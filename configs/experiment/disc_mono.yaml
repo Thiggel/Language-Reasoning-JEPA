@@ -1,0 +1,11 @@
+# @package _global_
+# Goal-monotonicity hinge on top of the combo recipe: necessary steps must
+# strictly decrease LN-L1 distance to the terminal state; distractors must
+# not decrease it.
+run_name: disc_mono
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 1.0}

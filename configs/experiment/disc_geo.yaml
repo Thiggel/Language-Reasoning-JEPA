@@ -1,0 +1,11 @@
+# @package _global_
+# Both geometry regularizers together (straightening + monotonicity) on the
+# combo recipe.
+run_name: disc_geo
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  straighten: {weight: 0.1}
+  monotone: {weight: 1.0}

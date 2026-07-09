@@ -9,6 +9,7 @@ from pathlib import Path
 import torch
 from omegaconf import OmegaConf
 
+from textjepa.objectives.geometry import goal_distances, velocity_cosines
 from textjepa.probing.probes import ridge_probe_accuracy
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup, ema_momentum
@@ -115,6 +116,13 @@ class Trainer:
             feats["delta"].append(flat(out.step_states - out.prev_states))
             if "chunk_pred" in out.extras:
                 feats.setdefault("chunkpred", []).append(flat(out.extras["chunk_pred"]))
+            cos, cmask = velocity_cosines(out)
+            feats.setdefault("traj_cos", []).append(cos.reshape(-1)[cmask.reshape(-1) > 0])
+            gd = goal_distances(out)[:, 1:]
+            feats.setdefault("goal_dist", []).append(gd.reshape(-1)[m])
+            feats.setdefault("goal_dist_rem", []).append(
+                batch["remaining"].reshape(-1)[m].float()
+            )
             feats["step_value"].append(batch["value"].reshape(-1)[m])
             feats["op"].append(batch["op"].reshape(-1)[m])
             feats["necessary"].append(batch["necessary"].reshape(-1)[m])
@@ -138,6 +146,12 @@ class Trainer:
                 metrics[f"probe_value_{src}"] = ridge_probe_accuracy(
                     cat[src], cat["step_value"], modulus
                 )
+        metrics["traj_cos"] = cat["traj_cos"].mean().item()
+        gd, rem = cat["goal_dist"], cat["goal_dist_rem"]
+        gd, rem = gd - gd.mean(), rem - rem.mean()
+        metrics["goal_dist_corr"] = (
+            (gd * rem).sum() / (gd.norm() * rem.norm() + 1e-8)
+        ).item()
         metrics["probe_op_delta"] = ridge_probe_accuracy(cat["delta"], cat["op"], 4)
         metrics["probe_necessary_delta"] = ridge_probe_accuracy(
             cat["delta"], cat["necessary"], 2

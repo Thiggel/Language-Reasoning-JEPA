@@ -77,3 +77,13 @@ def test_zero_step_encoding(setup):
         batch["prompt_tokens"][:2], batch["prompt_mask"][:2], empty, no_steps
     )
     assert torch.isfinite(s0).all()
+
+
+def test_geometry_objectives(setup):
+    from textjepa.objectives import GoalMonotonicity, TemporalStraightening
+
+    _, batch, model = setup
+    out = model(batch)
+    for obj in (TemporalStraightening(), GoalMonotonicity()):
+        loss = obj(out, batch)
+        assert torch.isfinite(loss) and loss >= 0

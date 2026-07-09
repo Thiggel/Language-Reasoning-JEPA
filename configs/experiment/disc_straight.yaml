@@ -1,0 +1,11 @@
+# @package _global_
+# Temporal straightening (arXiv:2603.12231) on top of the combo recipe:
+# curvature loss 1 - cos(v_t, v_{t+1}) with lambda=0.1 should make raw
+# latent distance a progress metric (test: oracle_goal-energy planning).
+run_name: disc_straight
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  straighten: {weight: 0.1}

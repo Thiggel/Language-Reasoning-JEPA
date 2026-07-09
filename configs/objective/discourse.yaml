@@ -31,3 +31,11 @@ chunk_pred:
   _target_: textjepa.objectives.ChunkPrediction
   weight: 0.0  # enabled in experiment configs (see disc_chunkpred)
   rollout_weight: 0.5
+straighten:
+  _target_: textjepa.objectives.TemporalStraightening
+  weight: 0.0  # enabled in experiment configs (see disc_straight/geo)
+monotone:
+  _target_: textjepa.objectives.GoalMonotonicity
+  weight: 0.0  # enabled in experiment configs (see disc_mono/geo)
+  margin: 0.02
+  distractor_weight: 0.5
