@@ -1,0 +1,5 @@
+# @package _global_
+# Ablation: extreme action bottleneck (HWM found tiny action dims optimal)
+run_name: disc_action4
+model:
+  d_action: 4

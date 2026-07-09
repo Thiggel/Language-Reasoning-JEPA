@@ -1,0 +1,486 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+\usetheme{default}
+\usecolortheme{seagull}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamerfont{frametitle}{series=\bfseries,size=\large}
+\setbeamercolor{frametitle}{fg=black}
+\usepackage{tikz,booktabs,amsmath,amssymb}
+\usetikzlibrary{positioning,arrows.meta,fit,calc,backgrounds}
+
+% validated categorical palette (light mode)
+\definecolor{cblue}{HTML}{2A78D6}
+\definecolor{caqua}{HTML}{1BAF7A}
+\definecolor{cyellow}{HTML}{EDA100}
+\definecolor{cgreen}{HTML}{008300}
+\definecolor{cviolet}{HTML}{4A3AA7}
+\definecolor{cred}{HTML}{E34948}
+\definecolor{cgray}{HTML}{52514E}
+\definecolor{cpale}{HTML}{E8E7E2}
+
+\newcommand{\claim}[1]{\textcolor{cviolet}{\textbf{Claim:} #1}}
+\newcommand{\sg}{\mathrm{sg}}
+
+\title{Discourse-JEPA:\\ Latent World Models over Reasoning Steps}
+\subtitle{Method and first experimental cycle --- fully reproducible from these slides}
+\author{TextJEPA project}
+\date{July 9, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/disc\_*})}
+
+\begin{document}
+\frame{\titlepage}
+
+% ---------------------------------------------------------------- idea
+\begin{frame}{Idea in one slide}
+\begin{itemize}
+  \item Treat a \textbf{reasoning trace} as trajectories of a world model: the
+        \emph{state} $s_t$ is a compressed discourse state (``what has been
+        established''), the \emph{action} $a_t$ is a tiny latent code of an
+        \emph{intent phrase} for the next step.
+  \item Actions state intent only (\emph{``derive purple apples from orange
+        jars times green pens .''}) --- never the outcome (\emph{``$=5$''}).
+        The predictor $F(s_t,a_t)$ must therefore \textbf{compute consequences
+        in latent space}.
+  \item Generation = \textbf{search over actions}: roll candidate actions
+        forward with $F$, score with an energy, execute the best in the
+        environment, re-encode, replan (closed-loop MPC). \textbf{No decoder,
+        no token loss anywhere} (JEPA-pure; the symbolic environment renders
+        chosen actions via templates).
+  \item Synthetic reasoning world $\Rightarrow$ exact ground truth for
+        \textbf{linear probes} and \textbf{objective planning success}.
+\end{itemize}
+\end{frame}
+
+% ---------------------------------------------------------------- data
+\begin{frame}{World: iGSM-style synthetic reasoning (exact generator)}
+\textbf{Problem sampler} (rejection-sampled until $3\le|\mathcal A_q|\le 9$; \texttt{rng = Random(f"\{seed\}:\{index\}")}):
+\begin{itemize}\itemsep1pt
+  \item $n\sim\mathcal U\{6,\dots,12\}$ variables; names = distinct
+        (adjective, noun) pairs from $20\times 20$ vocabulary.
+  \item Variable $i$: with $p{=}0.35$ (always for $i<2$) a \textbf{leaf}
+        $x_i = c_i,\ c_i\sim\mathcal U\{0..22\}$; else an \textbf{internal}
+        $x_i = x_a \circ x_b \bmod 23$, $\circ\in\{+,-,\times\}$,
+        parents $a,b$ sampled from $\{0..i-1\}$.
+  \item Query $q$ = uniform over internal variables;
+        $\mathcal A_q$ = ancestors of $q$ (incl.\ $q$) = the necessary
+        computation; the rest are \textbf{distractors}.
+\end{itemize}
+\medskip
+\textbf{Training traces}: solve by repeatedly resolving a feasible variable
+(parents resolved); with $p{=}0.15$ (max 2) pick a feasible \emph{distractor}
+instead of a necessary one $\Rightarrow$ off-path states for the value head.
+Fresh problems every epoch (train seed 1, val seed 2; 100k/5k).
+\end{frame}
+
+\begin{frame}[fragile]{A verbatim sample (val problem \#3)}
+\footnotesize
+\textbf{Prompt} (definitions shuffled per-sample, question last; one sentence = one chunk):
+\begin{quote}\ttfamily
+the number of purple apples equals the number of orange jars times the number of green pens .\\
+the number of orange jars is 15 . \quad the number of green pens is 8 .\\
+\textcolor{cgray}{(+ 7 distractor definitions)} \quad how many purple apples are there ?
+\end{quote}
+\textbf{Solution trace} --- step sentence (observed outcome) vs.\ action intent phrase (no outcome):
+\begin{center}\ttfamily\begin{tabular}{l|l}
+step sentence (encoder sees) & intent phrase (action encoder sees)\\\hline
+so the number of green pens is 8 . & look up the number of green pens .\\
+so the number of orange jars is 15 . & look up the number of orange jars .\\
+so the number of purple apples is & derive purple apples from orange\\
+\quad 15 times 8 = 5 . & \quad jars times green pens .
+\end{tabular}\end{center}
+\smallskip
+Note $15\times 8 = 120 \equiv 5 \pmod{23}$: outcomes are nontrivial to predict.
+\end{frame}
+
+% ---------------------------------------------------------------- architecture
+\begin{frame}{Architecture (all sizes exact; 8.8--9.1M params)}
+\begin{itemize}\itemsep2pt
+  \item \textbf{Chunk encoder} $E_c$: word-level vocab (441 tokens), embed 256,
+        2-layer pre-norm transformer (4 heads, FF 1024), masked mean-pool
+        $\to$ one 256-d vector per sentence. Shared for prompt, steps, intents.
+  \item \textbf{State model} $E_s$: 4-layer \emph{causal} transformer
+        (8 heads, FF 1024) over [prompt chunks $|$ step chunks] + learned
+        positions + 2 segment embeddings. $s_0$ = hidden at the question;
+        $s_t$ = hidden at step $t$.
+  \item \textbf{Action encoder} $A$: MLP $256\to256\to16$ on the intent-phrase
+        embedding (optional FSQ, unused in main runs).
+  \item \textbf{Predictor} $F$: residual MLP,
+        $\hat s_{t+1}=s_t+\mathrm{MLP}([\mathrm{LN}(s_t);a_t])$, 2 hidden
+        layers of 1024 (GELU).
+  \item \textbf{Hierarchy}: CLS-transformer over $K{=}3$ action codes
+        $\to$ 8-d macro action $m_t$; $F_{\mathrm{hi}}(s_t,m_t)$ predicts
+        $\bar s_{t+3}$ (same latent space, HWM-style).
+  \item \textbf{LDAD} (Delta-JEPA): MLP on
+        $\Delta s = s_{t+1}-s_t$ $\to$ op logits (4) + regression to the EMA
+        intent embedding.
+  \item \textbf{Value head} $V$: MLP on $[\mathrm{LN}([s_t;s_0])]$
+        $\to$ scalar = predicted remaining necessary steps.
+  \item \textbf{Teachers}: EMA copies of $E_c,E_s$ (momentum $0.99\to0.999$
+        linear); \textbf{frozen anchor} $\tilde E_c$ = copy of $E_c$ at random
+        init, never updated.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Training pipeline}
+\centering
+\resizebox{0.94\textwidth}{!}{%
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={draw=cgray, rounded corners=1pt, inner sep=3pt, align=center},
+  enc/.style={box, fill=cblue!12},
+  tgt/.style={box, fill=cpale},
+  frz/.style={box, fill=cyellow!22},
+  act/.style={box, fill=cred!10},
+  lat/.style={circle, draw=cgray, inner sep=1.6pt, fill=white},
+  loss/.style={align=center, text=cviolet, font=\scriptsize},
+  arr/.style={-{Stealth[length=1.8mm]}, cgray}]
+
+% ---- column x positions: 0, 42, 84, 126 (mm-ish units)
+% sentences row (y=0)
+\node[box] (p)  at (0,0)   {prompt sentences\\ \ttfamily ...jars is 15 .\ / how many apples ?};
+\node[box] (y1) at (4.6,0) {steps $1..t$\\ \ttfamily so ...\ pens is 8 .};
+\node[box] (u)  at (8.4,0) {intent phrase $t{+}1$\\ \ttfamily derive apples from ...};
+\node[box] (y2) at (12.6,0){step $t{+}1$ (outcome)\\ \ttfamily so ...\ 15 times 8 = 5 .};
+
+% encoder row (y=-1.4)
+\node[enc] (ecp) at (0,-1.5)   {$E_c$};
+\node[enc] (ecy) at (4.6,-1.5) {$E_c$};
+\node[enc] (ecu) at (8.4,-1.5) {$E_c$};
+\node[tgt] (ema) at (11.6,-1.5){EMA $\bar E_c,\bar E_s$};
+\node[frz] (frz) at (13.8,-1.5){frozen $\tilde E_c$};
+
+% state model row
+\node[enc, minimum width=52mm] (es) at (2.3,-2.9) {causal state model $E_s$};
+\node[act] (ae) at (8.4,-2.9) {action encoder $A$};
+
+% latent row
+\node[lat] (s0) at (0.9,-4.2) {$s_0$};
+\node[lat] (st) at (3.7,-4.2) {$s_t$};
+\node[lat, label={[font=\scriptsize]right:{$\in\mathbb R^{16}$}}] (a) at (8.4,-4.2) {$a_{t+1}$};
+\node[lat] (sbar) at (11.6,-4.2) {$\bar s_{t+1}$};
+\node[lat] (ce)   at (13.8,-4.2) {$\tilde e_{t+1}$};
+
+% predictor row
+\node[box, fill=caqua!18] (F) at (6.0,-5.4) {$F(s_t,a_{t+1})$};
+\node[lat] (shat) at (8.9,-5.4) {$\hat s_{t+1}$};
+
+\draw[arr] (p) -- (ecp); \draw[arr] (y1) -- (ecy); \draw[arr] (u) -- (ecu);
+\draw[arr] (y2.south) -- (ema.north); \draw[arr] (y2.south east) -- (frz.north);
+\draw[arr] (ecp) -- (ecp |- es.north); \draw[arr] (ecy) -- (ecy |- es.north);
+\draw[arr] (ecu) -- (ae);
+\draw[arr] (s0 |- es.south) -- (s0); \draw[arr] (st |- es.south) -- (st);
+\draw[arr] (ae) -- (a);
+\draw[arr] (ema) -- (sbar); \draw[arr] (frz) -- (ce);
+\draw[arr] (st) -- (F); \draw[arr] (a) -- (F);
+\draw[arr] (F) -- (shat);
+
+\draw[arr, cviolet, thick] (shat) -- node[below, loss, pos=0.55]
+  {$\mathcal L_{\text{pred}},\mathcal L_{\text{roll}}$} (sbar);
+\draw[arr, cviolet, thick] (shat) to[bend right=10]
+  node[below, loss, pos=0.7]{head $h$: $\mathcal L_{\text{chunk}}$} (ce);
+
+\node[loss] at (1.9,-5.4) {$V(s_t,s_0)\to\mathcal L_{\text{val}}$};
+\node[loss] at (1.9,-6.0) {LDAD: $\Delta s_t \to \mathcal L_{\text{act}}$};
+\node[loss, text=cgray] at (11.6,-6.0)
+  {sg$(\cdot)$ on all targets; VICReg on $s,a$ (not drawn)};
+\end{tikzpicture}}
+\end{frame}
+
+\begin{frame}{Objectives (exact losses and weights)}
+Let $d(x,y)=\mathrm{smoothL1}(\mathrm{LN}(x),\mathrm{LN}(y))$ (per-dim mean;
+LN = parameter-free layer norm), masks over valid steps.
+\begin{align*}
+\mathcal L_{\text{pred}} &= d\big(F(s_t,a_t),\, \sg\,\bar s_{t+1}\big)
+  &\text{weight } 1.0\\
+\mathcal L_{\text{roll}} &= d\big(F^{(t)}(s_0,a_{1:t}),\, \sg\,\bar s_{t}\big)
+  \ \text{(open loop, all $t$)} &1.0\\
+\mathcal L_{\text{hi}} &= d\big(F_{\mathrm{hi}}(s_t, m_t),\, \sg\,\bar s_{t+3}\big)
+  &0.5\\
+\mathcal L_{\text{vic}} &= \textstyle\sum_j \max(0, 1-\mathrm{std}(s^{(j)}))
+  + 0.04\,\|\mathrm{offdiag}(\mathrm{Cov}(s))\|_F^2/D + 0.1\,\text{var}(a)
+  &1.0\\
+\mathcal L_{\text{act}} &= \mathrm{CE}\big(\mathrm{op}\mid \Delta s_t\big)
+  + d\big(g(\Delta s_t),\, \sg\,\bar E_c(u_t)\big)\quad\text{(Delta-JEPA)}
+  &2.0\\
+\mathcal L_{\text{val}} &= \mathrm{smoothL1}\big(V(s_t,s_0),\,
+  \#\text{unresolved necessary}\big) &1.0\\
+\mathcal L_{\text{chunk}} &= d\big(h(\hat s_{t+1}),\, \sg\,\tilde E_c(y_{t+1})\big)
+  + 0.5\, d\big(h(\text{rollout}_t),\, \sg\,\tilde E_c(y_t)\big)
+  &\text{0 / 2.0}
+\end{align*}
+$\mathcal L_{\text{chunk}}$: weight 0 in \texttt{disc\_base}; 2.0 in
+\texttt{disc\_chunkpred}/\texttt{combo} with the \textbf{frozen} anchor
+$\tilde E_c$. Value head input detached except in
+\texttt{disc\_valgrad}/\texttt{combo}.
+\end{frame}
+
+\begin{frame}{Training protocol}
+\begin{itemize}\itemsep2pt
+  \item AdamW, lr $3\!\times\!10^{-4}$, weight decay $0.05$ (none for dim
+        $<2$ params), $\beta=(0.9,0.95)$; cosine schedule to floor $0.05$,
+        1000-step warmup; grad clip 5.0.
+  \item Batch 128 problems; 20 epochs $\times$ 781 steps; \textbf{fresh data
+        every epoch} (no memorization confound). EMA momentum $0.99\to0.999$
+        linear over training.
+  \item Hardware: one V100-32GB, fp32, $\sim$40 min/run.
+  \item In-training eval each epoch: all losses + collapse diagnostics
+        (per-dim std, RankMe effective rank) + closed-form ridge probes.
+  \item Code: \texttt{scripts/train.py +experiment=...}; every run's exact
+        config is stored in its checkpoint.
+\end{itemize}
+\end{frame}
+
+% ---------------------------------------------------------------- planning
+\begin{frame}{Planning: closed-loop MPC by exhaustive latent search}
+\textbf{Interface knowledge} (legitimate): feasible actions = unresolved
+variables whose stated dependencies are resolved --- readable from the prompt.
+\textbf{Consequence knowledge}: latent only.
+\medskip
+\begin{enumerate}\itemsep1pt
+  \item Encode prompt + steps so far $\to$ $s$ (and $s_0$ once).
+  \item Enumerate feasible action \emph{sequences} to depth $L$
+        (lookahead; cap 64), encode their intent phrases $\to a_i$.
+  \item Roll out $\hat s \leftarrow F(\hat s, a_i)$ along each sequence.
+  \item Score: $\;\text{cost} = \text{steps taken} + V(\hat s_{\text{end}},
+        s_0)$ \; (estimated total steps).
+  \item Execute the first action of the argmin in the symbolic environment
+        $\to$ real outcome sentence appended; go to 1.
+\end{enumerate}
+\medskip
+Success = query resolved within the \textbf{strict optimal budget}
+$|\mathcal A_q|$ (slack 0: any distractor pick is fatal). 200 val episodes.
+Discrete enumeration replaces CEM; a sampled action prior would need CEM/MPPI.
+\end{frame}
+
+\begin{frame}{Planning: search graph (one replanning round, lookahead 1)}
+\centering
+\resizebox{0.8\textwidth}{!}{%
+\begin{tikzpicture}[font=\scriptsize,
+  lat/.style={circle, draw=cgray, fill=cpale, inner sep=2pt},
+  arr/.style={-{Stealth[length=1.8mm]}},
+  cand/.style={arr, cgray},
+  best/.style={arr, caqua, very thick},
+  albl/.style={fill=white, inner sep=1pt, font=\ttfamily\scriptsize}]
+
+\node[lat] (s) at (0,0) {$s_t$};
+\node[align=right, text=cgray, anchor=east] at (-0.5,0)
+  {prompt + steps so far\\ re-encoded $\to s_t$};
+
+\node[lat] (s1) at (7.2, 1.6) {$\hat s^{(1)}$};
+\node[lat] (s2) at (7.2, 0.0) {$\hat s^{(2)}$};
+\node[lat] (s3) at (7.2,-1.6) {$\hat s^{(3)}$};
+
+\draw[best] (s) -- node[albl, pos=0.5, above=2pt, sloped]
+  {derive purple apples from orange jars times green pens .} (s1);
+\draw[cand] (s) -- node[albl, pos=0.52]
+  {look up small tiles .\ \textcolor{cgray}{(distractor)}} (s2);
+\draw[cand] (s) -- node[albl, pos=0.5, below=2pt, sloped]
+  {derive dark cups .\ \textcolor{cgray}{(distractor)}} (s3);
+
+\node[anchor=west, text=caqua] at (7.8, 1.6) {$1+V=1.08$ $\checkmark$};
+\node[anchor=west, text=cgray] at (7.8, 0.0) {$1+V=2.31$};
+\node[anchor=west, text=cgray] at (7.8,-1.6) {$1+V=2.94$};
+
+\node[draw=cgray, rounded corners=1pt, align=center, inner sep=3pt]
+  (env) at (3.6,-3.4)
+  {symbolic env executes the chosen action\\
+   \ttfamily so the number of purple apples is 15 times 8 = 5 .};
+\draw[best] (s1.east) -- ++(3.0,0) |- (env.east);
+\draw[arr, cviolet, thick] (env.west) to[out=180,in=-110]
+  node[albl, text=cviolet, pos=0.5]{re-encode, replan} (s.south);
+\end{tikzpicture}}
+
+\medskip
+$V$ values are predicted \emph{remaining necessary steps} of the predicted
+next latent; lookahead 2 scores 2-step latent rollouts.
+\end{frame}
+
+% ---------------------------------------------------------------- experiments
+\begin{frame}{Experiment grid (each = one training run, 20 epochs)}
+\centering\small
+\begin{tabular}{llll}
+\toprule
+run & $\mathcal L_{\text{chunk}}$ anchor & value grad $\to$ encoder & other\\
+\midrule
+\texttt{disc\_base} & --- & no & reference\\
+\texttt{disc\_no\_delta} & --- & no & $\mathcal L_{\text{act}}$ weight 0\\
+\texttt{disc\_chunkpred} & frozen, w=2.0 & no & ---\\
+\texttt{disc\_valgrad} & --- & \textbf{yes} & ---\\
+\texttt{disc\_combo} & frozen, w=2.0 & \textbf{yes} & ---\\
+\texttt{disc\_value\_only} & --- & \textbf{yes} & \emph{all} JEPA weights 0\\
+\texttt{disc\_frozen\_enc} & --- & no & encoders frozen at init\\
+\bottomrule
+\end{tabular}
+
+\medskip
+Baselines at plan time: \textbf{random feasible policy},
+\textbf{symbolic oracle} (=100\%), and \textbf{oracle goal-distance energy}
+(LeWM-style, uses the encoded solved state --- diagnostic only).
+\end{frame}
+
+\begin{frame}{Result 1 --- training objectives determine plannability}
+\claim{JEPA losses turn a frozen-vocabulary encoder into a plannable world
+model; each added mechanism helps.}
+\begin{columns}
+\column{0.58\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/planning_success.pdf}
+\column{0.4\textwidth}\small
+Success within the \emph{strict optimal budget}, greedy lookahead 1,
+200 episodes, mean necessary steps 4.07.\\[4pt]
+With slack 2: base 0.75, +anchor 0.88, +value-grad \textbf{0.92}
+(random 0.41).\\[4pt]
+Distractor pick rate: random 0.43 $\to$ base 0.28 $\to$ valgrad 0.14.
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 2 --- deeper latent search helps monotonically}
+\claim{Success grows with search depth: rollouts of $F$ and the energy stay
+trustworthy over multiple imagined steps.}
+\begin{columns}
+\column{0.5\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/lookahead.pdf}
+\column{0.48\textwidth}\small
+Lookahead 2 = exhaustive 2-step feasible sequences (cap 64), scored at the
+imagined end state.\\[4pt]
+\texttt{disc\_valgrad}: $0.665\to\mathbf{0.835}$;
+distractor rate $0.14\to0.07$.\\[4pt]
+This is the planning-time compute knob promised by latent world models ---
+no retraining involved.
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 3 --- encoder--predictor collusion, measured}
+\claim{Pure state-prediction JEPA \emph{removes} outcome information that was
+linearly present at initialization; a frozen outcome anchor prevents it.}
+\begin{columns}
+\column{0.52\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/collusion.pdf}
+\column{0.46\textwidth}\small
+Probe: linear decodability of the just-computed value (23 classes) from
+$s_t$, val split.\\[4pt]
+Both loss sides are learned; EMA targets \emph{trail the online encoder}, so
+deleting a hard-to-predict feature lowers the loss --- stop-grad does not pin
+content.\\[4pt]
+Consequence in \texttt{disc\_base}: answer decodable from the terminal state
+at only 0.26 (random-init control: 0.65).
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 4 --- latent arithmetic under the frozen anchor}
+\claim{With $\mathcal L_{\text{chunk}}$, the predictor computes outcomes it
+never observes: value decodability from \emph{predicted} latents doubles the
+random-encoder control.}
+\begin{columns}
+\column{0.55\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/arithmetic.pdf}
+\column{0.43\textwidth}\small
+Dashed = random-init encoder control (surface memory, no computation);
+dotted = chance $1/23$.\\[4pt]
+From $F(s_{t-1},a_t)$: base 0.15 ($=$ control) $\to$ anchor \textbf{0.31}.\\[2pt]
+Answer from terminal state: $0.26 \to \mathbf{0.98}$.\\[2pt]
+Full-trace open-loop rollout: 0.22 (error compounds; matches Result 2's
+need for re-encoding).
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 5 --- the goal energy must be learned (LeWM test)}
+\claim{Raw latent distance to the oracle goal state plans barely above
+random; the trained value head is the energy that works.}
+\begin{columns}
+\column{0.5\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/energy.pdf}
+\column{0.48\textwidth}\small
+Oracle goal = encoded terminal state of the \emph{true} solution (planner
+gets it for free --- upper-bound diagnostic).\\[4pt]
+Scoring $\|\mathrm{LN}(\hat s)-\mathrm{LN}(s_{\text{goal}})\|_1$:
+base 0.13, anchor 0.18, valgrad 0.105 (distractor rates $\approx$ random).\\[4pt]
+$\Rightarrow$ JEPA geometry alone is not a distance-to-goal metric here;
+distillation should target the \emph{value head} (or an advantage head
+$A(s,a)$), not raw geometry.
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 6 --- Delta-JEPA ablation; stability}
+\claim{Displacement-level action decoding is load-bearing for planning
+(replicates Delta-JEPA, arXiv:2606.31232, in language).}
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+ & success@opt & success@slack2 & distractor rate & op from $\Delta s$\\
+\midrule
+\texttt{disc\_base} & \textbf{0.35} & \textbf{0.75} & 0.28 & 1.00\\
+\texttt{disc\_no\_delta} & 0.15 & 0.51 & 0.40 & 0.98$^*$\\
+\bottomrule
+\end{tabular}
+
+\smallskip{\scriptsize $^*$op stays decodable (it correlates with surface
+features) but transitions lose the \emph{action-discriminative} structure the
+planner needs.}
+\medskip
+
+\textbf{Stability} (all runs): per-dim state std $\approx 1.03$, RankMe
+effective rank 220--243 / 256, no collapse; VICReg + EMA sufficed, discrete
+codes (FSQ) not needed.
+\end{frame}
+
+\begin{frame}{Probe suite (champion vs.\ reference; random-encoder control)}
+\centering\scriptsize
+\begin{tabular}{lccc}
+\toprule
+probe (linear, val split) & \texttt{base} & \texttt{chunkpred} & random-enc\\
+\midrule
+value of current step from $s_t$ & 0.39 & \textbf{0.81} & 0.87\\
+value from $F(s_{t-1},a_t)$ (latent arithmetic) & 0.15 & \textbf{0.31} & 0.15\\
+value from open-loop rollout & 0.17 & \textbf{0.22} & 0.15\\
+op type from $\Delta s$ & 1.00 & 1.00 & 0.97\\
+step goal-relevance from $\Delta s$ & 0.89 & \textbf{0.93} & 0.89\\
+remaining steps from $s_t$ & 0.44 & \textbf{0.61} & 0.41\\
+resolved count from $s_t$ & 0.97 & 0.92 & 0.95\\
+final answer from terminal state & 0.26 & \textbf{0.98} & 0.62\\
+answer from prompt alone $s_0$ (should be hard) & 0.035 & 0.05 & 0.04\\
+\midrule
+value-head MAE (remaining steps) & 0.76 & 0.57 & ---\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+\texttt{disc\_combo} adds value-grad: MAE \textbf{0.38} with the same
+collusion-free probes (state value 0.89).
+\end{frame}
+
+\begin{frame}{Honest limitations \& what this is not}
+\begin{itemize}\itemsep2pt
+  \item \textbf{iGSM-style, not iGSM}: flat DAG, binary mod-23 ops, one
+        question template, templated English --- no hierarchical categories /
+        instance-vs-abstract parameters of the original benchmark.
+  \item \textbf{Actions are observed intents}, not variational latents: the
+        symbolic world offers an enumerable interface. The
+        variational prior $p(a\mid s,g)$ (for CEM/MPPI over sampled actions)
+        is future work.
+  \item \textbf{The goal energy is supervised} (remaining-steps labels from
+        the symbolic executor), i.e.\ learned oracle distance --- Result 5
+        shows raw geometry does not replace it.
+  \item Value labels shape only the value head unless \texttt{valgrad};
+        the op-CE in LDAD uses the executed action's type (JEPA-legit:
+        actions are observed at training time).
+  \item Text ``generation'' is action selection + template rendering; a
+        learned renderer is orthogonal to the world model.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Next steps}
+\begin{itemize}\itemsep2pt
+  \item \textbf{Baselines in flight}: \texttt{disc\_value\_only} (no JEPA
+        losses) and \texttt{disc\_frozen\_enc} (random frozen features) ---
+        do JEPA representations matter beyond the value head?
+  \item \textbf{Advantage head} $A(s,a)$ trained on
+        $\Delta$(remaining) and action \emph{ranking} losses --- sharper than
+        $V(F(s,a))$, which conflates predictor and value error.
+  \item \textbf{Hierarchical planning}: use the trained $F_{\mathrm{hi}}$ +
+        macro codes to propose 3-step jumps, refine with $F$ (HWM).
+  \item \textbf{Unobserved actions}: variational $q(a\mid s_{t-1},s_t)$ with
+        KL to prior $p(a\mid s,g)$; inspect emergent action clusters.
+  \item \textbf{Harder worlds}: faithful iGSM (hierarchy + category sums),
+        larger moduli, paraphrase templates, natural-language noise; scale.
+\end{itemize}
+\end{frame}
+
+\end{document}

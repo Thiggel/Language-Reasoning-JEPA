@@ -1,0 +1,15 @@
+# @package _global_
+# Baseline: no JEPA losses at all — value regression alone shapes the
+# encoder; predictor F is trained by nothing. Tests whether the latent
+# world model matters or a goal-distance regressor suffices.
+run_name: disc_value_only
+model:
+  value_detach: false
+objective:
+  latent_pred: {weight: 0.0}
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  chunk_pred: {weight: 0.0}
+  value: {weight: 1.0}

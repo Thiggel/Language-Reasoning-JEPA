@@ -1,0 +1,8 @@
+# @package _global_
+# Baseline: encoders frozen at random init (PLDM-style random features);
+# only predictor, action encoder, heads train. Tests whether *learned*
+# JEPA representations beat random features for dynamics + value.
+run_name: disc_frozen_enc
+model:
+  freeze_encoders: true
+  value_detach: true

@@ -1,0 +1,6 @@
+# @package _global_
+# Ablation: remove Delta-JEPA action decoding (collapse/action-sensitivity test)
+run_name: disc_no_delta
+objective:
+  delta_action:
+    weight: 0.0

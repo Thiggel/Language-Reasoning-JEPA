@@ -1,0 +1,17 @@
+name: igsm_edit
+modulus: 23
+n_vars_range: [6, 12]
+leaf_prob: 0.35
+steps_range: [3, 9]
+distractor_prob: 0.15
+max_distractors: 2
+train_size: 60000
+val_size: 4000
+train_seed: 1
+val_seed: 2
+# corruption / trajectory parameters
+max_wrong: 2
+max_missing: 1
+max_extra: 1
+vandal_prob: 0.1
+max_vandal: 1

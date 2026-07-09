@@ -1,0 +1,33 @@
+latent_pred:
+  _target_: textjepa.objectives.LatentPrediction
+  weight: 1.0
+  kind: smooth_l1
+  norm_targets: true
+rollout:
+  _target_: textjepa.objectives.RolloutPrediction
+  weight: 1.0
+  kind: smooth_l1
+  norm_targets: true
+hierarchy:
+  _target_: textjepa.objectives.HierarchyPrediction
+  weight: 0.5
+  kind: smooth_l1
+  norm_targets: true
+vicreg:
+  _target_: textjepa.objectives.VICReg
+  weight: 1.0
+  std_target: 1.0
+  cov_weight: 0.04
+  action_weight: 0.1
+delta_action:
+  _target_: textjepa.objectives.DeltaAction
+  weight: 2.0
+  ce_weight: 1.0
+  emb_weight: 1.0
+value:
+  _target_: textjepa.objectives.ValueRegression
+  weight: 1.0
+chunk_pred:
+  _target_: textjepa.objectives.ChunkPrediction
+  weight: 0.0  # enabled in experiment configs (see disc_chunkpred)
+  rollout_weight: 0.5

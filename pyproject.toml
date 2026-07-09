@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "textjepa"
+version = "0.1.0"
+description = "Language JEPA: latent world models over discourse states and text edits"
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "hydra-core>=1.3",
+    "omegaconf>=2.3",
+    "numpy",
+    "einops",
+    "scikit-learn",
+    "pandas",
+    "matplotlib",
+    "tensorboard",
+    "rich",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

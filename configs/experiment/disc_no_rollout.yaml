@@ -1,0 +1,6 @@
+# @package _global_
+# Ablation: teacher-forcing only (no open-loop rollout loss)
+run_name: disc_no_rollout
+objective:
+  rollout:
+    weight: 0.0

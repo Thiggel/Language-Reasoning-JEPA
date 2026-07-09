@@ -1,0 +1,15 @@
+ckpt: ???
+device: cuda:0
+n_episodes: 200
+slack: 0
+lookahead: 1
+max_expand: 64
+energy: value  # value | oracle_goal (oracle diagnostic, uses the solution)
+seed: 321
+out: null
+
+hydra:
+  run:
+    dir: runs/_plan
+  job:
+    chdir: false

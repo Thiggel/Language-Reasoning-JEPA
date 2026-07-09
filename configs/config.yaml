@@ -1,0 +1,28 @@
+defaults:
+  - data: igsm
+  - model: discourse
+  - objective: discourse
+  - _self_
+
+run_name: dev
+seed: 0
+device: cuda:0
+
+train:
+  batch_size: 128
+  num_workers: 8
+  epochs: 20
+  lr: 3e-4
+  weight_decay: 0.05
+  warmup_steps: 1000
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 50
+  eval_batches: 40
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  job:
+    chdir: false

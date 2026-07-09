@@ -1,0 +1,10 @@
+# @package _global_
+# Anchor outcome content: predict frozen random-encoder embeddings of the
+# next chunk from (s_t, a_t). Counteracts encoder/predictor collusion that
+# smooths away hard-to-predict details (computed values).
+run_name: disc_chunkpred
+model:
+  chunk_target: frozen
+objective:
+  chunk_pred:
+    weight: 2.0

@@ -1,0 +1,12 @@
+ckpt: ???
+device: cuda:0
+n_samples: 3000
+seed: 123
+random_control: true
+out: null
+
+hydra:
+  run:
+    dir: runs/_probe
+  job:
+    chdir: false

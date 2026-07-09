@@ -1,0 +1,6 @@
+# @package _global_
+# Ablation: discrete action codes via finite scalar quantization (8 dims, 5 levels)
+run_name: disc_fsq
+model:
+  d_action: 8
+  fsq_levels: [5, 5, 5, 5, 5, 5, 5, 5]

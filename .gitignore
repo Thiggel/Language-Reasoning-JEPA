@@ -1,0 +1,29 @@
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# environments
+.venv/
+.venv2/
+
+# experiment outputs (checkpoints, logs, tensorboard)
+runs/
+runs_*.log
+outputs/
+multirun/
+
+# latex build artifacts
+reports/*.aux
+reports/*.log
+reports/*.nav
+reports/*.out
+reports/*.snm
+reports/*.toc
+reports/*.vrb
+reports/compile.log
+reports/slide*.png
+
+# misc
+.DS_Store
