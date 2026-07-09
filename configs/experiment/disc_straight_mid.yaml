@@ -1,0 +1,10 @@
+# @package _global_
+# Straightening weight sweep (mid): lambda=0.05, between disc_straight_lo
+# (0.02) and the paper default disc_straight (0.1).
+run_name: disc_straight_mid
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  straighten: {weight: 0.05}

@@ -1,0 +1,11 @@
+# @package _global_
+# Straightening weight sweep (low): lambda=0.02. The paper default 0.1
+# (disc_straight) straightens hard but collapses value content
+# (probe_value_state 0.89 -> 0.35); test whether a mild weight keeps both.
+run_name: disc_straight_lo
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  straighten: {weight: 0.02}

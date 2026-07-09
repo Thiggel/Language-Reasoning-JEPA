@@ -10,8 +10,9 @@ import random
 from dataclasses import dataclass
 
 import torch
+import torch.nn.functional as F
 
-from textjepa.data.edits.trajectory import EditEnv
+from textjepa.data.edits.trajectory import EditEnv, topo_necessary
 from textjepa.data.vocab import Vocab
 
 
@@ -23,10 +24,13 @@ class EditEpisodeResult:
 
 
 class EditPlanner:
-    def __init__(self, model, vocab: Vocab, device: torch.device):
+    def __init__(
+        self, model, vocab: Vocab, device: torch.device, energy: str = "value"
+    ):
         self.model = model
         self.vocab = vocab
         self.device = device
+        self.energy = energy
 
     def _chunk_tensor(self, texts: list[str]) -> tuple[torch.Tensor, torch.Tensor]:
         ids = [self.vocab.encode(t) for t in texts]
@@ -48,6 +52,14 @@ class EditPlanner:
         )
         return states[:, 0]
 
+    def _oracle_goal_state(
+        self, env: EditEnv, prompt_t, prompt_m
+    ) -> torch.Tensor:
+        """Encode the fully repaired buffer (LeWM-style oracle diagnostic):
+        every necessary variable, true text, topological order."""
+        texts = [env._true_text(i) for i in topo_necessary(env.p)]
+        return self._buffer_state(prompt_t, prompt_m, texts)
+
     @torch.no_grad()
     def plan_episode(
         self, env: EditEnv, prompt: list[str], rng: random.Random, slack: int = 0
@@ -56,6 +68,11 @@ class EditPlanner:
         n_initial = env.n_defects()
         budget = n_initial + slack
         s0 = self._buffer_state(prompt_t, prompt_m, env.sentences())
+        goal = (
+            self._oracle_goal_state(env, prompt_t, prompt_m)
+            if self.energy == "oracle_goal"
+            else None
+        )
         steps = 0
         while not env.solved and steps < budget:
             s = (
@@ -69,8 +86,12 @@ class EditPlanner:
             a = self.model.encode_actions(tok.squeeze(0).unsqueeze(1)).squeeze(1)
             n = a.shape[0]
             s_next = self.model.predictor(s.expand(n, -1), a)
-            value = self.model.value_head(s_next, s0.expand(n, -1))
-            env.apply(cands[int(value.argmin().item())])
+            if goal is not None:
+                ln = lambda x: F.layer_norm(x, x.shape[-1:])
+                score = (ln(s_next) - ln(goal.expand(n, -1))).abs().mean(-1)
+            else:
+                score = self.model.value_head(s_next, s0.expand(n, -1))
+            env.apply(cands[int(score.argmin().item())])
             steps += 1
         return EditEpisodeResult(env.solved, steps, n_initial)
 
@@ -114,8 +135,13 @@ def evaluate_edit_planning(
         rand_.append(random_edit_episode(env2, rng, slack))
         env3, _, _ = dataset.make_env(i)
         oracle.append(oracle_edit_episode(env3, rng))
+    key = (
+        "latent_planner"
+        if planner.energy == "value"
+        else f"latent_planner_{planner.energy}"
+    )
     return {
-        "latent_planner": agg(planned),
+        key: agg(planned),
         "random_policy": agg(rand_),
         "oracle": agg(oracle),
     }

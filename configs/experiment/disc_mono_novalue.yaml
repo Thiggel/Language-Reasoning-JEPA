@@ -1,0 +1,12 @@
+# @package _global_
+# Pure-geometry planner test: goal-monotonicity shaping but NO value head
+# (weight 0, detached). If oracle_goal-energy planning works here, latent
+# geometry alone replaces the learned value function.
+run_name: disc_mono_novalue
+model:
+  chunk_target: frozen
+  value_detach: true
+objective:
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 1.0}
+  value: {weight: 0.0}

@@ -25,7 +25,7 @@ def main(cfg: DictConfig) -> None:
     dataset = build_dataset(run_cfg, vocab, split="val")
     device = torch.device(cfg.device)
     if run_cfg.data.get("name", "igsm") == "igsm_edit":
-        planner = EditPlanner(model, vocab, device)
+        planner = EditPlanner(model, vocab, device, energy=cfg.energy)
         results = evaluate_edit_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
         )

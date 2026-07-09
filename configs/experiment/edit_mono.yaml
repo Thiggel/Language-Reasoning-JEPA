@@ -1,0 +1,21 @@
+# @package _global_
+# Edit track + goal monotonicity: fixing edits must strictly decrease the
+# latent distance to the repaired terminal buffer, vandal edits must not.
+# Direct attack on the edit track's flat goal energy (defects_from_state
+# 0.46, slack-insensitive planning).
+defaults:
+  - override /data: igsm_edit
+  - override /model: edit
+
+run_name: edit_mono
+model:
+  chunk_target: frozen
+  value_detach: false
+data:
+  vandal_prob: 0.25
+  max_vandal: 2
+objective:
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 1.0}
+train:
+  batch_size: 64
