@@ -31,6 +31,7 @@ class LatentDynamicsCore(nn.Module):
         macro_k: int = 3,
         d_macro: int = 8,
         value_detach: bool = True,
+        geo_proj: bool = False,
     ):
         super().__init__()
         self.macro_k = macro_k
@@ -47,6 +48,10 @@ class LatentDynamicsCore(nn.Module):
         # projects predicted states onto EMA chunk-embedding targets
         # (VL-JEPA-style continuous text-embedding prediction, no tokens)
         self.chunk_head = mlp([d_model, d_model * 2], d_model)
+        # optional geometry projection: straightening/monotonicity act on
+        # pi(s) instead of s, so the planning metric and the content
+        # representation stop competing (Result 8 trade-off)
+        self.geo_head = mlp([d_model, d_model], d_model) if geo_proj else None
 
     def forward(
         self,
@@ -57,6 +62,7 @@ class LatentDynamicsCore(nn.Module):
         action_emb_tgt: torch.Tensor,
         step_mask: torch.Tensor,
         step_emb_tgt: torch.Tensor | None = None,
+        alt_actions: torch.Tensor | None = None,  # [B, T, K, d_action]
     ) -> JEPAOutputs:
         prev_states = torch.cat([s0.unsqueeze(1), step_states[:, :-1]], dim=1)
         preds = self.predictor(prev_states, actions)
@@ -74,10 +80,30 @@ class LatentDynamicsCore(nn.Module):
             )
 
         extras = {}
+        if self.geo_head is not None:
+            extras["geo_states"] = self.geo_head(all_states)
+            extras["geo_states_tgt"] = self.geo_head(step_states_tgt.detach())
         if step_emb_tgt is not None:
             extras["chunk_pred"] = self.chunk_head(preds)
             extras["chunk_pred_rollout"] = self.chunk_head(rollout)
             extras["step_emb_tgt"] = step_emb_tgt.detach()
+        if alt_actions is not None:
+            # counterfactual candidates: predict + value-score the K
+            # alternative actions from each visited state (ranking loss)
+            B, T, K, d_a = alt_actions.shape
+            prev_rep = prev_states.unsqueeze(2).expand(-1, -1, K, -1)
+            alt_preds = self.predictor(
+                prev_rep.reshape(B, T * K, -1), alt_actions.reshape(B, T * K, d_a)
+            )
+            p_exec, p_alt = (
+                (preds.detach(), alt_preds.detach())
+                if self.value_detach
+                else (preds, alt_preds)
+            )
+            extras["exec_value"] = self.value_head(p_exec, value_in[:, 0])
+            extras["alt_value"] = self.value_head(
+                p_alt, value_in[:, 0]
+            ).reshape(B, T, K)
 
         return JEPAOutputs(
             s0=s0,

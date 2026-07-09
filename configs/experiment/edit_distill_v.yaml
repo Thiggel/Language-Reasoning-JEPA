@@ -1,0 +1,19 @@
+# @package _global_
+# Edit track: distill the (already goal-monotone) buffer geometry into the
+# value head; no symbolic defect-count labels.
+defaults:
+  - override /data: igsm_edit
+  - override /model: edit
+run_name: edit_distill_v
+model:
+  chunk_target: frozen
+  value_detach: false
+data:
+  vandal_prob: 0.25
+  max_vandal: 2
+objective:
+  chunk_pred: {weight: 2.0}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}
+train:
+  batch_size: 64

@@ -34,15 +34,21 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         steps_range=tuple(d.steps_range),
         distractor_prob=d.distractor_prob,
         max_distractors=d.max_distractors,
+        # .get: configs stored in older checkpoints lack these keys
+        shuffle_actions=d.get("shuffle_actions", False),
+        n_alt=d.get("n_alt", 0),
     )
     size = size or (d.val_size if split == "val" else d.train_size)
     seed = d.val_seed if split == "val" else d.train_seed
     if d.get("name", "igsm") == "igsm_edit":
+        kw = dict(igsm_kwargs)
+        kw.pop("shuffle_actions", None)
+        kw.pop("n_alt", None)
         return EditDataset(
             vocab, size=size, seed=seed,
             max_wrong=d.max_wrong, max_missing=d.max_missing,
             max_extra=d.max_extra, vandal_prob=d.vandal_prob,
-            max_vandal=d.max_vandal, **igsm_kwargs,
+            max_vandal=d.max_vandal, n_alt=d.get("n_alt", 0), **kw,
         )
     return IGSMDataset(vocab, size=size, seed=seed, **igsm_kwargs)
 

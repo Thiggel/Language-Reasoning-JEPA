@@ -1,0 +1,10 @@
+# @package _global_
+# Combo recipe without LDAD (completes the 2x2 ranking-x-LDAD grid; the old
+# disc_no_delta ablation was on the base recipe, not combo).
+run_name: disc_combo_nodelta
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  delta_action: {weight: 0.0}

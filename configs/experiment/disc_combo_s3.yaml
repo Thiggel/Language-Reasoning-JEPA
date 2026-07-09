@@ -1,0 +1,11 @@
+# @package _global_
+# Seed replicate of disc_combo (error bars for headline claims).
+run_name: disc_combo_s3
+seed: 3
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+data:
+  train_seed: 31

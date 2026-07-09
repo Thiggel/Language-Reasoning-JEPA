@@ -1,0 +1,11 @@
+# @package _global_
+# Label-free value head: V regresses the latent goal distance (x5) instead
+# of symbolic remaining-steps labels. Tests self-distilled goal energies.
+run_name: disc_distill_v
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}

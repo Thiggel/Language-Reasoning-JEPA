@@ -1,0 +1,13 @@
+# @package _global_
+# Ranking K=4 WITHOUT the Delta-JEPA loss: is LDAD what makes
+# counterfactual generalization possible, or does explicit ranking replace it?
+run_name: disc_rank_k4_nodelta
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+  delta_action: {weight: 0.0}
+data:
+  n_alt: 4

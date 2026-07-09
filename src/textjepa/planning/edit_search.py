@@ -87,8 +87,12 @@ class EditPlanner:
             n = a.shape[0]
             s_next = self.model.predictor(s.expand(n, -1), a)
             if goal is not None:
+                geo = getattr(self.model.core, "geo_head", None)
+                fin, g = (
+                    (geo(s_next), geo(goal)) if geo is not None else (s_next, goal)
+                )
                 ln = lambda x: F.layer_norm(x, x.shape[-1:])
-                score = (ln(s_next) - ln(goal.expand(n, -1))).abs().mean(-1)
+                score = (ln(fin) - ln(g.expand(n, -1))).abs().mean(-1)
             else:
                 score = self.model.value_head(s_next, s0.expand(n, -1))
             env.apply(cands[int(score.argmin().item())])

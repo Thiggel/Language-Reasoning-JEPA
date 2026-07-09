@@ -25,6 +25,7 @@ class ProbeTask:
     features: str
     labels: str
     description: str
+    kind: str = "clf"  # "clf" (logistic acc) | "reg" (ridge R^2)
 
 
 PROBE_TASKS = [
@@ -64,6 +65,29 @@ PROBE_TASKS = [
               "plan length awareness from the prompt state"),
     ProbeTask("n_vars_from_s0", "s0", "n_vars",
               "problem size from the prompt state"),
+    # --- structure / abstraction probes (v2) --------------------------- #
+    ProbeTask("value_prev3_from_state", "state", "value_prev3",
+              "memory: value established three steps earlier, from s_t"),
+    ProbeTask("answer_from_state", "state", "answer_step",
+              "final answer from every intermediate state (emergence curve)"),
+    ProbeTask("resolved_member", "state_var", "resolved_member",
+              "symbol table: is variable v resolved yet, from [s_t; onehot(v)]"),
+    ProbeTask("ancestor_member", "s0_var", "ancestor_member",
+              "relevance map: is v an ancestor of the query, from [s_0; onehot(v)]"),
+    ProbeTask("var_from_delta", "delta", "var_idx",
+              "identity: which variable was just resolved, from displacement"),
+    ProbeTask("query_from_s0", "s0", "query_idx",
+              "which variable is being asked for, from the prompt state"),
+    ProbeTask("value_cos_from_state", "state", "value_cos",
+              "circular coding: cos(2 pi v / p) from s_t (R^2)", kind="reg"),
+    ProbeTask("value_sin_from_state", "state", "value_sin",
+              "circular coding: sin(2 pi v / p) from s_t (R^2)", kind="reg"),
+    ProbeTask("value_cos_from_pred", "pred", "value_cos",
+              "circular latent arithmetic: cos component from F(s,a) (R^2)",
+              kind="reg"),
+    ProbeTask("value_sin_from_pred", "pred", "value_sin",
+              "circular latent arithmetic: sin component from F(s,a) (R^2)",
+              kind="reg"),
 ]
 
 
@@ -86,6 +110,12 @@ EDIT_PROBE_TASKS = [
               "true answer from the terminal (perfect) buffer state"),
     ProbeTask("initial_defects_from_s0", "s0", "n_necessary",
               "how corrupted is the initial buffer"),
+    # --- structure probes (v2) ----------------------------------------- #
+    ProbeTask("defect_member", "state_pos", "defect_member",
+              "defect map: is the sentence at position p wrong, from "
+              "[s_t; onehot(p)]"),
+    ProbeTask("editpos_from_delta", "delta", "edit_pos",
+              "which buffer position was just edited, from displacement"),
 ]
 
 
@@ -94,24 +124,35 @@ def run_probe_suite(
     max_n: int = 20000,
     seed: int = 0,
     tasks: list[ProbeTask] | None = None,
+    mlp: bool = False,
 ) -> pd.DataFrame:
+    from textjepa.probing.probes import mlp_probe_accuracy, ridge_regression_r2
+
     rows = []
     for task in tasks or PROBE_TASKS:
         if task.features not in feats or task.labels not in feats:
             continue
         x, y = feats[task.features], feats[task.labels]
-        valid = y >= 0  # negative labels mark undefined positions
-        x, y = x[valid], y[valid]
+        if task.kind == "clf":
+            valid = y >= 0  # negative labels mark undefined positions
+            x, y = x[valid], y[valid]
         if len(x) > max_n:
             idx = np.random.RandomState(seed).permutation(len(x))[:max_n]
             x, y = x[idx], y[idx]
-        rows.append(
-            {
-                "task": task.name,
-                "acc": logistic_probe_accuracy(x, y, seed=seed),
-                "majority": majority_baseline(y),
-                "n": len(y),
-                "description": task.description,
-            }
-        )
+        if task.kind == "reg":
+            acc = ridge_regression_r2(x, y, seed=seed)
+            baseline = 0.0
+        else:
+            acc = logistic_probe_accuracy(x, y, seed=seed)
+            baseline = majority_baseline(y)
+        row = {
+            "task": task.name,
+            "acc": acc,
+            "majority": baseline,
+            "n": len(y),
+            "description": task.description,
+        }
+        if mlp and task.kind == "clf":
+            row["acc_mlp"] = mlp_probe_accuracy(x, y, seed=seed)
+        rows.append(row)
     return pd.DataFrame(rows)

@@ -20,6 +20,10 @@ from textjepa.objectives.base import Objective, masked_mean
 
 
 def _all_states(out) -> torch.Tensor:
+    """States the geometry losses act on: the geo projection when the model
+    has one (decoupled metric), else the raw states [s0; s_1..T]."""
+    if "geo_states" in out.extras:
+        return out.extras["geo_states"]
     return torch.cat([out.s0.unsqueeze(1), out.step_states], dim=1)
 
 
@@ -35,7 +39,8 @@ def goal_distances(out) -> torch.Tensor:
     target state; [B, T+1]."""
     B = out.s0.shape[0]
     last = out.step_mask.sum(dim=1).clamp(min=1) - 1
-    goal = out.step_states_tgt[torch.arange(B, device=out.s0.device), last]
+    tgt = out.extras.get("geo_states_tgt", out.step_states_tgt)
+    goal = tgt[torch.arange(B, device=out.s0.device), last]
     ln = lambda x: F.layer_norm(x, x.shape[-1:])
     return (ln(_all_states(out)) - ln(goal).unsqueeze(1)).abs().mean(-1)
 

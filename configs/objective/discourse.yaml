@@ -39,3 +39,11 @@ monotone:
   weight: 0.0  # enabled in experiment configs (see disc_mono/geo)
   margin: 0.02
   distractor_weight: 0.5
+value_distill:
+  _target_: textjepa.objectives.ValueDistill
+  weight: 0.0  # enabled in experiment configs (see disc_distill_v)
+  scale: 5.0
+ranking:
+  _target_: textjepa.objectives.ActionRanking
+  weight: 0.0  # enabled in experiment configs (see disc_rank_*, edit_rank)
+  margin: 0.5

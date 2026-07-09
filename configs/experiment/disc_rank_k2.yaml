@@ -1,0 +1,11 @@
+# @package _global_
+# Counterfactual ranking, K=2 alternatives per visited state.
+run_name: disc_rank_k2
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2

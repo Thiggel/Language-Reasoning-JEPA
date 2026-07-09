@@ -93,6 +93,7 @@ class EditJEPA(nn.Module):
         value_detach: bool = True,
         dropout: float = 0.0,
         chunk_target: str = "none",  # "none" | "frozen" outcome anchor
+        geo_proj: bool = False,  # geometry losses act on a learned projection
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -106,7 +107,7 @@ class EditJEPA(nn.Module):
         self.action_encoder = ActionEncoder(d_model, d_action, fsq_levels=fsq_levels)
         self.core = LatentDynamicsCore(
             d_model, d_action, predictor_hidden_mult, predictor_layers,
-            n_ops, macro_k, d_macro, value_detach,
+            n_ops, macro_k, d_macro, value_detach, geo_proj,
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.buffer_teacher = EMATeacher(self.buffer_encoder)
@@ -183,7 +184,14 @@ class EditJEPA(nn.Module):
                     batch["buffer_tokens"], batch["buffer_mask"], mode="anchor",
                 )[:, 1:]
         actions = self.action_encoder(self.encode_chunks(batch["action_tokens"]))
+        alt_actions = None
+        if "alt_tokens" in batch:
+            B, T, K, L = batch["alt_tokens"].shape
+            alt_actions = self.encode_actions(
+                batch["alt_tokens"].reshape(B, T * K, L)
+            ).reshape(B, T, K, -1)
         return self.core(
             states[:, 0], states[:, 1:], states_tgt[:, 1:], actions,
             action_emb_tgt, batch["step_mask"], step_emb_tgt=step_emb_tgt,
+            alt_actions=alt_actions,
         )

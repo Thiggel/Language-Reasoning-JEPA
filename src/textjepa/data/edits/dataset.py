@@ -31,8 +31,11 @@ class EditDataset(Dataset):
         max_extra: int = 1,
         vandal_prob: float = 0.1,
         max_vandal: int = 1,
+        n_alt: int = 0,
         **igsm_kwargs,
     ):
+        igsm_kwargs.pop("shuffle_actions", None)  # discourse-only control
+        igsm_kwargs.pop("n_alt", None)
         self.igsm = IGSMDataset(vocab, size, seed, **igsm_kwargs)
         self.vocab = vocab
         self.max_wrong = max_wrong
@@ -40,6 +43,7 @@ class EditDataset(Dataset):
         self.max_extra = max_extra
         self.vandal_prob = vandal_prob
         self.max_vandal = max_vandal
+        self.n_alt = n_alt  # counterfactual candidate edits per step
 
     def __len__(self) -> int:
         return len(self.igsm)
@@ -64,6 +68,10 @@ class EditDataset(Dataset):
 
         buffers = [[enc(s) for s in env.sentences()]]
         actions, op, value, remaining, resolved_n, necessary = [], [], [], [], [], []
+        alt_actions: list[list[list[int]]] = []
+        alt_remaining: list[list[int]] = []
+        edit_pos: list[int] = []
+        defect_masks: list[list[int]] = []
         n_initial = env.n_defects()
         n_vandal = 0
         while not env.solved:
@@ -78,16 +86,35 @@ class EditDataset(Dataset):
             edit = rng.choice(harmful) if vandalize else rng.choice(fixes)
             n_vandal += int(vandalize)
 
+            if self.n_alt:
+                others = [
+                    e for e in env.candidate_edits(include_harmful=True, rng=rng)
+                    if e != edit
+                ]
+                rng.shuffle(others)
+                alts = others[: self.n_alt]
+                alt_actions.append([enc(env.intent_text(e)) for e in alts])
+                rems = []
+                for e in alts:
+                    c = env.clone()
+                    c.apply(e)
+                    rems.append(c.n_defects())
+                alt_remaining.append(rems)
+
             actions.append(enc(env.intent_text(edit)))
             env.apply(edit)
             buffers.append([enc(s) for s in env.sentences()])
+            edit_pos.append(min(edit.pos, 15))
+            defect_masks.append(
+                [int(env.is_defect(b)) for b in env.buffer[:16]]
+            )
             op.append(EDIT_OP_LABELS[edit.kind])
             value.append(env.stated_query_value())
             remaining.append(env.n_defects())
             resolved_n.append(len(env.buffer))
             necessary.append(int(not vandalize))
 
-        return {
+        out = {
             "prompt": [enc(s) for s in prompt],
             "buffers": buffers,
             "actions": actions,
@@ -100,7 +127,13 @@ class EditDataset(Dataset):
             "n_necessary": n_initial,
             "n_vars": len(p.vars),
             "index": index,
+            "edit_pos": edit_pos,
+            "defect_masks": defect_masks,
         }
+        if self.n_alt:
+            out["alt_actions"] = alt_actions
+            out["alt_remaining"] = alt_remaining
+        return out
 
 
 def collate_edits(batch: list[dict], pad_id: int) -> dict:
@@ -127,7 +160,11 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
                 buffer_mask[b, t, c] = True
 
     step_mask = snapshot_mask[:, 1:]
+    from textjepa.data.igsm.dataset import _pad_alt
+
+    extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
     return {
+        **extra,
         "prompt_tokens": prompt_tokens,
         "prompt_mask": prompt_mask,
         "buffer_tokens": buffer_tokens,
@@ -143,4 +180,17 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
         "n_necessary": torch.tensor([b["n_necessary"] for b in batch]),
         "n_vars": torch.tensor([b["n_vars"] for b in batch]),
         "index": torch.tensor([b["index"] for b in batch]),
+        "edit_pos": _pad_labels([b["edit_pos"] for b in batch], fill=-1),
+        "defect_mask": _pad_defects([b["defect_masks"] for b in batch]),
     }
+
+
+def _pad_defects(masks: list[list[list[int]]], width: int = 16) -> torch.Tensor:
+    """[B, T, 16] per-position defect flags; -1 marks absent positions."""
+    B = len(masks)
+    T = max(len(m) for m in masks)
+    out = torch.full((B, T, width), -1, dtype=torch.long)
+    for b, steps in enumerate(masks):
+        for t, flags in enumerate(steps):
+            out[b, t, : len(flags)] = torch.tensor(flags)
+    return out

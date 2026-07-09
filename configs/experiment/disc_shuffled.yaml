@@ -1,0 +1,11 @@
+# @package _global_
+# Falsifier control: intent phrases shuffled among the trace's steps at
+# training time. If planning survives, F(s,a) never used the action.
+run_name: disc_shuffled
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+data:
+  shuffle_actions: true

@@ -22,6 +22,11 @@ class SymbolicEnv:
     def resolved_set(self) -> set[int]:
         return set(self.resolved)
 
+    def clone(self) -> "SymbolicEnv":
+        c = SymbolicEnv(self.p)
+        c.resolved = list(self.resolved)
+        return c
+
     def feasible_actions(self) -> list[int]:
         """Unresolved variables whose parents are all resolved."""
         done = self.resolved_set

@@ -1,0 +1,11 @@
+# @package _global_
+# Energy decoupling: straightening acts on a learned projection pi(s), not
+# on s itself, so raw-geometry planning and content stop competing.
+run_name: disc_proj_straight
+model:
+  chunk_target: frozen
+  value_detach: false
+  geo_proj: true
+objective:
+  chunk_pred: {weight: 2.0}
+  straighten: {weight: 0.1}

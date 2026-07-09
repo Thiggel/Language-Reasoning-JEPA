@@ -1,0 +1,10 @@
+# @package _global_
+# Cross-problem counterfactual coverage: 10k unique problems (10x reuse).
+run_name: disc_size10k
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+data:
+  train_size: 10000

@@ -1,0 +1,17 @@
+# @package _global_
+# Edit-track counterfactual ablation: no vandal edits in training traces
+# (completes the vandal_prob {0, .1, .25} curve).
+defaults:
+  - override /data: igsm_edit
+  - override /model: edit
+run_name: edit_no_vandal
+model:
+  chunk_target: frozen
+  value_detach: false
+data:
+  vandal_prob: 0.0
+  max_vandal: 0
+objective:
+  chunk_pred: {weight: 2.0}
+train:
+  batch_size: 64

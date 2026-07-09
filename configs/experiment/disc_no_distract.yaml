@@ -1,0 +1,11 @@
+# @package _global_
+# Remove within-trace counterfactual variation (no distractor steps in the
+# training traces). Planner still faces distractors at test time.
+run_name: disc_no_distract
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+data:
+  distractor_prob: 0.0

@@ -67,3 +67,61 @@ def logistic_probe_accuracy(
 def majority_baseline(labels: np.ndarray) -> float:
     _, counts = np.unique(labels, return_counts=True)
     return float(counts.max() / counts.sum())
+
+
+def ridge_regression_r2(
+    features: np.ndarray,
+    targets: np.ndarray,
+    train_frac: float = 0.8,
+    alpha: float = 1.0,
+    seed: int = 0,
+) -> float:
+    """Linear ridge regression; returns test R^2 (continuous targets,
+    e.g. cos/sin of the mod-p value for circular-coding probes)."""
+    from sklearn.linear_model import Ridge
+    from sklearn.preprocessing import StandardScaler
+
+    rng = np.random.RandomState(seed)
+    idx = rng.permutation(len(targets))
+    n_train = int(len(targets) * train_frac)
+    tr, te = idx[:n_train], idx[n_train:]
+    scaler = StandardScaler().fit(features[tr])
+    reg = Ridge(alpha=alpha).fit(scaler.transform(features[tr]), targets[tr])
+    return float(reg.score(scaler.transform(features[te]), targets[te]))
+
+
+def mlp_probe_accuracy(
+    features: np.ndarray,
+    labels: np.ndarray,
+    hidden: int = 256,
+    epochs: int = 200,
+    train_frac: float = 0.8,
+    seed: int = 0,
+) -> float:
+    """2-layer MLP probe (torch, full-batch Adam). The gap to the linear
+    probe measures information that is present but not linearized."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    rng = np.random.RandomState(seed)
+    idx = rng.permutation(len(labels))
+    n_train = int(len(labels) * train_frac)
+    tr, te = idx[:n_train], idx[n_train:]
+    x = torch.tensor(features, dtype=torch.float32, device=device)
+    y = torch.tensor(labels, dtype=torch.long, device=device)
+    mu, sd = x[tr].mean(0), x[tr].std(0) + 1e-6
+    x = (x - mu) / sd
+    n_classes = int(y.max().item()) + 1
+    torch.manual_seed(seed)
+    net = torch.nn.Sequential(
+        torch.nn.Linear(x.shape[1], hidden),
+        torch.nn.GELU(),
+        torch.nn.Linear(hidden, n_classes),
+    ).to(device)
+    opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
+    for _ in range(epochs):
+        opt.zero_grad()
+        loss = torch.nn.functional.cross_entropy(net(x[tr]), y[tr])
+        loss.backward()
+        opt.step()
+    with torch.no_grad():
+        acc = (net(x[te]).argmax(1) == y[te]).float().mean().item()
+    return float(acc)

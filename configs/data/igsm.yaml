@@ -9,3 +9,5 @@ train_size: 100000
 val_size: 5000
 train_seed: 1
 val_seed: 2
+shuffle_actions: false
+n_alt: 0

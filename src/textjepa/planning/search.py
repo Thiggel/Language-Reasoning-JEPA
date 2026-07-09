@@ -189,8 +189,10 @@ class LatentPlanner:
             cur = torch.where(step_alive.unsqueeze(1), nxt, cur)
             cost = cost + step_alive.float()
         if goal_state is not None:
+            geo = getattr(self.model.core, "geo_head", None)
+            fin, goal = (geo(cur), geo(goal_state)) if geo is not None else (cur, goal_state)
             ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
-            total = (ln(cur) - ln(goal_state)).abs().mean(-1)
+            total = (ln(fin) - ln(goal)).abs().mean(-1)
         else:
             total = cost + self.model.value_head(cur, s0.expand(n, -1))
         return seqs[int(total.argmin().item())]

@@ -128,6 +128,13 @@ class EditEnv:
                     b.text = stated_sentence(problem, b.var, vals2)
 
     # ------------------------------------------------------------------ #
+    def clone(self) -> "EditEnv":
+        import copy
+
+        c = copy.copy(self)
+        c.buffer = [BufferStep(b.var, b.text) for b in self.buffer]
+        return c
+
     def _true_text(self, var: int) -> str:
         return step_sentence(self.p, var)
 

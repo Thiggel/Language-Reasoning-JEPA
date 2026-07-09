@@ -87,3 +87,49 @@ def test_geometry_objectives(setup):
     for obj in (TemporalStraightening(), GoalMonotonicity()):
         loss = obj(out, batch)
         assert torch.isfinite(loss) and loss >= 0
+
+
+def test_geo_projection(setup):
+    from textjepa.objectives import GoalMonotonicity, TemporalStraightening
+
+    vocab, batch, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2, state_layers=2, state_heads=2,
+        d_action=8, d_macro=4, geo_proj=True, value_detach=False,
+    )
+    out = model(batch)
+    assert "geo_states" in out.extras and "geo_states_tgt" in out.extras
+    loss = TemporalStraightening()(out, batch) + GoalMonotonicity()(out, batch)
+    loss.backward()
+    assert any(p.grad is not None for p in model.core.geo_head.parameters())
+
+
+def test_ranking_and_distill(setup):
+    from textjepa.objectives import ActionRanking, ValueDistill
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(vocab, size=6, seed=0, n_alt=3)
+    batch = collate([ds[i] for i in range(6)], vocab.pad_id)
+    assert batch["alt_tokens"].shape[:2] == batch["step_mask"].shape
+    assert batch["alt_tokens"].shape[2] == 3
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2, state_layers=2, state_heads=2,
+        d_action=8, d_macro=4, value_detach=False,
+    )
+    out = model(batch)
+    assert out.extras["alt_value"].shape == batch["alt_remaining"].shape
+    for obj in (ActionRanking(), ValueDistill()):
+        loss = obj(out, batch)
+        assert torch.isfinite(loss) and loss >= 0
+    ActionRanking()(out, batch).backward()
+    grads = [p.grad for p in model.core.predictor.parameters() if p.grad is not None]
+    assert grads, "ranking gave the predictor no gradient"
+
+
+def test_shuffled_actions_deterministic(setup):
+    vocab, _, _ = setup
+    ds = IGSMDataset(vocab, size=4, seed=0, shuffle_actions=True)
+    a, b = ds[1], ds[1]
+    assert a["actions"] == b["actions"]  # same index -> same shuffle

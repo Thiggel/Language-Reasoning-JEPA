@@ -10,3 +10,4 @@ hydra:
     dir: runs/_probe
   job:
     chdir: false
+mlp: false

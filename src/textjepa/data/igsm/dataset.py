@@ -75,6 +75,8 @@ class IGSMDataset(Dataset):
         steps_range: tuple[int, int] = (3, 9),
         distractor_prob: float = 0.15,
         max_distractors: int = 2,
+        shuffle_actions: bool = False,
+        n_alt: int = 0,
         adjectives: list[str] | None = None,
         nouns: list[str] | None = None,
     ):
@@ -87,6 +89,8 @@ class IGSMDataset(Dataset):
         self.steps_range = tuple(steps_range)
         self.distractor_prob = distractor_prob
         self.max_distractors = max_distractors
+        self.shuffle_actions = shuffle_actions  # control: break action grounding
+        self.n_alt = n_alt  # counterfactual candidates per step (ranking)
         self.adjectives = adjectives or DEFAULT_ADJECTIVES
         self.nouns = nouns or DEFAULT_NOUNS
 
@@ -115,8 +119,21 @@ class IGSMDataset(Dataset):
         steps, actions, op, value, remaining, resolved_n, necessary = (
             [], [], [], [], [], [], []
         )
+        alt_actions: list[list[list[int]]] = []
+        alt_remaining: list[list[int]] = []
         for idx in trace:
             actions.append(self.vocab.encode(action_phrase(p, idx)))
+            if self.n_alt:
+                done = env.resolved_set
+                others = [a for a in env.feasible_actions() if a != idx]
+                rng.shuffle(others)
+                alts = others[: self.n_alt]
+                alt_actions.append(
+                    [self.vocab.encode(action_phrase(p, a)) for a in alts]
+                )
+                alt_remaining.append(
+                    [len(p.query_ancestors - (done | {a})) for a in alts]
+                )
             steps.append(self.vocab.encode(env.step(idx)))
             v = p.vars[idx]
             op.append(OP_LABELS[v.op])
@@ -124,8 +141,10 @@ class IGSMDataset(Dataset):
             remaining.append(env.remaining_necessary())
             resolved_n.append(len(env.resolved))
             necessary.append(int(idx in p.query_ancestors))
+        if self.shuffle_actions and len(actions) > 1:
+            rng.shuffle(actions)
 
-        return {
+        out = {
             "prompt": prompt,
             "steps": steps,
             "actions": actions,
@@ -138,7 +157,14 @@ class IGSMDataset(Dataset):
             "n_necessary": p.n_necessary_steps,
             "n_vars": len(p.vars),
             "index": index,
+            "var_idx": list(trace),  # which variable each step resolved
+            "query_idx": p.query,
+            "ancestors": sorted(p.query_ancestors),
         }
+        if self.n_alt:
+            out["alt_actions"] = alt_actions
+            out["alt_remaining"] = alt_remaining
+        return out
 
 
 def _pad_chunks(
@@ -165,11 +191,36 @@ def _pad_labels(seqs: list[list[int]], fill: int = 0) -> torch.Tensor:
     return out
 
 
+def _pad_alt(batch: list[dict], pad: int) -> dict:
+    """Pad per-step alternative actions to alt_tokens [B, T, K, L] and
+    alt_remaining [B, T, K] (-1 marks absent candidates)."""
+    B = len(batch)
+    T = max(len(b["alt_actions"]) for b in batch)
+    K = max((len(step) for b in batch for step in b["alt_actions"]), default=1)
+    K = max(K, 1)
+    L = max(
+        (len(a) for b in batch for step in b["alt_actions"] for a in step),
+        default=1,
+    )
+    tokens = torch.full((B, T, K, L), pad, dtype=torch.long)
+    remaining = torch.full((B, T, K), -1, dtype=torch.long)
+    for b, item in enumerate(batch):
+        for t, (alts, rems) in enumerate(
+            zip(item["alt_actions"], item["alt_remaining"])
+        ):
+            for k, (a, r) in enumerate(zip(alts, rems)):
+                tokens[b, t, k, : len(a)] = torch.tensor(a)
+                remaining[b, t, k] = r
+    return {"alt_tokens": tokens, "alt_remaining": remaining}
+
+
 def collate(batch: list[dict], pad_id: int) -> dict:
     prompt_tokens, prompt_mask = _pad_chunks([b["prompt"] for b in batch], pad_id)
     step_tokens, step_mask = _pad_chunks([b["steps"] for b in batch], pad_id)
     action_tokens, _ = _pad_chunks([b["actions"] for b in batch], pad_id)
+    extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
     return {
+        **extra,
         "prompt_tokens": prompt_tokens,
         "prompt_mask": prompt_mask,
         "step_tokens": step_tokens,
@@ -184,4 +235,19 @@ def collate(batch: list[dict], pad_id: int) -> dict:
         "n_necessary": torch.tensor([b["n_necessary"] for b in batch]),
         "n_vars": torch.tensor([b["n_vars"] for b in batch]),
         "index": torch.tensor([b["index"] for b in batch]),
+        "var_idx": _pad_labels([b["var_idx"] for b in batch], fill=-1),
+        "query_idx": torch.tensor([b["query_idx"] for b in batch]),
+        "ancestor_mask": _member_mask([b["ancestors"] for b in batch]),
     }
+
+
+MAX_VARS = 12
+
+
+def _member_mask(sets: list[list[int]], width: int = MAX_VARS) -> torch.Tensor:
+    out = torch.zeros(len(sets), width, dtype=torch.long)
+    for b, s in enumerate(sets):
+        for j in s:
+            if j < width:
+                out[b, j] = 1
+    return out

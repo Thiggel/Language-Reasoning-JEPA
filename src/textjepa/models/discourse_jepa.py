@@ -46,6 +46,7 @@ class DiscourseJEPA(nn.Module):
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
+        geo_proj: bool = False,  # geometry losses act on a learned projection
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -60,7 +61,7 @@ class DiscourseJEPA(nn.Module):
         self.action_encoder = ActionEncoder(d_model, d_action, fsq_levels=fsq_levels)
         self.core = LatentDynamicsCore(
             d_model, d_action, predictor_hidden_mult, predictor_layers,
-            n_ops, macro_k, d_macro, value_detach,
+            n_ops, macro_k, d_macro, value_detach, geo_proj,
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
@@ -108,6 +109,15 @@ class DiscourseJEPA(nn.Module):
         """[B, T, L] action-phrase tokens -> [B, T, d_action]."""
         return self.action_encoder(self.encode_chunks(action_tokens))
 
+    def _encode_alt(self, batch: dict) -> torch.Tensor | None:
+        """[B, T, K, L] alternative-action tokens -> [B, T, K, d_action]."""
+        if "alt_tokens" not in batch:
+            return None
+        B, T, K, L = batch["alt_tokens"].shape
+        return self.encode_actions(
+            batch["alt_tokens"].reshape(B, T * K, L)
+        ).reshape(B, T, K, -1)
+
     @torch.no_grad()
     def update_teachers(self, momentum: float) -> None:
         self.chunk_teacher.update(self.chunk_encoder, momentum)
@@ -134,7 +144,9 @@ class DiscourseJEPA(nn.Module):
                 step_emb_tgt = self.encode_chunks(batch["step_tokens"], teacher=True)
 
         actions = self.action_encoder(self.encode_chunks(batch["action_tokens"]))
+        alt_actions = self._encode_alt(batch)
         return self.core(
             s0, step_states, step_states_tgt, actions, action_emb_tgt,
             batch["step_mask"], step_emb_tgt=step_emb_tgt,
+            alt_actions=alt_actions,
         )
