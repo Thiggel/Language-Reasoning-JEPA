@@ -22,7 +22,7 @@
 \newcommand{\sg}{\mathrm{sg}}
 
 \title{Discourse-JEPA:\\ Latent World Models over Reasoning Steps}
-\subtitle{Method and first experimental cycle --- fully reproducible from these slides}
+\subtitle{Method and first two experimental cycles --- fully reproducible from these slides}
 \author{TextJEPA project}
 \date{July 9, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/disc\_*})}
 
@@ -204,12 +204,18 @@ LN = parameter-free layer norm), masks over valid steps.
   \#\text{unresolved necessary}\big) &1.0\\
 \mathcal L_{\text{chunk}} &= d\big(h(\hat s_{t+1}),\, \sg\,\tilde E_c(y_{t+1})\big)
   + 0.5\, d\big(h(\text{rollout}_t),\, \sg\,\tilde E_c(y_t)\big)
-  &\text{0 / 2.0}
+  &\text{0 / 2.0}\\
+\mathcal L_{\text{curv}} &= 1-\cos(v_t,\,v_{t+1}),\quad v_t = s_{t+1}-s_t
+  \ \text{(straightening, arXiv:2603.12231)} &\text{0 / .02--.1}\\
+\mathcal L_{\text{mono}} &= \mathbb 1_{\text{nec}}\,[\Delta d^{\text{goal}}_t
+  + m]_+ + \tfrac12(1-\mathbb 1_{\text{nec}})\,[-\Delta d^{\text{goal}}_t]_+
+  &\text{0 / 1--2}
 \end{align*}
 $\mathcal L_{\text{chunk}}$: weight 0 in \texttt{disc\_base}; 2.0 in
-\texttt{disc\_chunkpred}/\texttt{combo} with the \textbf{frozen} anchor
-$\tilde E_c$. Value head input detached except in
-\texttt{disc\_valgrad}/\texttt{combo}.
+\texttt{disc\_chunkpred}/\texttt{combo} (\textbf{frozen} anchor
+$\tilde E_c$). Value head input detached except
+\texttt{disc\_valgrad}/\texttt{combo}. $d^{\text{goal}}_t$ = LN-L1 distance
+of $s_t$ to the trace-terminal EMA state; margin $m\in\{.02,.05\}$.
 \end{frame}
 
 \begin{frame}{Training protocol}
@@ -307,6 +313,14 @@ run & $\mathcal L_{\text{chunk}}$ anchor & value grad $\to$ encoder & other\\
 \texttt{disc\_combo} & frozen, w=2.0 & \textbf{yes} & ---\\
 \texttt{disc\_value\_only} & --- & \textbf{yes} & \emph{all} JEPA weights 0\\
 \texttt{disc\_frozen\_enc} & --- & no & encoders frozen at init\\
+\midrule
+\texttt{disc\_straight\_\{lo,mid,---\}} & frozen, w=2.0 & \textbf{yes}
+  & $+\,\mathcal L_{\text{curv}}$, $\lambda\in\{.02,.05,.1\}$\\
+\texttt{disc\_mono\,/\,\_hi} & frozen, w=2.0 & \textbf{yes}
+  & $+\,\mathcal L_{\text{mono}}$, w1\,m.02\,/\,w2\,m.05\\
+\texttt{disc\_geo\_lo\,/\,\_geo} & frozen, w=2.0 & \textbf{yes} & both regularizers\\
+\texttt{disc\_mono\_novalue} & frozen, w=2.0 & no
+  & $+\,\mathcal L_{\text{mono}}$, \emph{no value head}\\
 \bottomrule
 \end{tabular}
 
@@ -325,8 +339,8 @@ model; each added mechanism helps.}
 \column{0.4\textwidth}\small
 Success within the \emph{strict optimal budget}, greedy lookahead 1,
 200 episodes, mean necessary steps 4.07.\\[4pt]
-With slack 2: base 0.75, +anchor 0.88, +value-grad \textbf{0.92}
-(random 0.41).\\[4pt]
+With slack 2: base 0.75, +anchor 0.88, +value-grad 0.92,
++monotonicity \textbf{0.935} (random 0.41).\\[4pt]
 Distractor pick rate: random 0.43 $\to$ base 0.28 $\to$ valgrad 0.14.
 \end{columns}
 \end{frame}
@@ -392,9 +406,8 @@ Oracle goal = encoded terminal state of the \emph{true} solution (planner
 gets it for free --- upper-bound diagnostic).\\[4pt]
 Scoring $\|\mathrm{LN}(\hat s)-\mathrm{LN}(s_{\text{goal}})\|_1$:
 base 0.13, anchor 0.18, valgrad 0.105 (distractor rates $\approx$ random).\\[4pt]
-$\Rightarrow$ JEPA geometry alone is not a distance-to-goal metric here;
-distillation should target the \emph{value head} (or an advantage head
-$A(s,a)$), not raw geometry.
+$\Rightarrow$ \emph{unregularized} JEPA geometry is not a distance-to-goal
+metric. Result 7 shows temporal straightening fixes exactly this.
 \end{columns}
 \end{frame}
 
@@ -419,6 +432,60 @@ planner needs.}
 \textbf{Stability} (all runs): per-dim state std $\approx 1.03$, RankMe
 effective rank 220--243 / 256, no collapse; VICReg + EMA sufficed, discrete
 codes (FSQ) not needed.
+\end{frame}
+
+\begin{frame}{Result 7 --- temporal straightening makes raw geometry plannable}
+\claim{The curvature loss (arXiv:2603.12231) turns latent distance into a
+progress metric: goal-distance planning goes $0.15\to0.43$ @optimal
+($0.52\to0.85$ @slack 2) --- but it \emph{trades off} against the value head.}
+\begin{columns}
+\column{0.52\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/straighten_tradeoff.pdf}
+\column{0.46\textwidth}\small
+Dose-response over $\lambda_{\text{curv}}\in\{0,.02,.05,.1\}$ (all on the
+combo recipe):\\[2pt]
+\begin{tabular}{lcccc}
+\toprule
+ & 0 & .02 & .05 & .1\\
+\midrule
+velocity $\cos$ & $-.25$ & $-.01$ & .42 & .67\\
+corr($d^{\text{goal}}$, remaining) & .73 & .75 & .80 & .86\\
+value probe from $s_t$ & .89 & .89 & .74 & .43\\
+\bottomrule
+\end{tabular}\\[4pt]
+Geometry improves exactly as content decodability degrades;
+$\lambda=.05$ is the raw-geometry sweet spot.
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 8 --- two energies, one metric: the content--geometry
+trade-off}
+\claim{Straightening buys geometry planning, the monotonicity hinge keeps
+content and sets the value-planning record; geometry needs JEPA losses, not
+value labels.}
+\centering\small
+\begin{tabular}{lcc|cc}
+\toprule
+ & \multicolumn{2}{c|}{goal-distance energy} &
+   \multicolumn{2}{c}{value-head energy}\\
+run & @opt & @slack2 & @opt & @slack2\\
+\midrule
+\texttt{disc\_combo} ($\lambda=0$) & 0.15 & 0.52 & 0.635 & 0.89\\
+\texttt{disc\_straight\_mid} ($\lambda{=}.05$) & 0.365 & \textbf{0.845} & 0.355 & 0.73\\
+\texttt{disc\_mono\_hi} (hinge w2 m.05) & 0.255 & 0.68 & \textbf{0.655} & \textbf{0.935}\\
+\texttt{disc\_mono\_novalue} (\emph{no} $V$) & 0.20 & 0.65 & --- & ---\\
+\texttt{disc\_value\_only} (\emph{no} JEPA) & 0.06 & --- & 0.075 & 0.43\\
+random & 0.06 & 0.095 & 0.06 & 0.095\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+\textbf{Three readings.} (i) One latent metric cannot currently maximize
+both energies --- a learned \emph{projection head} for the geometric energy
+is the obvious fix. (ii) A model with \textbf{no value head} still plans at
+0.65 @slack 2 from pure geometry. (iii) \texttt{disc\_value\_only}'s
+geometry is \emph{exactly random}: planning-relevant structure comes from
+the JEPA objectives, not the value labels.
 \end{frame}
 
 \begin{frame}{Probe suite (champion vs.\ reference; random-encoder control)}
@@ -455,9 +522,11 @@ collusion-free probes (state value 0.89).
         symbolic world offers an enumerable interface. The
         variational prior $p(a\mid s,g)$ (for CEM/MPPI over sampled actions)
         is future work.
-  \item \textbf{The goal energy is supervised} (remaining-steps labels from
-        the symbolic executor), i.e.\ learned oracle distance --- Result 5
-        shows raw geometry does not replace it.
+  \item \textbf{The best goal energy is still supervised} (remaining-steps
+        labels); straightened raw geometry closes much of the gap
+        (0.845 vs 0.935 @slack 2, Results 7--8) and the curvature loss is
+        \emph{label-free}, but the monotonicity hinge uses the same labels
+        as the value head.
   \item Value labels shape only the value head unless \texttt{valgrad};
         the op-CE in LDAD uses the executed action's type (JEPA-legit:
         actions are observed at training time).
@@ -468,9 +537,9 @@ collusion-free probes (state value 0.89).
 
 \begin{frame}{Next steps}
 \begin{itemize}\itemsep2pt
-  \item \textbf{Baselines in flight}: \texttt{disc\_value\_only} (no JEPA
-        losses) and \texttt{disc\_frozen\_enc} (random frozen features) ---
-        do JEPA representations matter beyond the value head?
+  \item \textbf{Decouple the two energies}: straighten a learned
+        \emph{projection} $\pi(s)$ instead of $s$ itself, so goal-distance
+        planning and content decodability stop competing (Result 8).
   \item \textbf{Advantage head} $A(s,a)$ trained on
         $\Delta$(remaining) and action \emph{ranking} losses --- sharper than
         $V(F(s,a))$, which conflates predictor and value error.

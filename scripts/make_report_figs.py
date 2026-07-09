@@ -28,11 +28,15 @@ C = {
     "disc_chunkpred": "#1baf7a",
     "disc_combo": "#008300",
     "disc_valgrad": "#4a3aa7",
+    "disc_mono_hi": "#b0457b",
     "edit_base": "#2a78d6",
     "edit_valgrad": "#4a3aa7",
     "edit_anchor": "#1baf7a",
     "oracle": "#0b0b0b",
     "random_ctrl": "#c3c2b7",
+    # the two energies (used wherever value-head vs goal-distance is compared)
+    "energy_value": "#4a3aa7",
+    "energy_goal": "#1baf7a",
 }
 LABELS = {
     "random": "random policy",
@@ -41,9 +45,12 @@ LABELS = {
     "disc_chunkpred": "+ frozen anchor",
     "disc_combo": "+ anchor + value-grad",
     "disc_valgrad": "+ value-grad",
+    "disc_mono_hi": "+ monotonicity",
     "edit_base": "base",
     "edit_valgrad": "+ value-grad",
     "edit_anchor": "+ anchor + value-grad",
+    "edit_mono": "+ monotonicity",
+    "edit_geo": "+ straighten + mono",
 }
 
 plt.rcParams.update({
@@ -85,7 +92,7 @@ def bar_with_labels(ax, names, values, colors):
 
 def fig_planning():
     order = ["random", "disc_no_delta", "disc_base", "disc_chunkpred",
-             "disc_combo", "disc_valgrad"]
+             "disc_combo", "disc_valgrad", "disc_mono_hi"]
     vals, names, cols = [], [], []
     rnd = plan("disc_base")["random_policy"]["success"]
     for r in order:
@@ -219,23 +226,74 @@ def fig_energy():
 
 
 def fig_edit_planning():
+    """Claim: on the edit track the raw buffer-encoder geometry (goal
+    distance) beats every learned value head."""
     order = ["edit_base", "edit_valgrad", "edit_anchor"]
-    names, cols = ["random policy"], [C["random"]]
-    vals = [plan("edit_base")["random_policy"]["success"]]
-    for r in order:
-        v = planner_success(r)
-        if v is None:
-            continue
-        names.append(LABELS[r])
-        vals.append(v)
-        cols.append(C[r])
-    fig, ax = plt.subplots(figsize=(3.8, 2.6))
-    bar_with_labels(ax, names, vals, cols)
-    ax.axhline(1.0, color=C["oracle"], lw=1, ls="--")
-    ax.text(len(names) - 0.45, 0.965, "oracle", fontsize=8, ha="right")
+    rows = [
+        (r, planner_success(r), planner_success(r, energy="oracle_goal"))
+        for r in order
+        if planner_success(r) is not None
+    ]
+    fig, ax = plt.subplots(figsize=(4.2, 2.6))
+    width = 0.32
+    for i, key in enumerate((1, 2)):
+        xs = [j + (i - 0.5) * width for j in range(len(rows))]
+        vals = [row[key] if row[key] is not None else 0 for row in rows]
+        col = C["energy_value"] if key == 1 else C["energy_goal"]
+        bars = ax.bar(xs, vals, width=width * 0.9, color=col, zorder=3)
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.012, f"{v:.2f}",
+                    ha="center", fontsize=7.5)
+    rnd = plan("edit_base")["random_policy"]["success"]
+    ax.axhline(rnd, color=C["random"], lw=1.2, ls=":")
+    ax.text(len(rows) - 0.55, rnd + 0.02, "random", fontsize=8,
+            color=C["random"])
+    ax.set_xticks(range(len(rows)))
+    ax.set_xticklabels([LABELS[r[0]] for r in rows], fontsize=8)
+    ax.set_ylim(0, 1.02)
     ax.set_ylabel("perfect draft @ optimal budget")
+    from matplotlib.patches import Patch
+    ax.legend(handles=[
+        Patch(facecolor=C["energy_value"], label="learned value head"),
+        Patch(facecolor=C["energy_goal"], label="raw goal distance"),
+    ], fontsize=8, frameon=False, loc="upper left")
     fig.tight_layout()
     fig.savefig(OUT / "edit_planning.pdf")
+
+
+STRAIGHT_SWEEP = [
+    (0.0, "disc_combo"),
+    (0.02, "disc_straight_lo"),
+    (0.05, "disc_straight_mid"),
+    (0.1, "disc_straight"),
+]
+
+
+def fig_straighten():
+    """Claim: temporal straightening buys raw-geometry planning at the
+    cost of value-head planning — one dose-response curve per energy."""
+    fig, ax = plt.subplots(figsize=(4.2, 2.7))
+    for energy, col, label in (
+        ("", C["energy_value"], "value-head energy"),
+        ("oracle_goal", C["energy_goal"], "goal-distance energy"),
+    ):
+        for slack, ls in ((0, "--"), (2, "-")):
+            xs, ys = [], []
+            for lam, run in STRAIGHT_SWEEP:
+                v = planner_success(run, slack=slack, energy=energy)
+                if v is not None:
+                    xs.append(lam)
+                    ys.append(v)
+            ax.plot(xs, ys, marker="o", ms=4, lw=2 if slack else 1.4,
+                    ls=ls, color=col, zorder=3,
+                    label=f"{label} (slack {slack})")
+    ax.set_xticks([lam for lam, _ in STRAIGHT_SWEEP])
+    ax.set_xlabel(r"straightening weight $\lambda_{\mathrm{curv}}$")
+    ax.set_ylabel("planning success")
+    ax.set_ylim(0, 1.0)
+    ax.legend(fontsize=7, frameon=False, loc="lower center", ncol=2)
+    fig.tight_layout()
+    fig.savefig(OUT / "straighten_tradeoff.pdf")
 
 
 def main():
@@ -246,6 +304,7 @@ def main():
     fig_arithmetic()
     fig_energy()
     fig_edit_planning()
+    fig_straighten()
     print("wrote", sorted(p.name for p in OUT.glob("*.pdf")))
 
 

@@ -137,21 +137,25 @@ re-encode; budget $=$ initial defects $+$ slack.
 Success $=$ \textbf{perfect draft within the optimal number of edits}.
 \end{frame}
 
-\begin{frame}{Result --- goal-shaped encoding is what makes edits plannable}
+\begin{frame}{Result --- the geometry was never the problem}
 \begin{columns}
 \column{0.5\textwidth}
 \centering\includegraphics[width=\linewidth]{figs/edit_planning.pdf}
 \column{0.48\textwidth}\small
-\claim{The base edit-JEPA has good transitions but a flat goal energy;
-value-gradient + vandal negatives quadruple planning success.}
+\claim{The buffer encoder's \emph{raw} goal-distance geometry beats every
+learned edit value head --- the published weakness was a value-head
+failure.}
 \begin{itemize}\itemsep2pt
-  \item \texttt{edit\_base}: 0.115 (random 0.06); \textbf{slack-insensitive}
-        (0.115 at slack 2) --- extra budget is wasted on value ties, e.g.\
-        replacing an already-correct step (a no-op with $V(s'){=}V(s)$).
-  \item \texttt{edit\_valgrad}: \textbf{0.425} @ optimal; defects decodable
-        from $\Delta s$: fix-vs-vandal 0.96--0.98.
-  \item \texttt{edit\_anchor} (anchor + value-grad): training in flight;
-        table refreshed on completion.
+  \item Value heads: \texttt{base} 0.115 (random 0.06),
+        \texttt{valgrad} 0.425, \texttt{anchor} 0.365 --- all
+        \textbf{slack-insensitive} (ties on no-op edits waste budget).
+  \item Raw goal distance $\|\mathrm{LN}(\hat s)-\mathrm{LN}(s_{\text{goal}})\|_1$
+        ($s_{\text{goal}}$ = encoded perfect buffer): \texttt{base}
+        \textbf{0.425}, \texttt{anchor} \textbf{0.47} --- $4\times$ the
+        base value head, no value supervision used at plan time.
+  \item Geometry regularizers (straighten/monotonicity, cf.\ discourse
+        deck) change nothing here: 0.445--0.485 ---
+        corr($d^{\text{goal}}$, defects) was already $\approx$0.75.
 \end{itemize}
 \end{columns}
 \end{frame}
@@ -175,23 +179,27 @@ true answer from terminal state & 0.05 & --- & 0.13\\
 $^*$intent phrases are trivially separable by op --- the informative row is
 fix-vs-vandal. The two bottom rows show the \textbf{collusion signature}
 (trained $<$ random control): outcome content is being smoothed away, as in
-the discourse track before its anchor fix --- motivating
-\texttt{edit\_anchor}.
+the discourse track before its anchor fix. \texttt{edit\_anchor} (frozen
+buffer anchor, w=2.0) trains $\mathcal L_{\text{chunk}}$ to 0.005 and lifts
+value-head planning to 0.365, but the linear \emph{defect-count} probe stays
+flat --- the goal signal lives in the \emph{metric} (see previous slide),
+not in a linearly decodable counter.
 \end{frame}
 
 \begin{frame}{Diagnosis \& next steps}
 \begin{itemize}\itemsep2pt
-  \item \textbf{Why base fails}: repairs are near-deterministic given the
-        defect set, so state prediction is easy without representing
-        \emph{which} sentences are wrong; the value head on top of such
-        states cannot separate fixing from wasted edits.
-  \item \textbf{In flight}: \texttt{edit\_anchor} = frozen-anchor outcome
-        prediction (worked decisively on the discourse track: planning
-        $0.35\to0.62$).
-  \item \textbf{Value ties}: add an explicit no-change penalty or an
-        advantage head $A(s,a)$ trained on $\Delta$defects with a ranking
-        loss over the candidate set --- directly targets the
-        slack-insensitivity.
+  \item \textbf{Why the base value head fails}: repairs are
+        near-deterministic given the defect set, so state prediction is easy
+        without a linear defect counter; but the \emph{metric} structure
+        (distance to the perfect buffer) is there from the start --- use the
+        goal-distance energy, or distill it into $V$.
+  \item \textbf{Deployable goal states}: the oracle goal uses the true
+        buffer; a deployable version needs a goal \emph{description} encoder
+        (``all steps correct'') or a self-predicted fixed point
+        $F(s,a_{\text{stop}}) \approx s$.
+  \item \textbf{Energy ties} are now the binding constraint (planner is
+        slack-insensitive even at 0.47): ranking loss over the candidate
+        set / advantage head $A(s,a)$ on $\Delta$defects.
   \item \textbf{Harder corruption}: multiple root causes, order violations,
         subtle wrong-parent corruptions (currently only wrong values /
         missing / extra).

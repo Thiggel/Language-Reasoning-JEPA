@@ -17,12 +17,14 @@ def planning_table(runs_dir: Path) -> pd.DataFrame:
     for f in sorted(runs_dir.glob("*/plan_slack*_look*.json")):
         data = json.loads(f.read_text())
         parts = f.stem.replace("plan_slack", "").split("_look")
+        look, _, energy = parts[1].partition("_")
         for policy, m in data.items():
             rows.append(
                 {
                     "run": f.parent.name,
                     "slack": int(parts[0]),
-                    "lookahead": int(parts[1]),
+                    "lookahead": int(look),
+                    "energy": energy or "value",
                     "policy": policy,
                     "success": m["success"],
                     "distractor_rate": m.get("distractor_rate"),
@@ -49,11 +51,11 @@ def main() -> None:
 
     lines = ["# TextJEPA results\n", "## Planning success\n"]
     if not plans.empty:
-        piv = plans[plans.policy == "latent_planner"].pivot_table(
-            index="run", columns=["slack", "lookahead"], values="success"
+        piv = plans[plans.policy.str.startswith("latent_planner")].pivot_table(
+            index="run", columns=["energy", "slack", "lookahead"], values="success"
         )
         base = plans[plans.policy == "random_policy"].pivot_table(
-            index="run", columns=["slack", "lookahead"], values="success"
+            index="run", columns=["energy", "slack", "lookahead"], values="success"
         )
         lines += [piv.round(3).to_markdown(), "\n### Random-policy baseline\n",
                   base.round(3).to_markdown(), "\n"]
