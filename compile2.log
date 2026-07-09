@@ -1,0 +1,13 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2021/TeX Live for SUSE Linux) (preloaded format=pdflatex)
+ restricted \write18 enabled.
+entering extended mode
+! I can't find file `edit_jepa.tex'.
+<*> edit_jepa.tex
+                 
+(Press Enter to retry, or Control-D to exit)
+Please type another input file name
+! Emergency stop.
+<*> edit_jepa.tex
+                 
+!  ==> Fatal error occurred, no output PDF file produced!
+Transcript written on texput.log.

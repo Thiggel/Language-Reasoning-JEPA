@@ -1,0 +1,203 @@
+\documentclass[aspectratio=169,10pt]{beamer}
+\usetheme{default}
+\usecolortheme{seagull}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamerfont{frametitle}{series=\bfseries,size=\large}
+\setbeamercolor{frametitle}{fg=black}
+\usepackage{tikz,booktabs,amsmath}
+\usetikzlibrary{positioning,arrows.meta,calc}
+
+\definecolor{cblue}{HTML}{2A78D6}
+\definecolor{caqua}{HTML}{1BAF7A}
+\definecolor{cyellow}{HTML}{EDA100}
+\definecolor{cviolet}{HTML}{4A3AA7}
+\definecolor{cred}{HTML}{E34948}
+\definecolor{cgray}{HTML}{52514E}
+\definecolor{cpale}{HTML}{E8E7E2}
+\newcommand{\claim}[1]{\textcolor{cviolet}{\textbf{Claim:} #1}}
+\newcommand{\sg}{\mathrm{sg}}
+
+\title{Edit-JEPA:\\ Latent World Models over Text Buffers}
+\subtitle{``Edit until perfect'' --- method, results, and open problems}
+\author{TextJEPA project}
+\date{July 9, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/edit\_*})}
+
+\begin{document}
+\frame{\titlepage}
+
+\begin{frame}{Idea: the world is a mutable draft}
+\begin{itemize}\itemsep2pt
+  \item State = a \textbf{text buffer}: a draft solution to an iGSM-style
+        problem (same generator as the discourse track; see companion deck
+        for the problem sampler).
+  \item Action = a \textbf{span edit} with an intent phrase that never leaks
+        outcomes: \texttt{delete step 3 .}\ /
+        \texttt{insert green lamps at the start .}\ /
+        \texttt{replace step 2 : recompute dark cups .}
+  \item Corruptions have \textbf{propagated consequences}: corrupting one
+        step's value rewrites every downstream step \emph{consistently}
+        (change an assumption $\to$ later derivations change). One root cause
+        $\Rightarrow$ several defects.
+  \item Defect definition (symbolic, order-insensitive): a buffer step whose
+        sentence $\neq$ the true step sentence, a missing necessary step, or
+        an extra distractor step. \textbf{Solved} $=$ zero defects.
+  \item Generation = \textbf{edit until perfect}: latent search over
+        candidate edits, execute best, re-encode, repeat.
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{Corruption model (exact) and a verbatim sample}
+\small
+From the perfect draft (necessary steps, topological order), sample
+independently: $k_{\text{wrong}}\sim\mathcal U\{0..2\}$ internal steps get a
+wrong stated value (propagated to descendants via the corrupted value map);
+$k_{\text{miss}}\sim\mathcal U\{0,1\}$ necessary steps removed;
+$k_{\text{extra}}\sim\mathcal U\{0,1\}$ distractor steps inserted;
+re-corrupt if defect count $=0$.
+Repair trajectories: uniformly random fixing edit per step; with $p{=}0.1$
+(0.25 in \texttt{valgrad}/\texttt{anchor}; max 1--2) a \textbf{vandal} edit
+(harmful distractor insert) $\Rightarrow$ the value head sees edits that
+\emph{increase} distance.
+\medskip
+\footnotesize
+\textbf{Corrupted draft} (3 defects; step 3's wrong value propagates into step 4):
+\begin{quote}\ttfamily
+{}[1] so the number of large shells is 11 .\\
+{}[2] so the number of silver cards is 17 .\\
+{}[3] so the number of green books is 11 minus 17 = 5 . \textcolor{cred}{$\leftarrow$ wrong (true: 17)}\\
+{}[4] so the number of golden bells is 5 times 17 = 9 . \textcolor{cred}{$\leftarrow$ consistent-but-wrong}\\
+\textcolor{cgray}{missing: the step for green lamps}
+\end{quote}
+\textbf{Fixing intents}: \texttt{replace step 3 : recompute green books .}\quad
+\texttt{insert green lamps at the start .}
+\end{frame}
+
+\begin{frame}{Architecture: slot-based buffer encoder + shared JEPA core}
+\begin{columns}
+\column{0.55\textwidth}\small
+\begin{itemize}\itemsep2pt
+  \item Chunk encoder $E_c$ (identical to discourse track, 256-d).
+  \item \textbf{SlotBufferEncoder}: 4 learned slot queries cross-attend
+        (2 decoder layers, 4 heads) over [prompt chunks $|$ buffer chunks
+        (+ buffer position emb.)]; flatten slots $\to$ 256-d state.
+        Length-invariant, order-aware.
+  \item Action encoder, predictor $F$, LDAD ($n_{\text{ops}}{=}3$), macro
+        hierarchy ($K{=}3$), value head: the \emph{same}
+        \texttt{LatentDynamicsCore} as the discourse track.
+  \item Value target = \textbf{defects remaining} (distance to perfect).
+  \item \texttt{edit\_anchor}: predict the \emph{frozen random-init} buffer
+        embedding of the post-edit buffer from $(s_t,a_t)$ --- the collusion
+        fix ported from the discourse track.
+\end{itemize}
+\column{0.43\textwidth}
+\centering
+\begin{tikzpicture}[font=\scriptsize,
+  box/.style={draw=cgray, rounded corners=1pt, inner sep=2.5pt, align=center},
+  arr/.style={-{Stealth[length=1.6mm]}, cgray}]
+\node[box, fill=white, text width=34mm] (buf) at (0,0)
+  {\ttfamily [1] so ...\ shells is 11 .\\{}
+   [2] so ...\ cards is 17 .\\{}
+   \textcolor{cred}{[3] so ...\ books ...\ = 5 .}\\{}
+   \textcolor{cred}{[4] so ...\ bells ...\ = 9 .}};
+\node[box, fill=cblue!12, below=4mm of buf] (ec) {$E_c$ per sentence + prompt};
+\node[box, fill=caqua!15, below=4mm of ec, text width=30mm]
+  (slots) {4 slot queries\\ cross-attention $\times2$};
+\node[box, fill=cpale, below=4mm of slots] (s) {$s_t \in \mathbb R^{256}$};
+\node[box, fill=cred!10, right=3mm of ec, text width=17mm]
+  (edit) {\ttfamily replace step 3 ...};
+\draw[arr] (buf) -- (ec); \draw[arr] (ec) -- (slots);
+\draw[arr] (slots) -- (s);
+\draw[arr] (edit) |- ($(s.east)+(0,0.1)$)
+  node[pos=0.9, above, font=\scriptsize]{$a_t$};
+\end{tikzpicture}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Objectives, training, planning}
+\small
+\textbf{Losses}: identical composite to the discourse deck (weights 1.0
+pred / 1.0 rollout / 0.5 hierarchy / 1.0 VICReg / 2.0 Delta-JEPA / 1.0
+value; \texttt{anchor} adds $\mathcal L_{\text{chunk}}$ w=2.0 on frozen
+buffer embeddings). Labels: op $\in$ \{delete, insert, replace\}; ``was the
+edit a fix or vandalism'' plays the goal-relevance role.
+\smallskip
+
+\textbf{Training}: batch 64 (each item encodes all $T{+}1$ buffer
+snapshots), 20 epochs $\times$ 60k fresh trajectories, otherwise identical
+protocol (AdamW $3{\times}10^{-4}$, EMA $0.99{\to}0.999$, RTX 6000,
+$\sim$70--90 min).
+\smallskip
+
+\textbf{Planning}: candidates from the edit interface = \{delete
+$p$, replace $p$\} for every position $+$ insert for every missing necessary
+step $+$ 2 harmful distractor inserts (planner must \emph{reject} them);
+score $V(F(s,a_i), s_{\text{init}})$; apply argmin in the environment;
+re-encode; budget $=$ initial defects $+$ slack.
+Success $=$ \textbf{perfect draft within the optimal number of edits}.
+\end{frame}
+
+\begin{frame}{Result --- goal-shaped encoding is what makes edits plannable}
+\begin{columns}
+\column{0.5\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/edit_planning.pdf}
+\column{0.48\textwidth}\small
+\claim{The base edit-JEPA has good transitions but a flat goal energy;
+value-gradient + vandal negatives quadruple planning success.}
+\begin{itemize}\itemsep2pt
+  \item \texttt{edit\_base}: 0.115 (random 0.06); \textbf{slack-insensitive}
+        (0.115 at slack 2) --- extra budget is wasted on value ties, e.g.\
+        replacing an already-correct step (a no-op with $V(s'){=}V(s)$).
+  \item \texttt{edit\_valgrad}: \textbf{0.425} @ optimal; defects decodable
+        from $\Delta s$: fix-vs-vandal 0.96--0.98.
+  \item \texttt{edit\_anchor} (anchor + value-grad): training in flight;
+        table refreshed on completion.
+\end{itemize}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Probe summary (edit track)}
+\centering\small
+\begin{tabular}{lccc}
+\toprule
+probe (linear, val split) & \texttt{base} & \texttt{valgrad} & random-enc\\
+\midrule
+edit op from $\Delta s$ & 1.00 & 1.00 & 1.00$^*$\\
+fix-vs-vandal from $\Delta s$ & 0.96 & 0.98 & 0.92\\
+defects remaining from $s_t$ & 0.46 & --- & 0.38\\
+buffer length from $s_t$ & 0.91 & --- & 0.73\\
+claimed answer from $s_t$ & 0.23 & --- & 0.28\\
+true answer from terminal state & 0.05 & --- & 0.13\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+$^*$intent phrases are trivially separable by op --- the informative row is
+fix-vs-vandal. The two bottom rows show the \textbf{collusion signature}
+(trained $<$ random control): outcome content is being smoothed away, as in
+the discourse track before its anchor fix --- motivating
+\texttt{edit\_anchor}.
+\end{frame}
+
+\begin{frame}{Diagnosis \& next steps}
+\begin{itemize}\itemsep2pt
+  \item \textbf{Why base fails}: repairs are near-deterministic given the
+        defect set, so state prediction is easy without representing
+        \emph{which} sentences are wrong; the value head on top of such
+        states cannot separate fixing from wasted edits.
+  \item \textbf{In flight}: \texttt{edit\_anchor} = frozen-anchor outcome
+        prediction (worked decisively on the discourse track: planning
+        $0.35\to0.62$).
+  \item \textbf{Value ties}: add an explicit no-change penalty or an
+        advantage head $A(s,a)$ trained on $\Delta$defects with a ranking
+        loss over the candidate set --- directly targets the
+        slack-insensitivity.
+  \item \textbf{Harder corruption}: multiple root causes, order violations,
+        subtle wrong-parent corruptions (currently only wrong values /
+        missing / extra).
+  \item \textbf{Long-term}: draft-level macro edits (rewrite region), and the
+        hierarchical planner shared with the discourse track.
+\end{itemize}
+\end{frame}
+
+\end{document}
