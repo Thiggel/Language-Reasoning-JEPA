@@ -29,6 +29,7 @@ C = {
     "disc_combo": "#008300",
     "disc_valgrad": "#4a3aa7",
     "disc_mono_hi": "#b0457b",
+    "disc_rank_k2": "#c2361b",
     "edit_base": "#2a78d6",
     "edit_valgrad": "#4a3aa7",
     "edit_anchor": "#1baf7a",
@@ -46,6 +47,7 @@ LABELS = {
     "disc_combo": "+ anchor + value-grad",
     "disc_valgrad": "+ value-grad",
     "disc_mono_hi": "+ monotonicity",
+    "disc_rank_k2": "+ ranking (K=2)",
     "edit_base": "base",
     "edit_valgrad": "+ value-grad",
     "edit_anchor": "+ anchor + value-grad",
@@ -92,7 +94,7 @@ def bar_with_labels(ax, names, values, colors):
 
 def fig_planning():
     order = ["random", "disc_no_delta", "disc_base", "disc_chunkpred",
-             "disc_combo", "disc_valgrad", "disc_mono_hi"]
+             "disc_combo", "disc_valgrad", "disc_mono_hi", "disc_rank_k2"]
     vals, names, cols = [], [], []
     rnd = plan("disc_base")["random_policy"]["success"]
     for r in order:
@@ -296,6 +298,133 @@ def fig_straighten():
     fig.savefig(OUT / "straighten_tradeoff.pdf")
 
 
+def _audit(run: str) -> dict | None:
+    f = RUNS / run / "counterfactual_audit.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+def fig_audit():
+    """Claim: LDAD grounds counterfactual transitions — matching of F(s,a)
+    to true next states collapses without it; explicit ranking restores it."""
+    order = ["disc_value_only", "disc_no_delta", "disc_base", "disc_combo",
+             "disc_rank_k4_nodelta", "disc_rank_k4"]
+    labels = {"disc_value_only": "value only", "disc_no_delta": "no LDAD",
+              "disc_base": "base JEPA", "disc_combo": "combo",
+              "disc_rank_k4_nodelta": "rank, no LDAD", "disc_rank_k4": "rank + LDAD"}
+    rows = [(r, _audit(r)) for r in order]
+    rows = [(r, d) for r, d in rows if d is not None]
+    if not rows:
+        return
+    fig, ax = plt.subplots(figsize=(4.6, 2.7))
+    width = 0.36
+    for i, (key, label, col) in enumerate([
+        ("match", "NN matching of $F(s,a)$", "#2a78d6"),
+        ("tau_value", r"ranking Kendall $\tau$ (value energy)", "#eda100"),
+    ]):
+        xs = [j + (i - 0.5) * width for j in range(len(rows))]
+        vals = [d[key] for _, d in rows]
+        bars = ax.bar(xs, vals, width=width * 0.9, color=col, zorder=3, label=label)
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.012, f"{v:.2f}",
+                    ha="center", fontsize=7)
+    chance = sum(d["chance"] for _, d in rows) / len(rows)
+    ax.axhline(chance, color=C["random"], lw=1.2, ls=":")
+    ax.text(0.02, chance + 0.02, "matching chance", fontsize=7.5, color=C["random"])
+    ax.set_xticks(range(len(rows)))
+    ax.set_xticklabels([labels[r] for r, _ in rows], fontsize=7.5, rotation=12,
+                       ha="right")
+    ax.set_ylim(0, 1.05)
+    ax.set_ylabel("counterfactual accuracy")
+    ax.legend(fontsize=7.5, frameon=False, loc="upper left")
+    fig.tight_layout()
+    fig.savefig(OUT / "audit.pdf")
+
+
+def fig_datascale():
+    """Claim: cross-problem diversity is the counterfactual fuel; ranking
+    supervision partially substitutes for it."""
+    sizes = [(10, "disc_size10k", "disc_size10k_rank"),
+             (30, "disc_size30k", None),
+             (100, "disc_combo", "disc_rank_k2")]
+    fig, ax = plt.subplots(figsize=(3.9, 2.6))
+    for idx, (label, col) in enumerate([("combo", C["disc_combo"]),
+                                        ("+ ranking", C["disc_rank_k2"])]):
+        xs, ys = [], []
+        for size, base_run, rank_run in sizes:
+            run = base_run if idx == 0 else rank_run
+            v = planner_success(run) if run else None
+            if v is not None:
+                xs.append(size)
+                ys.append(v)
+        if xs:
+            ax.plot(xs, ys, marker="o", ms=5, lw=2, color=col, zorder=3)
+            ax.text(xs[-1], ys[-1] + 0.04, label, fontsize=8, color=col,
+                    ha="right")
+    ax.set_xscale("log")
+    ax.set_xticks([10, 30, 100])
+    ax.set_xticklabels(["10k", "30k", "100k"])
+    ax.set_xlabel("unique training problems")
+    ax.set_ylabel("success @ optimal budget")
+    ax.set_ylim(0, 1.0)
+    fig.tight_layout()
+    fig.savefig(OUT / "datascale.pdf")
+
+
+def fig_memory():
+    """Claim: the discourse state is a recency-weighted memory, not a full
+    symbol table — value decodability decays with lag."""
+    fig, ax = plt.subplots(figsize=(3.6, 2.6))
+    for r in ["disc_base", "disc_combo"]:
+        f = RUNS / r / "probe_v2.csv"
+        if not f.exists():
+            continue
+        df = pd.read_csv(f).set_index("task")
+        lags, accs = [0], [df.loc["value_from_state", "acc_trained"]]
+        for lag in (1, 2, 3):
+            t = f"value_prev{lag}_from_state"
+            if t in df.index:
+                lags.append(lag)
+                accs.append(df.loc[t, "acc_trained"])
+        ax.plot(lags, accs, marker="o", ms=5, lw=2, color=C[r], zorder=3)
+        ax.text(lags[-1] + 0.07, accs[-1], LABELS[r], fontsize=8, color=C[r],
+                va="center")
+    ax.axhline(1 / 23, color=C["random"], lw=1, ls=":")
+    ax.text(0.0, 1 / 23 + 0.015, "chance", fontsize=8, color=C["random"])
+    ax.set_xticks([0, 1, 2, 3])
+    ax.set_xlim(-0.2, 3.9)
+    ax.set_ylim(0, 1.0)
+    ax.set_xlabel("lag (steps since the value was established)")
+    ax.set_ylabel("value decodability from $s_t$")
+    fig.tight_layout()
+    fig.savefig(OUT / "memory.pdf")
+
+
+def fig_emergence():
+    """Claim: the answer emerges progressively and is stored nonlinearly —
+    MLP probes see it well before linear probes do."""
+    f = RUNS / "disc_combo" / "emergence.json"
+    if not f.exists():
+        return
+    d = json.loads(f.read_text())
+    rem = sorted(int(k) for k in d)
+    fig, ax = plt.subplots(figsize=(3.9, 2.6))
+    for key, col, label in (("mlp", "#1baf7a", "MLP probe"),
+                            ("linear", "#4a3aa7", "linear probe")):
+        ax.plot(rem, [d[str(r)][key] for r in rem], marker="o", ms=5, lw=2,
+                color=col, zorder=3)
+        ax.text(rem[0] + 0.05, d[str(rem[0])][key] + 0.03, label, fontsize=8,
+                color=col)
+    ax.axhline(1 / 23, color=C["random"], lw=1, ls=":")
+    ax.text(rem[-1], 1 / 23 + 0.015, "chance", fontsize=8, color=C["random"],
+            ha="right")
+    ax.invert_xaxis()  # progress runs left->right (remaining decreases)
+    ax.set_xlabel("necessary steps remaining (progress $\\rightarrow$)")
+    ax.set_ylabel("answer decodability from $s_t$")
+    ax.set_ylim(0, 1.0)
+    fig.tight_layout()
+    fig.savefig(OUT / "emergence.pdf")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     fig_planning()
@@ -305,6 +434,10 @@ def main():
     fig_energy()
     fig_edit_planning()
     fig_straighten()
+    fig_audit()
+    fig_datascale()
+    fig_memory()
+    fig_emergence()
     print("wrote", sorted(p.name for p in OUT.glob("*.pdf")))
 
 

@@ -1,0 +1,13 @@
+# @package _global_
+# Sample-efficiency test: does counterfactual ranking supervision substitute
+# for cross-problem data diversity? (10k problems cripples combo: 0.135)
+run_name: disc_size10k_rank
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2
+  train_size: 10000
