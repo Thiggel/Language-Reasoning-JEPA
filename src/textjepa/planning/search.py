@@ -69,6 +69,7 @@ class LatentPlanner:
         lookahead: int = 1,
         max_expand: int = 64,
         energy: str = "value",  # "value" | "oracle_goal"
+        hierarchy: bool = False,  # score K-step sequences with one F_hi jump
     ):
         self.model = model
         self.vocab = vocab
@@ -76,6 +77,7 @@ class LatentPlanner:
         self.lookahead = lookahead
         self.max_expand = max_expand
         self.energy = energy
+        self.hierarchy = hierarchy
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -161,14 +163,33 @@ class LatentPlanner:
         )
         return states[:, -1]
 
-    def _best_sequence(
+    def _energy(
+        self, cur: torch.Tensor, s0: torch.Tensor, steps: torch.Tensor,
+        goal_state: torch.Tensor | None,
+    ) -> torch.Tensor:
+        n = cur.shape[0]
+        if goal_state is not None:
+            geo = getattr(self.model.core, "geo_head", None)
+            fin, goal = (geo(cur), geo(goal_state)) if geo is not None else (cur, goal_state)
+            ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
+            return (ln(fin) - ln(goal)).abs().mean(-1)
+        return steps + self.model.value_head(cur, s0.expand(n, -1))
+
+    def _action_codes(self, problem: Problem, idxs: list[int]) -> torch.Tensor:
+        from textjepa.data.igsm.render import action_phrase
+
+        texts = [action_phrase(problem, i) for i in idxs]
+        tokens = self._tokens(texts).squeeze(0).unsqueeze(1)  # [n, 1, L]
+        return self.model.encode_actions(tokens).squeeze(1)
+
+    def _flat_costs(
         self,
         s: torch.Tensor,
         s0: torch.Tensor,
         problem: Problem,
         seqs: list[list[int]],
-        goal_state: torch.Tensor | None = None,
-    ) -> list[int]:
+        goal_state: torch.Tensor | None,
+    ) -> torch.Tensor:
         from textjepa.data.igsm.render import action_phrase
 
         depth = max(len(q) for q in seqs)
@@ -188,11 +209,45 @@ class LatentPlanner:
             nxt = self.model.predictor(cur, a)
             cur = torch.where(step_alive.unsqueeze(1), nxt, cur)
             cost = cost + step_alive.float()
-        if goal_state is not None:
-            geo = getattr(self.model.core, "geo_head", None)
-            fin, goal = (geo(cur), geo(goal_state)) if geo is not None else (cur, goal_state)
-            ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
-            total = (ln(fin) - ln(goal)).abs().mean(-1)
-        else:
-            total = cost + self.model.value_head(cur, s0.expand(n, -1))
+        return self._energy(cur, s0, cost, goal_state)
+
+    def _macro_costs(
+        self,
+        s: torch.Tensor,
+        s0: torch.Tensor,
+        problem: Problem,
+        seqs: list[list[int]],
+        goal_state: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Score K-step sequences with a single F_hi macro jump (HWM)."""
+        K = self.model.core.macro_k
+        n = len(seqs)
+        a = self._action_codes(
+            problem, [i for q in seqs for i in q]
+        ).reshape(n, K, -1)
+        m = self.model.core.macro_encoder(a)
+        nxt = self.model.core.hi_predictor(s.expand(n, -1), m)
+        steps = torch.full((n,), float(K), device=self.device)
+        return self._energy(nxt, s0, steps, goal_state)
+
+    def _best_sequence(
+        self,
+        s: torch.Tensor,
+        s0: torch.Tensor,
+        problem: Problem,
+        seqs: list[list[int]],
+        goal_state: torch.Tensor | None = None,
+    ) -> list[int]:
+        K = self.model.core.macro_k
+        if self.hierarchy and any(len(q) == K for q in seqs):
+            full = [q for q in seqs if len(q) == K]
+            rest = [q for q in seqs if len(q) < K]
+            costs = [self._macro_costs(s, s0, problem, full, goal_state)]
+            cands = list(full)
+            if rest:
+                costs.append(self._flat_costs(s, s0, problem, rest, goal_state))
+                cands += rest
+            total = torch.cat(costs)
+            return cands[int(total.argmin().item())]
+        total = self._flat_costs(s, s0, problem, seqs, goal_state)
         return seqs[int(total.argmin().item())]

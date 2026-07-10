@@ -33,6 +33,7 @@ def main(cfg: DictConfig) -> None:
         planner = LatentPlanner(
             model, vocab, device, lookahead=cfg.lookahead,
             max_expand=cfg.max_expand, energy=cfg.energy,
+            hierarchy=cfg.get("hierarchy", False),
         )
         results = evaluate_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -41,6 +42,8 @@ def main(cfg: DictConfig) -> None:
         line = "  ".join(f"{k}={v:.3f}" for k, v in metrics.items())
         print(f"{name:16s} {line}")
     suffix = "" if cfg.energy == "value" else f"_{cfg.energy}"
+    if cfg.get("hierarchy", False):
+        suffix += "_hier"
     out = Path(
         cfg.out
         or Path(cfg.ckpt).parent / f"plan_slack{cfg.slack}_look{cfg.lookahead}{suffix}.json"

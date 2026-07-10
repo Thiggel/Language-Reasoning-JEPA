@@ -13,3 +13,4 @@ hydra:
     dir: runs/_plan
   job:
     chdir: false
+hierarchy: false
