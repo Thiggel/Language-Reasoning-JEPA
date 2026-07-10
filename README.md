@@ -1,14 +1,16 @@
 # TextJEPA
 
-> **Results of the first two experimental cycles: see [RESULTS.md](RESULTS.md).**
-> TL;DR: latent planning over reasoning steps reaches 84% success at strict
-> optimal budget (random: 5.5%) once (a) Delta-JEPA displacement decoding,
-> (b) frozen-anchor next-chunk-embedding targets, and (c) a value-shaped
-> encoder are combined. Cycle 2: temporal straightening makes *raw latent
-> distance* a usable planning energy (0.15→0.43 strict / 0.85 slack-2, no
-> value head at plan time) at a measurable content cost; a goal-monotonicity
-> hinge instead keeps content and sets the value-planning record (0.935
-> slack-2); on the edit track the raw geometry beats every learned value head.
+> **Results of the first three experimental cycles: see [RESULTS.md](RESULTS.md).**
+> TL;DR: latent planning over reasoning steps now reaches **90.5% success at
+> the strict optimal budget / 99% at slack 2** (random: 5.5%, oracle: 100%)
+> via counterfactual action ranking + a goal-monotonicity hinge on top of
+> Delta-JEPA + frozen-anchor outcome targets + a value-shaped encoder.
+> Direct audits show the predictor F(s,a) is counterfactually grounded
+> (nearest-neighbor matching of predicted to true next states: 1.00 vs 0.30
+> for a shuffled-action control), temporal straightening makes raw latent
+> distance a usable planning energy, and probes characterize the state as a
+> recency-weighted working memory over an objective-independent relational
+> scaffold — with no anticipatory answer computation.
 
 Joint-embedding predictive architectures for **language**: latent world models
 over discourse, with actions, hierarchy, and latent-space planning — no text

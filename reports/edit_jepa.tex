@@ -160,6 +160,36 @@ failure.}
 \end{columns}
 \end{frame}
 
+\begin{frame}{Result 2 --- ranking, distillation, and the audited bottleneck}
+\claim{Counterfactual ranking sets the edit record and finally makes the
+planner slack-sensitive; the audit shows one-step buffer prediction ---
+not the goal energy --- is now the binding constraint.}
+\centering\small
+\begin{tabular}{lccccc}
+\toprule
+ & \multicolumn{2}{c}{value energy} & goal dist. & value $\tau$ & matching\\
+run & @opt & @slack2 & @opt & (audit) & (chance .10)\\
+\midrule
+\texttt{edit\_anchor} & 0.365 & 0.375 & 0.47 & 0.39 & 0.47\\
+\texttt{edit\_rank} (K=4) & \textbf{0.46} & \textbf{0.505} & \textbf{0.60}
+ & \textbf{0.59} & 0.43\\
+\texttt{edit\_distill\_v} (label-free) & 0.42 & 0.42 & 0.55 & 0.42 & 0.45\\
+\texttt{edit\_no\_vandal} & 0.22 & 0.225 & 0.445 & $-$0.07 & 0.39\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+\textbf{Readings.} (i) \texttt{edit\_rank}: first slack-\emph{sensitive}
+edit planner (0.46$\to$0.505) and best overall (0.60 with goal distance).
+(ii) \texttt{edit\_distill\_v}: distilling the latent goal distance into
+$V$ matches the \emph{label-supervised} head (0.42 vs 0.425) with zero
+defect-count labels. (iii) No vandal negatives $\Rightarrow$ the value
+energy becomes \emph{anti-correlated} ($\tau=-0.07$). (iv) Audit: buffer
+matching 0.39--0.47 vs \textbf{1.00} on the discourse track --- the edit
+predictor is the component to fix (slot-aligned predictor / per-slot
+outcome anchors), not the energy.
+\end{frame}
+
 \begin{frame}{Probe summary (edit track)}
 \centering\small
 \begin{tabular}{lccc}
@@ -197,9 +227,10 @@ not in a linearly decodable counter.
         buffer; a deployable version needs a goal \emph{description} encoder
         (``all steps correct'') or a self-predicted fixed point
         $F(s,a_{\text{stop}}) \approx s$.
-  \item \textbf{Energy ties} are now the binding constraint (planner is
-        slack-insensitive even at 0.47): ranking loss over the candidate
-        set / advantage head $A(s,a)$ on $\Delta$defects.
+  \item \textbf{Energy ties: fixed by ranking} (Result 2, 0.46/0.505 and
+        slack-sensitive). Next binding constraint per the audit:
+        \textbf{one-step buffer prediction} (matching 0.43 vs 1.00 on
+        discourse) --- slot-aligned predictor or per-slot outcome anchors.
   \item \textbf{Harder corruption}: multiple root causes, order violations,
         subtle wrong-parent corruptions (currently only wrong values /
         missing / extra).

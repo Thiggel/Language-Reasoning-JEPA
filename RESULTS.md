@@ -1,4 +1,4 @@
-# Results — first two experimental cycles (2026-07-09)
+# Results — three experimental cycles (2026-07-09/10)
 
 Setup: iGSM-style synthetic reasoning (mod-23 arithmetic DAGs, 6–12
 quantities, 3–9 necessary steps, distractor variables). All models ~9M
@@ -19,8 +19,14 @@ latent-geometry plots: `runs/*/geometry.png`.
 | disc_base | 0.350 | — | 0.750 | 0.28 |
 | disc_chunkpred | 0.620 | 0.755 | 0.880 | 0.16 |
 | disc_combo | 0.635 | 0.760 | 0.890 | 0.17 |
-| disc_valgrad | 0.665 | **0.835** | 0.920 | **0.07** (look-2) |
-| **disc_mono_hi** | **0.655** | — | **0.935** | 0.15 |
+| disc_valgrad | 0.665 | 0.835 | 0.920 | 0.07 (look-2) |
+| disc_mono_hi | 0.655 | 0.735 | 0.935 | 0.15 |
+| disc_rank_k2 | 0.910 | 0.850* | 0.985 | 0.04 |
+| **disc_champion** (rank+mono) | **0.905** | — | **0.990** | **0.04** |
+
+*Deeper search *hurts* ranking models (finding 12). Seed spread: combo
+0.60–0.695, mono_hi 0.57–0.655, rank_k2 0.885–0.910 @strict; slack-2
+numbers are stable within ±0.03.
 
 Edit track (value-head energy): edit_base 0.115 → **edit_valgrad 0.425**
 (random 0.06). See finding 8 for the raw-geometry energy, which changes
@@ -41,11 +47,19 @@ terminal state (LeWM-style), **no value head at plan time**:
 | disc_mono_hi (w2, m.05) | — | 0.255 | 0.680 | **0.935** |
 | disc_mono_novalue (no V) | — | 0.200 | 0.650 | 0.535* |
 | disc_value_only | — | 0.060 | — | 0.430 |
+| disc_proj_straight (π(s), 0.1) | — | 0.335 | 0.650 | 0.880 |
+| disc_proj_geo (π(s), both) | — | 0.380 | 0.650 | 0.895 |
+| disc_champion (rank+mono) | — | **0.655** | — | **0.990** |
+
+The learned projection π(s) softens the trade-off (value planning fully
+preserved at 0.88–0.895 with decent geometry 0.335–0.38) but direct
+straightening still wins on pure geometry; disc_champion gets the best of
+both without any curvature loss.
 
 *disc_mono_novalue's value head is untrained; its 0.535 is the value
 column's floor, not a real planner.
 
-## The nine findings
+## The fourteen findings
 
 1. **Latent planning over language works.** Searching tiny action codes
    with F(s, a) rollouts scored by a remaining-steps energy solves 84% of
@@ -115,6 +129,81 @@ column's floor, not a real planner.
    (edit_valgrad 0.425 with it), and the anchor's chunk_pred loss trains
    to 0.005 — the predicted post-edit buffer embedding is nearly exact.
 
+10. **The predictor is counterfactually grounded — and we can audit it
+    directly** (`scripts/audit_counterfactual.py`: enumerate ALL feasible
+    actions per state, predict each next-state latent, compare to
+    symbolically executed ground truth). With LDAD or the frozen anchor,
+    nearest-neighbor matching of F(s,a) to the true next states is
+    0.99–1.00 (chance 0.29), RSA 0.80–0.93. Remove both grounding signals
+    (disc_no_delta, base recipe) → matching 0.44; shuffle actions at
+    training → 0.30 ≈ chance; value-only training → 0.25. One trace never
+    shows two actions from the same state, so this grounding comes
+    entirely from cross-problem generalization — see finding 13.
+
+11. **Explicit counterfactual ranking is the strongest single lever
+    found so far.** K alternative feasible actions per state, hinge-ranked
+    by symbolic outcome against the executed one: disc_rank_k2 plans at
+    **0.91 @strict / 0.985 @slack-2** (combo 0.635/0.89); K=2 already
+    saturates (K=4: 0.925/0.98). Value-energy Kendall tau jumps 0.73 →
+    0.94. Ranking *without* LDAD reaches 0.875 and matching 0.999 — explicit
+    ranking and LDAD are two routes to the same grounding, and ranking is
+    the stronger one. Combining ranking with the monotonicity hinge
+    (disc_champion) gives 0.905/0.99 **and** the best raw-geometry energy
+    (tau 0.82, oracle-goal planning 0.655 without any straightening).
+
+12. **Ranking buys 1-step precision at the cost of depth calibration.**
+    Lookahead-2 helps regression-trained values (mono_hi 0.655→0.735,
+    valgrad 0.665→0.835) but *hurts* ranking-trained ones (rank_k2
+    0.91→0.85): the margin loss perfects the ordering of 1-step candidates
+    while distorting V's absolute scale, which multi-step cost sums rely
+    on. Distillation targets and search depth interact.
+
+13. **Cross-problem diversity is the counterfactual fuel; ranking is a
+    sharpener, not a substitute.** Shrinking 100k unique problems to 10k
+    (same optimizer steps) collapses combo to 0.135 @strict (matching
+    0.82, tau 0.22); 30k → 0.265. Adding ranking at 10k doubles planning
+    (0.26) and lifts tau to 0.53, but stays far from the 100k+rank 0.91.
+    Removing within-trace distractors also costs (0.635→0.415).
+
+14. **Edit track completes the same picture at lower transition
+    fidelity.** edit_rank is the new edit champion: 0.46/0.505 value
+    planning (slack-sensitive at last), 0.60 with the goal-distance
+    energy, tau 0.59. edit_distill_v matches the supervised value head
+    label-free (0.42 vs 0.425). Removing vandal negatives makes the value
+    energy *anti-correlated* (tau −0.07) — negatives are not optional.
+    The audit localizes the edit bottleneck: buffer matching is only
+    0.39–0.47 (chance 0.10) vs 1.00 on discourse — one-step buffer
+    prediction, not goal energy, is what limits the edit planner now.
+
+## What the probes say the state actually is
+
+Probe suite v2 (linear + MLP + random-encoder controls,
+`runs/*/probe_v2.csv`; membership probes use [state; onehot(v)] binding
+features):
+
+- **A recency-weighted working memory, not a symbol table.** The current
+  step's value is decodable at 0.90 (combo), then decays with lag:
+  0.43 (1 step back) → 0.29 → 0.21 (chance 0.04). Older established
+  values fade linearly but stay above chance (`figs/memory.pdf`).
+- **Structure is objective-independent; content is objective-dependent.**
+  Resolved-set membership (0.82), ancestor-of-query relevance (0.76),
+  which-variable-just-resolved (0.33) are *identical across every
+  training recipe* — base, no-LDAD, combo, geometry runs — while value
+  decodability swings 0.39→0.90 with the anchor fix. The encoder learns
+  the relational scaffold from text alone; the JEPA objectives decide
+  what *content* survives in it.
+- **No anticipatory answer computation.** Answer decodability from s_t is
+  a step function: 0.06–0.18 mid-trace (tiny MLP>linear gap), snapping to
+  1.00 exactly when the query variable resolves (`figs/emergence.pdf`).
+  The base model can't even hold it then (0.33) — collusion, again.
+- **Values are partially circularly coded**: ridge R² for cos(2πv/23)
+  from s_t is 0.52 (combo) vs 0.20 (base) — the mod-p structure is
+  partly geometric, and it tracks the anchor fix, echoing
+  modular-arithmetic interpretability results.
+- **Query identity is barely explicit** (0.19 vs 0.16 majority from s0)
+  even though the relevance map is strong (0.76) — "what matters" is
+  encoded relationally, not as a pointer.
+
 ## Stability
 
 No collapse in any run: VICReg + EMA targets held per-dim std ≈ 1.0 and
@@ -122,12 +211,14 @@ effective rank 220–243/256 throughout; FSQ/discrete actions not yet needed.
 
 ## Open directions
 
-- Decouple the two energies: a *learned projection head* on top of the
-  (content-rich) state that is straightened/monotone, so raw-geometry
-  planning and value decodability stop competing for the same metric.
-- Edit track: break energy ties among near-duplicate edits (margin/ranking
-  loss over candidate edits from the same state — distillation option (c));
-  the goal-distance energy already beats the value head there.
+- **Depth-calibrated ranking**: rank multi-step rollout costs (not only
+  1-step candidates) so lookahead helps ranking models too (finding 12);
+  target ≥0.95 @strict with look-2.
+- **Edit transition fidelity**: buffer matching is 0.4 vs 1.0 on
+  discourse (finding 14) — a slot-aligned predictor or per-sentence
+  outcome anchors for the *changed* slot are the obvious attack.
+- **Close the last gap to oracle** (0.905→1.0): error analysis of the
+  ~10% failures (long chains? mul-heavy? tie patterns).
 - Use the trained hierarchy (macro-actions + F_hi) in the planner: propose
   K-step macro rollouts, refine with the low-level model (HWM-style).
 - Harder worlds: deeper DAGs, larger moduli, compositional templates,

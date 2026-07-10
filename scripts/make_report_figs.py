@@ -400,27 +400,36 @@ def fig_memory():
 
 
 def fig_emergence():
-    """Claim: the answer emerges progressively and is stored nonlinearly —
-    MLP probes see it well before linear probes do."""
-    f = RUNS / "disc_combo" / "emergence.json"
-    if not f.exists():
+    """Claim: answer emergence is a step function — near-chance until the
+    query resolves, then snaps to 1.0 (no anticipatory computation); the
+    base model cannot even hold it at the terminal step (collusion)."""
+    files = [("disc_combo", C["disc_combo"], "-"),
+             ("disc_base", C["disc_base"], "--")]
+    fig, ax = plt.subplots(figsize=(4.0, 2.6))
+    plotted = False
+    for run, col, ls in files:
+        f = RUNS / run / "emergence.json"
+        if not f.exists():
+            continue
+        d = json.loads(f.read_text())
+        rem = sorted((int(k) for k in d), reverse=True)
+        for key, lw, alpha, label in (("linear", 2.0, 1.0, LABELS[run]),
+                                      ("mlp", 1.2, 0.55, None)):
+            ax.plot(rem, [d[str(r)][key] for r in rem], marker="o", ms=4,
+                    lw=lw, ls=ls, color=col, alpha=alpha, zorder=3,
+                    label=f"{label} (linear)" if label else None)
+        plotted = True
+    if not plotted:
         return
-    d = json.loads(f.read_text())
-    rem = sorted(int(k) for k in d)
-    fig, ax = plt.subplots(figsize=(3.9, 2.6))
-    for key, col, label in (("mlp", "#1baf7a", "MLP probe"),
-                            ("linear", "#4a3aa7", "linear probe")):
-        ax.plot(rem, [d[str(r)][key] for r in rem], marker="o", ms=5, lw=2,
-                color=col, zorder=3)
-        ax.text(rem[0] + 0.05, d[str(rem[0])][key] + 0.03, label, fontsize=8,
-                color=col)
+    ax.plot([], [], color="#52514e", lw=1.2, alpha=0.55, label="(thin: MLP probe)")
     ax.axhline(1 / 23, color=C["random"], lw=1, ls=":")
-    ax.text(rem[-1], 1 / 23 + 0.015, "chance", fontsize=8, color=C["random"],
-            ha="right")
+    ax.text(5.0, 1 / 23 + 0.02, "chance", fontsize=8, color=C["random"])
     ax.invert_xaxis()  # progress runs left->right (remaining decreases)
+    ax.set_xticks([5, 4, 3, 2, 1, 0])
     ax.set_xlabel("necessary steps remaining (progress $\\rightarrow$)")
     ax.set_ylabel("answer decodability from $s_t$")
-    ax.set_ylim(0, 1.0)
+    ax.set_ylim(0, 1.05)
+    ax.legend(fontsize=7.5, frameon=False, loc="upper left")
     fig.tight_layout()
     fig.savefig(OUT / "emergence.pdf")
 

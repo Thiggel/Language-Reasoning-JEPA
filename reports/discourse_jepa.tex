@@ -321,6 +321,13 @@ run & $\mathcal L_{\text{chunk}}$ anchor & value grad $\to$ encoder & other\\
 \texttt{disc\_geo\_lo\,/\,\_geo} & frozen, w=2.0 & \textbf{yes} & both regularizers\\
 \texttt{disc\_mono\_novalue} & frozen, w=2.0 & no
   & $+\,\mathcal L_{\text{mono}}$, \emph{no value head}\\
+\midrule
+\texttt{disc\_rank\_\{k2,k4\}(\_nodelta)} & frozen, w=2.0 & \textbf{yes}
+  & $+$ ranking over K counterfactual actions\\
+\texttt{disc\_champion} & frozen, w=2.0 & \textbf{yes}
+  & ranking K=2 $+$ $\mathcal L_{\text{mono}}$ w2\\
+\texttt{disc\_\{shuffled, no\_distract, size*\}} & frozen, w=2.0 & \textbf{yes}
+  & grounding controls (Results 9, 11)\\
 \bottomrule
 \end{tabular}
 
@@ -482,10 +489,129 @@ random & 0.06 & 0.095 & 0.06 & 0.095\\
 \medskip\small
 \textbf{Three readings.} (i) One latent metric cannot currently maximize
 both energies --- a learned \emph{projection head} for the geometric energy
-is the obvious fix. (ii) A model with \textbf{no value head} still plans at
+is the obvious fix (tested in Result 10: it softens but does not remove the
+trade-off). (ii) A model with \textbf{no value head} still plans at
 0.65 @slack 2 from pure geometry. (iii) \texttt{disc\_value\_only}'s
 geometry is \emph{exactly random}: planning-relevant structure comes from
 the JEPA objectives, not the value labels.
+\end{frame}
+
+\begin{frame}{Result 9 --- the predictor is counterfactually grounded
+(direct audit)}
+\claim{From each state we enumerate \emph{all} feasible actions, predict
+their next-state latents, and check against symbolic execution the model
+never saw: $F(s,a)$ is correct per action, and LDAD / outcome anchors are
+what ground it.}
+\begin{columns}
+\column{0.54\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/audit.pdf}
+\column{0.44\textwidth}\small
+\textbf{Audit metrics} (100 episodes, val):
+nearest-neighbor \emph{matching} of $F(s,a_i)$ to the executed-and-encoded
+true next states; Kendall $\tau$ of the value energy vs.\ true
+post-action remaining steps.\\[3pt]
+Training data shows \textbf{one action per state} --- grounding comes from
+cross-problem generalization alone.\\[3pt]
+Shuffled-action control: matching 0.30 $\approx$ chance. RSA of pairwise
+next-state geometry: 0.93 (base+LDAD) vs 0.48 (no LDAD).
+\end{columns}
+\end{frame}
+
+\begin{frame}{Result 10 --- counterfactual ranking: the strongest lever}
+\claim{Hinge-ranking K alternative actions per state by symbolic outcome
+nearly closes the gap to the oracle; K=2 suffices; it can replace LDAD but
+not data diversity; it trades search-depth calibration for 1-step precision.}
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+ & @opt & @slack2 & @opt look-2 & value $\tau$ \\
+\midrule
+\texttt{disc\_combo} & 0.635 & 0.89 & 0.76 & 0.73\\
+\texttt{disc\_rank\_k2} & 0.910 & 0.985 & 0.85 $\downarrow$ & 0.94\\
+\texttt{disc\_rank\_k4} & 0.925 & 0.98 & 0.85 $\downarrow$ & 0.94\\
+\texttt{disc\_rank\_k4} \emph{no LDAD} & 0.875 & 0.965 & --- & 0.94\\
+\texttt{disc\_combo} \emph{no LDAD} & 0.48 & 0.805 & --- & 0.69\\
+\textbf{\texttt{disc\_champion}} (rank+mono) & \textbf{0.905} & \textbf{0.99}
+ & --- & \textbf{0.96}\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+$\downarrow$ lookahead-2 \emph{hurts} ranking models (0.91$\to$0.85) while
+helping regression values (mono\_hi 0.655$\to$0.735): the margin loss
+perfects 1-step ordering but distorts $V$'s absolute scale that multi-step
+cost sums need. \texttt{disc\_champion} also has the best raw geometry
+($\tau_{\text{goal}}$ 0.82, oracle-goal planning 0.655, no curvature loss).
+Seed replicates: rank\_k2 0.885--0.91 @opt, 0.98--0.985 @slack2.
+\end{frame}
+
+\begin{frame}{Result 11 --- data diversity is the counterfactual fuel}
+\claim{Grounding comes from cross-problem coverage: shrinking unique
+problems collapses planning; ranking supervision sharpens but cannot
+substitute.}
+\begin{columns}
+\column{0.5\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/datascale.pdf}
+\column{0.48\textwidth}\small
+Same optimizer steps, fewer unique problems:\\[2pt]
+\begin{tabular}{lccc}
+\toprule
+problems & 10k & 30k & 100k\\
+\midrule
+combo @opt & 0.135 & 0.265 & 0.635\\
++ ranking & 0.26 & --- & 0.91\\
+matching & 0.82 & 1.00 & 1.00\\
+value $\tau$ & 0.22 & 0.44 & 0.73\\
+\bottomrule
+\end{tabular}\\[4pt]
+Matching survives small data; \emph{ranking quality} does not --- the
+predictor stays roughly right, the energy loses discrimination.
+Within-trace variation matters too: no distractors $\Rightarrow$
+0.635$\to$0.415.
+\end{columns}
+\end{frame}
+
+\begin{frame}{Probes I --- what the discourse state actually is}
+\claim{A recency-weighted working memory over a relational scaffold:
+structure is objective-independent, content is objective-dependent.}
+\begin{columns}
+\column{0.46\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/memory.pdf}
+\column{0.52\textwidth}\small
+\begin{tabular}{lcc}
+\toprule
+probe (combo / all recipes) & acc & maj.\\
+\midrule
+resolved-set member $[s_t;\mathrm{oh}(v)]$ & 0.82 & 0.67\\
+ancestor-of-query $[s_0;\mathrm{oh}(v)]$ & 0.76 & 0.56\\
+var just resolved (from $\Delta s$) & 0.33 & 0.19\\
+query identity (from $s_0$) & 0.19 & 0.16\\
+\bottomrule
+\end{tabular}\\[4pt]
+These rows are \textbf{identical across every training recipe} (base,
+no-LDAD, geometry, ranking) while value decodability swings 0.39--0.90:
+the encoder learns the scaffold from text alone; the objectives decide
+what content survives. Relevance is encoded \emph{relationally} (0.76),
+not as a query pointer (0.19).
+\end{columns}
+\end{frame}
+
+\begin{frame}{Probes II --- emergence, memory, circular code}
+\claim{No anticipatory answer computation: the answer appears exactly when
+its variable resolves --- and only collusion-free models can hold it.}
+\begin{columns}
+\column{0.5\textwidth}
+\centering\includegraphics[width=\linewidth]{figs/emergence.pdf}
+\column{0.48\textwidth}\small
+\textbf{Emergence is a step function}: 0.06--0.18 mid-trace (thin MLP
+lines: small nonlinear surplus), 1.00 the moment the query resolves;
+\texttt{disc\_base} manages only 0.33 even then (collusion).\\[4pt]
+\textbf{Memory decays with lag} (Probes I): 0.90 $\to$ 0.43 $\to$ 0.29
+$\to$ 0.21 (chance 0.04) --- a working buffer, not a symbol table.\\[4pt]
+\textbf{Circular coding}: ridge $R^2$ for $\cos(2\pi v/23)$ from $s_t$:
+0.52 (combo) vs 0.20 (base) --- the mod-$p$ value is partly geometric,
+and the circle sharpens under the anchor fix.
+\end{columns}
 \end{frame}
 
 \begin{frame}{Probe suite (champion vs.\ reference; random-encoder control)}
@@ -537,12 +663,12 @@ collusion-free probes (state value 0.89).
 
 \begin{frame}{Next steps}
 \begin{itemize}\itemsep2pt
-  \item \textbf{Decouple the two energies}: straighten a learned
-        \emph{projection} $\pi(s)$ instead of $s$ itself, so goal-distance
-        planning and content decodability stop competing (Result 8).
-  \item \textbf{Advantage head} $A(s,a)$ trained on
-        $\Delta$(remaining) and action \emph{ranking} losses --- sharper than
-        $V(F(s,a))$, which conflates predictor and value error.
+  \item \textbf{Depth-calibrated ranking}: rank multi-step rollout costs,
+        not only 1-step candidates, so lookahead helps ranking models too
+        (Result 10's anomaly); target $\ge$0.95 @optimal with look-2.
+  \item \textbf{Error analysis of the last 10\%}: what do the
+        \texttt{disc\_champion} failures share (chain depth, op mix,
+        tie patterns)?
   \item \textbf{Hierarchical planning}: use the trained $F_{\mathrm{hi}}$ +
         macro codes to propose 3-step jumps, refine with $F$ (HWM).
   \item \textbf{Unobserved actions}: variational $q(a\mid s_{t-1},s_t)$ with
