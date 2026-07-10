@@ -234,13 +234,20 @@ column's floor, not a real planner.
     (0.895): the ranking gradients hold the space open. Only −LDAD
     degrades audit matching (0.94 vs 0.99+). MDR seed spread: 0.87–0.935.
 
-20b. **Against parameter-matched LMs (action-selection parity).**
-    Token-level decoder-only LMs, same data, best LR each: 2M → 0.315,
-    9M → 0.670, 27M → 0.735. The naive JEPA (combo, 0.635) is on par
-    with the matched 9M LM; the ranking-calibrated JEPA (0.935–0.948)
-    beats the 3×-larger LM by ~20 points. (Remaining fairness item: a
-    candidate-ranked/DPO-style LM baseline with the same alt-outcome
-    supervision.)
+20b. **Against parameter-matched LM baselines (action-selection
+    parity).** Token-level decoder-only LMs, same data, best LR each:
+    2M → 0.315, 9M → 0.670, 27M → 0.735. Sentence-latent LMs (one latent
+    per sentence, causal trunk, token decoder; 7.2M): 0.470 with decoder
+    likelihood; adding a next-latent regression target lifts it to 0.510,
+    and scoring by **latent distance beats the model's own decoder**
+    (0.605) — the latent energy is the better ranker even in a
+    reconstruction-based model. The naive JEPA (combo, 0.635) is on par
+    with the matched token LM; the ranking-calibrated JEPA (0.935–0.948)
+    beats the 3×-larger LM by ~20 points. All likelihood/reconstruction
+    selection clusters at 0.47–0.735 regardless of granularity or scale;
+    explicit counterfactual training is worth +20–30 points over every
+    member of that family. (Remaining fairness item: a candidate-ranked /
+    DPO-style LM with the same alt-outcome supervision.)
 
 20c. **Cumulative-state targets are necessary** (disc_obs_only):
     replacing all state-prediction losses with anchored next-observation

@@ -654,6 +654,35 @@ convenience, not mechanism; LDAD constrains \emph{encoder} displacements,
 not predictor outputs, so it is not trivialized by either choice.
 \end{frame}
 
+\begin{frame}{Result 15 --- the baseline ladder (action-selection parity)}
+\claim{Every likelihood/reconstruction selector --- token- or
+sentence-level, any tested scale --- clusters at 0.47--0.74; explicit
+counterfactual training adds 20--30 points on top of all of them.}
+\centering\small
+\begin{tabular}{llcc}
+\toprule
+model (selection energy) & params & @opt & @slack2\\
+\midrule
+sentence-LM (decoder CE) & 7.2M & 0.470 & 0.810\\
+sentence-LM+latent tgt (decoder CE) & 7.2M & 0.510 & 0.800\\
+sentence-LM+latent tgt (\textbf{latent dist.}) & 7.2M & 0.605 & ---\\
+token LM (likelihood, best lr) & 8.2M & 0.670 & 0.910\\
+naive JEPA (combo, value head) & 9.1M & 0.635 & 0.890\\
+token LM & 25.5M & 0.735 & 0.940\\
+\textbf{JEPA + ranking (MDR / +cal)} & 9.1M & \textbf{0.935} & \textbf{0.99--1.00}\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+Parity protocol: every model scores the \emph{same} feasible candidates'
+rendered step sentences (LM: log-likelihood; sentence-LM: decoder CE or
+latent distance; JEPA: latent energy), same budget. LR swept for both
+families (LM prefers $10^{-3}$, JEPA $3\!\times\!10^{-4}$). Note the
+within-model dissociation: the sentence-LM's \emph{latent} energy
+outranks its own decoder (0.605 vs 0.510) --- selection is a
+latent-geometry problem even for reconstruction-trained models.
+\end{frame}
+
 \begin{frame}{Probes I --- what the discourse state actually is}
 \claim{A recency-weighted working memory over a relational scaffold:
 structure is objective-independent, content is objective-dependent.}
