@@ -65,7 +65,7 @@ both without any curvature loss.
 *disc_mono_novalue's value head is untrained; its 0.535 is the value
 column's floor, not a real planner.
 
-## The twenty findings
+## The findings
 
 1. **Latent planning over language works.** Searching tiny action codes
    with F(s, a) rollouts scored by a remaining-steps energy solves 84% of
@@ -224,7 +224,32 @@ column's floor, not a real planner.
     straightening is seed-fragile (0.31–0.59 @strict across seeds) while
     hinge/ranking recipes are seed-stable.
 
-20. **Failures are chain-depth-limited.** Champion fail rate: 4.4%
+20a. **The final recipe and its ablation matrix.** disc_mdr_cal (MDR +
+    cost ranking) reaches **0.925 @strict / 1.000 @slack-2 / 0.945
+    @look-2**. With ranking present the recipe is redundant: removing any
+    single component (anchor, LDAD, VICReg, hinge, distillation,
+    hierarchy, residual skip) costs only 2–7 points @strict and ~0
+    @slack-2 — ranking + distilled-V is the irreducible core. Notably
+    VICReg is catastrophic without ranking (0.27) but nearly free with it
+    (0.895): the ranking gradients hold the space open. Only −LDAD
+    degrades audit matching (0.94 vs 0.99+). MDR seed spread: 0.87–0.935.
+
+20b. **Against parameter-matched LMs (action-selection parity).**
+    Token-level decoder-only LMs, same data, best LR each: 2M → 0.315,
+    9M → 0.670, 27M → 0.735. The naive JEPA (combo, 0.635) is on par
+    with the matched 9M LM; the ranking-calibrated JEPA (0.935–0.948)
+    beats the 3×-larger LM by ~20 points. (Remaining fairness item: a
+    candidate-ranked/DPO-style LM baseline with the same alt-outcome
+    supervision.)
+
+20c. **Cumulative-state targets are necessary** (disc_obs_only):
+    replacing all state-prediction losses with anchored next-observation
+    prediction destroys the dynamics (matching 0.22 ≈ chance, planning
+    0.245). Together with the anchor's necessity for content, both
+    prediction levels are needed — a hard constraint for any
+    decoder-only redesign.
+
+21. **Failures are chain-depth-limited.** Champion fail rate: 4.4%
     (3–4 necessary steps), 16% (5–6), 59% (7–9); apparent distractor
     effects are depth confounds. Depth is exactly what cost-calibrated
     look-2 buys (finding 15) and what the scaled-up domain will stress.
