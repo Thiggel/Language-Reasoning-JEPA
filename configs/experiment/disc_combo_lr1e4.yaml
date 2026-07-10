@@ -1,0 +1,10 @@
+# @package _global_
+# LR sweep point for the JEPA recipe (fairness for the LM comparison).
+run_name: disc_combo_lr1e4
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+train:
+  lr: 1e-4

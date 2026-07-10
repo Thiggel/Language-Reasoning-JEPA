@@ -1,0 +1,31 @@
+defaults:
+  - data: igsm
+  - _self_
+
+run_name: lm
+seed: 1
+device: cuda
+
+model:
+  d_model: 288
+  n_layers: 8
+  n_heads: 8
+  ff_mult: 4
+  max_len: 512
+
+train:
+  batch_size: 64
+  num_workers: 8
+  epochs: 20
+  lr: 3.0e-4
+  weight_decay: 0.05
+  warmup_steps: 1000
+  grad_clip: 5.0
+  log_every: 50
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  output_subdir: null
+  job:
+    chdir: false
