@@ -1,0 +1,14 @@
+# @package _global_
+# THE fully geometric value head: NO symbolic value labels anywhere.
+# Straightened latent metric (label-free curvature loss) + V distilled
+# from the latent goal distance. If this plans well, the entire energy
+# emerges from JEPA geometry.
+run_name: disc_geometric
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  straighten: {weight: 0.05}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}

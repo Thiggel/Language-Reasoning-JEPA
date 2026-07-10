@@ -1,0 +1,12 @@
+# @package _global_
+# Diversity curve with ranking: 30k unique problems.
+run_name: disc_size30k_rank
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2
+  train_size: 30000

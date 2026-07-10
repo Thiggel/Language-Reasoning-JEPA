@@ -1,0 +1,9 @@
+# @package _global_
+run_name: disc_chunkpred_s3
+seed: 3
+model:
+  chunk_target: frozen
+objective:
+  chunk_pred: {weight: 2.0}
+data:
+  train_seed: 31

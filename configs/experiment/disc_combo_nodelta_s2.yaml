@@ -1,0 +1,11 @@
+# @package _global_
+run_name: disc_combo_nodelta_s2
+seed: 2
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  delta_action: {weight: 0.0}
+data:
+  train_seed: 21

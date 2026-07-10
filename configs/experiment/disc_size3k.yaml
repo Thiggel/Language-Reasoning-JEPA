@@ -1,0 +1,10 @@
+# @package _global_
+# Diversity curve: 3k unique problems.
+run_name: disc_size3k
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+data:
+  train_size: 3000

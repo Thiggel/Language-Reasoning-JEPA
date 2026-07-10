@@ -1,0 +1,13 @@
+# @package _global_
+# Depth-calibrated ranking: 1-step margin ranking + cross-depth cost
+# ranking (2 + V(F^2) vs 1 + V(F(alt))). Target: lookahead-2 helps again.
+run_name: disc_rank_cal
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+  cost_ranking: {weight: 1.0}
+data:
+  n_alt: 2

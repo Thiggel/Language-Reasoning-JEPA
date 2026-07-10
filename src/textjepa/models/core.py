@@ -104,6 +104,12 @@ class LatentDynamicsCore(nn.Module):
             extras["alt_value"] = self.value_head(
                 p_alt, value_in[:, 0]
             ).reshape(B, T, K)
+            if T > 1:
+                # executed 2-step continuation F(F(s,a_t), a_{t+1}) — free
+                # from the trace; lets CostRanking calibrate depth pricing
+                preds2 = self.predictor(preds[:, :-1], actions[:, 1:])
+                p2 = preds2.detach() if self.value_detach else preds2
+                extras["exec2_value"] = self.value_head(p2, value_in[:, 0])
 
         return JEPAOutputs(
             s0=s0,

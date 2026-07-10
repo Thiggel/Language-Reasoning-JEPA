@@ -1,0 +1,11 @@
+# @package _global_
+# Fully geometric value head, stronger straightening (0.1).
+run_name: disc_geometric_hi
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  straighten: {weight: 0.1}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}

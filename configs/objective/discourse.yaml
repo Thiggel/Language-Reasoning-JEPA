@@ -47,3 +47,7 @@ ranking:
   _target_: textjepa.objectives.ActionRanking
   weight: 0.0  # enabled in experiment configs (see disc_rank_*, edit_rank)
   margin: 0.5
+cost_ranking:
+  _target_: textjepa.objectives.CostRanking
+  weight: 0.0  # enabled in disc_rank_cal
+  margin: 0.5

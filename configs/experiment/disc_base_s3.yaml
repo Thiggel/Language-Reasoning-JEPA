@@ -1,0 +1,6 @@
+# @package _global_
+run_name: disc_base_s3
+seed: 3
+run_note: seed replicate of disc_base
+data:
+  train_seed: 31
