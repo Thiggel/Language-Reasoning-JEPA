@@ -47,10 +47,15 @@ class DiscourseJEPA(nn.Module):
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
         geo_proj: bool = False,  # geometry losses act on a learned projection
+        # "ema" | "online" (sg online states) | "online_nosg" (no stopgrad —
+        # the Delta-JEPA stability claim: LDAD alone prevents collapse)
+        state_target: str = "ema",
+        predictor_residual: bool = True,
     ):
         super().__init__()
         self.chunk_target = chunk_target
         self.freeze_encoders = freeze_encoders
+        self.state_target = state_target
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
             ff_mult, max_chunk_len, dropout,
@@ -62,6 +67,8 @@ class DiscourseJEPA(nn.Module):
         self.core = LatentDynamicsCore(
             d_model, d_action, predictor_hidden_mult, predictor_layers,
             n_ops, macro_k, d_macro, value_detach, geo_proj,
+            residual=predictor_residual,
+            detach_targets=state_target != "online_nosg",
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
@@ -129,11 +136,17 @@ class DiscourseJEPA(nn.Module):
             batch["prompt_tokens"], batch["prompt_mask"],
             batch["step_tokens"], batch["step_mask"],
         )
+        if self.state_target == "ema":
+            with torch.no_grad():
+                _, step_states_tgt = self.encode_states(
+                    batch["prompt_tokens"], batch["prompt_mask"],
+                    batch["step_tokens"], batch["step_mask"], teacher=True,
+                )
+        elif self.state_target == "online":
+            step_states_tgt = step_states.detach()
+        else:  # online_nosg: gradients flow through the target side too
+            step_states_tgt = step_states
         with torch.no_grad():
-            _, step_states_tgt = self.encode_states(
-                batch["prompt_tokens"], batch["prompt_mask"],
-                batch["step_tokens"], batch["step_mask"], teacher=True,
-            )
             action_emb_tgt = self.encode_chunks(batch["action_tokens"], teacher=True)
             if self.chunk_target == "frozen":
                 B, C, L = batch["step_tokens"].shape

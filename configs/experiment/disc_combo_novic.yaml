@@ -1,0 +1,9 @@
+# @package _global_
+# Does VICReg matter in practice on the combo recipe? (EMA + sg kept)
+run_name: disc_combo_novic
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  vicreg: {weight: 0.0}

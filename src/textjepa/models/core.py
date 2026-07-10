@@ -32,16 +32,19 @@ class LatentDynamicsCore(nn.Module):
         d_macro: int = 8,
         value_detach: bool = True,
         geo_proj: bool = False,
+        residual: bool = True,
+        detach_targets: bool = True,
     ):
         super().__init__()
         self.macro_k = macro_k
         self.value_detach = value_detach
+        self.detach_targets = detach_targets
         self.predictor = ActionConditionedPredictor(
-            d_model, d_action, predictor_hidden_mult, predictor_layers
+            d_model, d_action, predictor_hidden_mult, predictor_layers, residual
         )
         self.macro_encoder = MacroActionEncoder(d_action, d_macro)
         self.hi_predictor = ActionConditionedPredictor(
-            d_model, d_macro, predictor_hidden_mult, predictor_layers
+            d_model, d_macro, predictor_hidden_mult, predictor_layers, residual
         )
         self.delta_decoder = DeltaActionDecoder(d_model, d_model, n_ops)
         self.value_head = ValueHead(d_model)
@@ -115,7 +118,9 @@ class LatentDynamicsCore(nn.Module):
             s0=s0,
             step_states=step_states,
             prev_states=prev_states,
-            step_states_tgt=step_states_tgt.detach(),
+            step_states_tgt=(
+                step_states_tgt.detach() if self.detach_targets else step_states_tgt
+            ),
             actions=actions,
             action_emb_tgt=action_emb_tgt.detach(),
             preds=preds,

@@ -17,3 +17,5 @@ d_macro: 8
 value_detach: true
 dropout: 0.0
 geo_proj: false
+state_target: ema
+predictor_residual: true

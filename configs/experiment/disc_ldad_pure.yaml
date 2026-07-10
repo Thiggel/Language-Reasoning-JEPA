@@ -1,0 +1,9 @@
+# @package _global_
+# The Delta-JEPA stability claim: LDAD alone, NO stability mechanisms —
+# no EMA teacher (online targets), no stopgrad on the target side, no
+# VICReg. If the paper is right, no collapse (state_std/effrank hold).
+run_name: disc_ldad_pure
+model:
+  state_target: online_nosg
+objective:
+  vicreg: {weight: 0.0}

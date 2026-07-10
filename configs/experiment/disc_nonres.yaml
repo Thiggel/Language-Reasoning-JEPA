@@ -1,0 +1,11 @@
+# @package _global_
+# Non-residual predictor ablation: s_hat = MLP([LN(s); a]) without the
+# skip connection — does the residual parameterization matter (it makes
+# Delta s the natural LDAD object)?
+run_name: disc_nonres
+model:
+  chunk_target: frozen
+  value_detach: false
+  predictor_residual: false
+objective:
+  chunk_pred: {weight: 2.0}
