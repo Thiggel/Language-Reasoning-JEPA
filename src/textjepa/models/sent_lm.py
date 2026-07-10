@@ -51,6 +51,7 @@ class SentenceLM(nn.Module):
             d_model, state_layers, state_heads, ff_mult, max_chunks, 0.0
         )
         self.dec_tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
+        nn.init.normal_(self.dec_tok.weight, std=0.02)
         self.dec_pos = nn.Parameter(torch.zeros(1, max_chunk_len, d_model))
         nn.init.normal_(self.dec_pos, std=0.02)
         layer = nn.TransformerDecoderLayer(
