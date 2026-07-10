@@ -1,0 +1,10 @@
+# @package _global_
+# LDAD x VICReg x residual grid cell.
+run_name: disc_nodelta_nonres
+model:
+  chunk_target: frozen
+  value_detach: false
+  predictor_residual: false
+objective:
+  chunk_pred: {weight: 2.0}
+  delta_action: {weight: 0.0}
