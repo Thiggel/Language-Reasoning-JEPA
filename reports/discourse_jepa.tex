@@ -352,19 +352,22 @@ Distractor pick rate: random 0.43 $\to$ base 0.28 $\to$ valgrad 0.14.
 \end{columns}
 \end{frame}
 
-\begin{frame}{Result 2 --- deeper latent search helps monotonically}
-\claim{Success grows with search depth: rollouts of $F$ and the energy stay
-trustworthy over multiple imagined steps.}
+\begin{frame}{Result 2 --- search depth is a planning-time compute knob}
+\claim{Success grows with search depth up to a shared $\approx$0.97
+ceiling: rollouts of $F$ and the energy stay trustworthy over many
+imagined steps, and depth even rescues weak energies.}
 \begin{columns}
-\column{0.5\textwidth}
+\column{0.54\textwidth}
 \centering\includegraphics[width=\linewidth]{figs/lookahead.pdf}
-\column{0.48\textwidth}\small
-Lookahead 2 = exhaustive 2-step feasible sequences (cap 64), scored at the
-imagined end state.\\[4pt]
-\texttt{disc\_valgrad}: $0.665\to\mathbf{0.835}$;
-distractor rate $0.14\to0.07$.\\[4pt]
-This is the planning-time compute knob promised by latent world models ---
-no retraining involved.
+\column{0.44\textwidth}\small
+Lookahead $d$ = feasible $d$-step sequences (capped), scored at the
+imagined end state; no retraining.\\[4pt]
+All recipes converge to $\approx$0.96--0.97 by depth 4 --- the residual
+is the deep-chain failure mass (Result on failures), not search.\\[4pt]
+Base JEPA: $0.35\to0.87$ (depth 3); \texttt{mono\_hi}
+$0.655\to0.97$ (depth 6). The \texttt{rank\_k2} dip at depth 2 is the
+calibration anomaly; cost ranking (brown) removes it and dominates at
+every depth.
 \end{columns}
 \end{frame}
 

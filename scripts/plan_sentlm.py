@@ -72,8 +72,13 @@ def main(cfg: DictConfig) -> None:
                         device=device,
                     ),
                 }
-                ctx_all = model.contexts(batch)
-                ctx = ctx_all[:, len(step_texts) if step_texts else 0]
+                prompt_emb = model.encode_chunks(batch["prompt_tokens"])
+                step_emb = model.encode_chunks(batch["step_tokens"])
+                s0, states = model.state_model(
+                    prompt_emb, batch["prompt_mask"], step_emb,
+                    batch["step_mask"],
+                )
+                ctx = states[:, len(step_texts) - 1] if step_texts else s0
                 feas = env.feasible_actions()
                 cand_tok = tokens(
                     [step_sentence(problem, a) for a in feas]

@@ -133,9 +133,10 @@ def fig_lookahead():
                 xs.append(look)
                 ys.append(v)
         if len(xs) >= 2:
-            ax.plot(xs, ys, marker="o", ms=4, lw=1.8,
-                    color=extra_c.get(r, C[r]), zorder=3,
-                    label=extra_l.get(r, LABELS[r]))
+            col = extra_c[r] if r in extra_c else C[r]
+            lbl = extra_l[r] if r in extra_l else LABELS[r]
+            ax.plot(xs, ys, marker="o", ms=4, lw=1.8, color=col, zorder=3,
+                    label=lbl)
     rnd = plan("disc_base")["random_policy"]["success"]
     ax.axhline(rnd, color=C["random"], lw=1.2, ls=":")
     ax.text(7.9, rnd + 0.02, "random", fontsize=8, color=C["random"],
@@ -469,7 +470,7 @@ def fig_ladder():
         ax.barh(i, s2 or 0, height=0.62, color=col, alpha=0.35, zorder=2)
         ax.barh(i, s0, height=0.62, color=col, zorder=3)
         ax.text(s0 + 0.01, i, f"{s0:.2f}", va="center", fontsize=7.5)
-        if s2:
+        if s2 and s2 - s0 > 0.07:
             ax.text(s2 + 0.01, i, f"{s2:.2f}", va="center", fontsize=7,
                     color="#52514e")
     ax.set_yticks(list(y))
