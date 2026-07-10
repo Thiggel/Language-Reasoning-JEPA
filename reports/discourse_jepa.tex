@@ -571,6 +571,86 @@ Within-trace variation matters too: no distractors $\Rightarrow$
 \end{columns}
 \end{frame}
 
+\begin{frame}{Result 12 --- depth calibration: CostRanking and macro jumps}
+\claim{Plain ranking breaks lookahead (0.91$\to$0.85); two independent
+fixes exist, and they don't stack because they repair the same defect.}
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+ & look-1 & look-2 & look-3 flat & look-3 $F_{\mathrm{hi}}$\\
+\midrule
+\texttt{disc\_rank\_k2} & 0.910 & 0.850 $\downarrow$ & 0.915 & \textbf{0.970}\\
+\texttt{disc\_rank\_cal} (+CostRanking) & 0.905 & \textbf{0.945} & --- & 0.915\\
+\texttt{disc\_champion\_cal} & 0.910 & 0.945 & --- & 0.915\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+\textbf{CostRanking}: rank full MPC costs across depths — executed 2-step
+continuation ($2+V(F^2)$) vs 1-step alternatives ($1+V(F(a'))$); zero new
+data. \textbf{Macro jumps}: score 3-step sequences with one
+$F_{\mathrm{hi}}$ call — worse \emph{fidelity} than $F^3$ (matching
+0.62--0.70 vs 0.77--0.91) but stays on $V$'s training distribution.
+1000-episode: rank\_cal look-2 = 0.946 vs hier 0.931 — calibration wins
+once you have it; macro jumps are the no-retraining workaround.
+Train-side hierarchy loss: neutral (\texttt{combo\_nohier} 0.670/0.910).
+\end{frame}
+
+\begin{frame}{Result 13 --- the non-symbolic value head (headline)}
+\claim{Shape the metric with the monotonicity hinge, distill it into $V$,
+add binary-order ranking: \textbf{0.935 @optimal / 0.99 @slack-2} with no
+scalar value labels anywhere — beating the scalar-label champion.}
+\centering\small
+\begin{tabular}{llcc}
+\toprule
+run & energy supervision & @opt & @slack2\\
+\midrule
+\texttt{disc\_champion\_cal} & scalar + ranking & 0.910 & 0.995\\
+\textbf{\texttt{disc\_mono\_distill\_rank}} & \textbf{binary only}
+ & \textbf{0.935} & 0.990\\
+\texttt{disc\_mono\_hi} & scalar regression & 0.655 & 0.935\\
+\texttt{disc\_mono\_distill} & binary (no ranking) & 0.530 & 0.885\\
+\texttt{disc\_mono\_lf\_distill} & \emph{none} (all-steps hinge) & 0.355 & 0.775\\
+\texttt{disc\_geometric} & \emph{none} (curvature) & 0.300 & 0.715\\
+\texttt{disc\_distill\_v} & none, \emph{unshaped} (control) & 0.190 & 0.640\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+$V$ is distilled from the latent goal distance $d^{\text{goal}}$ — the
+energy \emph{emerges from the JEPA geometry}; labels only shape the metric
+(binary necessary/distractor for the hinge, binary order for ranking).
+Shaping is required: unshaped distillation fails (0.19). Seed replicate:
+0.560/0.880 (mono\_distill\_s2).
+\end{frame}
+
+\begin{frame}{Result 14 --- stability: the Delta-JEPA claim does not
+transfer; VICReg is load-bearing}
+\claim{LDAD alone does not prevent collapse in language JEPA, and VICReg
+is not redundant even with EMA + stopgrad + frozen anchor.}
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+run & EMA & sg & VICReg & result\\
+\midrule
+\texttt{disc\_ldad\_pure} & --- & --- & --- & \textbf{collapse}
+ (std .027, rank 80)\\
+\texttt{disc\_ldad\_pure\_sg} & --- & \checkmark & --- & collapse (0.11 @opt)\\
+\texttt{disc\_combo\_novic} & \checkmark & \checkmark & --- & 0.27 @opt
+ (vs 0.635)\\
+\texttt{disc\_combo} & \checkmark & \checkmark & \checkmark & 0.635 @opt\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+Honest negative replication of arXiv:2606.31232's stability claim in our
+domain (their evidence is visual control; our traces/action space differ).
+Also: non-residual predictor $\hat s = \mathrm{MLP}([\mathrm{LN}(s);a])$
+performs at least as well as residual (0.710/0.920) — the residual skip is
+convenience, not mechanism; LDAD constrains \emph{encoder} displacements,
+not predictor outputs, so it is not trivialized by either choice.
+\end{frame}
+
 \begin{frame}{Probes I --- what the discourse state actually is}
 \claim{A recency-weighted working memory over a relational scaffold:
 structure is objective-independent, content is objective-dependent.}

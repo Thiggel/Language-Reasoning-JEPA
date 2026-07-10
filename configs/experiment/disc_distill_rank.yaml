@@ -1,0 +1,15 @@
+# @package _global_
+# MDR ablation: remove the hinge shaping (distill + ranking on the
+# unshaped metric).
+run_name: disc_distill_rank
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 0.0}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2

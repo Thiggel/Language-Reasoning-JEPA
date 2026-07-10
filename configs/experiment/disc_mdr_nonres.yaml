@@ -1,0 +1,16 @@
+# @package _global_
+# MDR ablation: non-residual predictor (the grid says non-residual >=
+# residual and makes LDAD redundant on combo — does it help MDR too?).
+run_name: disc_mdr_nonres
+model:
+  chunk_target: frozen
+  value_detach: false
+  predictor_residual: false
+objective:
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 2.0, margin: 0.05}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2

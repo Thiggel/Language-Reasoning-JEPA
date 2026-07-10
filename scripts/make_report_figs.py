@@ -30,6 +30,7 @@ C = {
     "disc_valgrad": "#4a3aa7",
     "disc_mono_hi": "#b0457b",
     "disc_rank_k2": "#c2361b",
+    "disc_mono_distill_rank": "#7a5c00",
     "edit_base": "#2a78d6",
     "edit_valgrad": "#4a3aa7",
     "edit_anchor": "#1baf7a",
@@ -48,6 +49,7 @@ LABELS = {
     "disc_valgrad": "+ value-grad",
     "disc_mono_hi": "+ monotonicity",
     "disc_rank_k2": "+ ranking (K=2)",
+    "disc_mono_distill_rank": "no scalar labels (MDR)",
     "edit_base": "base",
     "edit_valgrad": "+ value-grad",
     "edit_anchor": "+ anchor + value-grad",
@@ -94,7 +96,8 @@ def bar_with_labels(ax, names, values, colors):
 
 def fig_planning():
     order = ["random", "disc_no_delta", "disc_base", "disc_chunkpred",
-             "disc_combo", "disc_valgrad", "disc_mono_hi", "disc_rank_k2"]
+             "disc_combo", "disc_valgrad", "disc_mono_hi", "disc_rank_k2",
+             "disc_mono_distill_rank"]
     vals, names, cols = [], [], []
     rnd = plan("disc_base")["random_policy"]["success"]
     for r in order:
@@ -434,8 +437,46 @@ def fig_emergence():
     fig.savefig(OUT / "emergence.pdf")
 
 
+LADDER = [
+    ("scalar + ranking", "disc_champion_cal", "#008300"),
+    ("binary (MDR)", "disc_mono_distill_rank", "#7a5c00"),
+    ("scalar regression", "disc_mono_hi", "#b0457b"),
+    ("binary, no ranking", "disc_mono_distill", "#2a78d6"),
+    ("label-free hinge", "disc_mono_lf_distill", "#1baf7a"),
+    ("label-free curvature", "disc_geometric", "#4a3aa7"),
+    ("unshaped (control)", "disc_distill_v", "#8a8984"),
+]
+
+
+def fig_ladder():
+    """Claim: the goal energy emerges from the JEPA geometry — supervision
+    buys precision, not existence."""
+    rows = [(lbl, planner_success(r), planner_success(r, slack=2), col)
+            for lbl, r, col in LADDER]
+    rows = [x for x in rows if x[1] is not None]
+    if not rows:
+        return
+    fig, ax = plt.subplots(figsize=(4.6, 2.8))
+    y = range(len(rows))
+    for i, (lbl, s0, s2, col) in enumerate(rows):
+        ax.barh(i, s2 or 0, height=0.62, color=col, alpha=0.35, zorder=2)
+        ax.barh(i, s0, height=0.62, color=col, zorder=3)
+        ax.text(s0 + 0.01, i, f"{s0:.2f}", va="center", fontsize=7.5)
+        if s2:
+            ax.text(s2 + 0.01, i, f"{s2:.2f}", va="center", fontsize=7,
+                    color="#52514e")
+    ax.set_yticks(list(y))
+    ax.set_yticklabels([r[0] for r in rows], fontsize=8)
+    ax.invert_yaxis()
+    ax.set_xlim(0, 1.12)
+    ax.set_xlabel("planning success (solid @optimal, pale @slack 2)")
+    fig.tight_layout()
+    fig.savefig(OUT / "supervision_ladder.pdf")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    fig_ladder()
     fig_planning()
     fig_lookahead()
     fig_collusion()

@@ -1,10 +1,12 @@
 # TextJEPA
 
-> **Results of the first three experimental cycles: see [RESULTS.md](RESULTS.md).**
-> TL;DR: latent planning over reasoning steps now reaches **90.5% success at
+> **Results of five experimental cycles: see [RESULTS.md](RESULTS.md).**
+> TL;DR: latent planning over reasoning steps reaches **93.5% success at
 > the strict optimal budget / 99% at slack 2** (random: 5.5%, oracle: 100%)
-> via counterfactual action ranking + a goal-monotonicity hinge on top of
-> Delta-JEPA + frozen-anchor outcome targets + a value-shaped encoder.
+> — with a value head that uses **no scalar value labels**: the energy is
+> distilled from the hinge-shaped JEPA geometry itself, plus binary-order
+> counterfactual ranking (with depth-calibrated cost ranking: 94.5% at
+> lookahead 2).
 > Direct audits show the predictor F(s,a) is counterfactually grounded
 > (nearest-neighbor matching of predicted to true next states: 1.00 vs 0.30
 > for a shuffled-action control), temporal straightening makes raw latent

@@ -1,4 +1,4 @@
-# Results — three experimental cycles (2026-07-09/10)
+# Results — five experimental cycles (2026-07-09/10)
 
 Setup: iGSM-style synthetic reasoning (mod-23 arithmetic DAGs, 6–12
 quantities, 3–9 necessary steps, distractor variables). All models ~9M
@@ -22,11 +22,17 @@ latent-geometry plots: `runs/*/geometry.png`.
 | disc_valgrad | 0.665 | 0.835 | 0.920 | 0.07 (look-2) |
 | disc_mono_hi | 0.655 | 0.735 | 0.935 | 0.15 |
 | disc_rank_k2 | 0.910 | 0.850* | 0.985 | 0.04 |
-| **disc_champion** (rank+mono) | **0.905** | — | **0.990** | **0.04** |
+| disc_champion (rank+mono) | 0.905 | — | 0.990 | 0.04 |
+| disc_rank_cal (+cost ranking) | 0.905 | **0.945** | 0.990 | — |
+| disc_champion_cal | 0.910 | 0.945 | **0.995** | — |
+| **disc_mono_distill_rank** (no scalar labels!) | **0.935** | — | 0.990 | — |
 
-*Deeper search *hurts* ranking models (finding 12). Seed spread: combo
-0.60–0.695, mono_hi 0.57–0.655, rank_k2 0.885–0.910 @strict; slack-2
-numbers are stable within ±0.03.
+*Deeper search *hurts* plain-ranking models (finding 12); CostRanking
+fixes it (finding 15). Seed spread: combo 0.60–0.695, mono_hi
+0.57–0.655, rank_k2 0.885–0.910, rank_cal 0.900–0.910, champion
+0.87–0.905 @strict; slack-2 numbers stable within ±0.03. 1000-episode
+confirmations: rank_k2 0.917, champion 0.913, rank_cal 0.914 (look-2
+0.946), mono_hi 0.706, combo 0.653, base 0.391.
 
 Edit track (value-head energy): edit_base 0.115 → **edit_valgrad 0.425**
 (random 0.06). See finding 8 for the raw-geometry energy, which changes
@@ -59,7 +65,7 @@ both without any curvature loss.
 *disc_mono_novalue's value head is untrained; its 0.535 is the value
 column's floor, not a real planner.
 
-## The fourteen findings
+## The twenty findings
 
 1. **Latent planning over language works.** Searching tiny action codes
    with F(s, a) rollouts scored by a remaining-steps energy solves 84% of
@@ -174,6 +180,54 @@ column's floor, not a real planner.
     The audit localizes the edit bottleneck: buffer matching is only
     0.39–0.47 (chance 0.10) vs 1.00 on discourse — one-step buffer
     prediction, not goal energy, is what limits the edit planner now.
+
+15. **Depth-calibrated ranking (CostRanking) fixes the lookahead anomaly.**
+    Ranking full MPC costs across depths — the executed 2-step
+    continuation's cost (2 + V(F²)) against 1-step alternatives' (1 +
+    V(F(alt))) — restores absolute calibration: rank_cal 0.905 look-1 →
+    **0.945 look-2** (plain ranking degraded 0.91 → 0.85); 1000-episode:
+    0.914/0.946. No new data needed (the 2-step continuation is already
+    in every trace).
+
+16. **The non-symbolic value head wins (headline).** Shape the metric
+    with the monotonicity hinge (binary relevance labels only), distill
+    it into V, add binary-order ranking: disc_mono_distill_rank =
+    **0.935 @strict / 0.99 @slack-2**, beating the scalar-label champion
+    (0.905/0.99), with tau_V 0.953 and the second-best raw geometry
+    (tau_G 0.813). Shaping is required: the same distillation on the
+    unshaped metric gets 0.19. The full supervision ladder @slack-2:
+    scalar+rank 0.99 = binary-tier 0.99 > scalar 0.935 > binary 0.885 >
+    label-free 0.775 > unshaped distill 0.64. Scalar remaining-steps
+    labels are dispensable.
+
+17. **Hierarchy pays at plan time, not train time.** Scoring 3-step
+    sequences with one F_hi macro jump beats composing F three times for
+    miscalibrated-value models (rank_k2: 0.970 @look-3-hier vs 0.915
+    flat) — not by fidelity (F_hi matching 0.62–0.70 vs 0.77–0.91 for
+    composed F) but by staying on the value head's training distribution.
+    Once V is depth-calibrated the effect disappears (rank_cal: hier
+    0.931 vs flat look-2 0.946 @1000 eps) — macro jumps and cost
+    calibration are two routes to the same fix. Training-side, the
+    hierarchy loss is neutral (combo_nohier 0.670/0.910 ≈ combo).
+
+18. **The Delta-JEPA stability claim does not transfer to language.**
+    LDAD alone (no EMA, no stopgrad, no VICReg) collapses: per-dim state
+    std 0.027, effective rank 80/256, value decodability 0.08; the
+    stopgrad-only variant collapses too. And **VICReg is load-bearing**
+    even with EMA+sg+anchor intact: removing it costs 0.635 → 0.27.
+    Stability in this domain needs the full kit.
+
+19. **Neutral-to-positive architecture facts**: non-residual predictor
+    0.710/0.920 (≥ combo — the residual skip is convenience, not
+    mechanism, and LDAD is not trivialized by it: it constrains encoder
+    displacements, not predictor outputs); hierarchy loss removable;
+    straightening is seed-fragile (0.31–0.59 @strict across seeds) while
+    hinge/ranking recipes are seed-stable.
+
+20. **Failures are chain-depth-limited.** Champion fail rate: 4.4%
+    (3–4 necessary steps), 16% (5–6), 59% (7–9); apparent distractor
+    effects are depth confounds. Depth is exactly what cost-calibrated
+    look-2 buys (finding 15) and what the scaled-up domain will stress.
 
 ## What the probes say the state actually is
 
