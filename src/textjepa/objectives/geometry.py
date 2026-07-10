@@ -52,15 +52,27 @@ class TemporalStraightening(Objective):
 
 
 class GoalMonotonicity(Objective):
-    def __init__(self, margin: float = 0.02, distractor_weight: float = 0.5):
+    def __init__(
+        self,
+        margin: float = 0.02,
+        distractor_weight: float = 0.5,
+        label_free: bool = False,
+    ):
         super().__init__()
         self.margin = margin
         self.distractor_weight = distractor_weight
+        # label_free: assume every executed step is necessary (true for ~85%
+        # of trace steps) — removes the necessary/distractor supervision
+        self.label_free = label_free
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         d = goal_distances(out)  # [B, T+1]
         delta = d[:, 1:] - d[:, :-1]  # <0 means the step moved toward goal
-        nec = batch["necessary"].float()
+        nec = (
+            torch.ones_like(batch["necessary"], dtype=torch.float)
+            if self.label_free
+            else batch["necessary"].float()
+        )
         loss = nec * F.relu(delta + self.margin) + (
             self.distractor_weight * (1 - nec) * F.relu(-delta)
         )

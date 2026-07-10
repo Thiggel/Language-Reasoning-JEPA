@@ -1,0 +1,13 @@
+# @package _global_
+# Non-symbolic value head, monotonicity route: hinge-shaped goal distance
+# (binary necessary/distractor labels only) + V distilled from that
+# distance. No remaining-steps regression anywhere.
+run_name: disc_mono_distill
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 2.0, margin: 0.05}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}

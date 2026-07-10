@@ -1,0 +1,13 @@
+# @package _global_
+# FULLY label-free value head: label-free monotonicity (every executed
+# step must approach the goal; no necessary/distractor labels) + distilled
+# V. Zero symbolic supervision of the energy.
+run_name: disc_mono_lf_distill
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 2.0, margin: 0.05, label_free: true}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}
