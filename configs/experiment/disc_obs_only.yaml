@@ -1,0 +1,15 @@
+# @package _global_
+# Objective-level test of the decoder-only redesign: NO cumulative-state
+# prediction targets (latent_pred/rollout/hierarchy all 0) — the JEPA
+# signal is anchored next-OBSERVATION-embedding prediction only (plus
+# LDAD, value, VICReg). If this matches combo, the scaled architecture
+# can drop EMA state targets entirely.
+run_name: disc_obs_only
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  latent_pred: {weight: 0.0}
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
