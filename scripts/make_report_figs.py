@@ -118,26 +118,33 @@ def fig_planning():
 
 
 def fig_lookahead():
-    fig, ax = plt.subplots(figsize=(3.6, 2.6))
-    for r in ["disc_base", "disc_chunkpred", "disc_combo", "disc_valgrad"]:
+    """Depth curve; legend (no inline end-labels — they collide when
+    curves coincide)."""
+    fig, ax = plt.subplots(figsize=(4.3, 2.8))
+    runs = ["disc_base", "disc_chunkpred", "disc_combo", "disc_valgrad",
+            "disc_mono_hi", "disc_rank_k2", "disc_rank_cal"]
+    extra_c = {"disc_rank_cal": "#7a5c00"}
+    extra_l = {"disc_rank_cal": "+ cost ranking"}
+    for r in runs:
         xs, ys = [], []
-        for look in (1, 2):
+        for look in (1, 2, 3, 4, 5, 6, 7, 8):
             v = planner_success(r, look=look)
             if v is not None:
                 xs.append(look)
                 ys.append(v)
-        if len(xs) >= 1:
-            ax.plot(xs, ys, marker="o", ms=5, lw=2, color=C[r], zorder=3)
-            ax.text(xs[-1] + 0.05, ys[-1], LABELS[r], fontsize=8, color=C[r],
-                    va="center")
+        if len(xs) >= 2:
+            ax.plot(xs, ys, marker="o", ms=4, lw=1.8,
+                    color=extra_c.get(r, C[r]), zorder=3,
+                    label=extra_l.get(r, LABELS[r]))
     rnd = plan("disc_base")["random_policy"]["success"]
     ax.axhline(rnd, color=C["random"], lw=1.2, ls=":")
-    ax.text(1.0, rnd + 0.02, "random", fontsize=8, color=C["random"])
-    ax.set_xticks([1, 2])
-    ax.set_xlim(0.85, 2.8)
+    ax.text(7.9, rnd + 0.02, "random", fontsize=8, color=C["random"],
+            ha="right")
+    ax.set_xticks([1, 2, 3, 4, 5, 6, 7, 8])
     ax.set_ylim(0, 1.0)
     ax.set_xlabel("planner lookahead (latent search depth)")
     ax.set_ylabel("success @ optimal budget")
+    ax.legend(fontsize=7, frameon=False, loc="lower right", ncol=2)
     fig.tight_layout()
     fig.savefig(OUT / "lookahead.pdf")
 
