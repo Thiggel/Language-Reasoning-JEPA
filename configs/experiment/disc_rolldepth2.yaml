@@ -1,0 +1,10 @@
+# @package _global_
+# Supervision-horizon ablation: rollout loss limited to the first 2
+# open-loop steps.
+run_name: disc_rolldepth2
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  rollout: {weight: 1.0, max_depth: 2}

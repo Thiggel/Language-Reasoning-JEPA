@@ -69,7 +69,8 @@ class LatentPlanner:
         lookahead: int = 1,
         max_expand: int = 64,
         energy: str = "value",  # "value" | "oracle_goal"
-        hierarchy: bool = False,  # score K-step sequences with one F_hi jump
+        hierarchy: bool = False,  # score K-step sequences with F_hi jumps
+        simulator: str = "latent",  # "latent" (F rollouts) | "symbolic"
     ):
         self.model = model
         self.vocab = vocab
@@ -78,6 +79,7 @@ class LatentPlanner:
         self.max_expand = max_expand
         self.energy = energy
         self.hierarchy = hierarchy
+        self.simulator = simulator
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -109,7 +111,10 @@ class LatentPlanner:
             seqs = _sequences(
                 problem, frozenset(env.resolved_set), self.lookahead, self.max_expand
             )
-            best = self._best_sequence(s, s0, problem, seqs, goal_state)
+            best = self._best_sequence(
+                s, s0, problem, seqs, goal_state,
+                sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
+            )
             chosen = best[0]
             n_distractor += int(chosen not in problem.query_ancestors)
             step_texts.append(env.step(chosen))
@@ -219,16 +224,61 @@ class LatentPlanner:
         seqs: list[list[int]],
         goal_state: torch.Tensor | None,
     ) -> torch.Tensor:
-        """Score K-step sequences with a single F_hi macro jump (HWM)."""
+        """Score (m*K)-step sequences with chained F_hi macro jumps (HWM)."""
         K = self.model.core.macro_k
+        L = len(seqs[0])
         n = len(seqs)
         a = self._action_codes(
             problem, [i for q in seqs for i in q]
-        ).reshape(n, K, -1)
-        m = self.model.core.macro_encoder(a)
-        nxt = self.model.core.hi_predictor(s.expand(n, -1), m)
-        steps = torch.full((n,), float(K), device=self.device)
-        return self._energy(nxt, s0, steps, goal_state)
+        ).reshape(n, L, -1)
+        cur = s.expand(n, -1)
+        for w in range(L // K):
+            m = self.model.core.macro_encoder(a[:, w * K : (w + 1) * K])
+            cur = self.model.core.hi_predictor(cur, m)
+        steps = torch.full((n,), float(L), device=self.device)
+        return self._energy(cur, s0, steps, goal_state)
+
+    def _symbolic_costs(
+        self,
+        env,
+        step_texts: list[str],
+        s0: torch.Tensor,
+        prompt_tokens: torch.Tensor,
+        prompt_mask: torch.Tensor,
+        seqs: list[list[int]],
+        goal_state: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Upper-bound control: execute each candidate sequence in the
+        SYMBOLIC environment, encode the true resulting state, apply the
+        learned energy — no latent imagination at all."""
+        all_texts = []
+        for q in seqs:
+            c = env.clone()
+            all_texts.append(step_texts + [c.step(i) for i in q])
+        n = len(all_texts)
+        C = max(len(t) for t in all_texts)
+        L = max(
+            (len(self.vocab.encode(x)) for t in all_texts for x in t), default=1
+        )
+        tokens = torch.full(
+            (n, C, L), self.vocab.pad_id, dtype=torch.long, device=self.device
+        )
+        mask = torch.zeros(n, C, dtype=torch.bool, device=self.device)
+        for i, t in enumerate(all_texts):
+            for c_i, x in enumerate(t):
+                ids = self.vocab.encode(x)
+                tokens[i, c_i, : len(ids)] = torch.tensor(ids, device=self.device)
+                mask[i, c_i] = True
+        _, states = self.model.encode_states(
+            prompt_tokens.expand(n, -1, -1), prompt_mask.expand(n, -1),
+            tokens, mask,
+        )
+        last = mask.sum(dim=1) - 1
+        cur = states[torch.arange(n, device=self.device), last]
+        steps = torch.tensor(
+            [float(len(q)) for q in seqs], device=self.device
+        )
+        return self._energy(cur, s0, steps, goal_state)
 
     def _best_sequence(
         self,
@@ -237,11 +287,23 @@ class LatentPlanner:
         problem: Problem,
         seqs: list[list[int]],
         goal_state: torch.Tensor | None = None,
+        sym_ctx: tuple | None = None,  # (env, step_texts, prompt_t, prompt_m)
     ) -> list[int]:
+        if self.simulator == "symbolic" and sym_ctx is not None:
+            env, step_texts, pt, pm = sym_ctx
+            total = self._symbolic_costs(
+                env, step_texts, s0, pt, pm, seqs, goal_state
+            )
+            return seqs[int(total.argmin().item())]
         K = self.model.core.macro_k
-        if self.hierarchy and any(len(q) == K for q in seqs):
-            full = [q for q in seqs if len(q) == K]
-            rest = [q for q in seqs if len(q) < K]
+        full_len = (max(len(q) for q in seqs) // K) * K
+        full = (
+            [q for q in seqs if len(q) == full_len]
+            if self.hierarchy and full_len >= K
+            else []
+        )
+        if full:
+            rest = [q for q in seqs if len(q) != full_len]
             costs = [self._macro_costs(s, s0, problem, full, goal_state)]
             cands = list(full)
             if rest:

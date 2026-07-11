@@ -34,6 +34,7 @@ def main(cfg: DictConfig) -> None:
             model, vocab, device, lookahead=cfg.lookahead,
             max_expand=cfg.max_expand, energy=cfg.energy,
             hierarchy=cfg.get("hierarchy", False),
+            simulator=cfg.get("simulator", "latent"),
         )
         results = evaluate_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -44,6 +45,8 @@ def main(cfg: DictConfig) -> None:
     suffix = "" if cfg.energy == "value" else f"_{cfg.energy}"
     if cfg.get("hierarchy", False):
         suffix += "_hier"
+    if cfg.get("simulator", "latent") == "symbolic":
+        suffix += "_sym"
     out = Path(
         cfg.out
         or Path(cfg.ckpt).parent / f"plan_slack{cfg.slack}_look{cfg.lookahead}{suffix}.json"
