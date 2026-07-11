@@ -14,7 +14,12 @@ def load_run(ckpt_path: str, device: str = "cuda:0", random_init: bool = False):
     """Returns (model, vocab, cfg) from a training checkpoint."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(ckpt["cfg"])
-    vocab = build_vocab(cfg.data.modulus)
+    if cfg.data.get("name", "igsm") == "igsm_real":
+        from textjepa.data.faithful import cached_faithful_vocab
+
+        vocab = cached_faithful_vocab()
+    else:
+        vocab = build_vocab(cfg.data.modulus)
     model = instantiate(cfg.model, vocab_size=len(vocab), pad_id=vocab.pad_id)
     if not random_init:
         missing, unexpected = model.load_state_dict(ckpt["model"], strict=False)

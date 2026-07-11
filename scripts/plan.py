@@ -24,7 +24,19 @@ def main(cfg: DictConfig) -> None:
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
     dataset = build_dataset(run_cfg, vocab, split="val")
     device = torch.device(cfg.device)
-    if run_cfg.data.get("name", "igsm") == "igsm_edit":
+    if run_cfg.data.get("name", "igsm") == "igsm_real":
+        from textjepa.planning.faithful_search import (
+            FaithfulPlanner, evaluate_faithful_planning,
+        )
+
+        planner = FaithfulPlanner(
+            model, vocab, device, lookahead=cfg.lookahead,
+            max_expand=cfg.max_expand,
+        )
+        results = evaluate_faithful_planning(
+            planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
+        )
+    elif run_cfg.data.get("name", "igsm") == "igsm_edit":
         planner = EditPlanner(model, vocab, device, energy=cfg.energy)
         results = evaluate_edit_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
