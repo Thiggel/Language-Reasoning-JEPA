@@ -40,6 +40,16 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
     )
     size = size or (d.val_size if split == "val" else d.train_size)
     seed = d.val_seed if split == "val" else d.train_seed
+    if d.get("name", "igsm") == "igsm_real":
+        from textjepa.data.faithful import FaithfulDataset
+
+        return FaithfulDataset(
+            vocab, size=size, seed=seed,
+            max_op=d.max_op, max_edge=d.max_edge,
+            op_range=tuple(d.op_range),
+            distractor_prob=d.distractor_prob,
+            max_distractors=d.max_distractors,
+        )
     if d.get("name", "igsm") == "igsm_edit":
         kw = dict(igsm_kwargs)
         kw.pop("shuffle_actions", None)

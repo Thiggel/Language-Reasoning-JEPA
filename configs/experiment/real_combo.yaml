@@ -1,0 +1,10 @@
+# @package _global_
+# FAITHFUL iGSM (official generator, med settings): reference recipe.
+defaults:
+  - override /data: igsm_real
+run_name: real_combo
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}

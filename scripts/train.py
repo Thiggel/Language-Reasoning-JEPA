@@ -33,7 +33,12 @@ def main(cfg: DictConfig) -> None:
     out_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     print(OmegaConf.to_yaml(cfg))
 
-    vocab = build_vocab(cfg.data.modulus)
+    if cfg.data.get("name", "igsm") == "igsm_real":
+        from textjepa.data.faithful import cached_faithful_vocab
+
+        vocab = cached_faithful_vocab()
+    else:
+        vocab = build_vocab(cfg.data.modulus)
     train_ds = build_dataset(cfg, vocab, split="train")
     val_ds = build_dataset(cfg, vocab, split="val")
     coll = partial(collate_for(cfg), pad_id=vocab.pad_id)

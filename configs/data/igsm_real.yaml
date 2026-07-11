@@ -1,0 +1,16 @@
+name: igsm_real
+modulus: 23
+max_op: 15        # official iGSM-med; hard = 21
+max_edge: 20      # official iGSM-med; hard = 28
+op_range: [3, 15]
+n_vars_range: [6, 12]   # unused by the faithful generator (interface compat)
+leaf_prob: 0.35
+steps_range: [3, 9]
+distractor_prob: 0.15
+max_distractors: 2
+train_size: 100000
+val_size: 5000
+train_seed: 1
+val_seed: 2
+shuffle_actions: false
+n_alt: 0
