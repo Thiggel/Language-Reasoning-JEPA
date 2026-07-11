@@ -31,9 +31,13 @@ OP_LABELS = {"const": 0, "sum": 1, "diff": 2, "mul": 3}
 
 
 def _fix_seed(key: str) -> None:
+    import hashlib
+
     from tools.tools import fix_seed
 
-    fix_seed(abs(hash(key)) % (2**31 - 1))
+    # stable across processes (builtin hash() is salted per process)
+    h = int.from_bytes(hashlib.md5(key.encode()).digest()[:4], "little")
+    fix_seed(h % (2**31 - 1))
 
 
 def gen_problem(key: str, max_op: int, max_edge: int, op_range=(None, None)):
