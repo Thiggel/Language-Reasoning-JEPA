@@ -900,6 +900,32 @@ value-head MAE (remaining steps) & 0.76 & 0.57 & ---\\
 collusion-free probes (state value 0.89).
 \end{frame}
 
+\begin{frame}{Scale-up preview --- the hard domain and faithful iGSM}
+\claim{On 10--18-step problems everything collapses --- the likelihood
+selector hardest --- and the ranking/capacity/search recipe degrades most
+gracefully. This is the quantified frontier for the next phase.}
+\centering\small
+\begin{tabular}{lcccc}
+\toprule
+hard domain (14--24 vars, 10--18 steps) & @opt & @slack2 & look-2 & look-4\\
+\midrule
+reference recipe (\texttt{combo}, 9M) & 0.000 & 0.070 & 0.035 & 0.175\\
+minimal-labels + cost rank (\texttt{mdr\_cal}, 9M) & \textbf{0.120} &
+ \textbf{0.445} & 0.105 & 0.150\\
+same recipe, 35M & 0.090 & 0.410 & 0.195 & \textbf{0.315}\\
+token LM (8M, parity selection) & 0.010 & --- & --- & ---\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+Capacity only pays \emph{through search} (35M: 0.09 greedy $\to$ 0.32 at
+look-4). Separately, the pipeline now runs on \textbf{100\%-faithful iGSM}
+(the official facebookresearch generator vendored; our env drives the
+reference renderer; full solutions pass the official checker 60/60 med,
+99/100 hard) --- first faithful-domain training runs completed, planning
+evaluation in flight.
+\end{frame}
+
 \begin{frame}{Honest limitations \& what this is not}
 \begin{itemize}\itemsep2pt
   \item \textbf{iGSM-style, not iGSM}: flat DAG, binary mod-23 ops, one

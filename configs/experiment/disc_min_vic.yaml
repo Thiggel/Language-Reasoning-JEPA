@@ -1,5 +1,6 @@
 # @package _global_
-# Shearing series: find the MINIMAL recipe. min + VICReg (collapse insurance).
+# Shearing series: min + VICReg (the candidate true minimal recipe —
+# min alone half-collapses at effrank 101).
 run_name: disc_min_vic
 model:
   chunk_target: frozen
@@ -7,11 +8,9 @@ model:
 objective:
   rollout: {weight: 0.0}
   hierarchy: {weight: 0.0}
-  vicreg: {weight: 0.0}
   delta_action: {weight: 0.0}
   chunk_pred: {weight: 0.0}
   value: {weight: 0.0}
   ranking: {weight: 1.0}
-  vicreg: {weight: 1.0}
 data:
   n_alt: 2
