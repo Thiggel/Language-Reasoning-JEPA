@@ -22,7 +22,7 @@
 \newcommand{\sg}{\mathrm{sg}}
 
 \title{Discourse-JEPA:\\ Latent World Models over Reasoning Steps}
-\subtitle{Method and first two experimental cycles --- fully reproducible from these slides}
+\subtitle{Method and five experimental cycles --- fully reproducible from these slides}
 \author{TextJEPA project}
 \date{July 9, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/disc\_*})}
 
@@ -101,7 +101,7 @@
 \end{tabular}
 
 \smallskip
-Run names: \texttt{disc\_*} = this (discourse) track;
+Run names (display names here drop the repository prefix \texttt{disc\string_}, short for \emph{discourse track} --- the track modeling reasoning traces, vs.\ the edit track):
 \texttt{combo} = anchor + value-grad; \texttt{mono\_hi} = + hinge;
 \texttt{rank\_k2} = + ranking; \texttt{champion} = ranking + hinge;
 \texttt{MDR} = hinge + distilled $V$ + ranking (no numeric labels);
@@ -323,10 +323,10 @@ LN = parameter-free layer norm), masks over valid steps.
   + m]_+ + \tfrac12(1-\mathbb 1_{\text{nec}})\,[-\Delta d^{\text{goal}}_t]_+
   &\text{0 / 1--2}
 \end{align*}
-$\mathcal L_{\text{chunk}}$: weight 0 in \texttt{disc\_base}; 2.0 in
-\texttt{disc\_chunkpred}/\texttt{combo} (\textbf{frozen} anchor
+$\mathcal L_{\text{chunk}}$: weight 0 in \texttt{base}; 2.0 in
+\texttt{chunkpred}/\texttt{combo} (\textbf{frozen} anchor
 $\tilde E_c$). Value head input detached except
-\texttt{disc\_valgrad}/\texttt{combo}. $d^{\text{goal}}_t$ = LN-L1 distance
+\texttt{valgrad}/\texttt{combo}. $d^{\text{goal}}_t$ = LN-L1 distance
 of $s_t$ to the trace-terminal EMA state; margin $m\in\{.02,.05\}$.
 \end{frame}
 
@@ -414,34 +414,35 @@ next latent; lookahead 2 scores 2-step latent rollouts.
 % ---------------------------------------------------------------- experiments
 \begin{frame}{Experiment grid (each = one training run, 20 epochs)}
 \centering\small
+\resizebox{\textwidth}{!}{%
 \begin{tabular}{llll}
 \toprule
 run & $\mathcal L_{\text{chunk}}$ anchor & value grad $\to$ encoder & other\\
 \midrule
-\texttt{disc\_base} & --- & no & reference\\
-\texttt{disc\_no\_delta} & --- & no & $\mathcal L_{\text{act}}$ weight 0\\
-\texttt{disc\_chunkpred} & frozen, w=2.0 & no & ---\\
-\texttt{disc\_valgrad} & --- & \textbf{yes} & ---\\
-\texttt{disc\_combo} & frozen, w=2.0 & \textbf{yes} & ---\\
-\texttt{disc\_value\_only} & --- & \textbf{yes} & \emph{all} JEPA weights 0\\
-\texttt{disc\_frozen\_enc} & --- & no & encoders frozen at init\\
+\texttt{base} & --- & no & reference\\
+\texttt{no\_delta} & --- & no & $\mathcal L_{\text{act}}$ weight 0\\
+\texttt{chunkpred} & frozen, w=2.0 & no & ---\\
+\texttt{valgrad} & --- & \textbf{yes} & ---\\
+\texttt{combo} & frozen, w=2.0 & \textbf{yes} & ---\\
+\texttt{value\_only} & --- & \textbf{yes} & \emph{all} JEPA weights 0\\
+\texttt{frozen\_enc} & --- & no & encoders frozen at init\\
 \midrule
-\texttt{disc\_straight\_\{lo,mid,---\}} & frozen, w=2.0 & \textbf{yes}
+\texttt{straight\_\{lo,mid,---\}} & frozen, w=2.0 & \textbf{yes}
   & $+\,\mathcal L_{\text{curv}}$, $\lambda\in\{.02,.05,.1\}$\\
-\texttt{disc\_mono\,/\,\_hi} & frozen, w=2.0 & \textbf{yes}
+\texttt{mono\,/\,\_hi} & frozen, w=2.0 & \textbf{yes}
   & $+\,\mathcal L_{\text{mono}}$, w1\,m.02\,/\,w2\,m.05\\
-\texttt{disc\_geo\_lo\,/\,\_geo} & frozen, w=2.0 & \textbf{yes} & both regularizers\\
-\texttt{disc\_mono\_novalue} & frozen, w=2.0 & no
+\texttt{geo\_lo\,/\,\_geo} & frozen, w=2.0 & \textbf{yes} & both regularizers\\
+\texttt{mono\_novalue} & frozen, w=2.0 & no
   & $+\,\mathcal L_{\text{mono}}$, \emph{no value head}\\
 \midrule
-\texttt{disc\_rank\_\{k2,k4\}(\_nodelta)} & frozen, w=2.0 & \textbf{yes}
+\texttt{rank\_\{k2,k4\}(\_nodelta)} & frozen, w=2.0 & \textbf{yes}
   & $+$ ranking over K counterfactual actions\\
-\texttt{disc\_champion} & frozen, w=2.0 & \textbf{yes}
+\texttt{champion} & frozen, w=2.0 & \textbf{yes}
   & ranking K=2 $+$ $\mathcal L_{\text{mono}}$ w2\\
-\texttt{disc\_\{shuffled, no\_distract, size*\}} & frozen, w=2.0 & \textbf{yes}
+\texttt{\{shuffled, no\_distract, size*\}} & frozen, w=2.0 & \textbf{yes}
   & grounding controls (Results 9, 11)\\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 
 \medskip
 Baselines at plan time: \textbf{random feasible policy},
@@ -495,7 +496,7 @@ $s_t$, val split.\\[4pt]
 Both loss sides are learned; EMA targets \emph{trail the online encoder}, so
 deleting a hard-to-predict feature lowers the loss --- stop-grad does not pin
 content.\\[4pt]
-Consequence in \texttt{disc\_base}: answer decodable from the terminal state
+Consequence in \texttt{base}: answer decodable from the terminal state
 at only 0.26 (random-init control: 0.65).
 \end{columns}
 \end{frame}
@@ -541,8 +542,8 @@ metric. Result 7 shows temporal straightening fixes exactly this.
 \toprule
  & success@opt & success@slack2 & distractor rate & op from $\Delta s$\\
 \midrule
-\texttt{disc\_base} & \textbf{0.35} & \textbf{0.75} & 0.28 & 1.00\\
-\texttt{disc\_no\_delta} & 0.15 & 0.51 & 0.40 & 0.98$^*$\\
+\texttt{base} & \textbf{0.35} & \textbf{0.75} & 0.28 & 1.00\\
+\texttt{no\_delta} & 0.15 & 0.51 & 0.40 & 0.98$^*$\\
 \bottomrule
 \end{tabular}
 
@@ -592,11 +593,11 @@ value labels.}
    \multicolumn{2}{c}{value-head energy}\\
 run & @opt & @slack2 & @opt & @slack2\\
 \midrule
-\texttt{disc\_combo} ($\lambda=0$) & 0.15 & 0.52 & 0.635 & 0.89\\
-\texttt{disc\_straight\_mid} ($\lambda{=}.05$) & 0.365 & \textbf{0.845} & 0.355 & 0.73\\
-\texttt{disc\_mono\_hi} (hinge w2 m.05) & 0.255 & 0.68 & \textbf{0.655} & \textbf{0.935}\\
-\texttt{disc\_mono\_novalue} (\emph{no} $V$) & 0.20 & 0.65 & --- & ---\\
-\texttt{disc\_value\_only} (\emph{no} JEPA) & 0.06 & --- & 0.075 & 0.43\\
+\texttt{combo} ($\lambda=0$) & 0.15 & 0.52 & 0.635 & 0.89\\
+\texttt{straight\_mid} ($\lambda{=}.05$) & 0.365 & \textbf{0.845} & 0.355 & 0.73\\
+\texttt{mono\_hi} (hinge w2 m.05) & 0.255 & 0.68 & \textbf{0.655} & \textbf{0.935}\\
+\texttt{mono\_novalue} (\emph{no} $V$) & 0.20 & 0.65 & --- & ---\\
+\texttt{value\_only} (\emph{no} JEPA) & 0.06 & --- & 0.075 & 0.43\\
 random & 0.06 & 0.095 & 0.06 & 0.095\\
 \bottomrule
 \end{tabular}
@@ -606,7 +607,7 @@ random & 0.06 & 0.095 & 0.06 & 0.095\\
 both energies --- a learned \emph{projection head} for the geometric energy
 is the obvious fix (tested in Result 10: it softens but does not remove the
 trade-off). (ii) A model with \textbf{no value head} still plans at
-0.65 @slack 2 from pure geometry. (iii) \texttt{disc\_value\_only}'s
+0.65 @slack 2 from pure geometry. (iii) \texttt{value\_only}'s
 geometry is \emph{exactly random}: planning-relevant structure comes from
 the JEPA objectives, not the value labels.
 \end{frame}
@@ -641,12 +642,12 @@ not data diversity; it trades search-depth calibration for 1-step precision.}
 \toprule
  & @opt & @slack2 & @opt look-2 & value $\tau$ \\
 \midrule
-\texttt{disc\_combo} & 0.635 & 0.89 & 0.76 & 0.73\\
-\texttt{disc\_rank\_k2} & 0.910 & 0.985 & 0.85 $\downarrow$ & 0.94\\
-\texttt{disc\_rank\_k4} & 0.925 & 0.98 & 0.85 $\downarrow$ & 0.94\\
-\texttt{disc\_rank\_k4} \emph{no LDAD} & 0.875 & 0.965 & --- & 0.94\\
-\texttt{disc\_combo} \emph{no LDAD} & 0.48 & 0.805 & --- & 0.69\\
-\textbf{\texttt{disc\_champion}} (rank+mono) & \textbf{0.905} & \textbf{0.99}
+\texttt{combo} & 0.635 & 0.89 & 0.76 & 0.73\\
+\texttt{rank\_k2} & 0.910 & 0.985 & 0.85 $\downarrow$ & 0.94\\
+\texttt{rank\_k4} & 0.925 & 0.98 & 0.85 $\downarrow$ & 0.94\\
+\texttt{rank\_k4} \emph{no LDAD} & 0.875 & 0.965 & --- & 0.94\\
+\texttt{combo} \emph{no LDAD} & 0.48 & 0.805 & --- & 0.69\\
+\textbf{\texttt{champion}} (rank+mono) & \textbf{0.905} & \textbf{0.99}
  & --- & \textbf{0.96}\\
 \bottomrule
 \end{tabular}
@@ -655,7 +656,7 @@ not data diversity; it trades search-depth calibration for 1-step precision.}
 $\downarrow$ lookahead-2 \emph{hurts} ranking models (0.91$\to$0.85) while
 helping regression values (mono\_hi 0.655$\to$0.735): the margin loss
 perfects 1-step ordering but distorts $V$'s absolute scale that multi-step
-cost sums need. \texttt{disc\_champion} also has the best raw geometry
+cost sums need. \texttt{champion} also has the best raw geometry
 ($\tau_{\text{goal}}$ 0.82, oracle-goal planning 0.655, no curvature loss).
 Seed replicates: rank\_k2 0.885--0.91 @opt, 0.98--0.985 @slack2.
 \end{frame}
@@ -694,9 +695,9 @@ fixes exist, and they don't stack because they repair the same defect.}
 \toprule
  & look-1 & look-2 & look-3 flat & look-3 $F_{\mathrm{hi}}$\\
 \midrule
-\texttt{disc\_rank\_k2} & 0.910 & 0.850 $\downarrow$ & 0.915 & \textbf{0.970}\\
-\texttt{disc\_rank\_cal} (+CostRanking) & 0.905 & \textbf{0.945} & --- & 0.915\\
-\texttt{disc\_champion\_cal} & 0.910 & 0.945 & --- & 0.915\\
+\texttt{rank\_k2} & 0.910 & 0.850 $\downarrow$ & 0.915 & \textbf{0.970}\\
+\texttt{rank\_cal} (+CostRanking) & 0.905 & \textbf{0.945} & --- & 0.915\\
+\texttt{champion\_cal} & 0.910 & 0.945 & --- & 0.915\\
 \bottomrule
 \end{tabular}
 
@@ -720,14 +721,14 @@ scalar value labels anywhere — beating the scalar-label champion.}
 \toprule
 run & energy supervision & @opt & @slack2\\
 \midrule
-\texttt{disc\_champion\_cal} & scalar + ranking & 0.910 & 0.995\\
-\textbf{\texttt{disc\_mono\_distill\_rank}} & \textbf{binary only}
+\texttt{champion\_cal} & scalar + ranking & 0.910 & 0.995\\
+\textbf{\texttt{mono\_distill\_rank}} & \textbf{binary only}
  & \textbf{0.935} & 0.990\\
-\texttt{disc\_mono\_hi} & scalar regression & 0.655 & 0.935\\
-\texttt{disc\_mono\_distill} & binary (no ranking) & 0.530 & 0.885\\
-\texttt{disc\_mono\_lf\_distill} & \emph{none} (all-steps hinge) & 0.355 & 0.775\\
-\texttt{disc\_geometric} & \emph{none} (curvature) & 0.300 & 0.715\\
-\texttt{disc\_distill\_v} & none, \emph{unshaped} (control) & 0.190 & 0.640\\
+\texttt{mono\_hi} & scalar regression & 0.655 & 0.935\\
+\texttt{mono\_distill} & binary (no ranking) & 0.530 & 0.885\\
+\texttt{mono\_lf\_distill} & \emph{none} (all-steps hinge) & 0.355 & 0.775\\
+\texttt{geometric} & \emph{none} (curvature) & 0.300 & 0.715\\
+\texttt{distill\_v} & none, \emph{unshaped} (control) & 0.190 & 0.640\\
 \bottomrule
 \end{tabular}
 
@@ -748,12 +749,12 @@ is not redundant even with EMA + stopgrad + frozen anchor.}
 \toprule
 run & EMA & sg & VICReg & result\\
 \midrule
-\texttt{disc\_ldad\_pure} & --- & --- & --- & \textbf{collapse}
+\texttt{ldad\_pure} & --- & --- & --- & \textbf{collapse}
  (std .027, rank 80)\\
-\texttt{disc\_ldad\_pure\_sg} & --- & \checkmark & --- & collapse (0.11 @opt)\\
-\texttt{disc\_combo\_novic} & \checkmark & \checkmark & --- & 0.27 @opt
+\texttt{ldad\_pure\_sg} & --- & \checkmark & --- & collapse (0.11 @opt)\\
+\texttt{combo\_novic} & \checkmark & \checkmark & --- & 0.27 @opt
  (vs 0.635)\\
-\texttt{disc\_combo} & \checkmark & \checkmark & \checkmark & 0.635 @opt\\
+\texttt{combo} & \checkmark & \checkmark & \checkmark & 0.635 @opt\\
 \bottomrule
 \end{tabular}
 
@@ -863,7 +864,7 @@ its variable resolves --- and only collusion-free models can hold it.}
 \column{0.48\textwidth}\small
 \textbf{Emergence is a step function}: 0.06--0.18 mid-trace (thin MLP
 lines: small nonlinear surplus), 1.00 the moment the query resolves;
-\texttt{disc\_base} manages only 0.33 even then (collusion).\\[4pt]
+\texttt{base} manages only 0.33 even then (collusion).\\[4pt]
 \textbf{Memory decays with lag} (Probes I): 0.90 $\to$ 0.43 $\to$ 0.29
 $\to$ 0.21 (chance 0.04) --- a working buffer, not a symbol table.\\[4pt]
 \textbf{Circular coding}: ridge $R^2$ for $\cos(2\pi v/23)$ from $s_t$:
@@ -893,7 +894,7 @@ value-head MAE (remaining steps) & 0.76 & 0.57 & ---\\
 \end{tabular}
 
 \medskip\small
-\texttt{disc\_combo} adds value-grad: MAE \textbf{0.38} with the same
+\texttt{combo} adds value-grad: MAE \textbf{0.38} with the same
 collusion-free probes (state value 0.89).
 \end{frame}
 
@@ -925,7 +926,7 @@ collusion-free probes (state value 0.89).
         not only 1-step candidates, so lookahead helps ranking models too
         (Result 10's anomaly); target $\ge$0.95 @optimal with look-2.
   \item \textbf{Error analysis of the last 10\%}: what do the
-        \texttt{disc\_champion} failures share (chain depth, op mix,
+        \texttt{champion} failures share (chain depth, op mix,
         tie patterns)?
   \item \textbf{Hierarchical planning}: use the trained $F_{\mathrm{hi}}$ +
         macro codes to propose 3-step jumps, refine with $F$ (HWM).
