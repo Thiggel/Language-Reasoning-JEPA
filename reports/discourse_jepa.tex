@@ -683,6 +683,40 @@ outranks its own decoder (0.605 vs 0.510) --- selection is a
 latent-geometry problem even for reconstruction-trained models.
 \end{frame}
 
+\begin{frame}{Result 16 --- the final recipe and its ablation matrix}
+\claim{disc\_mdr\_cal = anchor + LDAD + VICReg + hinge + distilled $V$ +
+ranking + cost ranking: \textbf{0.925 / 1.000 @slack-2 / 0.945 @look-2}.
+With ranking present the recipe is redundant --- every single removal
+costs only 2--7 points.}
+\centering\small
+\begin{tabular}{lcccc|lcccc}
+\toprule
+variant & @opt & @s2 & $\tau_V$ & m & variant & @opt & @s2 & $\tau_V$ & m\\
+\midrule
+\textbf{+cost rank} & .925 & \textbf{1.00} & .96 & 1.0 &
+ $-$VICReg & .895 & .99 & .90 & .99\\
+MDR (s1/2/3) & .87--.935 & .97--.99 & .95 & 1.0 &
+ $-$hierarchy & .910 & .98 & .95 & 1.0\\
+$-$anchor & .865 & .99 & .93 & .99 &
+ $-$hinge & .915 &1.00 & .94 & 1.0\\
+$-$LDAD & .865 & .97 & .92 & \textbf{.94} &
+ $-$distill & .895 & .99 & .91 & .98\\
+\bottomrule
+\end{tabular}
+
+\medskip\small
+\textbf{Interactions worth knowing}: VICReg is catastrophic without
+ranking (0.27) but nearly free with it — ranking gradients hold the space
+open. A \emph{non-residual} predictor makes LDAD planning-redundant on
+combo (0.71 = 0.71) and is $\ge$ residual everywhere. Replacing
+state-prediction targets with anchored observation prediction fails
+outright (\texttt{obs\_only}: matching 0.22) — both prediction levels are
+required. \textbf{Failure analysis} (500 eps): champion failures are
+chain-depth-limited — 4.4\% (3--4 steps), 16\% (5--6), 59\% (7--9);
+distractor-count effects are depth confounds. Depth is what the scaled
+domain stresses next.
+\end{frame}
+
 \begin{frame}{Probes I --- what the discourse state actually is}
 \claim{A recency-weighted working memory over a relational scaffold:
 structure is objective-independent, content is objective-dependent.}
