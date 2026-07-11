@@ -451,16 +451,17 @@ Baselines at plan time: \textbf{random feasible policy},
 \end{frame}
 
 \begin{frame}{Result 1 --- training objectives determine plannability}
-\claim{JEPA losses turn a frozen-vocabulary encoder into a plannable world
-model; each added mechanism helps.}
+\claim{The anchor lifts the base model decisively; value-grad and the
+hinge sit within seed noise of it; counterfactual ranking is the step
+change. Bars: mean $\pm$ std over 3 seeds (thin caps).}
 \begin{columns}
 \column{0.58\textwidth}
 \centering\includegraphics[width=\linewidth]{figs/planning_success.pdf}
 \column{0.4\textwidth}\small
 Success within the \emph{strict optimal budget}, greedy lookahead 1,
 200 episodes, mean necessary steps 4.07.\\[4pt]
-With slack 2: base 0.75, +anchor 0.88, +value-grad 0.92,
-+monotonicity \textbf{0.935} (random 0.41).\\[4pt]
+With slack 2 (mean of 3 seeds): base 0.83, +anchor 0.89,
++hinge 0.91, +ranking / MDR \textbf{0.98--0.99} (random 0.41).\\[4pt]
 Distractor pick rate: random 0.43 $\to$ base 0.28 $\to$ valgrad 0.14.
 \end{columns}
 \end{frame}
@@ -474,7 +475,8 @@ imagined steps, and depth even rescues weak energies.}
 \centering\includegraphics[width=\linewidth]{figs/lookahead.pdf}
 \column{0.44\textwidth}\small
 Lookahead $d$ = feasible $d$-step sequences (capped), scored at the
-imagined end state; no retraining.\\[4pt]
+imagined end state; no retraining. Depth curves are single-seed; the
+depth-1 anchors carry $\pm$0.03--0.05 seed bands (leaderboard slide).\\[4pt]
 All recipes converge to $\approx$0.96--0.97 by depth 4 --- the residual
 is the deep-chain failure mass (Result on failures), not search.\\[4pt]
 Base JEPA: $0.35\to0.87$ (depth 3); \texttt{mono\_hi}
@@ -713,31 +715,31 @@ Train-side hierarchy loss: neutral (\texttt{combo\_nohier} 0.670/0.910).
 \end{frame}
 
 \begin{frame}{Result 13 --- the non-symbolic value head (headline)}
-\claim{Shape the metric with the monotonicity hinge, distill it into $V$,
-add binary-order ranking: \textbf{0.935 @optimal / 0.99 @slack-2} with no
-scalar value labels anywhere — beating the scalar-label champion.}
+\claim{Shape the metric with the hinge, distill it into $V$, add ranking:
+best planner with no numeric value labels anywhere.}
 \centering\small
 \begin{tabular}{llcc}
 \toprule
 run & energy supervision & @opt & @slack2\\
 \midrule
-\texttt{champion\_cal} & scalar + ranking & 0.910 & 0.995\\
-\textbf{\texttt{mono\_distill\_rank}} & \textbf{binary only}
- & \textbf{0.935} & 0.990\\
-\texttt{mono\_hi} & scalar regression & 0.655 & 0.935\\
-\texttt{mono\_distill} & binary (no ranking) & 0.530 & 0.885\\
+\texttt{champion\_cal} & \emph{numeric} + ranking & 0.91 $\pm$ .01 & 0.995\\
+\textbf{\texttt{mono\_distill\_rank}} & \textbf{binary only (geometric $V$)}
+ & \textbf{0.90 $\pm$ .03} & \textbf{0.98 $\pm$ .01}\\
+\texttt{mono\_hi} & \emph{numeric} regression & 0.63 $\pm$ .05 & 0.91 $\pm$ .02\\
+\texttt{mono\_distill} & binary (no ranking) & 0.57 $\pm$ .05 & 0.89\\
 \texttt{mono\_lf\_distill} & \emph{none} (all-steps hinge) & 0.355 & 0.775\\
 \texttt{geometric} & \emph{none} (curvature) & 0.300 & 0.715\\
-\texttt{distill\_v} & none, \emph{unshaped} (control) & 0.190 & 0.640\\
+\texttt{distill\_v} & \emph{none, unshaped} (control) & 0.190 & 0.640\\
 \bottomrule
 \end{tabular}
 
 \medskip\small
-$V$ is distilled from the latent goal distance $d^{\text{goal}}$ — the
-energy \emph{emerges from the JEPA geometry}; labels only shape the metric
-(binary necessary/distractor for the hinge, binary order for ranking).
-Shaping is required: unshaped distillation fails (0.19). Seed replicate:
-0.560/0.880 (mono\_distill\_s2).
+Rows 1 vs 2 are the direct \textbf{numeric-vs-geometric} comparison at
+matched search settings: the geometric value head ($V$ regressed on the
+latent goal distance $d^{\text{goal}}$, ordered by binary-outcome ranking)
+matches the numeric-label champion within seed noise (0.90$\pm$.03 vs
+0.91$\pm$.01). Shaping is required: unshaped distillation fails (0.19).
+Mean$\pm$std over 3 seeds where shown; single-seed otherwise.
 \end{frame}
 
 \begin{frame}{Result 14 --- stability: the Delta-JEPA claim does not

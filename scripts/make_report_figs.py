@@ -94,21 +94,39 @@ def bar_with_labels(ax, names, values, colors):
     ax.set_ylim(0, 1.02)
 
 
+def seed_successes(run: str, slack=0) -> list:
+    vals = []
+    for suffix in ("", "_s2", "_s3"):
+        v = planner_success(run + suffix, slack=slack)
+        if v is not None:
+            vals.append(v)
+    return vals
+
+
 def fig_planning():
+    import numpy as np
     order = ["random", "disc_no_delta", "disc_base", "disc_chunkpred",
              "disc_combo", "disc_valgrad", "disc_mono_hi", "disc_rank_k2",
              "disc_mono_distill_rank"]
-    vals, names, cols = [], [], []
+    vals, errs, names, cols = [], [], [], []
     rnd = plan("disc_base")["random_policy"]["success"]
     for r in order:
-        v = rnd if r == "random" else planner_success(r)
-        if v is None:
-            continue
-        vals.append(v)
+        if r == "random":
+            vals.append(rnd)
+            errs.append(0.0)
+        else:
+            seeds = seed_successes(r)
+            if not seeds:
+                continue
+            vals.append(float(np.mean(seeds)))
+            errs.append(float(np.std(seeds)) if len(seeds) > 1 else 0.0)
         names.append(LABELS[r])
         cols.append(C[r])
     fig, ax = plt.subplots(figsize=(4.6, 2.7))
     bar_with_labels(ax, names, vals, cols)
+    x = range(len(vals))
+    ax.errorbar(x, vals, yerr=errs, fmt="none", ecolor="#0b0b0b",
+                elinewidth=1.1, capsize=2.5, zorder=4)
     ax.axhline(1.0, color=C["oracle"], lw=1, ls="--")
     ax.text(len(names) - 0.45, 0.965, "oracle", fontsize=8, color=C["oracle"],
             ha="right")
