@@ -1,0 +1,12 @@
+# @package _global_
+run_name: disc_rank_k2_s3
+seed: 3
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2
+  train_seed: 31

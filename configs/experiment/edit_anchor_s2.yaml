@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override /data: igsm_edit
+  - override /model: edit
+run_name: edit_anchor_s2
+seed: 2
+model:
+  chunk_target: frozen
+  value_detach: false
+data:
+  vandal_prob: 0.25
+  max_vandal: 2
+  train_seed: 21
+objective:
+  chunk_pred: {weight: 2.0}
+train:
+  batch_size: 64

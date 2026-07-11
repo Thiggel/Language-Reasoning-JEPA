@@ -1,0 +1,10 @@
+# @package _global_
+# Scale-up wave 1: reference recipe on the hard domain.
+defaults:
+  - override /data: igsm_hard
+run_name: hard_combo
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
