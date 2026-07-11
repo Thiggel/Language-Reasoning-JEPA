@@ -1,0 +1,11 @@
+# @package _global_
+# Stability grid completion: NO EMA teacher (targets = stopgrad(online
+# states)), VICReg and LDAD kept, on the reference recipe. Isolates the
+# EMA teacher's contribution.
+run_name: disc_noema
+model:
+  chunk_target: frozen
+  value_detach: false
+  state_target: online
+objective:
+  chunk_pred: {weight: 2.0}

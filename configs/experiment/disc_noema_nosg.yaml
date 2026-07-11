@@ -1,0 +1,10 @@
+# @package _global_
+# Stability grid completion: no EMA AND no stopgrad, but VICReg + LDAD
+# kept (the "LDAD + VICReg alone" cell).
+run_name: disc_noema_nosg
+model:
+  chunk_target: frozen
+  value_detach: false
+  state_target: online_nosg
+objective:
+  chunk_pred: {weight: 2.0}

@@ -50,6 +50,118 @@
 \end{itemize}
 \end{frame}
 
+\begin{frame}{The story in five acts (red thread)}
+\begin{enumerate}\itemsep4pt
+  \item \textbf{A latent world model over reasoning steps works} --- and we
+        can \emph{audit} it: predicted futures of never-taken actions match
+        symbolic execution (Results 1, 2, 9).
+  \item \textbf{What silently breaks}: EMA-target prediction deletes
+        computed content ("collusion", Result 3); the latent metric is not
+        a progress metric (Result 5).
+  \item \textbf{Reconstruction-free fixes}: frozen random-init embedding
+        targets restore content (Result 4); trajectory-geometry losses fix
+        the metric (Results 7, 8); counterfactual \emph{ranking} fixes the
+        energy's discrimination (Result 10).
+  \item \textbf{The energy can come from the geometry itself}: a value head
+        distilled from the latent goal distance, with zero numeric
+        supervision, beats the fully supervised one (Results 13, 16).
+  \item \textbf{Baselines and limits}: likelihood selection (LMs at any
+        tested scale/granularity) clusters far below (Result 15); failures
+        are chain-depth-limited --- the scale-up frontier (Result 16).
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Glossary --- every term and run-name used in this deck}
+\small
+\begin{tabular}{p{0.27\textwidth}p{0.69\textwidth}}
+\toprule
+\textbf{discourse state} $s_t$ & one vector summarizing prompt + steps
+  $1..t$ (output of the causal state model)\\
+\textbf{predictor} $F(s,a)$ & MLP producing the next state from state +
+  action code (the world model)\\
+\textbf{action} $a$ & 16-d encoding of an \emph{intent phrase} ("derive X
+  from Y times Z") --- states what to do, never the outcome\\
+\textbf{value head} $V(s, s_0)$ & scalar energy: estimated necessary steps
+  remaining; the planner minimizes steps${}+V$\\
+\textbf{value-grad} & value-head gradients flow into the encoder
+  (\texttt{value\_detach=false}) so the energy shapes the representation\\
+\textbf{LDAD} & Latent Displacement Action Decoding (Delta-JEPA): decode
+  the executed action from $\Delta s = s_{t+1}{-}s_t$\\
+\textbf{anchor} & auxiliary target: predict the \emph{frozen random-init}
+  encoder's embedding of the next sentence (collusion fix)\\
+\textbf{ranking (K)} & margin loss ordering $V(F(s,a_i))$ over K
+  counterfactual actions per state by their symbolic outcomes\\
+\textbf{cost ranking} & same, over multi-step costs (depth${}+V$) ---
+  calibrates search depth\\
+\textbf{hinge / monotonicity} & necessary steps must decrease the latent
+  distance to the trace-terminal state by a margin\\
+\textbf{distilled $V$} & value head regressed on that latent goal
+  distance (geometry target, no numeric labels)\\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Run names: \texttt{disc\_*} = this (discourse) track;
+\texttt{combo} = anchor + value-grad; \texttt{mono\_hi} = + hinge;
+\texttt{rank\_k2} = + ranking; \texttt{champion} = ranking + hinge;
+\texttt{MDR} = hinge + distilled $V$ + ranking (no numeric labels);
+\texttt{*\_cal} = + cost ranking; \texttt{*\_s2/s3} = seed replicates.
+\end{frame}
+
+\begin{frame}{Headline results with seed statistics (mean $\pm$ std, 3 seeds)}
+\centering\small
+\begin{tabular}{lcc}
+\toprule
+recipe (energy supervision) & @optimal & @slack-2\\
+\midrule
+random feasible policy & 0.055 & 0.405\\
+base JEPA (no anchor) & 0.48 $\pm$ 0.11 & 0.83 $\pm$ 0.07\\
++ frozen anchor & 0.65 $\pm$ 0.03 & 0.89 $\pm$ 0.01\\
++ value-grad (= \texttt{combo}) & 0.64 $\pm$ 0.05 & 0.89 $\pm$ 0.01\\
++ hinge (\texttt{mono\_hi}, numeric labels) & 0.63 $\pm$ 0.05 & 0.91 $\pm$ 0.02\\
++ ranking (\texttt{rank\_k2}) & 0.91 $\pm$ 0.03 & 0.99 $\pm$ 0.01\\
+ranking + hinge (\texttt{champion}) & 0.89 $\pm$ 0.02 & 0.99 $\pm$ 0.01\\
+\textbf{hinge + distilled V + ranking (MDR)} & \textbf{0.90 $\pm$ 0.03}
+ & \textbf{0.98 $\pm$ 0.01}\\
++ cost ranking (\texttt{mdr\_cal}, look-2) & 0.925 / \textbf{0.945} & 1.00\\
+\midrule
+symbolic oracle & 1.00 & 1.00\\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Single-seed numbers elsewhere in this deck sit inside these bands
+($\pm$0.03--0.05 @optimal, $\pm$0.01 @slack-2) unless flagged ---
+\emph{temporal straightening is the exception}: seed-fragile
+(0.31/0.36/0.59 @optimal).
+\end{frame}
+
+\begin{frame}{Value-head supervision targets compared (symbolic vs geometric)}
+\claim{The geometric target (latent goal distance) with ranking beats
+numeric-label regression --- IF the metric is shaped first.}
+\centering\small
+\begin{tabular}{llccc}
+\toprule
+$V$ trained on & metric shaping & labels used & @opt & @slack2\\
+\midrule
+numeric remaining-steps & --- & scalar counts & 0.64$\pm$.05 & 0.89\\
+numeric + ranking & --- & counts + order & 0.91$\pm$.03 & 0.99\\
+numeric + ranking + hinge & hinge & counts + order + binary & 0.89$\pm$.02 & 0.99\\
+\midrule
+latent goal distance & \textbf{none} (control) & none & 0.19 & 0.64\\
+latent goal distance & curvature (label-free) & none & 0.30 & 0.72\\
+latent goal distance & hinge & binary relevance & 0.57$\pm$.05 & 0.89\\
+\textbf{lat.\ dist.\ + ranking} & hinge & binary + order & \textbf{0.90$\pm$.03} & \textbf{0.98}\\
+\bottomrule
+\end{tabular}
+
+\smallskip
+Reading: the distilled (geometric) value head is a drop-in replacement for
+numeric supervision once the metric it distills is goal-monotone; scalar
+count labels contribute nothing beyond binary relevance + ordering
+(0.90 vs 0.89/0.91, within seed noise).
+\end{frame}
+
 % ---------------------------------------------------------------- data
 \begin{frame}{World: iGSM-style synthetic reasoning (exact generator)}
 \textbf{Problem sampler} (rejection-sampled until $3\le|\mathcal A_q|\le 9$; \texttt{rng = Random(f"\{seed\}:\{index\}")}):
