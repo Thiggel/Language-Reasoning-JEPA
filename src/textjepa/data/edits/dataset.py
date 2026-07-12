@@ -71,6 +71,7 @@ class EditDataset(Dataset):
         alt_actions: list[list[list[int]]] = []
         alt_remaining: list[list[int]] = []
         edit_pos: list[int] = []
+        changed: list[list[int]] = []
         defect_masks: list[list[int]] = []
         n_initial = env.n_defects()
         n_vandal = 0
@@ -104,6 +105,11 @@ class EditDataset(Dataset):
             actions.append(enc(env.intent_text(edit)))
             env.apply(edit)
             buffers.append([enc(s) for s in env.sentences()])
+            changed.append(
+                enc(env.buffer[edit.pos].text)
+                if edit.kind != "delete" and edit.pos < len(env.buffer)
+                else []
+            )
             edit_pos.append(min(edit.pos, 15))
             defect_masks.append(
                 [int(env.is_defect(b)) for b in env.buffer[:16]]
@@ -128,6 +134,7 @@ class EditDataset(Dataset):
             "n_vars": len(p.vars),
             "index": index,
             "edit_pos": edit_pos,
+            "changed": changed,
             "defect_masks": defect_masks,
         }
         if self.n_alt:
@@ -181,6 +188,14 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
         "n_vars": torch.tensor([b["n_vars"] for b in batch]),
         "index": torch.tensor([b["index"] for b in batch]),
         "edit_pos": _pad_labels([b["edit_pos"] for b in batch], fill=-1),
+        "changed_tokens": _pad_chunks(
+            [[c or [pad_id] for c in b["changed"]] for b in batch], pad_id
+        )[0],
+        "changed_valid": torch.tensor(
+            [[bool(c) for c in b["changed"]]
+             + [False] * (max(len(x["changed"]) for x in batch) - len(b["changed"]))
+             for b in batch]
+        ),
         "defect_mask": _pad_defects([b["defect_masks"] for b in batch]),
     }
 

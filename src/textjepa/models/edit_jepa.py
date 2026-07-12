@@ -184,14 +184,27 @@ class EditJEPA(nn.Module):
                     batch["buffer_tokens"], batch["buffer_mask"], mode="anchor",
                 )[:, 1:]
         actions = self.action_encoder(self.encode_chunks(batch["action_tokens"]))
+        if "changed_tokens" in batch and self.chunk_target == "frozen":
+            with torch.no_grad():
+                B2, T2, L2 = batch["changed_tokens"].shape
+                slot_tgt = self.chunk_anchor(
+                    batch["changed_tokens"].reshape(B2 * T2, L2)
+                ).reshape(B2, T2, -1)
+            self._slot_tgt = slot_tgt
+        else:
+            self._slot_tgt = None
         alt_actions = None
         if "alt_tokens" in batch:
             B, T, K, L = batch["alt_tokens"].shape
             alt_actions = self.encode_actions(
                 batch["alt_tokens"].reshape(B, T * K, L)
             ).reshape(B, T, K, -1)
-        return self.core(
+        out = self.core(
             states[:, 0], states[:, 1:], states_tgt[:, 1:], actions,
             action_emb_tgt, batch["step_mask"], step_emb_tgt=step_emb_tgt,
             alt_actions=alt_actions,
         )
+        if self._slot_tgt is not None:
+            out.extras["slot_pred"] = self.core.chunk_head(out.preds)
+            out.extras["slot_tgt"] = self._slot_tgt
+        return out

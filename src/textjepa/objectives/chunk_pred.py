@@ -43,3 +43,22 @@ class ChunkPrediction(Objective):
                 mask,
             )
         return loss
+
+
+class SlotAnchor(Objective):
+    """Per-slot outcome anchor (edit track): predict the frozen anchor
+    embedding of the CHANGED sentence at the edited position from
+    F(s, a) — targets at the granularity the action operates on."""
+
+    def __init__(self, kind: str = "smooth_l1"):
+        super().__init__()
+        self.kind = kind
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "slot_pred" not in out.extras:
+            return out.step_states.sum() * 0.0
+        d = latent_distance(
+            out.extras["slot_pred"], out.extras["slot_tgt"], self.kind, True
+        )
+        mask = (batch["changed_valid"] & out.step_mask).float()
+        return masked_mean(d, mask)

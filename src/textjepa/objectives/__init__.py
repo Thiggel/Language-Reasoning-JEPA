@@ -3,7 +3,7 @@ from textjepa.objectives.prediction import LatentPrediction, RolloutPrediction, 
 from textjepa.objectives.vicreg import VICReg
 from textjepa.objectives.delta_action import DeltaAction
 from textjepa.objectives.value import ValueDistill, ValueRegression
-from textjepa.objectives.chunk_pred import ChunkPrediction
+from textjepa.objectives.chunk_pred import ChunkPrediction, SlotAnchor
 from textjepa.objectives.geometry import GoalMonotonicity, TemporalStraightening
 from textjepa.objectives.ranking import ActionRanking, CostRanking
 
@@ -11,6 +11,7 @@ __all__ = [
     "ActionRanking",
     "CostRanking",
     "ChunkPrediction",
+    "SlotAnchor",
     "ValueDistill",
     "GoalMonotonicity",
     "TemporalStraightening",

@@ -51,3 +51,6 @@ cost_ranking:
   _target_: textjepa.objectives.CostRanking
   weight: 0.0  # enabled in disc_rank_cal
   margin: 0.5
+slot_anchor:
+  _target_: textjepa.objectives.SlotAnchor
+  weight: 0.0  # edit track: per-slot outcome anchor (edit_core5_slot)
