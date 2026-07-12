@@ -1,0 +1,16 @@
+# @package _global_
+# Occam candidate final recipe: core5 + cost ranking (depth calibration).
+# If this matches mdr_cal (~0.93-0.95 @look-2), hinge/distill are sheared.
+run_name: disc_core5_cal
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  chunk_pred: {weight: 2.0}
+  value: {weight: 0.0}
+  ranking: {weight: 1.0}
+  cost_ranking: {weight: 1.0}
+data:
+  n_alt: 2
