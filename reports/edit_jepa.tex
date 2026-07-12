@@ -175,6 +175,7 @@ run & @opt & @slack2 & @opt & (audit) & (chance .10)\\
  & \textbf{0.59} & 0.43\\
 \texttt{edit\_distill\_v} (label-free) & 0.42 & 0.42 & 0.55 & 0.42 & 0.45\\
 \texttt{edit\_no\_vandal} & 0.22 & 0.225 & 0.445 & $-$0.07 & 0.39\\
+\texttt{edit\_core5} (sheared, no labels) & 0.455 & 0.485 & 0.545 & --- & ---\\
 \bottomrule
 \end{tabular}
 
@@ -187,7 +188,10 @@ defect-count labels. (iii) No vandal negatives $\Rightarrow$ the value
 energy becomes \emph{anti-correlated} ($\tau=-0.07$). (iv) Audit: buffer
 matching 0.39--0.47 vs \textbf{1.00} on the discourse track --- the edit
 predictor is the component to fix (slot-aligned predictor / per-slot
-outcome anchors), not the energy.
+outcome anchors), not the energy. (v) \textbf{The shear transfers}:
+\texttt{edit\_core5} (latent pred + ranking + VICReg + anchor + LDAD,
+$V$ from ranking margins, \emph{no defect-count labels}) matches the
+champion --- same five-loss recipe as the discourse track.
 \end{frame}
 
 \begin{frame}{Probe summary (edit track)}
