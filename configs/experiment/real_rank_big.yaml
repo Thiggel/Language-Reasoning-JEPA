@@ -1,0 +1,17 @@
+# @package _global_
+# Faithful iGSM: ranking x capacity (35M).
+defaults:
+  - override /data: igsm_real
+run_name: real_rank_big
+model:
+  chunk_target: frozen
+  value_detach: false
+  max_chunk_len: 96
+  d_model: 512
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2
+train:
+  batch_size: 64

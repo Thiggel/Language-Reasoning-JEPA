@@ -914,11 +914,14 @@ token LM (8M, parity selection) & 0.010 & --- & --- & ---\\
 
 \medskip\small
 Capacity only pays \emph{through search} (35M: 0.09 greedy $\to$ 0.32 at
-look-4). Separately, the pipeline now runs on \textbf{100\%-faithful iGSM}
-(the official facebookresearch generator vendored; our env drives the
-reference renderer; full solutions pass the official checker 60/60 med,
-99/100 hard) --- first faithful-domain training runs completed, planning
-evaluation in flight.
+look-4). And on \textbf{100\%-faithful iGSM} (official facebookresearch
+generator vendored; our env drives the reference renderer; solutions pass
+the official checker 60/60 med, 99/100 hard): the reference recipe is
+near-random (0.245 vs 0.20; probes healthy --- the energy fails, the
+pre-ranking signature), 60 epochs don't help (0.235), and
+\textbf{counterfactual ranking is again the fix: 0.410 @optimal / 0.735
+@slack-2} --- the recipe's central mechanism transfers to the official
+domain.
 \end{frame}
 
 \begin{frame}{Honest limitations \& what this is not}
