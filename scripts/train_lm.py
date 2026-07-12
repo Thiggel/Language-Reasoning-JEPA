@@ -22,6 +22,23 @@ from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.utils import seed_everything
 
 
+def rank_loss(model, batch, device, margin=1.0):
+    rt = batch["rank_tokens"].to(device)
+    rb = batch["rank_better"].to(device)
+    rf = batch["rank_from"].to(device)
+    B, K1, L = rt.shape
+    lp = model.sequence_logprob(
+        rt.reshape(B * K1, L), rf.repeat_interleave(K1)
+    ).reshape(B, K1)
+    diff = lp[:, 1:] - lp[:, :1]  # alt minus executed
+    import torch.nn.functional as Fn
+    loss = (rb == 1).float() * Fn.relu(margin + diff) + (
+        (rb == -1).float() * Fn.relu(margin - diff)
+    )
+    n = (rb != 0).float().sum().clamp(min=1.0)
+    return loss.sum() / n
+
+
 def lm_loss(model, batch, device):
     tokens = batch["tokens"].to(device)
     logits = model(tokens)[:, :-1]
@@ -49,7 +66,8 @@ def main(cfg: DictConfig) -> None:
         size = d.val_size if split == "val" else d.train_size
         seed = d.val_seed if split == "val" else d.train_seed
         return LMDataset(
-            vocab, size=size, seed=seed, modulus=d.modulus,
+            vocab, size=size, seed=seed, n_alt=d.get("n_alt", 0),
+            modulus=d.modulus,
             n_vars_range=tuple(d.n_vars_range), leaf_prob=d.leaf_prob,
             steps_range=tuple(d.steps_range), distractor_prob=d.distractor_prob,
             max_distractors=d.max_distractors,
@@ -86,6 +104,10 @@ def main(cfg: DictConfig) -> None:
                     step, total, cfg.train.warmup_steps
                 )
             loss = lm_loss(model, batch, device)
+            if cfg.train.get("rank_weight", 0) and "rank_tokens" in batch:
+                loss = loss + cfg.train.rank_weight * rank_loss(
+                    model, batch, device
+                )
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.grad_clip)
