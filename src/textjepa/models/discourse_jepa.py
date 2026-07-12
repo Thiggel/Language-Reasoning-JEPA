@@ -51,6 +51,7 @@ class DiscourseJEPA(nn.Module):
         # the Delta-JEPA stability claim: LDAD alone prevents collapse)
         state_target: str = "ema",
         predictor_residual: bool = True,
+        predictor_kind: str = "concat",
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -69,6 +70,7 @@ class DiscourseJEPA(nn.Module):
             n_ops, macro_k, d_macro, value_detach, geo_proj,
             residual=predictor_residual,
             detach_targets=state_target != "online_nosg",
+            predictor_kind=predictor_kind,
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)

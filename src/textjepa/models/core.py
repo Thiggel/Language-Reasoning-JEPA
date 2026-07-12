@@ -17,7 +17,7 @@ from textjepa.models.delta_decoder import DeltaActionDecoder
 from textjepa.models.heads import ValueHead
 from textjepa.models.layers import mlp
 from textjepa.models.outputs import JEPAOutputs
-from textjepa.models.predictor import ActionConditionedPredictor
+from textjepa.models.predictor import ActionConditionedPredictor, FiLMPredictor
 
 
 class LatentDynamicsCore(nn.Module):
@@ -34,12 +34,14 @@ class LatentDynamicsCore(nn.Module):
         geo_proj: bool = False,
         residual: bool = True,
         detach_targets: bool = True,
+        predictor_kind: str = "concat",  # "concat" | "film" (AdaLN-style)
     ):
         super().__init__()
         self.macro_k = macro_k
         self.value_detach = value_detach
         self.detach_targets = detach_targets
-        self.predictor = ActionConditionedPredictor(
+        cls = FiLMPredictor if predictor_kind == "film" else ActionConditionedPredictor
+        self.predictor = cls(
             d_model, d_action, predictor_hidden_mult, predictor_layers, residual
         )
         self.macro_encoder = MacroActionEncoder(d_action, d_macro)

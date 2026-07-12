@@ -1,0 +1,18 @@
+# @package _global_
+# Hard domain x trunk conditioning: does richer action injection help
+# where deep-chain consequences must be computed?
+defaults:
+  - override /data: igsm_hard
+run_name: hard_rank_film
+model:
+  chunk_target: frozen
+  value_detach: false
+  predictor_kind: film
+objective:
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  chunk_pred: {weight: 2.0}
+  value: {weight: 0.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 2
