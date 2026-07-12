@@ -171,8 +171,10 @@ class FaithfulDataset(Dataset):
         op_range: tuple = (3, 15),
         distractor_prob: float = 0.15,
         max_distractors: int = 2,
+        n_alt: int = 0,
         **_,
     ):
+        self.n_alt = n_alt
         self.vocab = vocab
         self.size = size
         self.seed = seed
@@ -200,6 +202,8 @@ class FaithfulDataset(Dataset):
         n_distr = 0
         pidx = {q: i for i, q in enumerate(fp.params)}
         var_idx = []
+        alt_actions: list = []
+        alt_remaining: list = []
         while not env.solved:
             feas = env.feasible_actions()
             nec = [q for q in feas if q in fp.necessary]
@@ -208,6 +212,17 @@ class FaithfulDataset(Dataset):
                      and rng.random() < self.distractor_prob)
             q = rng.choice(distr) if use_d else rng.choice(nec)
             n_distr += int(q not in fp.necessary)
+            if self.n_alt:
+                done = env.resolved_set
+                others = [a for a in feas if a != q]
+                rng.shuffle(others)
+                alts = others[: self.n_alt]
+                alt_actions.append(
+                    [self.vocab.encode(env.action_text(a)) for a in alts]
+                )
+                alt_remaining.append(
+                    [len(fp.necessary - (done | {a})) for a in alts]
+                )
             actions.append(self.vocab.encode(env.action_text(q)))
             steps.append(self.vocab.encode(env.step(q)))
             op.append(fp.op_label(q))
@@ -217,7 +232,7 @@ class FaithfulDataset(Dataset):
             necessary.append(int(q in fp.necessary))
             var_idx.append(min(pidx[q], 11))
         prompt = [self.vocab.encode(s) for s in fp.prompt_sentences]
-        return {
+        out = {
             "prompt": prompt, "steps": steps, "actions": actions,
             "op": op, "value": value, "remaining": remaining,
             "resolved_n": resolved_n, "necessary": necessary,
@@ -228,6 +243,10 @@ class FaithfulDataset(Dataset):
                 min(pidx[q], 11) for q in fp.necessary
             ),
         }
+        if self.n_alt:
+            out["alt_actions"] = alt_actions
+            out["alt_remaining"] = alt_remaining
+        return out
 
 
 def build_faithful_vocab(n_scan: int = 1500, max_op: int = 21,

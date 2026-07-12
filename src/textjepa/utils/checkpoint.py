@@ -54,6 +54,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             op_range=tuple(d.op_range),
             distractor_prob=d.distractor_prob,
             max_distractors=d.max_distractors,
+            n_alt=d.get("n_alt", 0),
         )
     if d.get("name", "igsm") == "igsm_edit":
         kw = dict(igsm_kwargs)
