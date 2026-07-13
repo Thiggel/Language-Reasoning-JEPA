@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - override /data: igsm_real
+# Faithful counterfactual-density sweep: K=1 (K=2 = real_rank 0.410).
+run_name: real_rank_k1
+model:
+  chunk_target: frozen
+  value_detach: false
+  max_chunk_len: 96
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+data:
+  n_alt: 1
