@@ -1,5 +1,7 @@
 # TextJEPA
 
+> **Continuing this project? Start with [HANDOFF.md](HANDOFF.md)** — current state, in-flight experiments, active research question, and every gotcha.
+
 > **Results of five experimental cycles: see [RESULTS.md](RESULTS.md).**
 > TL;DR: latent planning over reasoning steps reaches **93.5% success at
 > the strict optimal budget / 99% at slack 2** (random: 5.5%, oracle: 100%)
