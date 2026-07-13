@@ -44,12 +44,21 @@ class ValueDistill(Objective):
 
 
 class ActionKL(Objective):
-    """KL(q(a|s,s') || p(a|s)) for variational unobserved actions."""
+    """KL(q(a|s,s') || p(a|s)) for variational unobserved actions.
+    ``free_nats``: KL below this threshold is not penalized (free bits) —
+    prevents posterior collapse."""
+
+    def __init__(self, free_nats: float = 0.0):
+        super().__init__()
+        self.free_nats = free_nats
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         if "action_kl" not in out.extras:
             return out.step_states.sum() * 0.0
-        return masked_mean(out.extras["action_kl"], out.step_mask.float())
+        kl = out.extras["action_kl"]
+        if self.free_nats:
+            kl = torch.clamp(kl - self.free_nats, min=0.0)
+        return masked_mean(kl, out.step_mask.float())
 
 
 class ActionDecode(Objective):
