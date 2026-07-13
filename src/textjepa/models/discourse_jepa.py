@@ -12,7 +12,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.action import ActionEncoder
+from textjepa.models.action import ActionEncoder, VariationalAction
 from textjepa.models.core import LatentDynamicsCore
 from textjepa.models.ema import EMATeacher
 from textjepa.models.layers import TokenTransformer
@@ -52,6 +52,7 @@ class DiscourseJEPA(nn.Module):
         state_target: str = "ema",
         predictor_residual: bool = True,
         predictor_kind: str = "concat",
+        variational_actions: bool = False,
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -65,6 +66,14 @@ class DiscourseJEPA(nn.Module):
             d_model, state_layers, state_heads, ff_mult, max_chunks, dropout
         )
         self.action_encoder = ActionEncoder(d_model, d_action, fsq_levels=fsq_levels)
+        self.var_action = (
+            VariationalAction(d_model, d_action) if variational_actions else None
+        )
+        from textjepa.models.layers import mlp as _mlp
+
+        self.act_decode = (
+            _mlp([d_action, d_model], d_model) if variational_actions else None
+        )
         self.core = LatentDynamicsCore(
             d_model, d_action, predictor_hidden_mult, predictor_layers,
             n_ops, macro_k, d_macro, value_detach, geo_proj,
@@ -158,10 +167,29 @@ class DiscourseJEPA(nn.Module):
             else:
                 step_emb_tgt = self.encode_chunks(batch["step_tokens"], teacher=True)
 
-        actions = self.action_encoder(self.encode_chunks(batch["action_tokens"]))
+        var_extras = {}
+        if self.var_action is not None:
+            prev = torch.cat([s0.unsqueeze(1), step_states[:, :-1]], dim=1)
+            actions, q_params = self.var_action.sample_posterior(
+                prev, step_states.detach()
+            )
+            p_params = self.var_action.prior_params(prev.detach())
+            var_extras["action_kl"] = self.var_action.kl(q_params, p_params)
+            # detached readout: code -> intent anchor embedding (no leakage)
+            with torch.no_grad():
+                B, C, L = batch["action_tokens"].shape
+                intent_anchor = self.chunk_anchor(
+                    batch["action_tokens"].reshape(B * C, L)
+                ).reshape(B, C, -1)
+            var_extras["act_decode"] = self.act_decode(actions.detach())
+            var_extras["act_decode_tgt"] = intent_anchor
+        else:
+            actions = self.action_encoder(self.encode_chunks(batch["action_tokens"]))
         alt_actions = self._encode_alt(batch)
-        return self.core(
+        out = self.core(
             s0, step_states, step_states_tgt, actions, action_emb_tgt,
             batch["step_mask"], step_emb_tgt=step_emb_tgt,
             alt_actions=alt_actions,
         )
+        out.extras.update(var_extras)
+        return out

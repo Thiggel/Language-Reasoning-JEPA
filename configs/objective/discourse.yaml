@@ -54,3 +54,9 @@ cost_ranking:
 slot_anchor:
   _target_: textjepa.objectives.SlotAnchor
   weight: 0.0  # edit track: per-slot outcome anchor (edit_core5_slot)
+action_kl:
+  _target_: textjepa.objectives.ActionKL
+  weight: 0.0  # variational runs (disc_var)
+act_decode:
+  _target_: textjepa.objectives.ActionDecode
+  weight: 0.0  # variational runs: detached code readout

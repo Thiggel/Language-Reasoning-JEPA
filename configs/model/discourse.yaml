@@ -20,3 +20,4 @@ geo_proj: false
 state_target: ema
 predictor_residual: true
 predictor_kind: concat
+variational_actions: false

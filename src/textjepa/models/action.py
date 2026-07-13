@@ -70,3 +70,44 @@ class MacroActionEncoder(nn.Module):
         h = self.inp(actions) + self.pos[:, 1 : actions.shape[1] + 1]
         h = torch.cat([self.cls.expand(h.shape[0], 1, -1) + self.pos[:, :1], h], 1)
         return self.out(self.encoder(h)[:, 0])
+
+
+class VariationalAction(nn.Module):
+    """Unobserved latent actions: posterior q(a | s_prev, s_next) infers
+    the action code from the observed transition; prior p(a | s_prev)
+    proposes codes at plan time. Reparametrized Gaussian, 16-d."""
+
+    def __init__(self, d_state: int, d_action: int, hidden: int = 256):
+        super().__init__()
+        self.post = mlp([2 * d_state, hidden], 2 * d_action)
+        self.prior = mlp([d_state, hidden], 2 * d_action)
+
+    @staticmethod
+    def _split(x):
+        mu, logvar = x.chunk(2, dim=-1)
+        return mu, logvar.clamp(-6, 2)
+
+    def sample_posterior(self, s_prev, s_next):
+        mu, logvar = self._split(self.post(torch.cat([s_prev, s_next], -1)))
+        a = mu + torch.randn_like(mu) * (0.5 * logvar).exp()
+        return a, (mu, logvar)
+
+    def prior_params(self, s_prev):
+        return self._split(self.prior(s_prev))
+
+    def sample_prior(self, s_prev, k: int = 1):
+        mu, logvar = self.prior_params(s_prev)
+        std = (0.5 * logvar).exp()
+        if k == 1:
+            return mu + torch.randn_like(mu) * std
+        return mu.unsqueeze(-2) + torch.randn(
+            *mu.shape[:-1], k, mu.shape[-1], device=mu.device
+        ) * std.unsqueeze(-2)
+
+    @staticmethod
+    def kl(q_params, p_params):
+        qm, ql = q_params
+        pm, pl = p_params
+        return 0.5 * (
+            pl - ql + (ql.exp() + (qm - pm) ** 2) / pl.exp() - 1
+        ).sum(-1)

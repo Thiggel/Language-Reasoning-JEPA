@@ -41,3 +41,29 @@ class ValueDistill(Objective):
         ).float()
         err = F.smooth_l1_loss(out.value_pred, target, reduction="none")
         return masked_mean(err, mask)
+
+
+class ActionKL(Objective):
+    """KL(q(a|s,s') || p(a|s)) for variational unobserved actions."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "action_kl" not in out.extras:
+            return out.step_states.sum() * 0.0
+        return masked_mean(out.extras["action_kl"], out.step_mask.float())
+
+
+class ActionDecode(Objective):
+    """Detached readout: latent action code -> frozen intent-anchor
+    embedding (interpretability + plan-time action matching; gradients do
+    not reach the code)."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "act_decode" not in out.extras:
+            return out.step_states.sum() * 0.0
+        from textjepa.objectives.base import latent_distance
+
+        d = latent_distance(
+            out.extras["act_decode"], out.extras["act_decode_tgt"],
+            "smooth_l1", True,
+        )
+        return masked_mean(d, out.step_mask.float())
