@@ -958,8 +958,12 @@ frontier.
         tie patterns)?
   \item \textbf{Hierarchical planning}: use the trained $F_{\mathrm{hi}}$ +
         macro codes to propose 3-step jumps, refine with $F$ (HWM).
-  \item \textbf{Unobserved actions}: variational $q(a\mid s_{t-1},s_t)$ with
-        KL to prior $p(a\mid s,g)$; inspect emergent action clusters.
+  \item \textbf{Unobserved actions --- first results}: variational
+        $q(a\mid s_{t-1},s_t)$, prior sampling planner, detached
+        intent-decode readout. v1 posterior-collapses; free bits (4 nats)
+        reach 0.195/0.68 --- $\approx$22\%/70\% of the observed-action
+        ceiling. Open frontier: code-taxonomy probes, ranking in code
+        space.
   \item \textbf{Harder worlds}: faithful iGSM (hierarchy + category sums),
         larger moduli, paraphrase templates, natural-language noise; scale.
 \end{itemize}
