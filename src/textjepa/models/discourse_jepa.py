@@ -192,4 +192,80 @@ class DiscourseJEPA(nn.Module):
             alt_actions=alt_actions,
         )
         out.extras.update(var_extras)
+        if "ga_t" in batch and (batch["ga_t"] >= 0).any():
+            self._geo_rank(batch, out)
         return out
+
+    def _geo_rank(self, batch: dict, out) -> None:
+        """Geometric-advantage ranking: energies for executed + K alt
+        actions at one anchor step; labels = LN-L1 distance of the TRUE
+        next states (EMA-encoded text) to the EMA terminal goal. No
+        symbolic annotations anywhere."""
+        import torch.nn.functional as Fn
+
+        B = out.s0.shape[0]
+        device = out.s0.device
+        t = batch["ga_t"].clamp(min=0)
+        bidx = torch.arange(B, device=device)
+        valid_b = batch["ga_t"] >= 0
+        # model-side energies
+        a_alt = self.encode_actions(batch["ga_alt_action_tokens"])  # [B,K,da]
+        K = a_alt.shape[1]
+        s_anchor = out.prev_states[bidx, t]  # state before the anchor step
+        preds_alt = self.core.predictor(
+            s_anchor.unsqueeze(1).expand(-1, K, -1).reshape(B * K, -1),
+            a_alt.reshape(B * K, -1),
+        )
+        pe = out.preds[bidx, t]
+        if self.core.value_detach:
+            pe, preds_alt = pe.detach(), preds_alt.detach()
+        e_exec = self.core.value_head(pe, out.s0)
+        e_alt = self.core.value_head(
+            preds_alt, out.s0.repeat_interleave(K, 0)
+        ).reshape(B, K)
+        # geometric labels in EMA space
+        with torch.no_grad():
+            st = batch["step_tokens"]  # [B, T, L]
+            ga_st = batch["ga_alt_step_tokens"]  # [B, K, La]
+            T, L = st.shape[1], max(st.shape[2], ga_st.shape[2])
+            seq = torch.full(
+                (B, K, T, L), self.chunk_encoder.pad_id
+                if hasattr(self.chunk_encoder, "pad_id") else 0,
+                dtype=torch.long, device=device,
+            )
+            seq[:, :, :, : st.shape[2]] = st.unsqueeze(1).expand(-1, K, -1, -1)[
+                :, :, :, : st.shape[2]
+            ].clone()
+            # place alt step at position t, blank positions after t
+            ar = torch.arange(T, device=device).view(1, 1, T)
+            after = ar > t.view(B, 1, 1)
+            seq[after.unsqueeze(-1).expand_as(seq)] = seq.new_tensor(0)
+            pad = seq.new_full((), 0)
+            for b in range(B):
+                if batch["ga_t"][b] < 0:
+                    continue
+                seq[b, :, t[b], :] = 0
+                seq[b, :, t[b], : ga_st.shape[2]] = ga_st[b]
+            mask = (ar <= t.view(B, 1, 1)).expand(B, K, T)
+            _, alt_states = self.encode_states(
+                batch["prompt_tokens"].repeat_interleave(K, 0),
+                batch["prompt_mask"].repeat_interleave(K, 0),
+                seq.reshape(B * K, T, L), mask.reshape(B * K, T),
+                teacher=True,
+            )
+            s_alt_true = alt_states.reshape(B, K, T, -1)[
+                bidx.unsqueeze(1), torch.arange(K, device=device).unsqueeze(0),
+                t.unsqueeze(1),
+            ]
+            last = out.step_mask.sum(1).clamp(min=1) - 1
+            goal = out.step_states_tgt[bidx, last]
+            ln = lambda x: Fn.layer_norm(x, x.shape[-1:])
+            d_alt = (ln(s_alt_true) - ln(goal).unsqueeze(1)).abs().mean(-1)
+            d_exec = (
+                ln(out.step_states_tgt[bidx, t]) - ln(goal)
+            ).abs().mean(-1)
+        out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
+        out.extras["ga_label"] = torch.cat([d_exec.unsqueeze(1), d_alt], 1)
+        out.extras["ga_valid"] = torch.cat(
+            [valid_b.unsqueeze(1), batch["ga_valid"] & valid_b.unsqueeze(1)], 1
+        )

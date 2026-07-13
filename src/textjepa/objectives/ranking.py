@@ -70,3 +70,29 @@ class CostRanking(Objective):
         )
         n = (two_better | one_better).float().sum().clamp(min=1.0)
         return loss.sum() / n
+
+
+class GeoAdvantageRank(Objective):
+    """Annotation-free counterfactual ranking: order V(F(s,a_i)) by the
+    GEOMETRIC quality of each action's true next state (LN-L1 distance of
+    the EMA-encoded outcome text to the EMA terminal goal). Environment
+    interaction only — no symbolic labels."""
+
+    def __init__(self, margin: float = 0.5, label_gap: float = 0.02):
+        super().__init__()
+        self.margin = margin
+        self.label_gap = label_gap
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "ga_energy" not in out.extras:
+            return out.step_states.sum() * 0.0
+        e = out.extras["ga_energy"]  # [B, 1+K]
+        d = out.extras["ga_label"]
+        v = out.extras["ga_valid"]
+        di = d.unsqueeze(2) - d.unsqueeze(1)  # label diffs
+        ei = e.unsqueeze(2) - e.unsqueeze(1)
+        pair_v = v.unsqueeze(2) & v.unsqueeze(1)
+        better = (di < -self.label_gap) & pair_v  # i closer to goal than j
+        loss = better.float() * F.relu(self.margin + ei)
+        n = better.float().sum().clamp(min=1.0)
+        return loss.sum() / n

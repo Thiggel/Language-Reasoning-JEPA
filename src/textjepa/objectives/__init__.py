@@ -5,11 +5,12 @@ from textjepa.objectives.delta_action import DeltaAction
 from textjepa.objectives.value import ActionDecode, ActionKL, ValueDistill, ValueRegression
 from textjepa.objectives.chunk_pred import ChunkPrediction, SlotAnchor
 from textjepa.objectives.geometry import GoalMonotonicity, TemporalStraightening
-from textjepa.objectives.ranking import ActionRanking, CostRanking
+from textjepa.objectives.ranking import ActionRanking, CostRanking, GeoAdvantageRank
 
 __all__ = [
     "ActionRanking",
     "CostRanking",
+    "GeoAdvantageRank",
     "ChunkPrediction",
     "SlotAnchor",
     "ValueDistill",

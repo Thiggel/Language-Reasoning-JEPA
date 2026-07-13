@@ -42,6 +42,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         # .get: configs stored in older checkpoints lack these keys
         shuffle_actions=d.get("shuffle_actions", False),
         n_alt=d.get("n_alt", 0),
+        geo_rank_k=d.get("geo_rank_k", 0),
     )
     size = size or (d.val_size if split == "val" else d.train_size)
     seed = d.val_seed if split == "val" else d.train_seed

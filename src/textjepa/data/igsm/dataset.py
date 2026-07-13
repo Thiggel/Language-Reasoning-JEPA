@@ -77,6 +77,7 @@ class IGSMDataset(Dataset):
         max_distractors: int = 2,
         shuffle_actions: bool = False,
         n_alt: int = 0,
+        geo_rank_k: int = 0,
         adjectives: list[str] | None = None,
         nouns: list[str] | None = None,
     ):
@@ -91,6 +92,7 @@ class IGSMDataset(Dataset):
         self.max_distractors = max_distractors
         self.shuffle_actions = shuffle_actions  # control: break action grounding
         self.n_alt = n_alt  # counterfactual candidates per step (ranking)
+        self.geo_rank_k = geo_rank_k  # geometric-advantage ranking anchors
         self.adjectives = adjectives or DEFAULT_ADJECTIVES
         self.nouns = nouns or DEFAULT_NOUNS
 
@@ -144,6 +146,29 @@ class IGSMDataset(Dataset):
         if self.shuffle_actions and len(actions) > 1:
             rng.shuffle(actions)
 
+        ga = {}
+        if self.geo_rank_k and len(trace) > 1:
+            # one anchor step: alt intent phrases + env-rendered TRUE next
+            # step sentences (text only; the ranking label is computed in
+            # latent space by the model — no symbolic annotations)
+            t_star = rng.randrange(len(trace))
+            env2 = SymbolicEnv(p)
+            for i in trace[:t_star]:
+                env2.step(i)
+            others = [a for a in env2.feasible_actions() if a != trace[t_star]]
+            rng.shuffle(others)
+            alts = others[: self.geo_rank_k]
+            if alts:
+                ga = {
+                    "ga_t": t_star,
+                    "ga_alt_actions": [
+                        self.vocab.encode(action_phrase(p, a)) for a in alts
+                    ],
+                    "ga_alt_steps": [
+                        self.vocab.encode(env2.clone().step(a)) for a in alts
+                    ],
+                }
+
         out = {
             "prompt": prompt,
             "steps": steps,
@@ -164,6 +189,7 @@ class IGSMDataset(Dataset):
         if self.n_alt:
             out["alt_actions"] = alt_actions
             out["alt_remaining"] = alt_remaining
+        out.update(ga)
         return out
 
 
@@ -219,6 +245,27 @@ def collate(batch: list[dict], pad_id: int) -> dict:
     step_tokens, step_mask = _pad_chunks([b["steps"] for b in batch], pad_id)
     action_tokens, _ = _pad_chunks([b["actions"] for b in batch], pad_id)
     extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
+    if any("ga_t" in b for b in batch):
+        K = max((len(b.get("ga_alt_actions", [])) for b in batch), default=1)
+        La = max((len(x) for b in batch for x in b.get("ga_alt_actions", [])),
+                 default=1)
+        Ls = max((len(x) for b in batch for x in b.get("ga_alt_steps", [])),
+                 default=1)
+        B = len(batch)
+        gaa = torch.full((B, K, La), pad_id, dtype=torch.long)
+        gas = torch.full((B, K, Ls), pad_id, dtype=torch.long)
+        gav = torch.zeros(B, K, dtype=torch.bool)
+        gat = torch.full((B,), -1, dtype=torch.long)
+        for i, b in enumerate(batch):
+            if "ga_t" not in b:
+                continue
+            gat[i] = b["ga_t"]
+            for k, (a, st) in enumerate(zip(b["ga_alt_actions"], b["ga_alt_steps"])):
+                gaa[i, k, : len(a)] = torch.tensor(a)
+                gas[i, k, : len(st)] = torch.tensor(st)
+                gav[i, k] = True
+        extra.update(ga_t=gat, ga_alt_action_tokens=gaa,
+                     ga_alt_step_tokens=gas, ga_valid=gav)
     return {
         **extra,
         "prompt_tokens": prompt_tokens,

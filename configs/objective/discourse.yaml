@@ -60,3 +60,8 @@ action_kl:
 act_decode:
   _target_: textjepa.objectives.ActionDecode
   weight: 0.0  # variational runs: detached code readout
+geo_rank:
+  _target_: textjepa.objectives.GeoAdvantageRank
+  weight: 0.0  # annotation-free ranking (disc_georank*)
+  margin: 0.5
+  label_gap: 0.02

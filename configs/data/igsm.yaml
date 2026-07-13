@@ -11,3 +11,4 @@ train_seed: 1
 val_seed: 2
 shuffle_actions: false
 n_alt: 0
+geo_rank_k: 0
