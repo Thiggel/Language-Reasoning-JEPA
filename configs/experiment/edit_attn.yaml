@@ -1,0 +1,24 @@
+# @package _global_
+defaults:
+  - override /data: igsm_edit
+  - override /model: edit
+# Attention predictor on the edit track: F cross-attends over the current
+# buffer's per-sentence embeddings (the pooled-slot bottleneck fix; win
+# condition = audit matching 0.44 -> high).
+run_name: edit_attn
+model:
+  chunk_target: frozen
+  value_detach: false
+  attn_predictor: true
+data:
+  vandal_prob: 0.25
+  max_vandal: 2
+  n_alt: 4
+objective:
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  chunk_pred: {weight: 2.0}
+  value: {weight: 0.0}
+  ranking: {weight: 1.0}
+train:
+  batch_size: 64

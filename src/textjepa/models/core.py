@@ -68,9 +68,14 @@ class LatentDynamicsCore(nn.Module):
         step_mask: torch.Tensor,
         step_emb_tgt: torch.Tensor | None = None,
         alt_actions: torch.Tensor | None = None,  # [B, T, K, d_action]
+        preds_override: torch.Tensor | None = None,
+        alt_preds_override: torch.Tensor | None = None,
     ) -> JEPAOutputs:
         prev_states = torch.cat([s0.unsqueeze(1), step_states[:, :-1]], dim=1)
-        preds = self.predictor(prev_states, actions)
+        preds = (
+            preds_override if preds_override is not None
+            else self.predictor(prev_states, actions)
+        )
         rollout = self._rollout(s0, actions)
         op_logits, emb_pred = self.delta_decoder(step_states - prev_states)
 
@@ -97,8 +102,12 @@ class LatentDynamicsCore(nn.Module):
             # alternative actions from each visited state (ranking loss)
             B, T, K, d_a = alt_actions.shape
             prev_rep = prev_states.unsqueeze(2).expand(-1, -1, K, -1)
-            alt_preds = self.predictor(
-                prev_rep.reshape(B, T * K, -1), alt_actions.reshape(B, T * K, d_a)
+            alt_preds = (
+                alt_preds_override if alt_preds_override is not None
+                else self.predictor(
+                    prev_rep.reshape(B, T * K, -1),
+                    alt_actions.reshape(B, T * K, d_a),
+                )
             )
             p_exec, p_alt = (
                 (preds.detach(), alt_preds.detach())

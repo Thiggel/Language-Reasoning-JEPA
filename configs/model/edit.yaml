@@ -18,3 +18,4 @@ d_macro: 8
 value_detach: true
 dropout: 0.0
 geo_proj: false
+attn_predictor: false

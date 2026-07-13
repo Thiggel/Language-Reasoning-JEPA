@@ -16,6 +16,7 @@ from textjepa.models.action import ActionEncoder
 from textjepa.models.core import LatentDynamicsCore
 from textjepa.models.ema import EMATeacher
 from textjepa.models.layers import TokenTransformer
+from textjepa.models.predictor import AttnEditPredictor
 from textjepa.models.outputs import JEPAOutputs
 
 
@@ -94,6 +95,7 @@ class EditJEPA(nn.Module):
         dropout: float = 0.0,
         chunk_target: str = "none",  # "none" | "frozen" outcome anchor
         geo_proj: bool = False,  # geometry losses act on a learned projection
+        attn_predictor: bool = False,  # F attends over buffer sentences
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -108,6 +110,9 @@ class EditJEPA(nn.Module):
         self.core = LatentDynamicsCore(
             d_model, d_action, predictor_hidden_mult, predictor_layers,
             n_ops, macro_k, d_macro, value_detach, geo_proj,
+        )
+        self.attn_pred = (
+            AttnEditPredictor(d_model, d_action) if attn_predictor else None
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.buffer_teacher = EMATeacher(self.buffer_encoder)
@@ -199,10 +204,32 @@ class EditJEPA(nn.Module):
             alt_actions = self.encode_actions(
                 batch["alt_tokens"].reshape(B, T * K, L)
             ).reshape(B, T, K, -1)
+        overrides = {}
+        if self.attn_pred is not None:
+            B, S, C, L = batch["buffer_tokens"].shape
+            sent = self.encode_chunks(
+                batch["buffer_tokens"][:, :-1].reshape(B * (S - 1), C, L)
+            )
+            smask = batch["buffer_mask"][:, :-1].reshape(B * (S - 1), C)
+            prev = states[:, :-1].reshape(B * (S - 1), -1)
+            T = S - 1
+            preds = self.attn_pred(
+                sent, smask, prev, actions.reshape(B * T, -1)
+            ).reshape(B, T, -1)
+            overrides["preds_override"] = preds
+            if alt_actions is not None:
+                K = alt_actions.shape[2]
+                alt_preds = self.attn_pred(
+                    sent.repeat_interleave(K, 0),
+                    smask.repeat_interleave(K, 0),
+                    prev.repeat_interleave(K, 0),
+                    alt_actions.reshape(B * T * K, -1),
+                ).reshape(B, T * K, -1)
+                overrides["alt_preds_override"] = alt_preds
         out = self.core(
             states[:, 0], states[:, 1:], states_tgt[:, 1:], actions,
             action_emb_tgt, batch["step_mask"], step_emb_tgt=step_emb_tgt,
-            alt_actions=alt_actions,
+            alt_actions=alt_actions, **overrides,
         )
         if self._slot_tgt is not None:
             out.extras["slot_pred"] = self.core.chunk_head(out.preds)

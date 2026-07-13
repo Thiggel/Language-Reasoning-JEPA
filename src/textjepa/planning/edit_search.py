@@ -85,7 +85,19 @@ class EditPlanner:
             tok, _ = self._chunk_tensor(texts)
             a = self.model.encode_actions(tok.squeeze(0).unsqueeze(1)).squeeze(1)
             n = a.shape[0]
-            s_next = self.model.predictor(s.expand(n, -1), a)
+            attn = getattr(self.model, "attn_pred", None)
+            if attn is not None:
+                bt, _ = self._chunk_tensor(env.sentences() or ["."])
+                sent = self.model.encode_chunks(bt)
+                sm = torch.ones(
+                    1, sent.shape[1], dtype=torch.bool, device=self.device
+                )
+                s_next = attn(
+                    sent.expand(n, -1, -1), sm.expand(n, -1),
+                    s.expand(n, -1), a,
+                )
+            else:
+                s_next = self.model.predictor(s.expand(n, -1), a)
             if goal is not None:
                 geo = getattr(self.model.core, "geo_head", None)
                 fin, g = (

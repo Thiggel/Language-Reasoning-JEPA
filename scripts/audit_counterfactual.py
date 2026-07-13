@@ -215,7 +215,16 @@ def audit_edit(model, vocab, dataset, device, n_episodes: int, seed: int) -> dic
                 texts = [env.intent_text(e) for e in cands]
                 a = model.encode_actions(tok(texts).squeeze(0).unsqueeze(1)).squeeze(1)
                 n = len(cands)
-                preds = model.predictor(s.expand(n, -1), a)
+                attn = getattr(model, "attn_pred", None)
+                if attn is not None:
+                    bt = tok(env.sentences() or ["."])
+                    sent = model.encode_chunks(bt)
+                    sm = torch.ones(1, sent.shape[1], dtype=torch.bool,
+                                    device=device)
+                    preds = attn(sent.expand(n, -1, -1), sm.expand(n, -1),
+                                 s.expand(n, -1), a)
+                else:
+                    preds = model.predictor(s.expand(n, -1), a)
                 clones = []
                 for e in cands:
                     c = env.clone()
