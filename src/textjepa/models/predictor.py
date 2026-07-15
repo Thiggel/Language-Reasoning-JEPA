@@ -30,6 +30,159 @@ class ActionConditionedPredictor(nn.Module):
         return s + out if self.residual else out
 
 
+class CausalHistoryPredictor(nn.Module):
+    """Causal world model over state/action histories.
+
+    Training receives teacher-forced states. Planning uses
+    :meth:`rollout`, recursively inserting predicted waypoints while retaining
+    the complete history. The same implementation is used for primitive and
+    macro dynamics so a predictor never silently falls back to a Markov MLP.
+    """
+
+    causal_sequence = True
+
+    def __init__(
+        self,
+        d_state: int,
+        d_action: int,
+        n_layers: int = 2,
+        n_heads: int = 8,
+        ff_mult: int = 4,
+        max_steps: int = 64,
+        residual: bool = False,
+    ):
+        super().__init__()
+        self.residual = residual
+        self.inp = nn.Linear(d_state + d_action, d_state)
+        self.pos = nn.Parameter(torch.zeros(1, max_steps, d_state))
+        nn.init.normal_(self.pos, std=0.02)
+        layer = nn.TransformerEncoderLayer(
+            d_state,
+            n_heads,
+            d_state * ff_mult,
+            dropout=0.0,
+            batch_first=True,
+            norm_first=True,
+            activation="gelu",
+        )
+        self.blocks = nn.TransformerEncoder(layer, n_layers)
+        self.norm = nn.LayerNorm(d_state)
+        self.out = nn.Linear(d_state, d_state)
+
+    def _positions(self, length: int) -> torch.Tensor:
+        if length <= self.pos.shape[1]:
+            return self.pos[:, :length]
+        return torch.nn.functional.interpolate(
+            self.pos.transpose(1, 2),
+            size=length,
+            mode="linear",
+            align_corners=False,
+        ).transpose(1, 2)
+
+    def forward(
+        self,
+        states: torch.Tensor,
+        actions: torch.Tensor,
+        valid: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        squeeze = states.dim() == 2
+        if squeeze:
+            states, actions = states.unsqueeze(1), actions.unsqueeze(1)
+        length = states.shape[1]
+        causal = torch.triu(
+            torch.ones(length, length, dtype=torch.bool, device=states.device),
+            diagonal=1,
+        )
+        h = self.inp(torch.cat([states, actions], -1)) + self._positions(length)
+        key_padding = None
+        if valid is not None:
+            key_padding = ~valid
+            key_padding = key_padding.clone()
+            key_padding[key_padding.all(1), 0] = False
+        pred = self.out(self.norm(self.blocks(
+            h, mask=causal, src_key_padding_mask=key_padding
+        )))
+        if self.residual:
+            pred = states + pred
+        return pred[:, 0] if squeeze else pred
+
+    def rollout(
+        self,
+        start: torch.Tensor,
+        codes: torch.Tensor,
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Autoregressively predict while retaining an observed prefix.
+
+        ``state_history`` contains ``s_0 ... s_t`` and ``action_history``
+        contains ``a_0 ... a_{t-1}``. Each proposed action is appended before
+        predicting the next state. Omitting both arguments starts a fresh
+        rollout from ``start``.
+        """
+        n, horizon, _ = codes.shape
+        if state_history is None:
+            states = start.expand(n, -1).unsqueeze(1)
+            actions = codes[:, :0]
+        else:
+            states = state_history
+            actions = (
+                codes[:, :0]
+                if action_history is None
+                else action_history
+            )
+            if states.shape[0] != n:
+                states = states.expand(n, -1, -1)
+            if actions.shape[0] != n:
+                actions = actions.expand(n, -1, -1)
+        predictions = []
+        for step in range(horizon):
+            actions = torch.cat([actions, codes[:, step:step + 1]], dim=1)
+            cur = self.forward(states, actions)[:, -1]
+            predictions.append(cur)
+            states = torch.cat([states, cur.unsqueeze(1)], dim=1)
+        return torch.stack(predictions, 1)
+
+
+# Backward-compatible scientific name used by the hierarchy code and old
+# checkpoints. Primitive and high-level predictors now share this class.
+CausalMacroPredictor = CausalHistoryPredictor
+
+
+class ProbabilisticActionConditionedPredictor(nn.Module):
+    """Diagonal-Gaussian latent transition ``p(z' | z, u)``.
+
+    The mean is residual by default; the variance is learned and bounded only
+    for numerical stability.  Training evaluates the density of a sample from
+    the EMA target distribution, as in the V-JEPA variational objective.
+    """
+
+    def __init__(
+        self,
+        d_state: int,
+        d_action: int,
+        hidden_mult: int = 4,
+        n_hidden_layers: int = 2,
+        residual: bool = True,
+        min_logvar: float = -8.0,
+        max_logvar: float = 3.0,
+    ):
+        super().__init__()
+        self.residual = residual
+        self.min_logvar = min_logvar
+        self.max_logvar = max_logvar
+        self.norm = nn.LayerNorm(d_state)
+        dims = [d_state + d_action] + [d_state * hidden_mult] * n_hidden_layers
+        self.net = mlp(dims, 2 * d_state)
+
+    def forward(self, s: torch.Tensor, a: torch.Tensor):
+        mu_delta, logvar = self.net(
+            torch.cat([self.norm(s), a], dim=-1)
+        ).chunk(2, dim=-1)
+        mu = s + mu_delta if self.residual else mu_delta
+        return mu, logvar.clamp(self.min_logvar, self.max_logvar)
+
+
 class FiLMPredictor(nn.Module):
     """Trunk-conditioned variant: the action modulates every hidden layer
     via FiLM (scale/shift), instead of one-shot input concatenation —

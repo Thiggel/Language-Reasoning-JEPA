@@ -1,0 +1,25 @@
+# @package _global_
+# Fast but long-horizon hierarchy screen. Final cells are rerun at full scale.
+run_name: hard_hier_v2_screen
+data:
+  train_size: 12000
+  val_size: 1000
+model:
+  d_model: 256
+  encoder_layers: 4
+  predictor_layers: 2
+  n_heads: 8
+  ff_mult: 4
+  max_len: 768
+  d_action: 64
+  level_spans: [8]
+  level_dims: [32]
+  variational_levels: [false]
+  concat_width: 8
+  low_dense_depth: 4
+  high_dense_depth: 4
+train:
+  epochs: 5
+  batch_size: 24
+  eval_batches: 30
+

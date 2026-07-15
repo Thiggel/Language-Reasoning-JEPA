@@ -5,7 +5,18 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from torch.utils.tensorboard import SummaryWriter
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ImportError:  # TensorBoard is optional on shared HPC environments.
+    class SummaryWriter:  # type: ignore[no-redef]
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def add_scalar(self, *args, **kwargs):
+            pass
+
+        def close(self):
+            pass
 
 
 class MetricLogger:

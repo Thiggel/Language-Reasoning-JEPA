@@ -1,0 +1,14 @@
+name	prior_weight	rollout_weight	detach	dense_depth	discount	hidden	smoothing	purpose
+roll_w01	1.0	0.1	false	4	0.7	0	0.0	weak predicted-state policy loss
+roll_w025	1.0	0.25	false	4	0.7	0	0.0	moderate predicted-state policy loss
+roll_w05	1.0	0.5	false	4	0.7	0	0.0	strong predicted-state policy loss
+roll_w1	1.0	1.0	false	4	0.7	0	0.0	unit predicted-state policy loss
+roll_w2	1.0	2.0	false	4	0.7	0	0.0	over-regularization control
+roll_detach_w05	1.0	0.5	true	4	0.7	0	0.0	proposal adaptation without representation gradient
+roll_detach_w1	1.0	1.0	true	4	0.7	0	0.0	strong detached predicted-state policy
+roll_d2_w1	1.0	1.0	false	2	0.7	0	0.0	short exposure horizon
+roll_d8_w1	1.0	1.0	false	8	0.7	0	0.0	long exposure horizon
+roll_d8_disc05	1.0	1.0	false	8	0.5	0	0.0	long horizon, steep discount
+roll_d8_disc09	1.0	1.0	false	8	0.9	0	0.0	long horizon, shallow discount
+roll_mlp256	1.0	1.0	false	4	0.7	256	0.0	nonlinear predicted-state prior
+roll_smooth01	1.0	1.0	false	4	0.7	0	0.1	calibrated predicted-state prior

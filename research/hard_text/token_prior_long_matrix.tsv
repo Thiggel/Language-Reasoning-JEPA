@@ -1,0 +1,19 @@
+name	seed	prior_weight	rollout_weight	detach	dense_depth	discount	hidden	smoothing	spans	dims	phases	purpose
+p2r05_s0	0	2.0	0.5	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	balanced joint objective
+p2r05_s1	1	2.0	0.5	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	balanced joint objective replication
+p2r05_s2	2	2.0	0.5	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	balanced joint objective replication
+p5r05_s0	0	5.0	0.5	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	high teacher-forced support
+p5r05_s1	1	5.0	0.5	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	high support replication
+p5r1_s0	0	5.0	1.0	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	high support plus exposure
+p5r1_s1	1	5.0	1.0	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	high support plus exposure replication
+p5r1_s2	2	5.0	1.0	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	high support plus exposure replication
+p10r1_s0	0	10.0	1.0	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,true]	maximum token support
+p1r1d8_s0	0	1.0	1.0	false	8	0.7	0	0.0	[8,32]	[32,16]	[false,true]	long exposure
+p1r1d8_s1	1	1.0	1.0	false	8	0.7	0	0.0	[8,32]	[32,16]	[false,true]	long exposure replication
+p2r2d8_s0	0	2.0	2.0	false	8	0.7	0	0.0	[8,32]	[32,16]	[false,true]	strong long exposure
+detach_mlp256_s0	0	5.0	5.0	true	4	0.7	256	0.0	[8,32]	[32,16]	[false,true]	high-capacity readout-only prior
+detach_mlp1024_s0	0	10.0	10.0	true	4	0.7	1024	0.0	[8,32]	[32,16]	[false,true]	maximum readout-only capacity
+mlp256_p5r1_s0	0	5.0	1.0	false	4	0.7	256	0.0	[8,32]	[32,16]	[false,true]	nonlinear joint prior
+mlp1024_p5r1_s0	0	5.0	1.0	false	4	0.7	1024	0.0	[8,32]	[32,16]	[false,true]	high-capacity nonlinear joint prior
+nophase_p5r1_s0	0	5.0	1.0	false	4	0.7	0	0.0	[8,32]	[32,16]	[false,false]	phase augmentation interaction
+span4_16_p5r1_s0	0	5.0	1.0	false	4	0.7	0	0.0	[4,16]	[32,16]	[false,true]	short-stride interaction
