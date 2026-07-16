@@ -414,9 +414,38 @@ class Controller:
                         unreviewed.append(report_id)
         return sorted(unreviewed)
 
+    def _autonomy_deadline(self) -> dt.datetime | None:
+        """Return the human-authorized unattended-work deadline, if any."""
+        value = self.cfg.get("codex", {}).get("autonomy_until")
+        if not value:
+            return None
+        try:
+            deadline = dt.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ResearchCtlError(f"invalid codex.autonomy_until: {value}") from exc
+        if deadline.tzinfo is None:
+            raise ResearchCtlError("codex.autonomy_until must include a timezone")
+        return deadline
+
+    def _autonomy_window_open(self, when: dt.datetime | None = None) -> bool:
+        deadline = self._autonomy_deadline()
+        if deadline is None:
+            return True
+        when = when or dt.datetime.now(dt.timezone.utc)
+        return when.astimezone(dt.timezone.utc) < deadline.astimezone(dt.timezone.utc)
+
+    def _unreviewed_limit(self) -> int:
+        limits = self.cfg["limits"]
+        if self._autonomy_deadline() is not None and self._autonomy_window_open():
+            return int(limits.get(
+                "max_unreviewed_reports_autonomous_window",
+                limits.get("max_unreviewed_reports", 1),
+            ))
+        return int(limits.get("max_unreviewed_reports", 1))
+
     def _human_review_guard(self) -> None:
         unreviewed = self._unreviewed_reports()
-        limit = int(self.cfg["limits"].get("max_unreviewed_reports", 1))
+        limit = self._unreviewed_limit()
         if len(unreviewed) > limit:
             raise ResearchCtlError(
                 f"human review guard: {len(unreviewed)} reports await reading (limit {limit}): "
@@ -1200,6 +1229,10 @@ class Controller:
         codex_cfg = self.cfg["codex"]
         if not codex_cfg.get("enabled", False):
             raise ResearchCtlError("Codex wake is disabled in configuration")
+        if not self._autonomy_window_open():
+            raise ResearchCtlError(
+                f"autonomy window ended at {self._autonomy_deadline().isoformat()}"
+            )
         if self.stop_path.exists():
             raise ResearchCtlError(f"STOP file present: {self.stop_path}")
         worktree = Path(manifest["project"]["worktree"])
@@ -1227,7 +1260,7 @@ class Controller:
         executable = codex_cfg.get("executable", "codex")
         argv = [
             executable, "--search", "exec", "--model", codex_cfg["model"],
-            "--config", f"model_reasoning_effort={json.dumps(codex_cfg['reasoning_effort'])}",
+            "--config", f"model_reasoning_effort={json.dumps(codex_cfg.get('autonomy_window_reasoning_effort', codex_cfg['reasoning_effort']) if self._autonomy_deadline() is not None and self._autonomy_window_open() else codex_cfg['reasoning_effort'])}",
             "--config", 'approval_policy="never"', "--sandbox", codex_cfg.get("sandbox", "workspace-write"),
             "--cd", str(worktree), "--ephemeral", "--json", "--output-last-message", str(last), "-",
         ]
@@ -1254,6 +1287,10 @@ class Controller:
             json_dump(resolved, self.validate_plan(plan))
             print(f"resolved plan: {resolved}")
             if codex_cfg.get("auto_submit_after_wake", False) and manifest["project"].get("autonomous_submission", False):
+                if not self._autonomy_window_open():
+                    raise ResearchCtlError(
+                        "autonomy window ended during oversight; plan was preserved without submission"
+                    )
                 self.submit(resolved, execute=True)
             else:
                 print("plan awaits human review; auto_submit_after_wake=false")
@@ -1271,6 +1308,12 @@ class Controller:
         if self.stop_path.exists() or state.get("paused"):
             print(f"observation only; paused={state.get('paused', False)} STOP={self.stop_path.exists()}")
             return
+        if not self._autonomy_window_open():
+            print(
+                "observation only; autonomy window ended at "
+                f"{self._autonomy_deadline().isoformat()}"
+            )
+            return
         terminal = [
             (rid, rnd) for rid, rnd in state.get("rounds", {}).items()
             if rnd.get("state") == "TERMINAL" and not rnd.get("oversight_woken")
@@ -1281,7 +1324,7 @@ class Controller:
         if not self.cfg["codex"].get("enabled", False):
             print("completed round awaits oversight; Codex wake is disabled")
             return
-        if len(self._unreviewed_reports()) >= int(self.cfg["limits"].get("max_unreviewed_reports", 1)):
+        if len(self._unreviewed_reports()) >= self._unreviewed_limit():
             print("completed rounds await oversight; unread-report limit reached")
             return
         by_project: dict[str, list[str]] = {}
