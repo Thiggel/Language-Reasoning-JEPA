@@ -141,6 +141,19 @@ class ResearchCtlTests(unittest.TestCase):
         )
         self.assertEqual(violations, ["automation/researchctl.py", "AGENTS.md"])
 
+    def test_project_context_rejects_sibling_memory(self):
+        paths = [
+            "projects/token_igsm/STATUS.md",
+            "research/hard_text/EVIDENCE.md",
+            "research/reports/token_igsm/new/REPORT.md",
+            "projects/intent_phrase/STATUS.md",
+            "src/textjepa/models/core.py",
+        ]
+        self.assertEqual(
+            researchctl.sibling_memory_violations(paths, "intent_phrase"),
+            paths[:3],
+        )
+
     def test_too_many_unread_reports_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctl = researchctl.Controller(ROOT / "automation/config.toml")

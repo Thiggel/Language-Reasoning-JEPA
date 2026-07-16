@@ -125,6 +125,26 @@ def protected_path_violations(paths: Iterable[str], protected: Iterable[str]) ->
     return [path for path in paths if any(path == item or path.startswith(item + "/") for item in roots)]
 
 
+def sibling_memory_violations(paths: Iterable[str], project: str) -> list[str]:
+    cycle_names = {"intent_phrase": "intent_phrase", "token_igsm": "hard_text", "sequence_edit": "sequence_edit"}
+    roots: list[str] = []
+    for sibling in PROJECTS:
+        if sibling == project:
+            continue
+        roots.extend((
+            f"projects/{sibling}",
+            f"research/reports/{sibling}",
+            f"research/cycles/{cycle_names[sibling]}",
+        ))
+    if project != "intent_phrase":
+        roots.append("research/intent_phrase")
+    if project != "token_igsm":
+        roots.append("research/hard_text")
+    if project != "sequence_edit":
+        roots.extend(("research/sequence_edit", "research/archive/edit_track"))
+    return protected_path_violations(paths, roots)
+
+
 class Controller:
     def __init__(self, config_path: Path | None = None) -> None:
         guessed_root = Path(__file__).resolve().parents[1]
@@ -1107,6 +1127,9 @@ class Controller:
                 "Codex oversight did not create or update a validated explanatory REPORT.md"
             )
         violations = protected_path_violations(paths, codex_cfg.get("protected_paths", []))
+        if project:
+            violations.extend(sibling_memory_violations(paths, project))
+            violations = sorted(set(violations))
         if violations:
             raise ResearchCtlError(
                 "Codex changed protected paths; changes were left for human inspection: "
@@ -1160,7 +1183,18 @@ class Controller:
             raise ResearchCtlError(f"project worktree does not exist: {worktree}")
         self._assert_clean(worktree)
         prompt_path = worktree / manifest["project"]["prompt"]
-        prompt = prompt_path.read_text() + "\n\n" + self.allocation_text()
+        state = self.load_state()
+        context = [
+            f"Integration repository: {self.root}",
+            f"Project steering inbox: {self.state_dir / 'steering/inbox' / project}",
+            "Newly terminal compact summaries for this project:",
+        ]
+        for rid, rnd in state.get("rounds", {}).items():
+            if self._round_project(rid, rnd) != project or rnd.get("state") != "TERMINAL" or rnd.get("oversight_woken"):
+                continue
+            for job in rnd.get("jobs", {}).values():
+                context.append(str(Path(job["local_dir"]) / "run_summary.json"))
+        prompt = prompt_path.read_text() + "\n\n" + "\n".join(context) + "\n\n" + self.allocation_text()
         output_dir = self.state_dir / "oversight" / project
         output_dir.mkdir(parents=True, exist_ok=True)
         stamp = dt.datetime.now().strftime("%Y%m%dT%H%M%S")
@@ -1178,6 +1212,13 @@ class Controller:
         if process.returncode:
             raise ResearchCtlError(f"Codex oversight failed ({process.returncode}); see {events}")
         commit = self._finalize_oversight_changes(worktree, project)
+        with self.lock():
+            state = self.load_state()
+            state.setdefault("integration_queue", []).append({
+                "project": project, "branch": manifest["project"]["branch"],
+                "commit": commit, "created_at": now(), "status": "awaiting_integration",
+            })
+            self.save_state(state)
         print(f"oversight response: {last}")
         print(f"oversight commit: {commit}")
         plan_path = worktree / manifest["project"]["plan_path"]
@@ -1220,11 +1261,12 @@ class Controller:
             project = self._round_project(rid, rnd)
             if project in self.projects:
                 by_project.setdefault(project, []).append(rid)
-        for project, round_ids in by_project.items():
+        if by_project:
+            project = sorted(by_project)[0]
             self.wake(project)
             with self.lock():
                 state = self.load_state()
-                for rid in round_ids:
+                for rid in by_project[project]:
                     state["rounds"][rid]["oversight_woken"] = True
                     state["rounds"][rid]["oversight_woken_at"] = now()
                 self.save_state(state)
