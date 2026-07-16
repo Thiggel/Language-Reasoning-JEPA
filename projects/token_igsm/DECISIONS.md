@@ -5,3 +5,9 @@
 - Require an information-matched flat control and executable low-level refinement.
 - Spend the remaining global headroom only on the missing seed-0 semantic flat
   control; do not expand seeds or scale until that matched comparison is valid.
+- Never compare a primitive reached state directly with a distinct hierarchy
+  state; lift the complete reached path through the corresponding EMA causal
+  encoders first.
+- Treat action-advantage targets as non-symbolic only when alternatives come
+  from full-vocabulary token outcomes, observed chunks, or learned support—not
+  symbolic feasibility filtering.

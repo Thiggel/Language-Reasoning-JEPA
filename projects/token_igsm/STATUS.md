@@ -4,7 +4,8 @@ The project is active. Fixed-span and semantic-boundary hierarchy experiments sh
 
 Current cycle: `research/cycles/hard_text/2026-07-16-hierarchy-gradient-abstraction.md`.
 
-The terminal audit cannot add a scientific result because all named compact
-summaries have empty metrics and unassessed validity. The immediate gate is a
-single bounded recovery of the timed-out semantic flat-objective control; no
-automatic submission or scale-up is authorized.
+The first distinct-state wave was scientifically confounded: its reachability
+loss compared primitive and higher-level coordinates directly. The corrected
+12M, six-total-level, and approximately 50M distinct-state validity reruns are
+active from commit `3aca4a5`. After this gate, the next requested mechanism is
+non-symbolic goal-advantage distillation at primitive and macro levels.

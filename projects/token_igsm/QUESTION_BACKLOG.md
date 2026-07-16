@@ -6,3 +6,10 @@
 4. Does dense multistep supervision reduce recursive drift at each level?
 5. Do rendered semantic boundaries improve future/progress or answer probes
    over both random-matched boundaries and a capacity-matched flat objective?
+6. After coordinate-correct distinct-state validation, can a state-action
+   value head learn the change in encoded goal distance for every discrete
+   token and improve full-vocabulary action ordering?
+7. Can alternative observed action chunks or a state-conditioned macro-action
+   codebook provide leakage-free counterfactual advantages at higher levels?
+8. Do N-step continuation targets from a small beam search or MCTS improve
+   value ranking over naive one-step goal-distance changes at N=2/4/8?
