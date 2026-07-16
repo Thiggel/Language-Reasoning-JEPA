@@ -317,38 +317,48 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
         self,
         sequence_states: torch.Tensor,
         token_actions: torch.Tensor,
-        macro_prev: torch.Tensor,
         raw_windows: torch.Tensor,
         valid: torch.Tensor,
         span: int,
         phase_offsets: torch.Tensor,
+        through_level: int | None = None,
     ) -> torch.Tensor:
-        """Execute each primitive chunk with its complete causal history."""
-        endpoint = macro_prev.new_zeros(macro_prev.shape)
+        """Execute primitive chunks and return endpoints in the target space.
+
+        A primitive endpoint already matches a shared hierarchy state.  For a
+        distinct hierarchy, causally lift the reached primitive-state path
+        through every EMA level encoder before comparing it with the
+        higher-level target.  Equal vector width does not imply equal latent
+        coordinates.
+        """
+        endpoint = sequence_states.new_zeros(
+            sequence_states.shape[0], raw_windows.shape[1], self.d_model
+        )
         for window_index in range(raw_windows.shape[1]):
             rows = valid[:, window_index]
             if not rows.any():
                 continue
-            token_start = int(phase_offsets[rows][0]) + window_index * span
-            # Rows in a batch can use different random phases. Group by
-            # phase so every causal history has the correct common length.
-            if not bool((phase_offsets[rows] == phase_offsets[rows][0]).all()):
-                for phase in phase_offsets[rows].unique():
-                    phase_rows = rows & phase_offsets.eq(phase)
-                    start_at = int(phase) + window_index * span
-                    endpoint[phase_rows, window_index] = self.low_predictor.rollout(
-                        macro_prev[phase_rows, window_index],
-                        raw_windows[phase_rows, window_index],
-                        state_history=sequence_states[phase_rows, :start_at + 1],
-                        action_history=token_actions[phase_rows, :start_at],
-                    )[:, -1]
-                continue
-            endpoint[rows, window_index] = self.low_predictor.rollout(
-                macro_prev[rows, window_index],
-                raw_windows[rows, window_index],
-                state_history=sequence_states[rows, :token_start + 1],
-                action_history=token_actions[rows, :token_start],
-            )[:, -1]
+            # Rows can use different random phases. Group them so every
+            # causal prefix has one common length.
+            for phase in phase_offsets[rows].unique():
+                phase_rows = rows & phase_offsets.eq(phase)
+                start_at = int(phase) + window_index * span
+                history = sequence_states[phase_rows, :start_at + 1]
+                predictions = self.low_predictor.rollout(
+                    history[:, -1], raw_windows[phase_rows, window_index],
+                    state_history=history,
+                    action_history=token_actions[phase_rows, :start_at],
+                )
+                if through_level is None:
+                    reached = predictions[:, -1]
+                else:
+                    lifted = self.lift_state_path(
+                        torch.cat([history, predictions], dim=1),
+                        through_level=through_level,
+                        teacher=True,
+                    )
+                    reached = lifted[-1][:, -1]
+                endpoint[phase_rows, window_index] = reached
         return endpoint
 
     def forward(self, tokens: torch.Tensor, prompt_len: torch.Tensor) -> dict:
@@ -477,8 +487,9 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
             # history that the same predictor uses during planning.
             with torch.no_grad():
                 endpoint = self._raw_recursive_endpoint(
-                    seq["prev"], token_actions, prev, raw_windows, valid,
+                    seq["prev"], token_actions, raw_windows, valid,
                     span, phase_offsets,
+                    through_level=(level_index if self.distinct_level_states else None),
                 )
             remaining = (
                 (seq["lengths"].unsqueeze(1) - end_positions)

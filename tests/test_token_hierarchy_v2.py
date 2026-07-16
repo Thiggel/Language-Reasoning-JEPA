@@ -1,4 +1,5 @@
 import torch
+from unittest.mock import patch
 
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
 from textjepa.models.action import MacroActionModel
@@ -217,3 +218,22 @@ def test_distinct_level_state_teacher_updates_with_ema():
     before = target.clone()
     model.update_teacher(0.5)
     assert not torch.allclose(before, target)
+
+
+def test_distinct_reachability_lifts_primitive_rollouts_with_ema_coordinates():
+    torch.manual_seed(13)
+    model = MultilevelTokenHierarchyJEPA(
+        vocab_size=30, pad_id=0, d_model=16, encoder_layers=1,
+        predictor_layers=1, n_heads=2, ff_mult=2, max_len=64,
+        d_action=8, level_spans=[2, 4], level_dims=[6, 4],
+        variational_levels=[False], distinct_level_states=True,
+        level_state_encoder_layers=1,
+    ).eval()
+    tokens = torch.randint(1, 30, (2, 20))
+    with patch.object(model, "lift_state_path", wraps=model.lift_state_path) as lift:
+        out = model(tokens, torch.tensor([8, 8]))
+    assert out["levels"][0]["recursive_low_endpoint"].shape == out["levels"][0]["target"].shape
+    assert out["levels"][1]["recursive_low_endpoint"].shape == out["levels"][1]["target"].shape
+    assert lift.call_count > 0
+    assert all(call.kwargs["teacher"] is True for call in lift.call_args_list)
+    assert {call.kwargs["through_level"] for call in lift.call_args_list} == {0, 1}
