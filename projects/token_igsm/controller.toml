@@ -17,6 +17,6 @@ run_patterns = ["hard_hier_*", "text_hier_*", "deltajepa_text_*", "*token-prior*
 
 [budget]
 guaranteed_active_gpus = 1
-maximum_active_gpus = 6
-maximum_pending_jobs = 4
+maximum_active_gpus = 12
+maximum_pending_jobs = 8
 maximum_gpu_hours_per_round = 16.0
