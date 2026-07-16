@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-16-terminal-run-validity-audit",
+  "project": "intent_phrase",
+  "title": "When ten scheduled runs produce zero scientific comparisons",
+  "created_at": "2026-07-16T16:00:00+02:00",
+  "status": "complete",
+  "decision": "Treat the terminal jobs as process-invalid, make no JEPA-over-language-model claim for the easier domain, and admit no new experiment while current work and budget are unresolved.",
+  "plain_summary": "Seven geometry jobs and two counterfactual jobs failed before training produced usable evidence; a third counterfactual job has no terminal summary, so the scientific question remains open.",
+  "report": "REPORT.md",
+  "review_required": true
+}

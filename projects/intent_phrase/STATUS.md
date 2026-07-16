@@ -2,6 +2,12 @@
 
 _Updated 2026-07-16._
 
+The latest terminal audit produced no new scientific metrics. Seven GAR jobs
+timed out before optimization due to an overlong multiprocessing socket path;
+two external-cluster counterfactual jobs failed because their exact snapshot
+lacked the requested configuration; seed 0 is not terminal. Current work is
+still unresolved, so no new round is planned from this audit.
+
 ## Defensible observations
 
 | Observation | Status |
@@ -13,6 +19,7 @@ _Updated 2026-07-16._
 | Dense rollout depth four does not improve control and increases seed variance. | supported for the current recipe |
 | LDAD and monotonicity improve strict success separately. | provisional until combined/matched confirmation |
 | Hierarchical planning improves this project. | contradicted by corrected confirmations |
+| JEPA currently beats the matched token intent policy on the easier stylized domain. | contradicted by the compact comparison: .797 versus .827 strict success |
 
 ## Current causal validation matrix
 

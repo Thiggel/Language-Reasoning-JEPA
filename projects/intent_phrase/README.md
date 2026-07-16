@@ -44,6 +44,7 @@ information-matched protocol.
 - [Current status](STATUS.md)
 - [Code/config/run ownership](ARTIFACTS.md)
 - [ICLR paper roadmap](PAPER_ROADMAP.md)
+- [Latest terminal-run audit report](../../research/reports/intent_phrase/2026-07-16-terminal-run-validity-audit/REPORT.md)
 - [Detailed historical waves](../../research/intent_phrase/README.md)
 - [Paper-facing experiment specification](../../research/intent_phrase/PAPER_PLAN.md)
 - [Staged historical backlog](../../research/intent_phrase/BACKLOG.md)
