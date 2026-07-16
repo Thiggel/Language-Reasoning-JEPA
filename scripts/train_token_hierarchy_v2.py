@@ -67,7 +67,10 @@ def compute_losses(out, cfg):
         F.layer_norm(out["goal_pred"], out["goal_pred"].shape[-1:]),
         F.layer_norm(out["final_target"].detach(), out["final_target"].shape[-1:]),
     )
-    state_flat = out["target"].reshape(-1, out["target"].shape[-1])[
+    # Regularize the online causal states. ``target`` comes from the EMA
+    # teacher under no_grad, so applying VICReg there changes the scalar loss
+    # without producing any encoder gradient.
+    state_flat = out["prev"].reshape(-1, out["prev"].shape[-1])[
         out["valid"].reshape(-1)
     ]
     regularizer = vicreg(state_flat, obj.covariance)
@@ -136,7 +139,18 @@ def compute_losses(out, cfg):
                 + obj.token_prior_rollout * token_prior_rollout.detach()
             )
             items["token_prior_rollout"] = token_prior_rollout
-    for level in out["levels"]:
+    configured_level_weights = list(
+        getattr(obj, "high_level_weights", [1.0])
+    )
+    if len(configured_level_weights) == 1:
+        configured_level_weights *= len(out["levels"])
+    if len(configured_level_weights) != len(out["levels"]):
+        raise ValueError(
+            "objective.high_level_weights must have length one or match "
+            "the number of hierarchy levels"
+        )
+    for level, level_weight in zip(out["levels"], configured_level_weights):
+        level_weight = float(level_weight)
         mask = level["valid"]
         high = normalized_mse(level["pred"], level["target"], mask)
         high_dense = dense_loss(
@@ -154,7 +168,7 @@ def compute_losses(out, cfg):
             F.softplus(-level["support_pos"]) + F.softplus(level["support_neg"]),
             mask.float(),
         )
-        total = total + (
+        level_total = (
             obj.high_prediction * high
             + obj.high_dense * high_dense
             + obj.reachability * reachability
@@ -162,6 +176,7 @@ def compute_losses(out, cfg):
             + obj.macro_prior * prior
             + obj.support * support
         )
+        total = total + level_weight * level_total
         prefix = f"level{level['index'] + 1}"
         items.update({
             f"{prefix}_prediction": high,
@@ -170,8 +185,9 @@ def compute_losses(out, cfg):
             f"{prefix}_value": value,
             f"{prefix}_prior": prior,
             f"{prefix}_support": support,
+            f"{prefix}_weight": high.new_tensor(level_weight),
         })
-        selection = selection + (
+        selection = selection + level_weight * (
             obj.high_prediction * high.detach()
             + obj.high_dense * high_dense.detach()
             + obj.reachability * reachability.detach()

@@ -32,6 +32,9 @@ objective:
   goal_prediction: 1.0
   high_prediction: 1.0
   high_dense: 1.0
+  # Per-level multipliers, from the shortest to the longest macro horizon.
+  # A single value is broadcast to every active level.
+  high_level_weights: [1.0]
   reachability: 0.25
   high_value: 1.0
   macro_prior: 0.05
