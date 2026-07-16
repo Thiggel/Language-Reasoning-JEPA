@@ -51,3 +51,28 @@ class DiscourseStateModel(nn.Module):
         q_pos = prompt_mask.sum(dim=1) - 1
         s0 = h[torch.arange(B, device=h.device), q_pos]
         return s0, h[:, P:]
+
+
+class CausalSentenceStateModel(nn.Module):
+    """Causal cumulative states for an undifferentiated sentence stream."""
+
+    def __init__(
+        self,
+        d_model: int = 256,
+        n_layers: int = 4,
+        n_heads: int = 8,
+        ff_mult: int = 4,
+        max_chunks: int = 96,
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.n_heads = n_heads
+        self.pos = nn.Parameter(torch.zeros(1, max_chunks, d_model))
+        nn.init.normal_(self.pos, std=0.02)
+        self.encoder = encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, sentence_emb: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        x = sentence_emb + self.pos[:, : sentence_emb.shape[1]]
+        attn_mask = build_causal_attention_mask(mask, self.n_heads)
+        return self.norm(self.encoder(x, mask=attn_mask))

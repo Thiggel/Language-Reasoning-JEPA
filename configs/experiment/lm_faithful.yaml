@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - override /data: igsm_real
+run_name: lm_faithful
+model:
+  max_len: 1024
+train:
+  batch_size: 32
+  lr: 1.0e-3

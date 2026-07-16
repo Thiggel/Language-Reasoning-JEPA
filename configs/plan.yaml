@@ -1,12 +1,23 @@
 ckpt: ???
 device: cuda:0
 n_episodes: 200
+split: val  # use test only after recipe/model selection is frozen
 slack: 0
 lookahead: 1
+# Depth > 1 uses the reference graph/environment to propose future feasible
+# actions. Keep false for the information-matched evaluation; enable only for
+# an explicitly labeled oracle-action diagnostic.
+allow_oracle_future_actions: false
 max_expand: 64
 energy: value  # value | oracle_goal (oracle diagnostic, uses the solution)
 seed: 321
 out: null
+# null infers outcome/intent from the training checkpoint. Override only for
+# diagnostics; the paper evaluates each LM using its matched training target.
+score_kind: null
+# Compare candidate strings by mean token likelihood.  Summed likelihood has
+# an avoidable preference for shorter intent wording.
+length_normalize: true
 
 hydra:
   run:

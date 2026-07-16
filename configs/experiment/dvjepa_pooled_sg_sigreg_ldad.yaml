@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - override /model: discourse_vjepa
+  - override /objective: discourse_vjepa
+run_name: dvjepa_pooled_sg_sigreg_ldad
+model:
+  target_mode: online_sg
+  action_mode: pooled
+  observed_action_ldad: true
+objective:
+  action_kl: {weight: 0.0, free_nats: 4.0}
+  observed_action_ldad: {weight: 0.2}
+data: {train_size: 30000}
+train: {epochs: 10}

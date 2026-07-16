@@ -10,7 +10,15 @@ distractor_prob: 0.15
 max_distractors: 2
 train_size: 100000
 val_size: 5000
+test_size: 5000
 train_seed: 1
 val_seed: 2
+test_seed: 3
 shuffle_actions: false
 n_alt: 0
+geo_rank_k: 0
+geo_rank_horizon: 1
+geo_rank_rollouts: 1
+geo_rank_policy: random
+geo_rank_beam_width: 1
+fresh_per_epoch: true

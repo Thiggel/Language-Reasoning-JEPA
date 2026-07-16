@@ -1,0 +1,5 @@
+# @package _global_
+defaults: [paper_causal_j3, _self_]
+run_name: paper_causal_gar_h4
+data: {geo_rank_horizon: 4}
+

@@ -1,0 +1,12 @@
+# @package _global_
+# Counterfactual-data control, K=4 observed alternative outcomes, no ranking.
+run_name: disc_cfout_k4
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  counterfactual_outcome: {weight: 2.0}
+  ranking: {weight: 0.0}
+data:
+  n_alt: 4

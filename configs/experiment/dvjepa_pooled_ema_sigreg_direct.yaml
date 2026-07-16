@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - override /model: discourse_vjepa
+  - override /objective: discourse_vjepa
+# Test whether the direct next-state parameterization selected by the
+# deterministic study transfers to probabilistic dynamics.
+run_name: dvjepa_pooled_ema_sigreg_direct
+model:
+  target_mode: ema
+  action_mode: pooled
+  predictor_residual: false
+  observed_action_ldad: false
+objective:
+  action_kl: {weight: 0.0, free_nats: 4.0}
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01}
+  observed_action_ldad: {weight: 0.0}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

@@ -53,6 +53,9 @@ class CompositeObjective(nn.Module):
     def forward(self, out, batch: dict) -> tuple[torch.Tensor, dict[str, float]]:
         total, items = 0.0, {}
         for name, obj in self.objectives.items():
+            if self.weights.get(name, 1.0) == 0.0:
+                items[name] = 0.0
+                continue
             loss = obj(out, batch)
             total = total + self.weights.get(name, 1.0) * loss
             items[name] = loss.detach().item()

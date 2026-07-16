@@ -1,0 +1,77 @@
+# @package _global_
+# Faithful long-iGSM transfer of the selected discrete hierarchy.  Stage 1
+# freezes the established faithful low level and fits planning-matched macro
+# dynamics, exact macro-state value, and state-conditioned action support.
+defaults:
+  - override /data: igsm_real
+
+run_name: real_discrete_hierarchy_h2_stage1
+
+model:
+  max_chunk_len: 96
+  macro_k: 3
+  d_macro: 32
+  macro_encoder_kind: transformer
+  macro_variational: false
+  high_predictor_kind: causal
+  high_predictor_layers: 2
+  high_predictor_heads: 8
+  high_predictor_ff_mult: 4
+  high_predictor_residual: false
+  high_dense_rollout_depth: 3
+  dense_rollout_depth: 0
+  action_support_states: 'true'
+  macro_support_scales: [3.0]
+  predictor_residual: false
+  value_detach: true
+
+objective:
+  latent_pred: {weight: 0.0}
+  rollout: {weight: 0.0}
+  dense_rollout: {weight: 0.0}
+  high_dense_rollout:
+    weight: 1.0
+    kind: smooth_l1
+    norm_targets: true
+    horizon_discount: 1.0
+  hierarchy: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  macro_prior: {weight: 0.01, free_nats: 0.0}
+  hierarchy_value: {weight: 0.0}
+  hierarchy_value_steps: {weight: 1.0}
+  high_dense_value: {weight: 1.0, horizon_discount: 0.7}
+  vicreg: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  value: {weight: 0.0}
+  macro_cf_dynamics: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  macro_state_value: {weight: 1.0}
+  macro_state_advantage_rank: {weight: 1.0, margin: 0.5}
+  macro_support:
+    weight: 1.0
+    shuffled_weight: 1.0
+    perturbed_weight: 1.0
+  action_feasibility: {weight: 1.0, positive_weight: 2.0}
+
+data:
+  max_op: 21
+  max_edge: 28
+  op_range: [10, 18]
+  train_size: 12000
+  val_size: 1000
+  macro_alt_k: 8
+  macro_alt_horizon: 3
+  all_action_supervision: true
+  n_alt: 0
+  geo_rank_k: 0
+
+train:
+  init_ckpt: runs/real_latent_goal_h2_r1/best.pt
+  init_mode: low_level
+  freeze_low_level: true
+  train_high_level: true
+  train_action_support: true
+  batch_size: 32
+  num_workers: 8
+  epochs: 8
+  lr: 3e-4
+  warmup_steps: 300
+  eval_batches: 8

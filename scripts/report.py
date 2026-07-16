@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -14,17 +15,39 @@ import pandas as pd
 
 def planning_table(runs_dir: Path) -> pd.DataFrame:
     rows = []
-    for f in sorted(runs_dir.glob("*/plan_slack*_look*.json")):
+    for f in sorted(runs_dir.glob("*/plan_slack*.json")):
         data = json.loads(f.read_text())
-        parts = f.stem.replace("plan_slack", "").split("_look")
-        look, _, energy = parts[1].partition("_")
+        match = re.fullmatch(r"plan_slack(\d+)_look(\d+)(?:_(.*))?", f.stem)
+        if match is not None:
+            slack, look, suffix = match.groups()
+            suffix = suffix or ""
+        else:
+            # Token/sentence LM files have no search-depth field.  Preserve
+            # old names (lm, sentlm_decoder) and new explicit target names
+            # (lm_intent, sentlm_outcome_latent).
+            lm_match = re.fullmatch(
+                r"plan_slack(\d+)_(lm(?:_(?:outcome|intent))?|"
+                r"sentlm_(?:(?:outcome|intent)_)?(?:decoder|latent))"
+                r"(?:_(test))?",
+                f.stem,
+            )
+            if lm_match is None:
+                continue
+            slack, suffix, test_suffix = lm_match.groups()
+            look = 1
+            if test_suffix:
+                suffix += "_test"
+        split = "test" if suffix == "test" or suffix.endswith("_test") else "val"
+        if split == "test":
+            suffix = suffix.removesuffix("_test")
         for policy, m in data.items():
             rows.append(
                 {
                     "run": f.parent.name,
-                    "slack": int(parts[0]),
+                    "split": split,
+                    "slack": int(slack),
                     "lookahead": int(look),
-                    "energy": energy or "value",
+                    "energy": suffix or "value",
                     "policy": policy,
                     "success": m["success"],
                     "distractor_rate": m.get("distractor_rate"),
@@ -51,14 +74,31 @@ def main() -> None:
 
     lines = ["# TextJEPA results\n", "## Planning success\n"]
     if not plans.empty:
-        piv = plans[plans.policy.str.startswith("latent_planner")].pivot_table(
-            index="run", columns=["energy", "slack", "lookahead"], values="success"
+        latent = plans[plans.policy.str.startswith("latent_planner")]
+        piv = latent.pivot_table(
+            index="run", columns=["split", "energy", "slack", "lookahead"],
+            values="success"
         )
         base = plans[plans.policy == "random_policy"].pivot_table(
-            index="run", columns=["energy", "slack", "lookahead"], values="success"
+            index="run", columns=["split", "energy", "slack", "lookahead"],
+            values="success"
         )
         lines += [piv.round(3).to_markdown(), "\n### Random-policy baseline\n",
                   base.round(3).to_markdown(), "\n"]
+        lm = plans[
+            plans.policy.str.startswith("lm_")
+            | plans.policy.str.startswith("sentlm_")
+        ]
+        if not lm.empty:
+            lm_piv = lm.pivot_table(
+                index=["run", "policy"], columns=["split", "slack"],
+                values="success",
+            )
+            lines += [
+                "\n### Language-model policies and diagnostics\n",
+                lm_piv.round(3).to_markdown(),
+                "\n",
+            ]
     if not probes.empty:
         lines.append("\n## Probes (trained vs random-encoder control)\n")
         cols = [c for c in ("run", "task", "acc_trained", "acc_random_enc", "majority")

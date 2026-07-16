@@ -1,0 +1,12 @@
+# @package _global_
+# Official-iGSM information-matched causal intent-policy baseline.
+defaults:
+  - override /data: igsm_real
+run_name: lm_intent_faithful
+model:
+  max_len: 1024
+train:
+  target_kind: intent
+  rank_weight: 0.0
+  batch_size: 32
+  lr: 1.0e-3

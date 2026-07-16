@@ -1,9 +1,10 @@
 """Closed-loop latent planning on the FAITHFUL iGSM domain.
 
-Same protocol as the stylized planner: enumerate feasible parameters,
-encode their intent phrases, score F(s, a) with the value head, execute
-the argmin in the official environment, re-encode, replan. Lookahead-d
-enumerates feasible d-step sequences (capped).
+Same protocol as the stylized planner: enumerate every currently feasible
+parameter, encode its intent phrase, score F(s, a) with the value head,
+execute the argmin in the official environment, re-encode, and replan.
+Lookahead greater than one uses the reference environment to enumerate future
+feasible sequences and is therefore an explicitly opt-in diagnostic.
 """
 
 from __future__ import annotations
@@ -19,12 +20,20 @@ from textjepa.planning.search import EpisodeResult
 
 class FaithfulPlanner:
     def __init__(self, model, vocab: Vocab, device: torch.device,
-                 lookahead: int = 1, max_expand: int = 64):
+                 lookahead: int = 1, max_expand: int = 64,
+                 allow_oracle_future_actions: bool = False):
+        if lookahead > 1 and not allow_oracle_future_actions:
+            raise ValueError(
+                "lookahead > 1 enumerates future actions with the reference "
+                "environment; set allow_oracle_future_actions=true only for "
+                "a labeled oracle-action diagnostic"
+            )
         self.model = model
         self.vocab = vocab
         self.device = device
         self.lookahead = lookahead
         self.max_expand = max_expand
+        self.allow_oracle_future_actions = allow_oracle_future_actions
 
     def _tokens(self, texts: list[str]) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]

@@ -1,0 +1,13 @@
+# @package _global_
+# Action-free posterior-code reconstruction: EMA target + VICReg.
+defaults:
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+run_name: svjepa_ldad_ema_vicreg
+model: {use_ema_target: true, latent_ldad: true}
+objective:
+  latent_ldad: {weight: 1.0}
+  vicreg: {weight: 1.0}
+  sigreg: {weight: 0.0}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

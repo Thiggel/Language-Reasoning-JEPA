@@ -14,13 +14,18 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
-from textjepa.data.igsm.dataset import build_vocab, collate
+from textjepa.data.igsm.dataset import build_vocab
+from textjepa.data.lm import (
+    IntentSentencePolicyDataset,
+    collate_intent_sentence_policy,
+)
+from textjepa.data.sampling import FreshEpochSampler
 from textjepa.models.sent_lm import SentenceLM
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.training.trainer import to_device
 from textjepa.utils import seed_everything
-from textjepa.utils.checkpoint import build_dataset
+from textjepa.utils.checkpoint import build_dataset, collate_for
 
 
 @hydra.main(config_path="../configs", config_name="sentlm", version_base="1.3")
@@ -29,15 +34,31 @@ def main(cfg: DictConfig) -> None:
     out_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
     print(OmegaConf.to_yaml(cfg))
     device = torch.device(cfg.device)
-    vocab = build_vocab(cfg.data.modulus)
-    coll = partial(collate, pad_id=vocab.pad_id)
+    if cfg.data.get("name", "igsm") == "igsm_real":
+        from textjepa.data.faithful import cached_faithful_vocab
+
+        vocab = cached_faithful_vocab()
+    else:
+        vocab = build_vocab(cfg.data.modulus)
+    target_kind = cfg.train.get("target_kind", "outcome")
+    if target_kind == "intent":
+        coll = partial(collate_intent_sentence_policy, pad_id=vocab.pad_id)
+        wrap = IntentSentencePolicyDataset
+    elif target_kind == "outcome":
+        coll = partial(collate_for(cfg), pad_id=vocab.pad_id)
+        wrap = lambda dataset: dataset
+    else:
+        raise ValueError(f"unknown sentence LM target_kind: {target_kind}")
+    train_ds = wrap(build_dataset(cfg, vocab, split="train"))
+    train_sampler = FreshEpochSampler(train_ds, seed=cfg.seed)
     train_loader = DataLoader(
-        build_dataset(cfg, vocab, split="train"), batch_size=cfg.train.batch_size,
-        shuffle=True, num_workers=cfg.train.num_workers, collate_fn=coll,
+        train_ds, batch_size=cfg.train.batch_size,
+        sampler=train_sampler, num_workers=cfg.train.num_workers, collate_fn=coll,
         drop_last=True, persistent_workers=cfg.train.num_workers > 0,
     )
     val_loader = DataLoader(
-        build_dataset(cfg, vocab, split="val"), batch_size=cfg.train.batch_size,
+        wrap(build_dataset(cfg, vocab, split="val")),
+        batch_size=cfg.train.batch_size,
         num_workers=2, collate_fn=coll,
     )
     model = SentenceLM(
@@ -51,6 +72,7 @@ def main(cfg: DictConfig) -> None:
     logger = MetricLogger(out_dir)
     step, best = 0, float("inf")
     for epoch in range(cfg.train.epochs):
+        train_sampler.set_epoch(epoch)
         model.train()
         for batch in train_loader:
             for g in opt.param_groups:
@@ -69,10 +91,11 @@ def main(cfg: DictConfig) -> None:
             step += 1
         model.eval()
         with torch.no_grad():
-            vloss = sum(
+            val_losses = [
                 sum(model(to_device(b, device)).values()).item()
                 for i, b in enumerate(val_loader) if i < 40
-            ) / 40
+            ]
+            vloss = sum(val_losses) / len(val_losses)
         logger.log(step, {"loss": vloss}, prefix="val/")
         ckpt = {
             "model": model.state_dict(),

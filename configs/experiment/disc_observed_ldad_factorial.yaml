@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override /objective: discourse_observed_ldad
+
+# Base cell for the faithful deterministic LDAD factorial.  The launcher
+# overrides target mode, regularizer and LDAD presence while retaining this
+# exact data/compute budget in all 18 cells.
+run_name: dldad_ema_none_off
+model:
+  state_target: ema
+  observed_action_ldad: false
+  predictor_residual: true
+data:
+  train_size: 30000
+  val_size: 2000
+train:
+  epochs: 10

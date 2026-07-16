@@ -1,16 +1,71 @@
 from textjepa.objectives.base import Objective, CompositeObjective
-from textjepa.objectives.prediction import LatentPrediction, RolloutPrediction, HierarchyPrediction
-from textjepa.objectives.vicreg import VICReg
-from textjepa.objectives.delta_action import DeltaAction
+from textjepa.objectives.prediction import (
+    DenseHierarchyRolloutPrediction,
+    DenseHierarchyValueRegression,
+    DenseRolloutPrediction,
+    HierarchyPrediction,
+    HierarchyValueDistill,
+    HierarchyValueRegression,
+    LatentPrediction,
+    MacroPrior,
+    RolloutPrediction,
+)
+from textjepa.objectives.vicreg import SIGReg, VICReg
+from textjepa.objectives.delta_action import DeltaAction, ObservedActionLDAD
 from textjepa.objectives.value import ActionDecode, ActionKL, ValueDistill, ValueRegression
 from textjepa.objectives.chunk_pred import ChunkPrediction, SlotAnchor
 from textjepa.objectives.geometry import GoalMonotonicity, TemporalStraightening
 from textjepa.objectives.ranking import ActionRanking, CostRanking, GeoAdvantageRank
+from textjepa.objectives.counterfactual import CounterfactualOutcomePrediction
+from textjepa.objectives.macro_hierarchy import (
+    ActionFeasibility,
+    HierarchyReachability,
+    LowerHierarchyRollout,
+    MacroActionValue,
+    MacroAdvantageRanking,
+    MacroOODValueRanking,
+    MacroCounterfactualDynamics,
+    MacroStateValue,
+    MacroStateAdvantageRanking,
+    MacroSupport,
+    SubgoalActionRanking,
+    MacroTop1Ranking,
+    MacroRecedingRanking,
+    MacroRecedingValue,
+)
+from textjepa.objectives.variational import (
+    CounterfactualActionPrior,
+    CounterfactualVariationalPrediction,
+    LatentDifferenceActionReconstruction,
+    TargetDistributionKL,
+    VariationalLatentPrediction,
+)
 
 __all__ = [
+    "ActionFeasibility",
+    "HierarchyReachability",
+    "LowerHierarchyRollout",
     "ActionRanking",
     "CostRanking",
     "GeoAdvantageRank",
+    "CounterfactualOutcomePrediction",
+    "MacroCounterfactualDynamics",
+    "MacroStateValue",
+    "MacroStateAdvantageRanking",
+    "MacroActionValue",
+    "MacroAdvantageRanking",
+    "MacroOODValueRanking",
+    "MacroSupport",
+    "SubgoalActionRanking",
+    "MacroTop1Ranking",
+    "MacroRecedingRanking",
+    "MacroRecedingValue",
+    "VariationalLatentPrediction",
+    "TargetDistributionKL",
+    "LatentDifferenceActionReconstruction",
+    "CounterfactualVariationalPrediction",
+    "CounterfactualActionPrior",
+    "SIGReg",
     "ChunkPrediction",
     "SlotAnchor",
     "ValueDistill",
@@ -21,9 +76,16 @@ __all__ = [
     "Objective",
     "CompositeObjective",
     "LatentPrediction",
+    "DenseRolloutPrediction",
+    "DenseHierarchyRolloutPrediction",
+    "DenseHierarchyValueRegression",
     "RolloutPrediction",
     "HierarchyPrediction",
+    "HierarchyValueDistill",
+    "HierarchyValueRegression",
+    "MacroPrior",
     "VICReg",
     "DeltaAction",
+    "ObservedActionLDAD",
     "ValueRegression",
 ]

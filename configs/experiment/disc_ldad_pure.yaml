@@ -1,7 +1,8 @@
 # @package _global_
-# The Delta-JEPA stability claim: LDAD alone, NO stability mechanisms —
+# Stability ablation for the hybrid displacement loss alone —
+# not a faithful raw-action Delta-JEPA replication. NO stability mechanisms:
 # no EMA teacher (online targets), no stopgrad on the target side, no
-# VICReg. If the paper is right, no collapse (state_std/effrank hold).
+# VICReg. This tests whether the hybrid objective alone prevents collapse.
 run_name: disc_ldad_pure
 model:
   state_target: online_nosg

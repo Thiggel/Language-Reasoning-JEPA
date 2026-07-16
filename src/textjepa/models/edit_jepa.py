@@ -88,6 +88,7 @@ class EditJEPA(nn.Module):
         fsq_levels: list[int] | None = None,
         predictor_hidden_mult: int = 4,
         predictor_layers: int = 2,
+        predictor_heads: int = 8,
         n_ops: int = 3,
         macro_k: int = 3,
         d_macro: int = 8,
@@ -108,8 +109,18 @@ class EditJEPA(nn.Module):
         )
         self.action_encoder = ActionEncoder(d_model, d_action, fsq_levels=fsq_levels)
         self.core = LatentDynamicsCore(
-            d_model, d_action, predictor_hidden_mult, predictor_layers,
-            n_ops, macro_k, d_macro, value_detach, geo_proj,
+            d_model=d_model,
+            d_action=d_action,
+            predictor_hidden_mult=predictor_hidden_mult,
+            predictor_layers=predictor_layers,
+            predictor_heads=predictor_heads,
+            n_ops=n_ops,
+            macro_k=macro_k,
+            d_macro=d_macro,
+            value_detach=value_detach,
+            geo_proj=geo_proj,
+            predictor_kind="causal",
+            high_predictor_kind="causal",
         )
         self.attn_pred = (
             AttnEditPredictor(d_model, d_action) if attn_predictor else None

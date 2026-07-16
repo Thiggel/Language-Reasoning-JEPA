@@ -63,6 +63,8 @@ class Trainer:
 
     def _train_epoch(self, epoch: int) -> None:
         self.model.train()
+        if hasattr(self.train_loader.sampler, "set_epoch"):
+            self.train_loader.sampler.set_epoch(epoch)
         t0 = time.time()
         for batch in self.train_loader:
             batch = to_device(batch, self.device)
@@ -71,6 +73,24 @@ class Trainer:
                 g["lr"] = self.cfg.train.lr * lr_scale
             out = self.model(batch)
             loss, items = self.objective(out, batch)
+            support_logits = out.extras.get("action_support_logits")
+            if support_logits is not None:
+                support_valid = out.extras["action_support_valid"]
+                support_target = out.extras["action_support_target"]
+                support_pred = support_logits >= 0
+                items["action_feasibility_accuracy"] = (
+                    support_pred[support_valid]
+                    .eq(support_target[support_valid])
+                    .float().mean().item()
+                )
+                positive = support_valid & support_target
+                negative = support_valid & ~support_target
+                items["action_feasibility_positive_logit"] = (
+                    support_logits[positive].mean().item()
+                )
+                items["action_feasibility_negative_logit"] = (
+                    support_logits[negative].mean().item()
+                )
             self.opt.zero_grad(set_to_none=True)
             loss.backward()
             gnorm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
@@ -96,14 +116,74 @@ class Trainer:
         n = 0
         feats: dict[str, list[torch.Tensor]] = {k: [] for k in (
             "state", "pred", "rollout", "delta", "value", "value_tgt",
-            "step_value", "op", "necessary",
+            "step_value", "op", "necessary", "action",
         )}
+        sentence_stream = False
         for i, batch in enumerate(self.val_loader):
             if i >= self.eval_batches:
                 break
             batch = to_device(batch, self.device)
             out = self.model(batch)
             loss, items = self.objective(out, batch)
+            support_logits = out.extras.get("action_support_logits")
+            if support_logits is not None:
+                support_valid = out.extras["action_support_valid"]
+                support_target = out.extras["action_support_target"]
+                support_pred = support_logits >= 0
+                items["action_feasibility_accuracy"] = (
+                    support_pred[support_valid]
+                    .eq(support_target[support_valid])
+                    .float().mean().item()
+                )
+                positive = support_valid & support_target
+                negative = support_valid & ~support_target
+                items["action_feasibility_positive_logit"] = (
+                    support_logits[positive].mean().item()
+                )
+                items["action_feasibility_negative_logit"] = (
+                    support_logits[negative].mean().item()
+                )
+            logits = out.extras.get("observed_action_logits")
+            if logits is not None:
+                target = batch["action_tokens"]
+                width = min(logits.shape[-2], target.shape[-1])
+                prediction = logits[..., :width, :].argmax(-1)
+                target = target[..., :width]
+                token_mask = out.step_mask.unsqueeze(-1) & target.ne(0)
+                correct = prediction.eq(target)
+                items["observed_action_token_accuracy"] = (
+                    correct[token_mask].float().mean().item()
+                )
+                sequence_correct = (correct | ~token_mask).all(-1)
+                items["observed_action_sequence_exact"] = (
+                    sequence_correct[out.step_mask].float().mean().item()
+                )
+            multistep_logits = out.extras.get("observed_action_multistep_logits")
+            if multistep_logits is not None and multistep_logits.shape[1] > 0:
+                horizon = multistep_logits.shape[-3]
+                n_starts = multistep_logits.shape[1]
+                target = torch.stack(
+                    [batch["action_tokens"][:, j : j + n_starts]
+                     for j in range(horizon)],
+                    dim=2,
+                )
+                valid = torch.stack(
+                    [out.step_mask[:, j : j + n_starts]
+                     for j in range(horizon)],
+                    dim=2,
+                )
+                width = min(multistep_logits.shape[-2], target.shape[-1])
+                prediction = multistep_logits[..., :width, :].argmax(-1)
+                target = target[..., :width]
+                token_mask = valid.unsqueeze(-1) & target.ne(0)
+                correct = prediction.eq(target)
+                items["observed_action_token_accuracy"] = (
+                    correct[token_mask].float().mean().item()
+                )
+                phrase_correct = (correct | ~token_mask).all(-1)
+                items["observed_action_sequence_exact"] = (
+                    phrase_correct[valid].float().mean().item()
+                )
             items["loss"] = loss.item()
             for k, v in items.items():
                 sums[k] = sums.get(k, 0.0) + v
@@ -114,6 +194,47 @@ class Trainer:
             feats["pred"].append(flat(out.preds))
             feats["rollout"].append(flat(out.rollout))
             feats["delta"].append(flat(out.step_states - out.prev_states))
+            feats["action"].append(flat(out.actions))
+            if out.hi_mask is not None and "macro_codes" in out.extras:
+                hm = out.hi_mask.reshape(-1)
+                hflat = lambda x: x.reshape(-1, x.shape[-1])[hm]
+                feats.setdefault("macro", []).append(
+                    hflat(out.extras["macro_codes"])
+                )
+                feats.setdefault("hi_pred", []).append(hflat(out.hi_preds))
+                feats.setdefault("hi_target", []).append(hflat(out.hi_targets))
+                if "hi_value_pred" in out.extras:
+                    feats.setdefault("hi_value", []).append(
+                        out.extras["hi_value_pred"].reshape(-1)[hm]
+                    )
+                    feats.setdefault("hi_value_target", []).append(
+                        out.extras["hi_value_target"].reshape(-1)[hm]
+                    )
+            if out.extras.get("sentence_stream", False):
+                sentence_stream = True
+                feats.setdefault("pred_std", []).append(
+                    (0.5 * out.extras["pred_logvar"]).exp().reshape(
+                        -1, out.preds.shape[-1]
+                    )[m]
+                )
+                feats.setdefault("target_std", []).append(
+                    (0.5 * out.extras["target_logvar"]).exp().reshape(
+                        -1, out.preds.shape[-1]
+                    )[m]
+                )
+                feats.setdefault("action_q_mu", []).append(
+                    flat(out.extras["action_q_mu"])
+                )
+                feats.setdefault("action_p_mu", []).append(
+                    flat(out.extras["action_p_mu"])
+                )
+                if "latent_ldad_pred" in out.extras:
+                    feats.setdefault("ldad_error", []).append(
+                        (out.extras["latent_ldad_pred"]
+                         - out.extras["latent_ldad_tgt"]).pow(2).mean(-1)
+                        .reshape(-1)[m]
+                    )
+                continue
             if "chunk_pred" in out.extras:
                 feats.setdefault("chunkpred", []).append(flat(out.extras["chunk_pred"]))
             cos, cmask = velocity_cosines(out)
@@ -139,6 +260,33 @@ class Trainer:
         cat = {k: torch.cat(v) for k, v in feats.items() if v}
         metrics["state_std"] = feature_std(cat["state"])
         metrics["state_effrank"] = effective_rank(cat["state"][:4096])
+        metrics["action_std"] = feature_std(cat["action"])
+        metrics["action_effrank"] = effective_rank(cat["action"][:4096])
+        if "macro" in cat:
+            metrics["macro_std"] = feature_std(cat["macro"])
+            metrics["macro_effrank"] = effective_rank(cat["macro"][:4096])
+            hp = torch.nn.functional.layer_norm(
+                cat["hi_pred"], cat["hi_pred"].shape[-1:]
+            )
+            ht = torch.nn.functional.layer_norm(
+                cat["hi_target"], cat["hi_target"].shape[-1:]
+            )
+            metrics["hi_matched_l1"] = (hp - ht).abs().mean().item()
+            if "hi_value" in cat:
+                metrics["hi_value_mae"] = (
+                    cat["hi_value"] - 5.0 * cat["hi_value_target"]
+                ).abs().mean().item()
+        if sentence_stream:
+            metrics["pred_std"] = cat["pred_std"].mean().item()
+            metrics["target_std"] = cat["target_std"].mean().item()
+            metrics["action_q_mu_std"] = feature_std(cat["action_q_mu"])
+            metrics["action_q_mu_effrank"] = effective_rank(
+                cat["action_q_mu"][:4096]
+            )
+            metrics["action_p_mu_std"] = feature_std(cat["action_p_mu"])
+            if "ldad_error" in cat:
+                metrics["ldad_mse"] = cat["ldad_error"].mean().item()
+            return metrics
         metrics["value_mae"] = (cat["value"] - cat["value_tgt"]).abs().mean().item()
         modulus = int(cat["step_value"].max().item()) + 1
         for src in ("state", "pred", "rollout", "chunkpred"):

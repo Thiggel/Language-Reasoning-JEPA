@@ -1,0 +1,26 @@
+# Isolated faithful observed-action LDAD stability factorial.
+#
+# Keep only the one-step JEPA transition loss, one optional anti-collapse
+# regularizer, and optional reconstruction of the externally observed action
+# text from s_{t+1}-s_t.  GAR, scalar values, outcome anchors, hierarchy,
+# rollout, and the legacy hybrid operation target are deliberately absent.
+latent_pred:
+  _target_: textjepa.objectives.LatentPrediction
+  weight: 1.0
+  kind: smooth_l1
+  norm_targets: true
+vicreg:
+  _target_: textjepa.objectives.VICReg
+  weight: 0.0
+  std_target: 1.0
+  cov_weight: 0.04
+  action_weight: 0.1
+sigreg:
+  _target_: textjepa.objectives.SIGReg
+  weight: 0.0
+  num_slices: 256
+  n_points: 17
+  integration_limit: 5.0
+observed_action_ldad:
+  _target_: textjepa.objectives.ObservedActionLDAD
+  weight: 0.0

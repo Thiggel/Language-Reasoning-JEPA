@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - override /data: igsm_real
+run_name: sentlm_intent_faithful
+train:
+  target_kind: intent
+model:
+  max_chunk_len: 96
+  max_chunks: 96
+  latent_target: false

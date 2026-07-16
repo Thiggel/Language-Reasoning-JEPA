@@ -34,6 +34,7 @@ C = {
     "edit_base": "#2a78d6",
     "edit_valgrad": "#4a3aa7",
     "edit_anchor": "#1baf7a",
+    "edit_attn": "#c2361b",
     "oracle": "#0b0b0b",
     "random_ctrl": "#c3c2b7",
     # the two energies (used wherever value-head vs goal-distance is compared)
@@ -53,6 +54,7 @@ LABELS = {
     "edit_base": "base",
     "edit_valgrad": "+ value-grad",
     "edit_anchor": "+ anchor + value-grad",
+    "edit_attn": "attention transition model",
     "edit_mono": "+ monotonicity",
     "edit_geo": "+ straighten + mono",
 }
@@ -122,15 +124,31 @@ def fig_planning():
             errs.append(float(np.std(seeds)) if len(seeds) > 1 else 0.0)
         names.append(LABELS[r])
         cols.append(C[r])
-    fig, ax = plt.subplots(figsize=(4.6, 2.7))
-    bar_with_labels(ax, names, vals, cols)
-    x = range(len(vals))
-    ax.errorbar(x, vals, yerr=errs, fmt="none", ecolor="#0b0b0b",
+    scientific = {
+        "no Delta-JEPA": "without displacement decoding",
+        "base JEPA": "latent-prediction baseline",
+        "+ frozen anchor": "fixed outcome target",
+        "+ anchor + value-grad": "fixed outcome + value shaping",
+        "+ value-grad": "end-to-end value shaping",
+        "+ monotonicity": "goal-monotonicity constraint",
+        "+ ranking (K=2)": "counterfactual preference loss",
+        "no scalar labels (MDR)": "geometry-distilled preference model",
+    }
+    names = [scientific.get(n, n) for n in names]
+    fig, ax = plt.subplots(figsize=(5.2, 3.35))
+    y = list(range(len(vals)))
+    bars = ax.barh(y, vals, height=0.62, color=cols, zorder=2)
+    ax.errorbar(vals, y, xerr=errs, fmt="none", ecolor="#0b0b0b",
                 elinewidth=1.1, capsize=2.5, zorder=4)
-    ax.axhline(1.0, color=C["oracle"], lw=1, ls="--")
-    ax.text(len(names) - 0.45, 0.965, "oracle", fontsize=8, color=C["oracle"],
-            ha="right")
-    ax.set_ylabel("success @ optimal budget")
+    for b, v in zip(bars, vals):
+        ax.text(v + 0.012, b.get_y() + b.get_height() / 2, f"{v:.2f}",
+                va="center", fontsize=8)
+    ax.set_yticks(y)
+    ax.set_yticklabels(names, fontsize=7.5)
+    ax.invert_yaxis()
+    ax.axvline(1.0, color=C["oracle"], lw=1, ls="--")
+    ax.set_xlim(0, 1.08)
+    ax.set_xlabel("success @ optimal budget")
     fig.tight_layout()
     fig.savefig(OUT / "planning_success.pdf")
 
@@ -259,35 +277,43 @@ def fig_energy():
 def fig_edit_planning():
     """Claim: on the edit track the raw buffer-encoder geometry (goal
     distance) beats every learned value head."""
-    order = ["edit_base", "edit_valgrad", "edit_anchor"]
+    order = ["edit_base", "edit_valgrad", "edit_anchor", "edit_attn"]
     rows = [
         (r, planner_success(r), planner_success(r, energy="oracle_goal"))
         for r in order
         if planner_success(r) is not None
     ]
-    fig, ax = plt.subplots(figsize=(4.2, 2.6))
-    width = 0.32
+    fig, ax = plt.subplots(figsize=(4.6, 2.8))
+    width = 0.34
+    y = list(range(len(rows)))
     for i, key in enumerate((1, 2)):
-        xs = [j + (i - 0.5) * width for j in range(len(rows))]
+        ys = [j + (i - 0.5) * width for j in y]
         vals = [row[key] if row[key] is not None else 0 for row in rows]
         col = C["energy_value"] if key == 1 else C["energy_goal"]
-        bars = ax.bar(xs, vals, width=width * 0.9, color=col, zorder=3)
+        bars = ax.barh(ys, vals, height=width * 0.9, color=col, zorder=3)
         for b, v in zip(bars, vals):
-            ax.text(b.get_x() + b.get_width() / 2, v + 0.012, f"{v:.2f}",
-                    ha="center", fontsize=7.5)
+            ax.text(v + 0.012, b.get_y() + b.get_height() / 2, f"{v:.2f}",
+                    va="center", fontsize=7.5)
     rnd = plan("edit_base")["random_policy"]["success"]
-    ax.axhline(rnd, color=C["random"], lw=1.2, ls=":")
-    ax.text(len(rows) - 0.55, rnd + 0.02, "random", fontsize=8,
-            color=C["random"])
-    ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels([LABELS[r[0]] for r in rows], fontsize=8)
-    ax.set_ylim(0, 1.02)
-    ax.set_ylabel("perfect draft @ optimal budget")
+    ax.axvline(rnd, color=C["random"], lw=1.2, ls=":")
+    ax.text(rnd + 0.012, len(rows) - 0.45, "random", fontsize=7.5,
+            color=C["random"], rotation=90, va="top")
+    names = {
+        "edit_base": "latent-prediction baseline",
+        "edit_valgrad": "end-to-end value shaping",
+        "edit_anchor": "fixed outcome target",
+        "edit_attn": "sentence-attentive transition",
+    }
+    ax.set_yticks(y)
+    ax.set_yticklabels([names[r[0]] for r in rows], fontsize=7.5)
+    ax.invert_yaxis()
+    ax.set_xlim(0, 1.02)
+    ax.set_xlabel("perfect draft @ optimal budget")
     from matplotlib.patches import Patch
     ax.legend(handles=[
         Patch(facecolor=C["energy_value"], label="learned value head"),
         Patch(facecolor=C["energy_goal"], label="raw goal distance"),
-    ], fontsize=8, frameon=False, loc="upper left")
+    ], fontsize=7.5, frameon=False, loc="upper right")
     fig.tight_layout()
     fig.savefig(OUT / "edit_planning.pdf")
 

@@ -20,6 +20,7 @@ model:
   latent_target: false
 
 train:
+  target_kind: outcome  # outcome | intent
   batch_size: 128
   num_workers: 8
   epochs: 20

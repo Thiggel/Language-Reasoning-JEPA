@@ -1,0 +1,22 @@
+# @package _global_
+defaults:
+  - override /data: igsm_real
+  - override /model: discourse_vjepa
+  - override /objective: discourse_vjepa
+
+# Official-iGSM transfer of the selected observed-action probabilistic cell.
+# This is the raw-LDAD-off side of an otherwise exact pair.
+run_name: dvjepa_faithful_pooled_ema_sigreg
+model:
+  max_chunk_len: 96
+  target_mode: ema
+  action_mode: pooled
+  predictor_residual: true
+  observed_action_ldad: false
+objective:
+  action_kl: {weight: 0.0, free_nats: 4.0}
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01}
+  observed_action_ldad: {weight: 0.0}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

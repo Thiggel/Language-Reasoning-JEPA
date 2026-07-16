@@ -1,0 +1,5 @@
+# @package _global_
+defaults: [sentlm_latent_intent_faithful, _self_]
+run_name: paper_sentence_latent_lm_faithful
+data: {shuffle_actions: true}
+

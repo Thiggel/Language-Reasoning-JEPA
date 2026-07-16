@@ -1,0 +1,54 @@
+# @package _global_
+# Learn future intent-phrase availability from observed feasible sets.  This
+# supplies the lower hierarchical planner without goal/relevance rankings.
+run_name: intent_action_support
+model:
+  action_support_states: "true"
+data:
+  train_size: 40000
+  val_size: 3000
+  all_action_supervision: true
+  n_alt: 0
+  geo_rank_k: 0
+  macro_alt_k: 0
+objective:
+  latent_pred: {weight: 0.0, kind: smooth_l1, norm_targets: true}
+  rollout: {weight: 0.0, kind: smooth_l1, norm_targets: true}
+  hierarchy: {weight: 0.0, kind: smooth_l1, norm_targets: true}
+  macro_prior: {weight: 0.0, free_nats: 0.0}
+  hierarchy_value: {weight: 0.0, scale: 5.0}
+  vicreg: {weight: 0.0, std_target: 1.0, cov_weight: 0.04, action_weight: 0.1}
+  delta_action: {weight: 0.0, ce_weight: 1.0, emb_weight: 1.0}
+  observed_action_ldad: {weight: 0.0}
+  value: {weight: 0.0}
+  chunk_pred: {weight: 0.0, rollout_weight: 0.5}
+  straighten: {weight: 0.0}
+  monotone:
+    weight: 0.0
+    margin: 0.02
+    distractor_weight: 0.5
+    label_free: true
+  value_distill: {weight: 0.0, scale: 5.0}
+  ranking: {weight: 0.0, margin: 0.5}
+  cost_ranking: {weight: 0.0, margin: 0.5}
+  slot_anchor: {weight: 0.0}
+  action_kl: {weight: 0.0, free_nats: 0.0}
+  act_decode: {weight: 0.0}
+  geo_rank: {weight: 0.0, margin: 0.5, label_gap: 0.02}
+  counterfactual_outcome: {weight: 0.0}
+  macro_cf_dynamics: {weight: 0.0, kind: smooth_l1, norm_targets: true}
+  macro_state_value: {weight: 0.0}
+  macro_action_value: {weight: 0.0}
+  macro_advantage_rank: {weight: 0.0, margin: 0.5}
+  macro_support:
+    weight: 0.0
+    shuffled_weight: 1.0
+    perturbed_weight: 1.0
+  action_feasibility: {weight: 1.0, positive_weight: 2.0}
+train:
+  init_ckpt: runs/disc_latent_goal_h2_r1/best.pt
+  freeze_low_level: true
+  train_high_level: false
+  train_action_support: true
+  epochs: 10
+  warmup_steps: 200

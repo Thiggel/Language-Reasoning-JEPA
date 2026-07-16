@@ -1,0 +1,19 @@
+# @package _global_
+# Exact counterpart to real_rank_faithful_ldad: same fresh-data official-iGSM
+# symbolic preference reference, but no displacement decoder or legacy
+# operation target. This isolates faithful raw-action LDAD.
+defaults:
+  - override /data: igsm_real
+run_name: real_rank_fresh_noldad
+model:
+  chunk_target: frozen
+  value_detach: false
+  max_chunk_len: 96
+  observed_action_ldad: false
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.0}
+data:
+  n_alt: 2

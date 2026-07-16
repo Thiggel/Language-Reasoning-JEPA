@@ -45,3 +45,40 @@ class VICReg(Objective):
             var_a, _ = variance_covariance(acts, self.std_target)
             loss = loss + self.action_weight * var_a
         return loss
+
+
+class SIGReg(Objective):
+    """Sketched Epps--Pulley test against an isotropic Gaussian.
+
+    This follows LeJEPA Algorithm 1: random unit projections, empirical
+    characteristic functions at 17 integration points, a Gaussian window,
+    and trapezoidal quadrature.  Directions are resampled on every call.
+    """
+
+    def __init__(self, num_slices: int = 256, n_points: int = 17,
+                 integration_limit: float = 5.0):
+        super().__init__()
+        self.num_slices = num_slices
+        self.n_points = n_points
+        self.integration_limit = integration_limit
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        mask = out.step_mask.reshape(-1)
+        x = torch.cat([
+            out.s0,
+            out.step_states.reshape(-1, out.step_states.shape[-1])[mask],
+        ], dim=0)
+        directions = torch.randn(
+            x.shape[-1], self.num_slices, device=x.device, dtype=x.dtype
+        )
+        directions = directions / directions.norm(dim=0, keepdim=True).clamp_min(1e-8)
+        t = torch.linspace(
+            -self.integration_limit, self.integration_limit, self.n_points,
+            device=x.device, dtype=x.dtype,
+        )
+        projected = (x @ directions).unsqueeze(-1) * t
+        ecf = torch.complex(projected.cos(), projected.sin()).mean(0)
+        normal_cf = torch.exp(-0.5 * t.square())
+        err = (ecf - normal_cf).abs().square() * normal_cf
+        statistic = torch.trapz(err, t, dim=-1) * x.shape[0]
+        return statistic.mean()

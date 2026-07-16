@@ -1,12 +1,14 @@
-"""Closed-loop latent planning (MPC) over discourse actions.
+"""Closed-loop latent planning over discourse actions.
 
 The planner may query the *interface* of the world — which actions are
-feasible (dependency preconditions are stated in the prompt) and their
-intent phrases — but consequences and goal progress are judged purely in
-latent space: candidate actions are rolled out with the predictor and
-scored with the value head (estimated total steps = depth + predicted
-remaining). The chosen action is executed by the symbolic environment,
-whose outcome sentence is re-encoded before replanning.
+feasible (dependency preconditions are stated in the prompt) and their intent
+phrases. Lookahead 1 enumerates every currently feasible action and is the
+deployable, information-matched protocol. Deeper lookahead additionally uses
+the reference dependency graph to enumerate future feasible actions and detect
+terminal sequences. It is therefore an explicitly opt-in oracle-action
+diagnostic, even when consequences are rolled out with the latent predictor.
+The chosen action is executed by the environment, whose outcome sentence is
+re-encoded before replanning.
 """
 
 from __future__ import annotations
@@ -71,7 +73,14 @@ class LatentPlanner:
         energy: str = "value",  # "value" | "oracle_goal"
         hierarchy: bool = False,  # score K-step sequences with F_hi jumps
         simulator: str = "latent",  # "latent" (F rollouts) | "symbolic"
+        allow_oracle_future_actions: bool = False,
     ):
+        if lookahead > 1 and not allow_oracle_future_actions:
+            raise ValueError(
+                "lookahead > 1 enumerates future actions with the reference "
+                "dependency graph; set allow_oracle_future_actions=true "
+                "only for a labeled oracle-action diagnostic"
+            )
         self.model = model
         self.vocab = vocab
         self.device = device
@@ -80,6 +89,7 @@ class LatentPlanner:
         self.energy = energy
         self.hierarchy = hierarchy
         self.simulator = simulator
+        self.allow_oracle_future_actions = allow_oracle_future_actions
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -97,6 +107,7 @@ class LatentPlanner:
         prompt_tokens = self._tokens(prompt)
         prompt_mask = torch.ones(1, len(prompt), dtype=torch.bool, device=self.device)
         step_texts: list[str] = []
+        action_history: list[int] = []
         budget = problem.n_necessary_steps + slack
         n_distractor = 0
         goal_state = (
@@ -108,16 +119,26 @@ class LatentPlanner:
         while not env.solved and len(step_texts) < budget:
             s = self._current_state(prompt_tokens, prompt_mask, step_texts)
             s0 = self._s0(prompt_tokens, prompt_mask)
+            state_history, action_codes = self._causal_history(
+                prompt_tokens,
+                prompt_mask,
+                step_texts,
+                problem,
+                action_history,
+            )
             seqs = _sequences(
                 problem, frozenset(env.resolved_set), self.lookahead, self.max_expand
             )
             best = self._best_sequence(
                 s, s0, problem, seqs, goal_state,
+                state_history=state_history,
+                action_history=action_codes,
                 sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
             )
             chosen = best[0]
             n_distractor += int(chosen not in problem.query_ancestors)
             step_texts.append(env.step(chosen))
+            action_history.append(chosen)
 
         return EpisodeResult(
             env.solved, len(step_texts), problem.n_necessary_steps, n_distractor
@@ -168,6 +189,33 @@ class LatentPlanner:
         )
         return states[:, -1]
 
+    def _causal_history(
+        self,
+        prompt_tokens: torch.Tensor,
+        prompt_mask: torch.Tensor,
+        step_texts: list[str],
+        problem: Problem,
+        action_history: list[int],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return teacher-forced ``s_0...s_t`` and ``a_0...a_{t-1}``."""
+        s0 = self._s0(prompt_tokens, prompt_mask)
+        if step_texts:
+            step_tokens = self._tokens(step_texts)
+            step_mask = torch.ones(
+                1, len(step_texts), dtype=torch.bool, device=self.device
+            )
+            _, observed = self.model.encode_states(
+                prompt_tokens, prompt_mask, step_tokens, step_mask
+            )
+            states = torch.cat([s0.unsqueeze(1), observed], dim=1)
+        else:
+            states = s0.unsqueeze(1)
+        if action_history:
+            actions = self._action_codes(problem, action_history).unsqueeze(0)
+        else:
+            actions = states.new_zeros(1, 0, self.model.core.d_action)
+        return states, actions
+
     def _energy(
         self, cur: torch.Tensor, s0: torch.Tensor, steps: torch.Tensor,
         goal_state: torch.Tensor | None,
@@ -194,27 +242,44 @@ class LatentPlanner:
         problem: Problem,
         seqs: list[list[int]],
         goal_state: torch.Tensor | None,
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        from textjepa.data.igsm.render import action_phrase
-
-        depth = max(len(q) for q in seqs)
         n = len(seqs)
-        cur = s.expand(n, -1).clone()
-        cost = torch.zeros(n, device=self.device)
-        for d in range(depth):
-            idxs = [q[d] if d < len(q) else None for q in seqs]
-            texts = [
-                action_phrase(problem, i) if i is not None else "." for i in idxs
-            ]
-            tokens = self._tokens(texts).squeeze(0).unsqueeze(1)  # [n, 1, L]
-            a = self.model.encode_actions(tokens).squeeze(1)
-            step_alive = torch.tensor(
-                [i is not None for i in idxs], device=self.device
+        total = torch.empty(n, device=self.device)
+        for length in sorted({len(q) for q in seqs}):
+            selected = [i for i, q in enumerate(seqs) if len(q) == length]
+            if length == 0:
+                cur = s.expand(len(selected), -1)
+            else:
+                flat = [a for i in selected for a in seqs[i]]
+                future = self._action_codes(problem, flat).reshape(
+                    len(selected), length, -1
+                )
+                if hasattr(self.model.predictor, "rollout"):
+                    cur = self.model.predictor.rollout(
+                        s.expand(len(selected), -1),
+                        future,
+                        state_history=(
+                            state_history.expand(len(selected), -1, -1)
+                            if state_history is not None else None
+                        ),
+                        action_history=(
+                            action_history.expand(len(selected), -1, -1)
+                            if action_history is not None else None
+                        ),
+                    )[:, -1]
+                else:
+                    cur = s.expand(len(selected), -1)
+                    for step in range(length):
+                        cur = self.model.predictor(cur, future[:, step])
+            steps = torch.full(
+                (len(selected),), float(length), device=self.device
             )
-            nxt = self.model.predictor(cur, a)
-            cur = torch.where(step_alive.unsqueeze(1), nxt, cur)
-            cost = cost + step_alive.float()
-        return self._energy(cur, s0, cost, goal_state)
+            total[torch.tensor(selected, device=self.device)] = self._energy(
+                cur, s0, steps, goal_state
+            )
+        return total
 
     def _macro_costs(
         self,
@@ -225,7 +290,10 @@ class LatentPlanner:
         goal_state: torch.Tensor | None,
     ) -> torch.Tensor:
         """Score (m*K)-step sequences with chained F_hi macro jumps (HWM)."""
-        K = self.model.core.macro_k
+        # Flat configurations intentionally set macro_k=0 so unused hierarchy
+        # modules are absent/frozen. They must still pass through the ordinary
+        # flat planner without a division-by-zero in this hierarchy gate.
+        K = max(int(self.model.core.macro_k), 1)
         L = len(seqs[0])
         n = len(seqs)
         a = self._action_codes(
@@ -287,6 +355,8 @@ class LatentPlanner:
         problem: Problem,
         seqs: list[list[int]],
         goal_state: torch.Tensor | None = None,
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
         sym_ctx: tuple | None = None,  # (env, step_texts, prompt_t, prompt_m)
     ) -> list[int]:
         if self.simulator == "symbolic" and sym_ctx is not None:
@@ -295,7 +365,7 @@ class LatentPlanner:
                 env, step_texts, s0, pt, pm, seqs, goal_state
             )
             return seqs[int(total.argmin().item())]
-        K = self.model.core.macro_k
+        K = max(int(self.model.core.macro_k), 1)
         full_len = (max(len(q) for q in seqs) // K) * K
         full = (
             [q for q in seqs if len(q) == full_len]
@@ -307,9 +377,15 @@ class LatentPlanner:
             costs = [self._macro_costs(s, s0, problem, full, goal_state)]
             cands = list(full)
             if rest:
-                costs.append(self._flat_costs(s, s0, problem, rest, goal_state))
+                costs.append(self._flat_costs(
+                    s, s0, problem, rest, goal_state,
+                    state_history, action_history,
+                ))
                 cands += rest
             total = torch.cat(costs)
             return cands[int(total.argmin().item())]
-        total = self._flat_costs(s, s0, problem, seqs, goal_state)
+        total = self._flat_costs(
+            s, s0, problem, seqs, goal_state,
+            state_history, action_history,
+        )
         return seqs[int(total.argmin().item())]

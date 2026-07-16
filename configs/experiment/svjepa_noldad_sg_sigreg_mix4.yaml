@@ -1,0 +1,17 @@
+# @package _global_
+# Controlled action-free prior study: the strongest healthy no-EMA target
+# path with a four-component plan-time prior instead of one diagonal Gaussian.
+# Posterior-code reconstruction remains disabled to isolate prior multimodality.
+defaults: [{override /model: sentence_vjepa}, {override /objective: sentence_vjepa}]
+run_name: svjepa_noldad_sg_sigreg_mix4
+model:
+  target_mode: online_sg
+  use_ema_target: false
+  latent_ldad: false
+  action_prior_components: 4
+objective:
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01}
+  latent_ldad: {weight: 0.0}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

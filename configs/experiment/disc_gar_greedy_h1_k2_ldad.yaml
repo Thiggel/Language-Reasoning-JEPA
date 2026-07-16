@@ -1,0 +1,16 @@
+# @package _global_
+# One-step geometric ranking control for the H={1,2,4,8,16} teacher-horizon
+# comparison.  At H=1 no continuation policy is invoked.
+run_name: disc_gar_greedy_h1_k2_ldad
+model: {chunk_target: frozen, value_detach: false, observed_action_ldad: true}
+objective:
+  chunk_pred: {weight: 2.0}
+  counterfactual_outcome: {weight: 2.0}
+  ranking: {weight: 0.0}
+  value: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.2}
+  monotone: {weight: 2.0, margin: 0.05, label_free: true}
+  value_distill: {weight: 1.0}
+  geo_rank: {weight: 1.0}
+data: {n_alt: 2, geo_rank_k: 2, geo_rank_horizon: 1, geo_rank_policy: greedy}

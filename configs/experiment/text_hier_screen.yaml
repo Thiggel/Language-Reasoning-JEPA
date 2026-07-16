@@ -1,0 +1,13 @@
+# @package _global_
+# Fixed-span Level-1 hierarchy screen for the hard text project.
+run_name: text_hier_span8_d32_det
+data:
+  train_size: 30000
+  val_size: 2000
+model:
+  macro_span: 8
+  d_macro: 32
+  macro_variational: false
+  macro_encoder_kind: concat
+train:
+  epochs: 10

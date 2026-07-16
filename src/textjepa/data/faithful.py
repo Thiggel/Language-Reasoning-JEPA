@@ -69,6 +69,15 @@ class FaithfulProblem:
         # exclude the RNG pseudo-node (l = -1): it feeds random
         # constants into expressions and is never itself "defined"
         self.params = [q for q in p.template.nodes if q[0] != -1]
+        # The reference graph iterates parameters in a near-topological order.
+        # Exposing that order as the action menu makes "take the first
+        # feasible action" an accidental solution policy.  Preserve the
+        # official problem itself but present every model with one stable,
+        # problem-specific shuffled action order.
+        self.action_order = list(self.params)
+        random.Random(f"faithful-action-menu:{self.text}").shuffle(
+            self.action_order
+        )
         self.deps = {
             q: [d for d in p.template.predecessors(q) if d[0] != -1]
             for q in self.params
@@ -135,7 +144,7 @@ class FaithfulEnv:
 
     def feasible_actions(self) -> list:
         done = self.resolved_set
-        return [q for q in self.fp.params
+        return [q for q in self.fp.action_order
                 if q not in done
                 and all(d in done for d in self.fp.deps[q])
                 and q in self.fp.p.sketch]
@@ -157,6 +166,24 @@ class FaithfulEnv:
         return len(self.fp.necessary - self.resolved_set)
 
 
+def enumerate_faithful_action_sequences(
+    env: FaithfulEnv, depth: int, cap: int = 256
+) -> list[list]:
+    """Enumerate fixed-depth feasible chunks from a faithful environment."""
+    frontier: list[tuple[list, FaithfulEnv]] = [([], env.clone())]
+    for _ in range(depth):
+        nxt = []
+        for sequence, current in frontier:
+            for action in current.feasible_actions():
+                clone = current.clone()
+                clone.step(action)
+                nxt.append((sequence + [action], clone))
+        frontier = nxt[:cap]
+        if not frontier:
+            break
+    return [sequence for sequence, _ in frontier if len(sequence) == depth]
+
+
 class FaithfulDataset(Dataset):
     """Batch schema compatible with the discourse collate; traces follow
     the official minimal solution order with optional distractor detours."""
@@ -172,9 +199,27 @@ class FaithfulDataset(Dataset):
         distractor_prob: float = 0.15,
         max_distractors: int = 2,
         n_alt: int = 0,
+        geo_rank_k: int = 0,
+        geo_rank_horizon: int = 1,
+        geo_rank_rollouts: int = 1,
+        geo_rank_policy: str = "random",
+        geo_rank_beam_width: int = 1,
+        macro_alt_k: int = 0,
+        macro_alt_horizon: int = 3,
+        all_action_supervision: bool = False,
         **_,
     ):
         self.n_alt = n_alt
+        self.geo_rank_k = geo_rank_k
+        self.geo_rank_horizon = max(1, int(geo_rank_horizon))
+        self.geo_rank_rollouts = max(1, int(geo_rank_rollouts))
+        self.geo_rank_policy = str(geo_rank_policy)
+        self.geo_rank_beam_width = max(1, int(geo_rank_beam_width))
+        self.macro_alt_k = max(0, int(macro_alt_k))
+        self.macro_alt_horizon = max(1, int(macro_alt_horizon))
+        self.all_action_supervision = bool(all_action_supervision)
+        if self.geo_rank_policy not in {"random", "greedy"}:
+            raise ValueError(f"unknown geo_rank_policy: {self.geo_rank_policy}")
         self.vocab = vocab
         self.size = size
         self.seed = seed
@@ -195,6 +240,10 @@ class FaithfulDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict:
         fp, rng = self.problem(index)
+        # Alternative outcomes are an optional supervision view, not part of
+        # trajectory generation.  Isolate their randomness so n_alt=0 and
+        # n_alt>0 remain exactly paired on every on-trajectory field.
+        alt_rng = random.Random(f"{self.seed}:{index}:alt")
         env = FaithfulEnv(fp)
         steps, actions, op, value, remaining, resolved_n, necessary = (
             [], [], [], [], [], [], []
@@ -203,23 +252,48 @@ class FaithfulDataset(Dataset):
         pidx = {q: i for i, q in enumerate(fp.params)}
         var_idx = []
         alt_actions: list = []
+        alt_steps: list = []
         alt_remaining: list = []
+        action_feasible: list[list[int]] = []
+        trace: list = []
         while not env.solved:
             feas = env.feasible_actions()
+            if self.all_action_supervision:
+                feasible_set = set(feas)
+                action_feasible.append([
+                    int(candidate in feasible_set)
+                    for candidate in fp.action_order
+                ])
             nec = [q for q in feas if q in fp.necessary]
             distr = [q for q in feas if q not in fp.necessary]
             use_d = (distr and n_distr < self.max_distractors
                      and rng.random() < self.distractor_prob)
             q = rng.choice(distr) if use_d else rng.choice(nec)
+            trace.append(q)
             n_distr += int(q not in fp.necessary)
             if self.n_alt:
+                import numpy as np
+
                 done = env.resolved_set
                 others = [a for a in feas if a != q]
-                rng.shuffle(others)
+                alt_rng.shuffle(others)
                 alts = others[: self.n_alt]
                 alt_actions.append(
                     [self.vocab.encode(env.action_text(a)) for a in alts]
                 )
+                # Problem.to_sol draws temporary variable names from the
+                # process-global Python RNG.  Counterfactual rendering must
+                # not perturb the factual renderer (or the next action).
+                py_state = random.getstate()
+                np_state = np.random.get_state()
+                try:
+                    rendered_alts = [
+                        self.vocab.encode(env.clone().step(a)) for a in alts
+                    ]
+                finally:
+                    random.setstate(py_state)
+                    np.random.set_state(np_state)
+                alt_steps.append(rendered_alts)
                 alt_remaining.append(
                     [len(fp.necessary - (done | {a})) for a in alts]
                 )
@@ -232,6 +306,63 @@ class FaithfulDataset(Dataset):
             necessary.append(int(q in fp.necessary))
             var_idx.append(min(pidx[q], 11))
         prompt = [self.vocab.encode(s) for s in fp.prompt_sentences]
+        ga = {}
+        if self.geo_rank_k and len(trace) > 1:
+            t_star = rng.randrange(len(trace))
+            env2 = FaithfulEnv(fp)
+            for q in trace[:t_star]:
+                env2.step(q)
+            executed = trace[t_star]
+            alternatives = [q for q in env2.feasible_actions() if q != executed]
+            rng.shuffle(alternatives)
+            alternatives = alternatives[: self.geo_rank_k]
+            if alternatives:
+                candidates = [executed, *alternatives]
+                ga = {
+                    "ga_t": t_star,
+                    "ga_horizon": self.geo_rank_horizon,
+                    "ga_beam_width": self.geo_rank_beam_width,
+                    "ga_candidate_objects": candidates,
+                    "ga_alt_actions": [
+                        self.vocab.encode(env2.action_text(q))
+                        for q in alternatives
+                    ],
+                    "ga_alt_steps": [
+                        self.vocab.encode(env2.clone().step(q))
+                        for q in alternatives
+                    ],
+                }
+                if self.geo_rank_horizon > 1 and self.geo_rank_policy == "greedy":
+                    ga.update(
+                        ga_greedy=True,
+                        ga_problem=fp,
+                        ga_trace=list(trace),
+                        ga_vocab=self.vocab,
+                        ga_env_kind="faithful",
+                    )
+                elif self.geo_rank_horizon > 1:
+                    rollout_steps = []
+                    for candidate in candidates:
+                        candidate_rollouts = []
+                        for _ in range(self.geo_rank_rollouts):
+                            roll_env = env2.clone()
+                            sequence = list(steps[:t_star])
+                            sequence.append(
+                                self.vocab.encode(roll_env.step(candidate))
+                            )
+                            for _depth in range(1, self.geo_rank_horizon):
+                                if roll_env.solved:
+                                    break
+                                feasible = roll_env.feasible_actions()
+                                if not feasible:
+                                    break
+                                nxt = feasible[rng.randrange(len(feasible))]
+                                sequence.append(
+                                    self.vocab.encode(roll_env.step(nxt))
+                                )
+                            candidate_rollouts.append(sequence)
+                        rollout_steps.append(candidate_rollouts)
+                    ga["ga_rollout_steps"] = rollout_steps
         out = {
             "prompt": prompt, "steps": steps, "actions": actions,
             "op": op, "value": value, "remaining": remaining,
@@ -243,9 +374,70 @@ class FaithfulDataset(Dataset):
                 min(pidx[q], 11) for q in fp.necessary
             ),
         }
+        if self.macro_alt_k and len(trace) >= self.macro_alt_horizon:
+            import numpy as np
+
+            K = self.macro_alt_horizon
+            macro_rng = random.Random(f"{self.seed}:{index}:macro-alt")
+            t_star = macro_rng.choice(list(range(len(trace) - K + 1)))
+            env3 = FaithfulEnv(fp)
+            for action in trace[:t_star]:
+                env3.step(action)
+            candidates = enumerate_faithful_action_sequences(
+                env3, K, cap=max(64, 8 * self.macro_alt_k)
+            )
+            factual = list(trace[t_star:t_star + K])
+            alternatives = [seq for seq in candidates if seq != factual]
+            macro_rng.shuffle(alternatives)
+            chosen = [factual] + alternatives[:self.macro_alt_k]
+            macro_actions = []
+            macro_steps = []
+            macro_remaining = []
+            macro_prefix_remaining = []
+            before = env3.remaining_necessary()
+            py_state = random.getstate()
+            np_state = np.random.get_state()
+            try:
+                for sequence in chosen:
+                    clone = env3.clone()
+                    future = []
+                    prefix_remaining = []
+                    for action in sequence:
+                        future.append(self.vocab.encode(clone.step(action)))
+                        prefix_remaining.append(clone.remaining_necessary())
+                    macro_actions.append([
+                        self.vocab.encode(env3.action_text(action))
+                        for action in sequence
+                    ])
+                    macro_steps.append(list(steps[:t_star]) + future)
+                    macro_remaining.append(clone.remaining_necessary())
+                    macro_prefix_remaining.append(prefix_remaining)
+            finally:
+                random.setstate(py_state)
+                np.random.set_state(np_state)
+            out.update(
+                macro_alt_t=t_star,
+                macro_alt_actions=macro_actions,
+                macro_alt_steps=macro_steps,
+                macro_alt_remaining=macro_remaining,
+                macro_alt_prefix_remaining=macro_prefix_remaining,
+                macro_alt_advantage=[
+                    before - rem for rem in macro_remaining
+                ],
+            )
+        if self.all_action_supervision:
+            out.update(
+                action_candidate_tokens=[
+                    self.vocab.encode(FaithfulEnv(fp).action_text(action))
+                    for action in fp.action_order
+                ],
+                action_feasible=action_feasible,
+            )
         if self.n_alt:
             out["alt_actions"] = alt_actions
+            out["alt_steps"] = alt_steps
             out["alt_remaining"] = alt_remaining
+        out.update(ga)
         return out
 
 

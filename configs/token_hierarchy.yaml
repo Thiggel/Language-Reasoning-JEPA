@@ -1,0 +1,50 @@
+defaults:
+  - data: igsm
+  - _self_
+
+run_name: text_hier_span8_d32_det
+seed: 1
+device: cuda:0
+
+model:
+  d_model: 256
+  encoder_layers: 4
+  predictor_layers: 2
+  n_heads: 8
+  ff_mult: 4
+  max_len: 512
+  d_action: 64
+  macro_span: 8
+  d_macro: 32
+  macro_variational: false
+  macro_encoder_kind: concat
+  macro_concat_width: 8
+
+objective:
+  low_prediction: 1.0
+  high_prediction: 1.0
+  macro_prior: 0.05
+  high_value: 1.0
+  vicreg: 1.0
+  covariance: 0.04
+  value_scale: 5.0
+
+train:
+  batch_size: 32
+  num_workers: 8
+  epochs: 10
+  lr: 3.0e-4
+  weight_decay: 0.05
+  warmup_steps: 300
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 50
+  eval_batches: 40
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  output_subdir: null
+  job:
+    chdir: false

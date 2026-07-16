@@ -1,0 +1,26 @@
+# @package _global_
+defaults:
+  - override /model: discourse_vjepa
+  - override /objective: discourse_vjepa
+
+# Base cell for the faithful observed-action probabilistic-state LDAD
+# factorial. The launcher overrides target mode, regularizer, and LDAD while
+# retaining this data and compute budget in all 18 cells.
+run_name: dvldad_ema_none_off
+model:
+  target_mode: ema
+  action_mode: pooled
+  predictor_residual: true
+  observed_action_ldad: false
+  latent_ldad: false
+objective:
+  action_kl: {weight: 0.0, free_nats: 4.0}
+  latent_ldad: {weight: 0.0}
+  observed_action_ldad: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.0}
+data:
+  train_size: 30000
+  val_size: 2000
+train:
+  epochs: 10

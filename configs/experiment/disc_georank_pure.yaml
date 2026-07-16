@@ -1,5 +1,6 @@
 # @package _global_
-# Annotation-free, V from geometric ranking margins alone (no distill).
+# Preference-label-free V from geometric ranking margins alone (no distill).
+# The feasible-action/text interface and default LDAD operation labels remain.
 run_name: disc_georank_pure
 model:
   chunk_target: frozen

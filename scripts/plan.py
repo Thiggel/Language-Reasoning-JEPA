@@ -22,7 +22,8 @@ from textjepa.utils.checkpoint import build_dataset, load_run
 def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
-    dataset = build_dataset(run_cfg, vocab, split="val")
+    split = cfg.get("split", "val")
+    dataset = build_dataset(run_cfg, vocab, split=split)
     device = torch.device(cfg.device)
     if run_cfg.data.get("name", "igsm") == "igsm_real":
         from textjepa.planning.faithful_search import (
@@ -32,6 +33,7 @@ def main(cfg: DictConfig) -> None:
         planner = FaithfulPlanner(
             model, vocab, device, lookahead=cfg.lookahead,
             max_expand=cfg.max_expand,
+            allow_oracle_future_actions=cfg.allow_oracle_future_actions,
         )
         results = evaluate_faithful_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -47,6 +49,7 @@ def main(cfg: DictConfig) -> None:
             max_expand=cfg.max_expand, energy=cfg.energy,
             hierarchy=cfg.get("hierarchy", False),
             simulator=cfg.get("simulator", "latent"),
+            allow_oracle_future_actions=cfg.allow_oracle_future_actions,
         )
         results = evaluate_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -59,9 +62,12 @@ def main(cfg: DictConfig) -> None:
         suffix += "_hier"
     if cfg.get("simulator", "latent") == "symbolic":
         suffix += "_sym"
+    if cfg.lookahead > 1:
+        suffix += "_oracle_actions"
+    split_suffix = "" if split == "val" else f"_{split}"
     out = Path(
-        cfg.out
-        or Path(cfg.ckpt).parent / f"plan_slack{cfg.slack}_look{cfg.lookahead}{suffix}.json"
+        cfg.out or Path(cfg.ckpt).parent
+        / f"plan_slack{cfg.slack}_look{cfg.lookahead}{suffix}{split_suffix}.json"
     )
     out.write_text(json.dumps(results, indent=2))
     print(f"saved to {out}")

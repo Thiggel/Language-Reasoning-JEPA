@@ -1,0 +1,24 @@
+# @package _global_
+# Prior-capacity control for action-free official iGSM. Relative to the
+# strongest existing no-EMA reference, only the single Gaussian is replaced
+# by four context-conditioned components; no counterfactual outcome set is
+# supplied.
+defaults:
+  - override /data: igsm_real
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+
+run_name: sentence_vjepa_faithful_mixture
+model:
+  target_mode: online_sg
+  latent_ldad: false
+  action_prior_components: 4
+  counterfactual_set: false
+objective:
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01, num_slices: 256, n_points: 17, integration_limit: 5.0}
+  latent_ldad: {weight: 0.0}
+  counterfactual_variational_prediction: {weight: 0.0}
+  counterfactual_action_prior: {weight: 0.0, free_nats: 4.0}
+data:
+  n_alt: 0

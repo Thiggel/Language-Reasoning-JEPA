@@ -1,0 +1,6 @@
+# @package _global_
+# Fully variational, action-free sentence stream on the stylized generator.
+defaults:
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+run_name: sentence_vjepa_stylized

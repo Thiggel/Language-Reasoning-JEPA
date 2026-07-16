@@ -1,0 +1,16 @@
+# @package _global_
+# Transfer the healthiest no-EMA sentence-stream cell from the stylized
+# factorial to official iGSM: online stop-gradient target + SIGReg, no
+# self-reconstructing latent-action LDAD.
+defaults:
+  - override /data: igsm_real
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+run_name: sentence_vjepa_faithful_sg_sigreg
+model:
+  target_mode: online_sg
+  latent_ldad: false
+objective:
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01, num_slices: 256, n_points: 17, integration_limit: 5.0}
+  latent_ldad: {weight: 0.0}

@@ -1,0 +1,6 @@
+# @package _global_
+defaults: [paper_causal_j4_dense4, _self_]
+run_name: paper_causal_dense4_l07
+objective:
+  dense_rollout: {weight: 1.0, horizon_discount: 0.7}
+

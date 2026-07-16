@@ -1,0 +1,88 @@
+ckpt: ???
+low_support_ckpt: null
+device: cuda:0
+n_episodes: 200
+split: val
+slack: 0
+energy: value  # value | macro_q | oracle_goal
+method: shooting  # shooting | cem
+high_horizon: 2
+n_samples: 1200
+cem_iters: 20
+n_elites: 20
+elite_frac: 0.1
+mean_ema: 0.0
+variance_ema: 0.9
+scale_update: variance  # variance = HWM; std = classical CEM
+cem_return: mean  # mean | best
+cem_tolerance: 0.0
+min_std: 0.05
+cem_domain: code  # code | prior_noise
+density_weight: 0.1
+macro_q_aux_weight: 0.0
+path_value_weight: 0.0
+learned_support_weight: 0.0
+learned_support_threshold: null
+macro_knn_weight: 0.0
+macro_gmm_weight: 0.0
+macro_gmm_components: 4
+macro_gmm_ridge: 0.05
+macro_project_to_span: false
+reachability_weight: 0.0
+reachability_mode: joint  # joint | rerank
+reachability_topk: 32
+measured_reachability_weight: 0.0
+measured_reachability_topk: 8
+measured_reachability_horizon: 0  # 0 = macro_k actual closed-loop steps
+measured_latent_goal_weight: 0.0
+measured_symbolic_goal_weight: 0.0
+controller_remaining_weight: 0.0
+controller_residual_weight: 0.0
+collect_controller_outcomes: false
+controller_dataset_out: null
+ensemble_ckpts: []
+epistemic_weight: 0.0
+low_subgoal_weight: 1.0
+low_value_weight: 0.0
+low_method: discrete  # discrete | cem | goal_policy
+low_action_source: current  # current | all_problem | oracle_feasible
+low_horizon: 1
+low_max_expand: 128
+low_cem_samples: 1200
+low_cem_iters: 5
+low_cem_elites: 20
+low_cem_variance_ema: 0.8
+low_cem_min_std: 0.05
+low_density_weight: 0.1
+low_support_weight: 0.0
+low_support_threshold: null
+low_cem_return: mean  # mean | best
+allow_oracle_low_actions: false
+subgoal_source: model  # model | oracle_waypoint | discrete_model | discrete_true | discrete_all | discrete_support
+discrete_execute_macro: false
+discrete_first_value_weight: 0.0
+flat_fallback_threshold: null
+adaptive_high_horizon: false
+seed: 321
+eval_steps_range: null
+eval_n_vars_range: null
+eval_op_range: null
+eval_max_op: null
+eval_max_edge: null
+eval_dataset_seed: null
+out: null
+
+hydra:
+  run:
+    dir: runs/_hierarchical_plan
+  output_subdir: null
+  job:
+    chdir: false
+
+# HWM Appendix-B reference presets (high / low):
+# Franka:        3000x15, 22 elites, var EMA .65 /  800x5, 12, .25
+# Push-T short:   900x20, 10 elites, var EMA .00 /  300x5, 30, .00
+# Push-T medium: 1500x40, 10 elites, var EMA .90 /  900x5, 20, .80
+# Push-T long:   1200x20, 10 elites, var EMA .90 / 1200x5, 20, .80
+# The easy project's low level exhaustively scores a finite feasible set, so
+# continuous CEM applies only to its high-level macro actions.

@@ -1,7 +1,11 @@
 """Sentence-latent LM baseline: one latent per sentence, causal
 next-sentence prediction WITH a token decoder (reconstruction-based).
 
-Two training modes:
+Two prediction targets:
+- outcome (default): predict each rendered next-step sentence;
+- intent: predict only interleaved action chunks and observe outcome chunks.
+
+Two model modes:
 - decoder-only (``latent_target=False``): CE of next-sentence tokens
   decoded from the context latent (a "chunked LM").
 - semi-JEPA (``latent_target=True``): + regression of the context latent
@@ -103,7 +107,7 @@ class SentenceLM(nn.Module):
     def forward(self, batch: dict) -> dict:
         ctx = self.contexts(batch)  # [B, T, D]
         B, T, D = ctx.shape
-        m = batch["step_mask"].reshape(-1)
+        m = batch.get("target_mask", batch["step_mask"]).reshape(-1)
         ctx_flat = ctx.reshape(-1, D)[m]
         tok_flat = batch["step_tokens"].reshape(B * T, -1)[m]
         ce = self.decode_ce(ctx_flat, tok_flat)

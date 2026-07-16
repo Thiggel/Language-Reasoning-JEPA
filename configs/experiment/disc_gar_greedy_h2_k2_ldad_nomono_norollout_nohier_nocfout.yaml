@@ -1,0 +1,22 @@
+# @package _global_
+# Early interaction pilot for the four removals supported by the preliminary
+# H=2/K=2 reference.  The formal round-1 model is selected only after the
+# final reference and all exact one-component removals finish.
+run_name: disc_gar_greedy_h2_k2_ldad_nomono_norollout_nohier_nocfout
+model:
+  chunk_target: frozen
+  value_detach: false
+  observed_action_ldad: true
+objective:
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  chunk_pred: {weight: 2.0}
+  counterfactual_outcome: {weight: 0.0}
+  ranking: {weight: 0.0}
+  value: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.2}
+  monotone: {weight: 0.0, margin: 0.05, label_free: true}
+  value_distill: {weight: 1.0}
+  geo_rank: {weight: 1.0}
+data: {n_alt: 0, geo_rank_k: 2, geo_rank_horizon: 2, geo_rank_policy: greedy}

@@ -1,0 +1,23 @@
+# @package _global_
+defaults:
+  - override /objective: discourse_observed_ldad
+
+# Exact two-objective protocol control for the text-domain Delta-JEPA
+# analogue. This cell removes action decoding and therefore has only the
+# fully-online, unnormalized MSE latent prediction objective.
+run_name: deltajepa_text_noldad
+model:
+  state_target: online_nosg
+  observed_action_ldad: false
+  observed_action_ldad_horizon: 1
+  predictor_residual: true
+objective:
+  latent_pred: {weight: 1.0, kind: mse, norm_targets: false}
+  observed_action_ldad: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.0}
+data:
+  train_size: 30000
+  val_size: 2000
+train:
+  epochs: 10

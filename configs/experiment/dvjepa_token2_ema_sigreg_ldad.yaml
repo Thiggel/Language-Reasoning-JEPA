@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override /model: discourse_vjepa
+  - override /objective: discourse_vjepa
+run_name: dvjepa_token2_ema_sigreg_ldad
+model:
+  target_mode: ema
+  action_mode: token_bottleneck
+  action_token_dim: 2
+  observed_action_ldad: true
+objective:
+  action_kl: {weight: 0.0, free_nats: 4.0}
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01}
+  observed_action_ldad: {weight: 1.0}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

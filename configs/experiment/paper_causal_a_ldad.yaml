@@ -1,0 +1,9 @@
+# @package _global_
+defaults: [paper_causal_j3, _self_]
+run_name: paper_causal_a_ldad
+model:
+  observed_action_ldad: true
+  observed_action_ldad_horizon: 1
+objective:
+  observed_action_ldad: {weight: 0.2}
+

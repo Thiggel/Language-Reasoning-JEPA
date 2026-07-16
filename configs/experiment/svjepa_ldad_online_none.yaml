@@ -1,0 +1,14 @@
+# @package _global_
+# Action-free posterior-code reconstruction with a symmetric online target;
+# this is not faithful LDAD because no external action is observed.
+defaults:
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+run_name: svjepa_ldad_online_none
+model: {use_ema_target: false, latent_ldad: true}
+objective:
+  latent_ldad: {weight: 1.0}
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.0}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

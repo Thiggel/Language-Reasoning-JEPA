@@ -1,0 +1,6 @@
+# @package _global_
+# Information-matched causal LM: predict intent phrases, observe outcomes.
+run_name: lm_intent
+train:
+  target_kind: intent
+  rank_weight: 0.0

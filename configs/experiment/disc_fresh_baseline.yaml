@@ -1,0 +1,9 @@
+# @package _global_
+# Fresh-data matched reference: fixed outcome prediction + scalar value
+# regression, without counterfactual alternatives or ranking.
+run_name: disc_fresh_baseline
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}

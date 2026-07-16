@@ -1,0 +1,6 @@
+# @package _global_
+defaults: [paper_causal_j3, _self_]
+run_name: paper_causal_a_value
+objective:
+  value_distill: {weight: 1.0}
+

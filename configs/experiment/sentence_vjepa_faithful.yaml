@@ -1,0 +1,7 @@
+# @package _global_
+# Fully variational, action-free sentence stream over official iGSM text.
+defaults:
+  - override /data: igsm_real
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+run_name: sentence_vjepa_faithful

@@ -7,8 +7,9 @@ makes raw-geometry goal-distance planning work. Label-free, applied to
 online states.
 
 GoalMonotonicity: hinge on the LN-L1 distance to the trace-terminal EMA
-state — necessary steps must strictly decrease it, distractor steps must
-not decrease it. Supervised by the same symbolic labels as the value head.
+state.  The legacy mode uses necessary/distractor annotations; the clean
+``label_free`` mode instead asks every observed transition to decrease the
+distance and never reads those annotations.
 """
 
 from __future__ import annotations

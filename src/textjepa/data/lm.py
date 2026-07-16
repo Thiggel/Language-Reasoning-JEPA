@@ -1,7 +1,11 @@
-"""Token-stream dataset for the decoder-only LM baseline.
+"""Token streams for decoder-only LM baselines.
 
-Flattens prompt sentences + step sentences into one token sequence;
-loss is masked to the step region (the prompt is context)."""
+``LMDataset`` and ``FlattenedDiscourseLMDataset`` train an outcome LM on
+prompt + rendered solution steps.  ``IntentPolicyLMDataset`` instead
+interleaves intent phrases and observed outcomes and masks the loss to the
+intent phrases.  The latter is the information-matched policy baseline: at
+test time it ranks the same outcome-free action text as the JEPA planner.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,6 @@ import torch
 from torch.utils.data import Dataset
 
 from textjepa.data.igsm.dataset import IGSMDataset
-from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.render import prompt_sentences
 from textjepa.data.vocab import Vocab
@@ -82,6 +85,103 @@ class LMDataset(Dataset):
         return {"rank_prefix": prefix, "rank_cands": cands, "rank_better": better}
 
 
+class FlattenedDiscourseLMDataset(Dataset):
+    """Token-LM view of any dataset that exposes prompt/step token chunks.
+
+    This wrapper is used for official iGSM, where the reference generator and
+    vocabulary must remain untouched.  Symbolic preference candidates are
+    intentionally not synthesized here; the paper's plain LM baseline only
+    receives next-token supervision.
+    """
+
+    def __init__(self, discourse: Dataset):
+        self.discourse = discourse
+
+    def __len__(self) -> int:
+        return len(self.discourse)
+
+    def __getitem__(self, index: int) -> dict:
+        item = self.discourse[index]
+        prompt = [token for sentence in item["prompt"] for token in sentence]
+        steps = [token for sentence in item["steps"] for token in sentence]
+        return {"tokens": prompt + steps, "prompt_len": len(prompt)}
+
+
+class IntentPolicyLMDataset(Dataset):
+    """Causal policy view of a discourse trace.
+
+    The stream is ``prompt, intent_1, outcome_1, ..., intent_T, outcome_T``.
+    Only intent tokens receive next-token cross-entropy.  Outcomes are still
+    appended as observations, making train-time histories identical to those
+    constructed by :mod:`scripts.plan_lm` after each selected action.
+    """
+
+    def __init__(self, discourse: Dataset):
+        self.discourse = discourse
+
+    def __len__(self) -> int:
+        return len(self.discourse)
+
+    def __getitem__(self, index: int) -> dict:
+        item = self.discourse[index]
+        tokens = [token for sentence in item["prompt"] for token in sentence]
+        loss_mask = [False] * len(tokens)
+        if len(item["actions"]) != len(item["steps"]):
+            raise ValueError("every policy action must have one observed outcome")
+        for action, outcome in zip(item["actions"], item["steps"]):
+            tokens.extend(action)
+            loss_mask.extend([True] * len(action))
+            tokens.extend(outcome)
+            loss_mask.extend([False] * len(outcome))
+        return {
+            "tokens": tokens,
+            "prompt_len": len(tokens),  # unused when loss_mask is present
+            "loss_mask": loss_mask,
+        }
+
+
+class IntentSentencePolicyDataset(Dataset):
+    """Sentence-level analogue of :class:`IntentPolicyLMDataset`.
+
+    Action and outcome chunks are interleaved in ``steps``.  ``target_mask``
+    marks only action chunks, so a sentence LM predicts the next intent while
+    retaining past selected intents and observed outcomes as context.
+    """
+
+    def __init__(self, discourse: Dataset):
+        self.discourse = discourse
+
+    def __len__(self) -> int:
+        return len(self.discourse)
+
+    def __getitem__(self, index: int) -> dict:
+        item = dict(self.discourse[index])
+        if len(item["actions"]) != len(item["steps"]):
+            raise ValueError("every policy action must have one observed outcome")
+        stream, target_mask = [], []
+        for action, outcome in zip(item["actions"], item["steps"]):
+            stream.extend([action, outcome])
+            target_mask.extend([True, False])
+        item["steps"] = stream
+        item["target_mask"] = target_mask
+        return item
+
+
+def collate_intent_sentence_policy(batch: list[dict], pad_id: int) -> dict:
+    """Use the discourse collator and add the action-chunk target mask."""
+    from textjepa.data.igsm.dataset import collate
+
+    out = collate(batch, pad_id)
+    B, T = out["step_mask"].shape
+    target_mask = torch.zeros((B, T), dtype=torch.bool)
+    for i, item in enumerate(batch):
+        target_mask[i, : len(item["target_mask"])] = torch.tensor(
+            item["target_mask"], dtype=torch.bool
+        )
+    out["target_mask"] = target_mask
+    return out
+
+
 def collate_lm(batch: list[dict], pad_id: int) -> dict:
     L = max(len(b["tokens"]) for b in batch)
     tokens = torch.full((len(batch), L), pad_id, dtype=torch.long)
@@ -91,6 +191,13 @@ def collate_lm(batch: list[dict], pad_id: int) -> dict:
         "tokens": tokens,
         "prompt_len": torch.tensor([b["prompt_len"] for b in batch]),
     }
+    if "loss_mask" in batch[0]:
+        loss_mask = torch.zeros((len(batch), L), dtype=torch.bool)
+        for i, b in enumerate(batch):
+            loss_mask[i, : len(b["loss_mask"])] = torch.tensor(
+                b["loss_mask"], dtype=torch.bool
+            )
+        out["loss_mask"] = loss_mask
     if "rank_prefix" in batch[0]:
         K1 = max(len(b["rank_cands"]) for b in batch)
         L2 = max(

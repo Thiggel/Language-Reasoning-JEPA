@@ -7,8 +7,21 @@ defaults:
 run_name: dev
 seed: 0
 device: cuda:0
+allow_legacy_predictor: false
 
 train:
+  init_ckpt: null
+  init_mode: low_level  # low_level | full
+  reset_hi_predictor: false
+  reset_macro_value_head: false
+  freeze_low_level: false
+  train_high_level: true
+  train_hi_predictor: false
+  train_hi_value_head: false
+  train_subgoal_action_head: false
+  train_macro_value_head: false
+  train_low_predictor: false
+  train_low_value_head: false
   batch_size: 128
   num_workers: 8
   epochs: 20

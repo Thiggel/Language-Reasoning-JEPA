@@ -18,7 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
 from textjepa.training.trainer import to_device
@@ -45,10 +45,17 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
     device = torch.device(cfg.device)
-    ds = build_dataset(run_cfg, vocab, split="val", size=cfg.n_samples)
+    # These plots use demonstration states only. Avoid constructing unused
+    # symbolic/GAR alternatives, especially for long or beam continuations.
+    analysis_cfg = OmegaConf.create(
+        OmegaConf.to_container(run_cfg, resolve=False)
+    )
+    analysis_cfg.data.geo_rank_k = 0
+    analysis_cfg.data.n_alt = 0
+    ds = build_dataset(analysis_cfg, vocab, split="val", size=cfg.n_samples)
     loader = DataLoader(
         ds, batch_size=128, num_workers=4,
-        collate_fn=partial(collate_for(run_cfg), pad_id=vocab.pad_id),
+        collate_fn=partial(collate_for(analysis_cfg), pad_id=vocab.pad_id),
     )
 
     states, deltas, actions, rollout, tgt = [], [], [], [], []

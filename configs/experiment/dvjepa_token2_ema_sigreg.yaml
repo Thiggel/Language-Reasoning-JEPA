@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - override /model: discourse_vjepa
+  - override /objective: discourse_vjepa
+# Controlled action-architecture comparison at the strongest pooled-action
+# target/regularizer setting from the observed-action factorial.
+run_name: dvjepa_token2_ema_sigreg
+model:
+  target_mode: ema
+  action_mode: token_bottleneck
+  action_token_dim: 2
+  observed_action_ldad: false
+objective:
+  action_kl: {weight: 0.0, free_nats: 4.0}
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01}
+  observed_action_ldad: {weight: 0.0}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

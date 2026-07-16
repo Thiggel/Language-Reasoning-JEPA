@@ -1,0 +1,18 @@
+# @package _global_
+# Preference- and action-label-free K=2 transition-data model. It still uses
+# intent text and a feasible-action interface, but no counts, relevance flags,
+# pairwise order labels, or operation-class displacement target.
+run_name: disc_cfout_k2_clean
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  chunk_pred: {weight: 2.0}
+  counterfactual_outcome: {weight: 2.0}
+  ranking: {weight: 0.0}
+  value: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  monotone: {weight: 2.0, margin: 0.05, label_free: true}
+  value_distill: {weight: 1.0}
+data:
+  n_alt: 2

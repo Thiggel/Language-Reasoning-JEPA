@@ -1,0 +1,7 @@
+# @package _global_
+# Sentence-level intent policy with additional next-intent latent prediction.
+run_name: sentlm_latent_intent
+train:
+  target_kind: intent
+model:
+  latent_target: true

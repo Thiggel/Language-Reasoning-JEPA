@@ -15,11 +15,18 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
 from textjepa.data.igsm.dataset import build_vocab
-from textjepa.data.lm import LMDataset, collate_lm
+from textjepa.data.lm import (
+    FlattenedDiscourseLMDataset,
+    IntentPolicyLMDataset,
+    LMDataset,
+    collate_lm,
+)
+from textjepa.data.sampling import FreshEpochSampler
 from textjepa.models.lm_baseline import DecoderLM
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.utils import seed_everything
+from textjepa.utils.checkpoint import build_dataset
 
 
 def rank_loss(model, batch, device, margin=1.0):
@@ -43,10 +50,14 @@ def lm_loss(model, batch, device):
     tokens = batch["tokens"].to(device)
     logits = model(tokens)[:, :-1]
     tgt = tokens[:, 1:]
-    pos = torch.arange(tgt.shape[1], device=device).unsqueeze(0)
-    mask = (pos >= (batch["prompt_len"].to(device).unsqueeze(1) - 1)) & (
-        tgt != model.pad_id
-    )
+    if "loss_mask" in batch:
+        # loss_mask marks target tokens in the unshifted input sequence.
+        mask = batch["loss_mask"].to(device)[:, 1:] & (tgt != model.pad_id)
+    else:
+        pos = torch.arange(tgt.shape[1], device=device).unsqueeze(0)
+        mask = (pos >= (batch["prompt_len"].to(device).unsqueeze(1) - 1)) & (
+            tgt != model.pad_id
+        )
     ce = F.cross_entropy(
         logits.reshape(-1, logits.shape[-1]), tgt.reshape(-1), reduction="none"
     ).reshape(tgt.shape)
@@ -59,10 +70,28 @@ def main(cfg: DictConfig) -> None:
     out_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
     print(OmegaConf.to_yaml(cfg))
     device = torch.device(cfg.device)
-    vocab = build_vocab(cfg.data.modulus)
+    if cfg.data.get("name", "igsm") == "igsm_real":
+        from textjepa.data.faithful import cached_faithful_vocab
+
+        vocab = cached_faithful_vocab()
+    else:
+        vocab = build_vocab(cfg.data.modulus)
 
     def make(split):
         d = cfg.data
+        target_kind = cfg.train.get("target_kind", "outcome")
+        if target_kind == "intent":
+            if cfg.train.get("rank_weight", 0):
+                raise ValueError("ranking loss is not defined for the intent policy LM")
+            return IntentPolicyLMDataset(build_dataset(cfg, vocab, split=split))
+        if target_kind != "outcome":
+            raise ValueError(f"unknown LM target_kind: {target_kind}")
+        if d.get("name", "igsm") == "igsm_real":
+            if cfg.train.get("rank_weight", 0):
+                raise ValueError("faithful token-LM ranking is not implemented")
+            return FlattenedDiscourseLMDataset(
+                build_dataset(cfg, vocab, split=split)
+            )
         size = d.val_size if split == "val" else d.train_size
         seed = d.val_seed if split == "val" else d.train_seed
         return LMDataset(
@@ -74,8 +103,10 @@ def main(cfg: DictConfig) -> None:
         )
 
     coll = partial(collate_lm, pad_id=vocab.pad_id)
+    train_ds = make("train")
+    train_sampler = FreshEpochSampler(train_ds, seed=cfg.seed)
     train_loader = DataLoader(
-        make("train"), batch_size=cfg.train.batch_size, shuffle=True,
+        train_ds, batch_size=cfg.train.batch_size, sampler=train_sampler,
         num_workers=cfg.train.num_workers, collate_fn=coll, drop_last=True,
         persistent_workers=cfg.train.num_workers > 0,
     )
@@ -97,6 +128,7 @@ def main(cfg: DictConfig) -> None:
     logger = MetricLogger(out_dir)
     step, best = 0, float("inf")
     for epoch in range(cfg.train.epochs):
+        train_sampler.set_epoch(epoch)
         model.train()
         for batch in train_loader:
             for g in opt.param_groups:
@@ -117,10 +149,11 @@ def main(cfg: DictConfig) -> None:
             step += 1
         model.eval()
         with torch.no_grad():
-            vloss = sum(
+            val_losses = [
                 lm_loss(model, b, device).item()
                 for i, b in enumerate(val_loader) if i < 40
-            ) / 40
+            ]
+            vloss = sum(val_losses) / len(val_losses)
         logger.log(step, {"loss": vloss}, prefix="val/")
         ckpt = {
             "model": model.state_dict(),

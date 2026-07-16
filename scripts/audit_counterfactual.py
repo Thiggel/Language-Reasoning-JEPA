@@ -99,16 +99,38 @@ def audit_discourse(model, vocab, dataset, device, n_episodes: int, seed: int) -
     }
     for ep in range(n_episodes):
         problem, _ = dataset.problem(ep)
-        env = SymbolicEnv(problem)
-        prompt = prompt_sentences(problem, random.Random(seed + ep))
+        faithful = hasattr(problem, "prompt_sentences")
+        if faithful:
+            from textjepa.data.faithful import FaithfulEnv
+
+            env = FaithfulEnv(problem)
+            prompt = problem.prompt_sentences
+            necessary = problem.necessary
+            action_text = env.action_text
+        else:
+            env = SymbolicEnv(problem)
+            prompt = prompt_sentences(problem, random.Random(seed + ep))
+            necessary = problem.query_ancestors
+            action_text = lambda action: action_phrase(problem, action)
         pt = tok(prompt)
         pm = torch.ones(1, len(pt[0]), dtype=torch.bool, device=device)
         step_texts: list[str] = []
+        empty = torch.full(
+            (1, 1, 1), vocab.pad_id, dtype=torch.long, device=device
+        )
+        s0 = model.encode_states(
+            pt, pm, empty,
+            torch.zeros(1, 1, dtype=torch.bool, device=device),
+        )[0]
         # oracle goal latent for the goal-distance energy
-        genv, gtexts = SymbolicEnv(problem), []
+        genv = FaithfulEnv(problem) if faithful else SymbolicEnv(problem)
+        gtexts = []
         while not genv.solved:
-            nec = [a for a in genv.feasible_actions() if a in problem.query_ancestors]
-            gtexts.append(genv.step(min(nec)))
+            nec = [a for a in genv.feasible_actions() if a in necessary]
+            # Official action identifiers are structured tuples.  Selecting
+            # the first action in the reference environment's stable order
+            # avoids imposing an artificial cross-type ordering.
+            gtexts.append(genv.step(nec[0]))
         goal = _enc_steps(model, pt, pm, gtexts, tok, device)
 
         while not env.solved:
@@ -117,13 +139,9 @@ def audit_discourse(model, vocab, dataset, device, n_episodes: int, seed: int) -
                 s = (
                     _enc_steps(model, pt, pm, step_texts, tok, device)
                     if step_texts
-                    else model.encode_states(
-                        pt, pm,
-                        torch.full((1, 1, 1), vocab.pad_id, dtype=torch.long, device=device),
-                        torch.zeros(1, 1, dtype=torch.bool, device=device),
-                    )[0]
+                    else s0
                 )
-                texts = [action_phrase(problem, a) for a in feas]
+                texts = [action_text(a) for a in feas]
                 a_emb = model.encode_actions(
                     tok(texts).squeeze(0).unsqueeze(1)
                 ).squeeze(1)
@@ -131,10 +149,10 @@ def audit_discourse(model, vocab, dataset, device, n_episodes: int, seed: int) -
                 preds = model.predictor(s.expand(n, -1), a_emb)
                 done = env.resolved_set
                 true_rem = torch.tensor(
-                    [len(problem.query_ancestors - (done | {a})) for a in feas],
+                    [len(necessary - (done | {a})) for a in feas],
                     dtype=torch.float,
                 )
-                e_val = model.value_head(preds, s.expand(n, -1)).cpu()
+                e_val = model.value_head(preds, s0.expand(n, -1)).cpu()
                 pg, gg = (geo(preds), geo(goal)) if geo is not None else (preds, goal)
                 e_goal = _dist(pg, gg.expand(n, -1)).cpu()
                 for key, e in (("value", e_val), ("goal", e_goal)):
@@ -167,8 +185,8 @@ def audit_discourse(model, vocab, dataset, device, n_episodes: int, seed: int) -
                     if denom > 1e-8:
                         stats["rsa"].append((dp * dt_).sum().item() / denom.item())
             # follow the oracle to visit informative states
-            nec = [a for a in env.feasible_actions() if a in problem.query_ancestors]
-            step_texts.append(env.step(min(nec)))
+            nec = [a for a in env.feasible_actions() if a in necessary]
+            step_texts.append(env.step(nec[0]))
     return _summarize(stats)
 
 
@@ -208,6 +226,7 @@ def audit_edit(model, vocab, dataset, device, n_episodes: int, seed: int) -> dic
         pm = torch.ones(1, pt.shape[1], dtype=torch.bool, device=device)
         goal_texts = [env._true_text(i) for i in topo_necessary(env.p)]
         goal = buf_state(pt, pm, goal_texts)
+        s0 = buf_state(pt, pm, env.sentences())
         while not env.solved:
             cands = env.candidate_edits(include_harmful=True, rng=prng)
             if len(cands) >= 2:
@@ -233,7 +252,7 @@ def audit_edit(model, vocab, dataset, device, n_episodes: int, seed: int) -> dic
                 true_rem = torch.tensor(
                     [c.n_defects() for c in clones], dtype=torch.float
                 )
-                e_val = model.value_head(preds, s.expand(n, -1)).cpu()
+                e_val = model.value_head(preds, s0.expand(n, -1)).cpu()
                 pg, gg = (geo(preds), geo(goal)) if geo is not None else (preds, goal)
                 e_goal = _dist(pg, gg.expand(n, -1)).cpu()
                 for key, e in (("value", e_val), ("goal", e_goal)):

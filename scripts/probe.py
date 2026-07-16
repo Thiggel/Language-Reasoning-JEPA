@@ -10,7 +10,7 @@ from pathlib import Path
 
 import hydra
 import pandas as pd
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
 from textjepa.probing.extract import extract_features
@@ -20,10 +20,16 @@ from textjepa.utils.checkpoint import build_dataset, collate_for, load_run
 
 
 def probe_model(model, vocab, cfg, device, n_samples, batch_size=128, seed=0, mlp=False):
-    ds = build_dataset(cfg, vocab, split="val", size=n_samples)
+    # Preference/counterfactual candidates create extra model outputs but do
+    # not affect the encoded demonstration states used by any probe.  Longer
+    # GAR or bounded-beam teachers can otherwise dominate probe runtime.
+    analysis_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=False))
+    analysis_cfg.data.geo_rank_k = 0
+    analysis_cfg.data.n_alt = 0
+    ds = build_dataset(analysis_cfg, vocab, split="val", size=n_samples)
     loader = DataLoader(
         ds, batch_size=batch_size, num_workers=4,
-        collate_fn=partial(collate_for(cfg), pad_id=vocab.pad_id),
+        collate_fn=partial(collate_for(analysis_cfg), pad_id=vocab.pad_id),
     )
     feats = extract_features(model, loader, device)
     tasks = EDIT_PROBE_TASKS if cfg.data.get("name", "igsm") == "igsm_edit" else None

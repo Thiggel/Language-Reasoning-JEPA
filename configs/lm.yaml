@@ -14,6 +14,7 @@ model:
   max_len: 512
 
 train:
+  target_kind: outcome  # outcome | intent
   batch_size: 64
   num_workers: 8
   epochs: 20

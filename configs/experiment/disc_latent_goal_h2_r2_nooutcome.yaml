@@ -1,0 +1,21 @@
+# @package _global_
+# Round-two exact removal: no frozen outcome-embedding prediction.
+run_name: disc_latent_goal_h2_r2_nooutcome
+model:
+  chunk_target: frozen
+  value_detach: false
+  observed_action_ldad: false
+  predictor_residual: false
+objective:
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  chunk_pred: {weight: 0.0}
+  counterfactual_outcome: {weight: 0.0}
+  ranking: {weight: 0.0}
+  value: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.0}
+  monotone: {weight: 0.0, margin: 0.05, label_free: true}
+  value_distill: {weight: 0.0}
+  geo_rank: {weight: 1.0}
+data: {n_alt: 0, geo_rank_k: 2, geo_rank_horizon: 2, geo_rank_policy: greedy}

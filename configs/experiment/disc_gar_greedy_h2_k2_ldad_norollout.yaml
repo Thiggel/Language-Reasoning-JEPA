@@ -1,0 +1,19 @@
+# @package _global_
+# Exact ablation of the open-loop multi-step latent prediction loss.
+run_name: disc_gar_greedy_h2_k2_ldad_norollout
+model:
+  chunk_target: frozen
+  value_detach: false
+  observed_action_ldad: true
+objective:
+  rollout: {weight: 0.0}
+  chunk_pred: {weight: 2.0}
+  counterfactual_outcome: {weight: 2.0}
+  ranking: {weight: 0.0}
+  value: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.2}
+  monotone: {weight: 2.0, margin: 0.05, label_free: true}
+  value_distill: {weight: 1.0}
+  geo_rank: {weight: 1.0}
+data: {n_alt: 2, geo_rank_k: 2, geo_rank_horizon: 2, geo_rank_policy: greedy}

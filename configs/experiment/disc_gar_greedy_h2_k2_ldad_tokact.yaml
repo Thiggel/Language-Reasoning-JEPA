@@ -1,0 +1,22 @@
+# @package _global_
+# Controlled observed-action architecture test: preserve token order by
+# concatenating 8-d token projections before the 16-d action bottleneck.
+# Every objective and data setting matches the pooled-action H=2 candidate.
+run_name: disc_gar_greedy_h2_k2_ldad_tokact
+model:
+  chunk_target: frozen
+  value_detach: false
+  action_encoder_kind: token_bottleneck
+  action_token_dim: 8
+  observed_action_ldad: true
+objective:
+  chunk_pred: {weight: 2.0}
+  counterfactual_outcome: {weight: 2.0}
+  ranking: {weight: 0.0}
+  value: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.2}
+  monotone: {weight: 2.0, margin: 0.05, label_free: true}
+  value_distill: {weight: 1.0}
+  geo_rank: {weight: 1.0}
+data: {n_alt: 2, geo_rank_k: 2, geo_rank_horizon: 2, geo_rank_policy: greedy}

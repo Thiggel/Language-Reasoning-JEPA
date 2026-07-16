@@ -11,13 +11,31 @@ d_action: 16
 fsq_levels: null
 predictor_hidden_mult: 4
 predictor_layers: 2
+predictor_heads: 8
 n_ops: 4
 macro_k: 3
 d_macro: 8
+macro_encoder_kind: transformer  # transformer | concat
+macro_variational: false
+macro_concat_width: 8
+high_predictor_kind: causal
+high_predictor_layers: 2
+high_predictor_heads: 8
+high_predictor_ff_mult: 4
+high_predictor_residual: null
+action_support_states: "true"  # true | all (also one-step/open-loop states)
+macro_support_scales: [3.0]
+dense_rollout_depth: 0
+high_dense_rollout_depth: 0
 value_detach: true
 dropout: 0.0
 geo_proj: false
 state_target: ema
 predictor_residual: true
-predictor_kind: concat
+predictor_kind: causal
+action_encoder_kind: pooled  # pooled | token_bottleneck
+action_token_dim: 8          # per-token width before fixed-order concatenation
 variational_actions: false
+observed_action_ldad: false
+observed_action_ldad_horizon: 1
+ldad_decoder_layers: 2

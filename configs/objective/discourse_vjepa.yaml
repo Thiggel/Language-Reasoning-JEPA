@@ -1,0 +1,32 @@
+variational_prediction:
+  _target_: textjepa.objectives.VariationalLatentPrediction
+  weight: 1.0
+target_distribution_kl:
+  _target_: textjepa.objectives.TargetDistributionKL
+  weight: 0.01
+  free_nats: 0.0
+action_kl:
+  _target_: textjepa.objectives.ActionKL
+  weight: 0.1
+  free_nats: 4.0
+vicreg:
+  _target_: textjepa.objectives.VICReg
+  weight: 0.0
+  std_target: 1.0
+  cov_weight: 0.04
+  action_weight: 0.05
+sigreg:
+  _target_: textjepa.objectives.SIGReg
+  # Match the stable scale selected by the sentence-stream factorial.  The
+  # raw characteristic-function penalty is O(10), so weight 1.0 overwhelms
+  # the variational prediction objective.
+  weight: 0.01
+  num_slices: 256
+  n_points: 17
+  integration_limit: 5.0
+latent_ldad:
+  _target_: textjepa.objectives.LatentDifferenceActionReconstruction
+  weight: 0.0
+observed_action_ldad:
+  _target_: textjepa.objectives.ObservedActionLDAD
+  weight: 0.0

@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - override /model: discourse_vjepa
+  - override /objective: discourse_vjepa
+run_name: dvjepa_latent_sg_sigreg
+model:
+  target_mode: online_sg
+  action_mode: latent
+  latent_ldad: false
+  observed_action_ldad: false
+objective:
+  action_kl: {weight: 0.1, free_nats: 4.0}
+  latent_ldad: {weight: 0.0}
+  observed_action_ldad: {weight: 0.0}
+data: {train_size: 30000}
+train: {epochs: 10}

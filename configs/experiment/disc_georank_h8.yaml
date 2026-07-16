@@ -1,0 +1,18 @@
+# @package _global_
+# Eight-step geometric advantage via best of four feasible random rollouts.
+run_name: disc_georank_h8
+model:
+  chunk_target: frozen
+  value_detach: false
+objective:
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  chunk_pred: {weight: 2.0}
+  monotone: {weight: 2.0, margin: 0.05, label_free: true}
+  value: {weight: 0.0}
+  value_distill: {weight: 1.0}
+  geo_rank: {weight: 1.0}
+data:
+  geo_rank_k: 2
+  geo_rank_horizon: 8
+  geo_rank_rollouts: 4

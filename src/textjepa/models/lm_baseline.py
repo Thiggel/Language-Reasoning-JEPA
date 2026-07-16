@@ -1,9 +1,9 @@
 """Decoder-only transformer LM baseline (token-level, teacher-forced).
 
 The comparison class for the JEPA world model: same data, same vocab,
-trained to model the trace text autoregressively. Evaluated with
-action-selection parity: score each feasible action's rendered step
-sentence by log-likelihood given the history, pick the argmax.
+trained to model the trace text autoregressively.  It supports both an
+information-matched intent-policy evaluation and the historical diagnostic
+that scores rendered candidate outcomes (which contain privileged values).
 """
 
 from __future__ import annotations

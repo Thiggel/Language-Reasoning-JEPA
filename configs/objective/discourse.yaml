@@ -8,22 +8,58 @@ rollout:
   weight: 1.0
   kind: smooth_l1
   norm_targets: true
+dense_rollout:
+  _target_: textjepa.objectives.DenseRolloutPrediction
+  weight: 0.0
+  kind: smooth_l1
+  norm_targets: true
+  horizon_discount: 1.0
+high_dense_rollout:
+  _target_: textjepa.objectives.DenseHierarchyRolloutPrediction
+  weight: 0.0
+  kind: smooth_l1
+  norm_targets: true
+  horizon_discount: 1.0
 hierarchy:
   _target_: textjepa.objectives.HierarchyPrediction
   weight: 0.5
   kind: smooth_l1
   norm_targets: true
+macro_prior:
+  _target_: textjepa.objectives.MacroPrior
+  weight: 0.0
+  free_nats: 0.0
+hierarchy_value:
+  _target_: textjepa.objectives.HierarchyValueDistill
+  weight: 0.0
+  scale: 5.0
+hierarchy_value_steps:
+  _target_: textjepa.objectives.HierarchyValueRegression
+  weight: 0.0
+high_dense_value:
+  _target_: textjepa.objectives.DenseHierarchyValueRegression
+  weight: 0.0
+  horizon_discount: 1.0
 vicreg:
   _target_: textjepa.objectives.VICReg
   weight: 1.0
   std_target: 1.0
   cov_weight: 0.04
   action_weight: 0.1
+sigreg:
+  _target_: textjepa.objectives.SIGReg
+  weight: 0.0
+  num_slices: 256
+  n_points: 17
+  integration_limit: 5.0
 delta_action:
   _target_: textjepa.objectives.DeltaAction
   weight: 2.0
   ce_weight: 1.0
   emb_weight: 1.0
+observed_action_ldad:
+  _target_: textjepa.objectives.ObservedActionLDAD
+  weight: 0.0
 value:
   _target_: textjepa.objectives.ValueRegression
   weight: 1.0
@@ -62,6 +98,70 @@ act_decode:
   weight: 0.0  # variational runs: detached code readout
 geo_rank:
   _target_: textjepa.objectives.GeoAdvantageRank
-  weight: 0.0  # annotation-free ranking (disc_georank*)
+  weight: 0.0  # preference-label-free geometric ranking (disc_georank*)
   margin: 0.5
   label_gap: 0.02
+counterfactual_outcome:
+  _target_: textjepa.objectives.CounterfactualOutcomePrediction
+  weight: 0.0  # data-only control: observed alternatives, no preference labels
+macro_cf_dynamics:
+  _target_: textjepa.objectives.MacroCounterfactualDynamics
+  weight: 0.0
+  kind: smooth_l1
+  norm_targets: true
+hierarchy_reachability:
+  _target_: textjepa.objectives.HierarchyReachability
+  weight: 0.0
+  kind: smooth_l1
+  norm_targets: true
+lower_hierarchy_rollout:
+  _target_: textjepa.objectives.LowerHierarchyRollout
+  weight: 0.0
+  kind: smooth_l1
+  norm_targets: true
+macro_state_value:
+  _target_: textjepa.objectives.MacroStateValue
+  weight: 0.0
+macro_state_advantage_rank:
+  _target_: textjepa.objectives.MacroStateAdvantageRanking
+  weight: 0.0
+  margin: 0.5
+macro_action_value:
+  _target_: textjepa.objectives.MacroActionValue
+  weight: 0.0
+macro_advantage_rank:
+  _target_: textjepa.objectives.MacroAdvantageRanking
+  weight: 0.0
+  margin: 0.5
+macro_ood_value_rank:
+  _target_: textjepa.objectives.MacroOODValueRanking
+  weight: 0.0
+  margin: 1.0
+subgoal_action_rank:
+  _target_: textjepa.objectives.SubgoalActionRanking
+  weight: 0.0
+  temperature: 1.0
+  predicted_weight: 1.0
+macro_top1_rank:
+  _target_: textjepa.objectives.MacroTop1Ranking
+  weight: 0.0
+  temperature: 1.0
+macro_receding_value:
+  _target_: textjepa.objectives.MacroRecedingValue
+  weight: 0.0
+  discount: 0.5
+  tie_break_scale: 0.1
+macro_receding_rank:
+  _target_: textjepa.objectives.MacroRecedingRanking
+  weight: 0.0
+  discount: 0.5
+  margin: 0.2
+macro_support:
+  _target_: textjepa.objectives.MacroSupport
+  weight: 0.0
+  shuffled_weight: 1.0
+  perturbed_weight: 1.0
+action_feasibility:
+  _target_: textjepa.objectives.ActionFeasibility
+  weight: 0.0
+  positive_weight: 2.0

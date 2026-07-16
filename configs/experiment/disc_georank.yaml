@@ -1,7 +1,7 @@
 # @package _global_
-# ANNOTATION-FREE recipe: every training signal is trace text, geometry,
-# or environment interaction with geometric labels. No symbolic counts,
-# no binary relevance flags. latent_pred + VICReg + anchor + LDAD +
+# PREFERENCE-LABEL-FREE recipe: no symbolic remaining-step counts or binary
+# relevance flags. It is not fully annotation-free: the feasible-action/text
+# interface and default LDAD operation labels remain. latent_pred + VICReg + anchor + LDAD +
 # label-free hinge + distilled V + geometric-advantage ranking.
 run_name: disc_georank
 model:

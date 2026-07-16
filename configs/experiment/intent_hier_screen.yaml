@@ -1,0 +1,44 @@
+# @package _global_
+# Frozen-low-level hierarchy screen. Command-line overrides select macro
+# dimension and deterministic/variational macro encoding.
+run_name: intent_hier_k3_d8_det
+model:
+  macro_k: 3
+  d_macro: 8
+  macro_encoder_kind: transformer
+  macro_variational: false
+  macro_concat_width: 8
+  predictor_residual: false
+  value_detach: false
+  observed_action_ldad: false
+objective:
+  latent_pred: {weight: 0.0, kind: smooth_l1, norm_targets: true}
+  rollout: {weight: 0.0, kind: smooth_l1, norm_targets: true}
+  hierarchy: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  macro_prior: {weight: 0.05, free_nats: 0.0}
+  hierarchy_value: {weight: 1.0, scale: 5.0}
+  vicreg: {weight: 0.0, std_target: 1.0, cov_weight: 0.04, action_weight: 0.1}
+  delta_action: {weight: 0.0, ce_weight: 1.0, emb_weight: 1.0}
+  observed_action_ldad: {weight: 0.0}
+  value: {weight: 0.0}
+  chunk_pred: {weight: 0.0, rollout_weight: 0.5}
+  straighten: {weight: 0.0}
+  monotone: {weight: 0.0, margin: 0.02, distractor_weight: 0.5, label_free: true}
+  value_distill: {weight: 0.0, scale: 5.0}
+  ranking: {weight: 0.0, margin: 0.5}
+  cost_ranking: {weight: 0.0, margin: 0.5}
+  slot_anchor: {weight: 0.0}
+  action_kl: {weight: 0.0, free_nats: 0.0}
+  act_decode: {weight: 0.0}
+  geo_rank: {weight: 0.0, margin: 0.5, label_gap: 0.02}
+  counterfactual_outcome: {weight: 0.0}
+data:
+  train_size: 30000
+  val_size: 2000
+  geo_rank_k: 0
+  n_alt: 0
+train:
+  init_ckpt: runs/disc_latent_goal_h2_r1/best.pt
+  freeze_low_level: true
+  epochs: 10
+  warmup_steps: 300

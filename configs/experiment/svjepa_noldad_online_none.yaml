@@ -1,0 +1,7 @@
+# @package _global_
+defaults: [{override /model: sentence_vjepa}, {override /objective: sentence_vjepa}]
+run_name: svjepa_noldad_online_none
+model: {target_mode: online_grad, latent_ldad: false}
+objective: {latent_ldad: {weight: 0.0}, vicreg: {weight: 0.0}, sigreg: {weight: 0.0}}
+data: {train_size: 30000, val_size: 2000}
+train: {epochs: 10}

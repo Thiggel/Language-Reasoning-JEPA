@@ -1,0 +1,24 @@
+# @package _global_
+# Full action-free counterfactual-set model. This crosses the four-component
+# plan-time prior with complete same-state outcome supervision, isolating
+# whether multimodal capacity becomes useful only when every outcome mode is
+# presented to the prior during training.
+defaults:
+  - override /data: igsm_real
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+
+run_name: sentence_vjepa_faithful_cfset_mixture
+model:
+  target_mode: online_sg
+  latent_ldad: false
+  action_prior_components: 4
+  counterfactual_set: true
+objective:
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01, num_slices: 256, n_points: 17, integration_limit: 5.0}
+  latent_ldad: {weight: 0.0}
+  counterfactual_variational_prediction: {weight: 1.0}
+  counterfactual_action_prior: {weight: 0.1, free_nats: 4.0}
+data:
+  n_alt: 64

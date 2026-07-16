@@ -1,0 +1,52 @@
+# @package _global_
+# Planning-matched feasibility head: current, one-step predicted, and recursive
+# rollout states.  All dynamics remain frozen.
+run_name: intent_action_support_predicted_tail79
+
+model:
+  macro_k: 3
+  d_macro: 32
+  macro_encoder_kind: transformer
+  macro_variational: false
+  high_predictor_kind: causal
+  high_predictor_layers: 2
+  high_predictor_heads: 8
+  high_predictor_ff_mult: 4
+  high_predictor_residual: false
+  dense_rollout_depth: 4
+  predictor_residual: false
+  action_support_states: all
+
+objective:
+  latent_pred: {weight: 0.0}
+  rollout: {weight: 0.0}
+  dense_rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  macro_prior: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  value: {weight: 0.0}
+  action_feasibility: {weight: 1.0, positive_weight: 2.0}
+
+data:
+  n_vars_range: [8, 14]
+  steps_range: [7, 9]
+  train_size: 12000
+  val_size: 1000
+  all_action_supervision: true
+  n_alt: 0
+  geo_rank_k: 0
+  macro_alt_k: 0
+
+train:
+  init_ckpt: runs/intent_lodense_tail79_n4/best.pt
+  init_mode: full
+  freeze_low_level: true
+  train_high_level: false
+  train_action_support: true
+  batch_size: 128
+  num_workers: 4
+  epochs: 3
+  lr: 3e-4
+  warmup_steps: 50
+  eval_batches: 8

@@ -1,0 +1,25 @@
+# @package _global_
+# Action-free counterfactual outcome-set supervision with the original
+# single-Gaussian plan-time prior. The model observes every feasible rendered
+# next sentence during training, but no intent phrase, action identifier,
+# relevance flag, remaining-step count, or preference label. n_alt=64 exceeds
+# the domain branching factor and therefore retains the complete outcome set.
+defaults:
+  - override /data: igsm_real
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+
+run_name: sentence_vjepa_faithful_cfset_gaussian
+model:
+  target_mode: online_sg
+  latent_ldad: false
+  action_prior_components: 1
+  counterfactual_set: true
+objective:
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01, num_slices: 256, n_points: 17, integration_limit: 5.0}
+  latent_ldad: {weight: 0.0}
+  counterfactual_variational_prediction: {weight: 1.0}
+  counterfactual_action_prior: {weight: 0.1, free_nats: 4.0}
+data:
+  n_alt: 64

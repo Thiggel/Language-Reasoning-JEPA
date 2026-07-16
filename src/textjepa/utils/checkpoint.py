@@ -10,6 +10,29 @@ from textjepa.data.edits.dataset import EditDataset, collate_edits
 from textjepa.data.igsm.dataset import IGSMDataset, build_vocab, collate
 
 
+def _migrate_legacy_state_dict(state: dict[str, torch.Tensor]):
+    """Adapt checkpoints created before ``MacroActionModel`` wrapped its encoder.
+
+    Historical transformer macro encoders lived directly at
+    ``core.macro_encoder.*``.  The current module keeps the identical encoder
+    under ``core.macro_encoder.encoder.*`` and adds a conditional prior.  Only
+    the historical encoder tensors are renamed; the newly added prior remains
+    randomly initialized and is reported through the ordinary missing-key
+    path.
+    """
+    legacy_marker = "core.macro_encoder.cls"
+    current_marker = "core.macro_encoder.encoder.cls"
+    if legacy_marker not in state or current_marker in state:
+        return state
+    prefix = "core.macro_encoder."
+    migrated = {}
+    for name, value in state.items():
+        if name.startswith(prefix):
+            name = prefix + "encoder." + name[len(prefix):]
+        migrated[name] = value
+    return migrated
+
+
 def load_run(ckpt_path: str, device: str = "cuda:0", random_init: bool = False):
     """Returns (model, vocab, cfg) from a training checkpoint."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
@@ -22,7 +45,8 @@ def load_run(ckpt_path: str, device: str = "cuda:0", random_init: bool = False):
         vocab = build_vocab(cfg.data.modulus)
     model = instantiate(cfg.model, vocab_size=len(vocab), pad_id=vocab.pad_id)
     if not random_init:
-        missing, unexpected = model.load_state_dict(ckpt["model"], strict=False)
+        state = _migrate_legacy_state_dict(ckpt["model"])
+        missing, unexpected = model.load_state_dict(state, strict=False)
         if unexpected:
             raise RuntimeError(f"unexpected checkpoint keys: {unexpected}")
         if missing:
@@ -43,9 +67,24 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         shuffle_actions=d.get("shuffle_actions", False),
         n_alt=d.get("n_alt", 0),
         geo_rank_k=d.get("geo_rank_k", 0),
+        geo_rank_horizon=d.get("geo_rank_horizon", 1),
+        geo_rank_rollouts=d.get("geo_rank_rollouts", 1),
+        geo_rank_policy=d.get("geo_rank_policy", "random"),
+        geo_rank_beam_width=d.get("geo_rank_beam_width", 1),
+        macro_alt_k=d.get("macro_alt_k", 0),
+        macro_alt_horizon=d.get("macro_alt_horizon", 3),
+        all_action_supervision=d.get("all_action_supervision", False),
     )
-    size = size or (d.val_size if split == "val" else d.train_size)
-    seed = d.val_seed if split == "val" else d.train_seed
+    if split == "train":
+        default_size, seed = d.train_size, d.train_seed
+    elif split == "val":
+        default_size, seed = d.val_size, d.val_seed
+    elif split == "test":
+        default_size = d.get("test_size", d.val_size)
+        seed = d.get("test_seed", int(d.val_seed) + 1)
+    else:
+        raise ValueError(f"unknown dataset split: {split}")
+    size = size or default_size
     if d.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import FaithfulDataset
 
@@ -56,11 +95,22 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             distractor_prob=d.distractor_prob,
             max_distractors=d.max_distractors,
             n_alt=d.get("n_alt", 0),
+            geo_rank_k=d.get("geo_rank_k", 0),
+            geo_rank_horizon=d.get("geo_rank_horizon", 1),
+            geo_rank_rollouts=d.get("geo_rank_rollouts", 1),
+            geo_rank_policy=d.get("geo_rank_policy", "random"),
+            geo_rank_beam_width=d.get("geo_rank_beam_width", 1),
+            macro_alt_k=d.get("macro_alt_k", 0),
+            macro_alt_horizon=d.get("macro_alt_horizon", 3),
+            all_action_supervision=d.get("all_action_supervision", False),
         )
     if d.get("name", "igsm") == "igsm_edit":
         kw = dict(igsm_kwargs)
         kw.pop("shuffle_actions", None)
         kw.pop("n_alt", None)
+        kw.pop("macro_alt_k", None)
+        kw.pop("macro_alt_horizon", None)
+        kw.pop("all_action_supervision", None)
         return EditDataset(
             vocab, size=size, seed=seed,
             max_wrong=d.max_wrong, max_missing=d.max_missing,

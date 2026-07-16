@@ -45,6 +45,40 @@ class RolloutPrediction(Objective):
         return masked_mean(d, mask)
 
 
+class DenseRolloutPrediction(Objective):
+    """Open-loop loss from every valid origin at every horizon up to N."""
+
+    def __init__(
+        self,
+        kind: str = "smooth_l1",
+        norm_targets: bool = True,
+        horizon_discount: float = 1.0,
+    ):
+        super().__init__()
+        self.kind = kind
+        self.norm_targets = norm_targets
+        self.horizon_discount = horizon_discount
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        predictions = out.extras.get("dense_rollout_predictions")
+        if not predictions:
+            return out.preds.sum() * 0.0
+        targets = out.extras["dense_rollout_targets"]
+        masks = out.extras["dense_rollout_masks"]
+        losses = []
+        weights = []
+        for horizon, (prediction, target, mask) in enumerate(
+            zip(predictions, targets, masks)
+        ):
+            distance = latent_distance(
+                prediction, target.detach(), self.kind, self.norm_targets
+            )
+            weight = self.horizon_discount ** horizon
+            losses.append(weight * masked_mean(distance, mask.float()))
+            weights.append(weight)
+        return torch.stack(losses).sum() / sum(weights)
+
+
 class HierarchyPrediction(Objective):
     """||F_hi(s_t, macro(a_{t:t+K})) - sg(s̄_{t+K})|| over valid windows."""
 
@@ -57,3 +91,112 @@ class HierarchyPrediction(Objective):
             return torch.zeros((), device=out.preds.device)
         d = latent_distance(out.hi_preds, out.hi_targets, self.kind, self.norm_targets)
         return masked_mean(d, out.hi_mask.float())
+
+
+class DenseHierarchyRolloutPrediction(Objective):
+    """Planning-matched recursive macro rollout loss from every origin."""
+
+    def __init__(
+        self,
+        kind: str = "smooth_l1",
+        norm_targets: bool = True,
+        horizon_discount: float = 1.0,
+    ):
+        super().__init__()
+        self.kind = kind
+        self.norm_targets = norm_targets
+        self.horizon_discount = horizon_discount
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        predictions = out.extras.get("high_dense_rollout_predictions")
+        if not predictions:
+            return out.preds.sum() * 0.0
+        targets = out.extras["high_dense_rollout_targets"]
+        masks = out.extras["high_dense_rollout_masks"]
+        losses = []
+        weights = []
+        for horizon, (prediction, target, mask) in enumerate(
+            zip(predictions, targets, masks)
+        ):
+            distance = latent_distance(
+                prediction, target.detach(), self.kind, self.norm_targets
+            )
+            weight = self.horizon_discount ** horizon
+            losses.append(weight * masked_mean(distance, mask.float()))
+            weights.append(weight)
+        return torch.stack(losses).sum() / sum(weights)
+
+
+class MacroPrior(Objective):
+    """Fit the state-conditioned macro prior or variational q/p pair."""
+
+    def __init__(self, free_nats: float = 0.0):
+        super().__init__()
+        self.free_nats = free_nats
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        loss = out.extras.get("macro_prior_loss")
+        if loss is None or out.hi_mask is None:
+            return out.preds.sum() * 0.0
+        if self.free_nats:
+            loss = torch.clamp(loss - self.free_nats, min=0.0)
+        return masked_mean(loss, out.hi_mask.float())
+
+
+class HierarchyValueDistill(Objective):
+    """Train the high-level value on geometric waypoint advantages."""
+
+    def __init__(self, scale: float = 5.0):
+        super().__init__()
+        self.scale = scale
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("hi_value_pred")
+        target = out.extras.get("hi_value_target")
+        if pred is None or target is None or out.hi_mask is None:
+            return out.preds.sum() * 0.0
+        loss = torch.nn.functional.smooth_l1_loss(
+            pred, target.detach() * self.scale, reduction="none"
+        )
+        return masked_mean(loss, out.hi_mask.float())
+
+
+class HierarchyValueRegression(Objective):
+    """Exact remaining-step supervision on predicted macro states."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("hi_value_pred")
+        target = out.extras.get("hi_remaining_target")
+        if pred is None or target is None or out.hi_mask is None:
+            return out.preds.sum() * 0.0
+        loss = torch.nn.functional.smooth_l1_loss(
+            pred, target.detach(), reduction="none"
+        )
+        return masked_mean(loss, out.hi_mask.float())
+
+
+class DenseHierarchyValueRegression(Objective):
+    """Value supervision on recursively predicted planning-time states."""
+
+    def __init__(self, horizon_discount: float = 1.0):
+        super().__init__()
+        self.horizon_discount = horizon_discount
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        predictions = out.extras.get("high_dense_value_predictions")
+        if not predictions:
+            return out.preds.sum() * 0.0
+        targets = out.extras["high_dense_value_targets"]
+        masks = out.extras["high_dense_rollout_masks"]
+        losses = []
+        weights = []
+        for horizon, (prediction, target, mask) in enumerate(
+            zip(predictions, targets, masks)
+        ):
+            loss = torch.nn.functional.smooth_l1_loss(
+                prediction, target.detach(), reduction="none"
+            )
+            weight = self.horizon_discount ** horizon
+            losses.append(weight * masked_mean(loss, mask.float()))
+            weights.append(weight)
+        return torch.stack(losses).sum() / sum(weights)

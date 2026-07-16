@@ -1,0 +1,19 @@
+# @package _global_
+# Faithful iGSM observed-action LDAD pilot on the established strong symbolic
+# ranking control.  This isolates faithful raw-action reconstruction before
+# transferring the final non-symbolic recipe.
+defaults:
+  - override /data: igsm_real
+run_name: real_rank_faithful_ldad
+model:
+  chunk_target: frozen
+  value_detach: false
+  max_chunk_len: 96
+  observed_action_ldad: true
+objective:
+  chunk_pred: {weight: 2.0}
+  ranking: {weight: 1.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.2}
+data:
+  n_alt: 2

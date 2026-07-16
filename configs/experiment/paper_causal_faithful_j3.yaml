@@ -1,0 +1,14 @@
+# @package _global_
+# Provisional faithful-iGSM transfer. Launch only if J3 remains selected after
+# the stylized validation matrix; otherwise inherit the selected flat recipe.
+defaults:
+  - paper_causal_j3
+  - override /data: igsm_real
+  - _self_
+run_name: paper_causal_faithful_j3
+model:
+  max_chunk_len: 96
+  max_chunks: 96
+data:
+  shuffle_actions: true
+

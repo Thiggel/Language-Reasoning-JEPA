@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+run_name: paper_causal_j2
+objective:
+  geo_rank: {weight: 0.0}
+data:
+  geo_rank_k: 0
+  geo_rank_horizon: 1
+

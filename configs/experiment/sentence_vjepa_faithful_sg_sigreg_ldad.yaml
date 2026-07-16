@@ -1,0 +1,18 @@
+# @package _global_
+# Exact official-iGSM counterpart to sentence_vjepa_faithful_sg_sigreg.
+# This reconstructs an inferred posterior transition code and therefore is
+# not faithful observed-action LDAD; it tests whether that auxiliary improves
+# the plan-time prior or only the outcome-informed posterior.
+defaults:
+  - override /data: igsm_real
+  - override /model: sentence_vjepa
+  - override /objective: sentence_vjepa
+
+run_name: sentence_vjepa_faithful_sg_sigreg_ldad
+model:
+  target_mode: online_sg
+  latent_ldad: true
+objective:
+  vicreg: {weight: 0.0}
+  sigreg: {weight: 0.01, num_slices: 256, n_points: 17, integration_limit: 5.0}
+  latent_ldad: {weight: 1.0}
