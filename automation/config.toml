@@ -18,7 +18,6 @@ borrow_grace_minutes = 30
 max_jobs_per_round = 16
 max_gpus_per_job = 2
 max_gpu_hours_per_round = 24.0
-max_gpu_hours_7d = 120.0
 max_active_jobs = 16
 max_unreviewed_reports = 1
 

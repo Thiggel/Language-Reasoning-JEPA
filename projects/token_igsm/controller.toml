@@ -20,4 +20,3 @@ guaranteed_active_gpus = 1
 maximum_active_gpus = 6
 maximum_pending_jobs = 4
 maximum_gpu_hours_per_round = 16.0
-maximum_gpu_hours_7d = 60.0

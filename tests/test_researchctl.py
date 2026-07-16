@@ -179,12 +179,22 @@ class ResearchCtlTests(unittest.TestCase):
 
     def test_global_weekly_gpu_hour_rejection(self):
         plan = self.controller.validate_plan(copy.deepcopy(self.plan))
+        self.controller.cfg["limits"]["max_gpu_hours_7d"] = 1.0
         state = {"rounds": {"recent": {
             "created_at": researchctl.now(),
-            "projected_gpu_hours": float(self.controller.cfg["limits"]["max_gpu_hours_7d"]),
+            "projected_gpu_hours": 1.0,
         }}}
         with self.assertRaisesRegex(researchctl.ResearchCtlError, "7-day GPU-hour"):
             self.controller._global_gpu_hour_guard(plan, state)
+
+    def test_global_weekly_gpu_hour_guard_can_be_disabled(self):
+        plan = self.controller.validate_plan(copy.deepcopy(self.plan))
+        self.controller.cfg["limits"].pop("max_gpu_hours_7d", None)
+        state = {"rounds": {"recent": {
+            "created_at": researchctl.now(),
+            "projected_gpu_hours": 1_000_000.0,
+        }}}
+        self.controller._global_gpu_hour_guard(plan, state)
 
 
 if __name__ == "__main__":

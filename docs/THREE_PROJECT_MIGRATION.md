@@ -33,7 +33,7 @@ Never remove original run directories or snapshots during rollback. Refresh obse
 
 ## Fair future admissions
 
-Every active project has a one-GPU guarantee when compatible capacity exists. Project manifests cap active GPUs, pending Slurm jobs, per-round GPU-hours, and seven-day GPU-hours. Legacy active jobs count toward current usage. If another project has a resolved runnable plan waiting, a project is held near 40% of visible/global slots. Idle capacity may be borrowed; nothing running is preempted.
+Every active project has a one-GPU guarantee when compatible capacity exists. Project manifests cap active GPUs, pending Slurm jobs, and per-round GPU-hours. The human removed rolling seven-day GPU-hour allowances on 2026-07-16 because they counted reserved wall-time rather than cluster quotas or actual consumption. If another project has a resolved runnable plan waiting, a project is held near 40% of visible/global slots. Idle capacity may be borrowed; nothing running is preempted.
 
 ```bash
 automation/bin/researchctl projects
@@ -42,7 +42,7 @@ automation/bin/researchctl status --all
 automation/bin/researchctl status --project token_igsm
 ```
 
-The allocation output explains active and pending usage, guarantee, borrowing, remaining budgets, and whether a plan waits. Global storage, job, round, and weekly limits remain in force.
+The allocation output explains active and pending usage, guarantee, borrowing, recent projected usage, remaining per-round budgets, and whether a plan waits. Global storage, active-job, per-round, review, and fair-share limits remain in force; rolling weekly allowances are disabled.
 
 ## Plans and manual approval
 

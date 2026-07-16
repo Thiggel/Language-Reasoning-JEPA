@@ -824,12 +824,13 @@ class Controller:
                 f"project pending-job cap: {project} would have {pending_after}; "
                 f"maximum is {budget['maximum_pending_jobs']}"
             )
-        project_week = usage[project]["gpu_hours_7d"] + float(plan["projected_gpu_hours"])
-        if project_week > float(budget["maximum_gpu_hours_7d"]):
-            raise ResearchCtlError(
-                f"project 7-day GPU-hour limit: {project_week:.2f} > "
-                f"{float(budget['maximum_gpu_hours_7d']):.2f} for {project}"
-            )
+        if "maximum_gpu_hours_7d" in budget:
+            project_week = usage[project]["gpu_hours_7d"] + float(plan["projected_gpu_hours"])
+            if project_week > float(budget["maximum_gpu_hours_7d"]):
+                raise ResearchCtlError(
+                    f"project 7-day GPU-hour limit: {project_week:.2f} > "
+                    f"{float(budget['maximum_gpu_hours_7d']):.2f} for {project}"
+                )
         waiting = self._waiting_projects(state, plan["round_id"]) - {project}
         latest = self.state_dir / "inventory/latest.json"
         visible = 0
@@ -846,13 +847,15 @@ class Controller:
             )
 
     def _global_gpu_hour_guard(self, plan: dict[str, Any], state: dict[str, Any]) -> None:
+        if "max_gpu_hours_7d" not in self.cfg["limits"]:
+            return
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
         recent = 0.0
         for rnd in state.get("rounds", {}).values():
             with contextlib.suppress(ValueError, TypeError):
                 if rnd.get("created_at") and dt.datetime.fromisoformat(rnd["created_at"]) >= cutoff:
                     recent += float(rnd.get("projected_gpu_hours", 0))
-        limit = float(self.cfg["limits"].get("max_gpu_hours_7d", 1e30))
+        limit = float(self.cfg["limits"]["max_gpu_hours_7d"])
         if recent + float(plan["projected_gpu_hours"]) > limit:
             raise ResearchCtlError(
                 f"7-day GPU-hour limit would be exceeded: {recent:.2f} reserved + "
@@ -880,15 +883,23 @@ class Controller:
             u = usage[slug]
             borrowed = max(0, int(u["active_gpus"]) - int(b["guaranteed_active_gpus"]))
             reason = "runnable plan waiting" if slug in waiting else "no unadmitted resolved plan"
+            weekly = (
+                f"weekly_remaining={max(0.0, float(b['maximum_gpu_hours_7d'])-u['gpu_hours_7d']):.1f} GPU-h"
+                if "maximum_gpu_hours_7d" in b else
+                f"weekly_cap=disabled (recent_projected={u['gpu_hours_7d']:.1f} GPU-h)"
+            )
             lines.append(
                 f"{slug}: active_gpus={int(u['active_gpus'])}, pending_jobs={int(u['pending_jobs'])}, "
                 f"guaranteed={b['guaranteed_active_gpus']}, borrowed={borrowed}, "
                 f"round_remaining={float(b['maximum_gpu_hours_per_round']):.1f} GPU-h, "
-                f"weekly_remaining={max(0.0, float(b['maximum_gpu_hours_7d'])-u['gpu_hours_7d']):.1f} GPU-h; {reason}"
+                f"{weekly}; {reason}"
             )
-        lines.append(
-            f"global weekly remaining={max(0.0, float(self.cfg['limits']['max_gpu_hours_7d'])-global_recent):.1f} GPU-h"
-        )
+        if "max_gpu_hours_7d" in self.cfg["limits"]:
+            lines.append(
+                f"global weekly remaining={max(0.0, float(self.cfg['limits']['max_gpu_hours_7d'])-global_recent):.1f} GPU-h"
+            )
+        else:
+            lines.append(f"global weekly cap=disabled (recent projected={global_recent:.1f} GPU-h)")
         return "\n".join(lines)
 
     def allocation(self) -> None:
