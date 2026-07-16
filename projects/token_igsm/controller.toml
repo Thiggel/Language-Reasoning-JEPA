@@ -9,7 +9,7 @@ branch = "research/token_igsm"
 worktree = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees/token_igsm"
 prompt = "automation/prompts/projects/token_igsm.md"
 scientifically_active = true
-autonomous_submission = false
+autonomous_submission = true
 
 [ownership]
 config_patterns = ["configs/experiment/hard_*", "configs/experiment/text_hier_*", "configs/experiment/deltajepa_text_*"]

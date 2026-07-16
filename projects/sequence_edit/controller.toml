@@ -9,7 +9,7 @@ branch = "research/sequence_edit"
 worktree = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees/sequence_edit"
 prompt = "automation/prompts/projects/sequence_edit.md"
 scientifically_active = true
-autonomous_submission = false
+autonomous_submission = true
 
 [ownership]
 config_patterns = ["configs/experiment/edit_*", "configs/experiment/edit_token_*"]
