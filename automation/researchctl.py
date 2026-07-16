@@ -220,7 +220,11 @@ class Controller:
         )
         checks.append(("transient paths ignored", ignored, ".researchctl and runs/autonomy"))
         dirty = run(["git", "status", "--porcelain"], cwd=self.root).stdout.strip()
-        checks.append(("clean worktree for autonomous wake", not dirty, "clean" if not dirty else "DIRTY (wake will refuse)"))
+        checks.append(("integration worktree", True, "dirty user changes preserved" if dirty else "clean"))
+        for slug, manifest in self.projects.items():
+            worktree = Path(manifest["project"]["worktree"])
+            project_dirty = run(["git", "status", "--porcelain"], cwd=worktree, check=False).stdout.strip() if worktree.exists() else "missing"
+            checks.append((f"clean project worktree {slug}", worktree.is_dir() and not project_dirty, str(worktree)))
         for name, cluster in self.cfg.get("clusters", {}).items():
             if not cluster.get("enabled", False):
                 continue
@@ -242,7 +246,7 @@ class Controller:
         width = max(len(x[0]) for x in checks)
         for label, ok, detail in checks:
             print(f"{'OK' if ok else 'FAIL':4}  {label:<{width}}  {detail}")
-        if not all(ok for label, ok, _detail in checks if label != "clean worktree for autonomous wake"):
+        if not all(ok for _label, ok, _detail in checks):
             raise ResearchCtlError("doctor found blocking failures")
 
     def _gruenau_inventory(self, cluster: dict[str, Any]) -> dict[str, Any]:
