@@ -72,14 +72,14 @@ def validate_bundle(bundle: Path, minimum_words: int) -> list[str]:
     for heading in REQUIRED_SECTIONS:
         if heading not in found:
             errors.append(f"{report}: missing section '## {heading}'")
-        elif words(found[heading]) < 20:
+        elif words(found[heading]) < 8:
             errors.append(f"{report}: section '{heading}' is too short to be explanatory")
     if words(text) < minimum_words:
         errors.append(f"{report}: {words(text)} words; require at least {minimum_words}")
-    if words(found.get("First, the idea in everyday language", "")) < 220:
-        errors.append(f"{report}: everyday-language explanation must contain at least 220 words")
-    if words(found.get("The technical details", "")) < 250:
-        errors.append(f"{report}: technical details must contain at least 250 words")
+    if words(found.get("First, the idea in everyday language", "")) < 60:
+        errors.append(f"{report}: everyday-language explanation must contain at least 60 words")
+    if words(found.get("The technical details", "")) < 100:
+        errors.append(f"{report}: technical details must contain at least 100 words")
     if not re.search(r"^\|.+\|\s*$\n^\|\s*:?-", text, re.MULTILINE):
         errors.append(f"{report}: include at least one Markdown comparison table")
     images = re.findall(r"!\[([^\]]*)\]\(([^)\s]+)(?:\s+['\"][^'\"]*['\"])?\)", text)
@@ -91,18 +91,18 @@ def validate_bundle(bundle: Path, minimum_words: int) -> list[str]:
         if "://" not in target and not (bundle / target).resolve().is_file():
             errors.append(f"{report}: missing figure {target}")
     glossary = found.get("Words used in this report", "")
-    if len(re.findall(r"^[-*]\s+\*?\*?[^\n:]+[:—-]", glossary, re.MULTILINE)) < 5:
-        errors.append(f"{report}: glossary must define at least five terms")
+    if len(re.findall(r"^[-*]\s+\*?\*?[^\n:]+[:—-]", glossary, re.MULTILINE)) < 3:
+        errors.append(f"{report}: glossary must define at least three terms")
     questions = found.get("Questions for you", "")
-    if len(re.findall(r"^[-*]\s+", questions, re.MULTILINE)) < 2:
-        errors.append(f"{report}: include at least two concrete steering questions")
+    if len(re.findall(r"^[-*]\s+", questions, re.MULTILINE)) < 1:
+        errors.append(f"{report}: include at least one concrete steering question")
     return errors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("root", nargs="?", type=Path, default=Path("research/reports"))
-    parser.add_argument("--minimum-words", type=int, default=1200)
+    parser.add_argument("--minimum-words", type=int, default=450)
     args = parser.parse_args()
     if not args.root.exists():
         print(f"No report root yet: {args.root}")

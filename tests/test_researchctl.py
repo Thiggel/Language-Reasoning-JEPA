@@ -1,4 +1,5 @@
 import copy
+import datetime as dt
 import importlib.util
 import json
 from pathlib import Path
@@ -122,7 +123,9 @@ class ResearchCtlTests(unittest.TestCase):
     def test_project_gpu_cap_rejects_future_admission_only(self):
         state = {"rounds": {}}
         plan = copy.deepcopy(self.plan)
-        plan["jobs"] = [copy.deepcopy(plan["jobs"][0]) for _ in range(7)]
+        project = plan["project"]
+        maximum = int(self.controller.projects[project]["budget"]["maximum_active_gpus"])
+        plan["jobs"] = [copy.deepcopy(plan["jobs"][0]) for _ in range(maximum + 1)]
         for i, job in enumerate(plan["jobs"]):
             job["id"] = f"job-{i}"
         plan = self.controller.validate_plan(plan)
@@ -176,6 +179,26 @@ class ResearchCtlTests(unittest.TestCase):
                 (bundle / "report.json").write_text(json.dumps({"id": f"report-{i}", "review_required": True, "report": "REPORT.md"}))
             with self.assertRaisesRegex(researchctl.ResearchCtlError, "human review guard"):
                 ctl._human_review_guard()
+
+    def test_time_bounded_autonomy_requires_timezone_and_expires(self):
+        ctl = researchctl.Controller(ROOT / "automation/config.toml")
+        ctl.cfg["codex"]["autonomy_until"] = "2026-07-17T08:30:00+02:00"
+        self.assertTrue(ctl._autonomy_window_open(
+            dt.datetime(2026, 7, 17, 6, 29, tzinfo=dt.timezone.utc)
+        ))
+        self.assertFalse(ctl._autonomy_window_open(
+            dt.datetime(2026, 7, 17, 6, 30, tzinfo=dt.timezone.utc)
+        ))
+        ctl.cfg["codex"]["autonomy_until"] = "2026-07-17T08:30:00"
+        with self.assertRaisesRegex(researchctl.ResearchCtlError, "timezone"):
+            ctl._autonomy_window_open()
+
+    def test_autonomy_window_has_temporary_unread_limit(self):
+        ctl = researchctl.Controller(ROOT / "automation/config.toml")
+        ctl.cfg["codex"]["autonomy_until"] = "2999-07-17T08:30:00+02:00"
+        ctl.cfg["limits"]["max_unreviewed_reports"] = 1
+        ctl.cfg["limits"]["max_unreviewed_reports_autonomous_window"] = 12
+        self.assertEqual(ctl._unreviewed_limit(), 12)
 
     def test_global_weekly_gpu_hour_rejection(self):
         plan = self.controller.validate_plan(copy.deepcopy(self.plan))

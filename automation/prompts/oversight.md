@@ -13,15 +13,15 @@ Read every unhandled note under `.researchctl/steering/inbox/` that applies to
 the active project. Record in the cycle and report how the human direction
 changed the decision, or explain concretely why the evidence argues against it.
 
-Audit newly completed run summaries before proposing more work. Use
-$explain-research to create a self-contained report bundle that passes
-`automation/validate_reports.py`; assume the reader has almost no prior
-knowledge of neural networks or language models. A terse final response,
-cycle log, table without interpretation, or unexplained filename is not an
-acceptable report. Clearly
+Audit newly completed run summaries before proposing more work. Create a
+compact self-contained report bundle that passes
+`automation/validate_reports.py`; target 450--700 words and assume the reader
+has almost no prior knowledge of neural networks or language models. Prefer
+one small interpreted table and one simple chart. Clearly
 separate process success, scientific validity, observation, inference, and
-speculation. Update the current cycle, ledgers, and paper-facing Beamer source
-with concise evidence. Choose the highest-value unresolved question by
+speculation. Update only the current cycle and compact ledgers with concise
+evidence; do not update Beamer slides during unattended overnight cycles.
+Choose the highest-value unresolved question by
 expected decision value per elapsed hour. Design the smallest faithful test,
 fair controls, appropriate per-method tuning, seeds, validity gates, and
 predeclared interpretation. Do not create experiments merely to occupy idle
@@ -36,5 +36,8 @@ change AGENTS.md, .codex/, .agents/, automation/, research/CHARTER.md,
 increase budgets, or transfer datasets. If no experiment is justified, do not
 write a plan; record the reason and the concrete human decision needed.
 
-Do not write the next plan until the explanatory report validates.
+Token-efficiency rule: make one narrow decision, load only explicitly linked
+compact artifacts, avoid broad searches and historical rereading, and finish
+as soon as the plan is validated. Do not spend tokens polishing prose.
 
+Do not write the next plan until the explanatory report validates.
