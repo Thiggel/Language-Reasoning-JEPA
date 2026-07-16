@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import subprocess
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +17,7 @@ def run(argv: list[str]) -> int:
 
 
 def main() -> int:
-    python = str(ROOT / ".venv2/bin/python")
+    python = sys.executable
     if run([python, str(ROOT / "automation/validate_reports.py"), str(ROOT / "research/reports")]):
         return 1
     return run([python, "-m", "pytest", "-q"])
@@ -24,4 +25,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

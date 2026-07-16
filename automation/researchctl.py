@@ -1111,7 +1111,10 @@ class Controller:
             )
         verify = codex_cfg.get("verification_command", [])
         if verify:
-            result = run([str(x) for x in verify], cwd=root, timeout=int(codex_cfg.get("verification_timeout_seconds", 600)), check=False)
+            verify_argv = [str(x) for x in verify]
+            if not Path(verify_argv[0]).is_absolute() and not (root / verify_argv[0]).exists() and (self.root / verify_argv[0]).exists():
+                verify_argv[0] = str(self.root / verify_argv[0])
+            result = run(verify_argv, cwd=root, timeout=int(codex_cfg.get("verification_timeout_seconds", 600)), check=False)
             verification_log = self.state_dir / "oversight" / "latest-verification.log"
             verification_log.write_text(result.stdout + result.stderr)
             if result.returncode:
