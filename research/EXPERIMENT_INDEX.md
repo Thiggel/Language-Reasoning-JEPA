@@ -6,6 +6,8 @@
 | 2026-07-16-hierarchy-gradient-abstraction | Does hierarchy create future-relevant abstraction, and does upper-level weighting help? | 12 planned | awaiting submission | [`2026-07-16-hierarchy-gradient-abstraction.md`](cycles/hard_text/2026-07-16-hierarchy-gradient-abstraction.md) |
 | paper-causal-stage-1 | Which components create a competitive causal-transformer intent-phrase JEPA? | 45 intended (three seeds per condition) | J3 preference distillation is decisive; LDAD/monotonicity promising; dense-4 and residual prediction negative; repaired counterfactual row in flight | [`12_causal_paper_matrix.md`](intent_phrase/waves/12_causal_paper_matrix.md) |
 | 2026-07-16-intent-phrase-iclr-roadmap | What must be resolved before an ICLR-scale intent-phrase campaign? | 0 | diagnose dynamics vs teacher vs student before new training; no new round admitted | [`2026-07-16-iclr-project-roadmap.md`](cycles/intent_phrase/2026-07-16-iclr-project-roadmap.md) |
+| 2026-07-16-gar-geometry-screen | Does deeper/wider JEPA-geometric preference supervision improve strict causal control? | 7 attempted; 7 retries finalized | first launch infrastructure-invalid before optimization; v2 waits for slots | [`2026-07-16-gar-geometry-screen.md`](cycles/intent_phrase/2026-07-16-gar-geometry-screen.md) |
+| 2026-07-16-faithful-token-edit-hierarchy | Does non-symbolic edit hierarchy improve faithful token-buffer dynamics? | 5 submitted | one-seed full/hard official-iGSM pilot | [`2026-07-16-faithful-token-hierarchy.md`](cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md) |
 
 Historical waves remain indexed by the subproject READMEs. Add one row per new
 controller round and keep invalid/failed rounds visible.

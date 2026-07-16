@@ -1,0 +1,23 @@
+[project]
+slug = "sequence_edit"
+title = "Sequence-edit JEPA"
+research_memory_root = "research/sequence_edit"
+report_root = "research/reports/sequence_edit"
+current_cycle = "research/cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md"
+plan_path = "research/sequence_edit/NEXT_PLAN.json"
+branch = "research/sequence_edit"
+worktree = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees/sequence_edit"
+prompt = "automation/prompts/projects/sequence_edit.md"
+scientifically_active = true
+autonomous_submission = false
+
+[ownership]
+config_patterns = ["configs/experiment/edit_*", "configs/experiment/edit_token_*"]
+run_patterns = ["edit_*", "token-edit-*", "*faithful-token-edit*"]
+
+[budget]
+guaranteed_active_gpus = 1
+maximum_active_gpus = 6
+maximum_pending_jobs = 4
+maximum_gpu_hours_per_round = 16.0
+maximum_gpu_hours_7d = 60.0

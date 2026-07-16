@@ -1,0 +1,23 @@
+[project]
+slug = "intent_phrase"
+title = "Observed intent-phrase JEPA"
+research_memory_root = "research/intent_phrase"
+report_root = "research/reports/intent_phrase"
+current_cycle = "research/cycles/intent_phrase/2026-07-16-gar-geometry-screen.md"
+plan_path = "research/intent_phrase/NEXT_PLAN.json"
+branch = "research/intent_phrase"
+worktree = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees/intent_phrase"
+prompt = "automation/prompts/projects/intent_phrase.md"
+scientifically_active = true
+autonomous_submission = false
+
+[ownership]
+config_patterns = ["configs/experiment/disc_*", "configs/experiment/paper_causal_*", "configs/experiment/real_*", "configs/experiment/*intent*"]
+run_patterns = ["disc_*", "paper_causal_*", "real_*", "*intent-policy*", "*observed-action*", "*gar-geometry*"]
+
+[budget]
+guaranteed_active_gpus = 1
+maximum_active_gpus = 6
+maximum_pending_jobs = 4
+maximum_gpu_hours_per_round = 16.0
+maximum_gpu_hours_7d = 60.0

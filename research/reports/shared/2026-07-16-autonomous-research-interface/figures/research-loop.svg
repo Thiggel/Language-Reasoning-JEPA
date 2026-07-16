@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="470" viewBox="0 0 1100 470" role="img" aria-labelledby="title desc">
+  <title id="title">The TextJEPA autonomous research loop</title>
+  <desc id="desc">Three separate project researchers send bounded experiment plans to one trusted controller. Results become beginner-first reports that the human reads and steers.</desc>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#52665a"/></marker></defs>
+  <rect width="1100" height="470" rx="22" fill="#f7f6ef"/>
+  <text x="550" y="42" text-anchor="middle" font-family="Georgia" font-size="27" fill="#15211b">One loop, three separate scientific minds</text>
+  <g font-family="Arial" font-size="17" fill="#15211b">
+    <rect x="35" y="90" width="235" height="72" rx="12" fill="#dceddf" stroke="#6d9c7e"/><text x="152" y="120" text-anchor="middle" font-weight="bold">Project A director</text><text x="152" y="144" text-anchor="middle">reads only Project A</text>
+    <rect x="35" y="190" width="235" height="72" rx="12" fill="#e4eaf5" stroke="#758eae"/><text x="152" y="220" text-anchor="middle" font-weight="bold">Project B director</text><text x="152" y="244" text-anchor="middle">reads only Project B</text>
+    <rect x="35" y="290" width="235" height="72" rx="12" fill="#f4e7ce" stroke="#ba8a43"/><text x="152" y="320" text-anchor="middle" font-weight="bold">Project C director</text><text x="152" y="344" text-anchor="middle">reads only Project C</text>
+    <rect x="410" y="166" width="260" height="122" rx="15" fill="#15211b"/><text x="540" y="202" text-anchor="middle" fill="white" font-weight="bold">Trusted controller</text><text x="540" y="230" text-anchor="middle" fill="#d6e4db">checks budgets and storage</text><text x="540" y="255" text-anchor="middle" fill="#d6e4db">submits and watches jobs</text>
+    <rect x="800" y="95" width="260" height="108" rx="15" fill="#fffdf8" stroke="#84968a"/><text x="930" y="130" text-anchor="middle" font-weight="bold">Beginner-first reports</text><text x="930" y="157" text-anchor="middle">plain idea → evidence</text><text x="930" y="181" text-anchor="middle">→ technical detail</text>
+    <rect x="800" y="275" width="260" height="108" rx="15" fill="#fff0c9" stroke="#b88932"/><text x="930" y="311" text-anchor="middle" font-weight="bold">You</text><text x="930" y="338" text-anchor="middle">read, question, and steer</text><text x="930" y="362" text-anchor="middle">the next decision</text>
+  </g>
+  <g fill="none" stroke="#52665a" stroke-width="3" marker-end="url(#arrow)"><path d="M270 126 C340 126 345 195 410 205"/><path d="M270 226 L405 226"/><path d="M270 326 C340 326 345 255 410 247"/><path d="M670 205 C725 185 745 155 795 150"/><path d="M930 205 L930 268"/><path d="M800 330 C710 335 700 285 645 270"/></g>
+  <text x="550" y="432" text-anchor="middle" font-family="Arial" font-size="16" fill="#52665a">The machine can keep working, but only you decide which scientific destination is valuable.</text>
+</svg>
+

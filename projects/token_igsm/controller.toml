@@ -1,0 +1,23 @@
+[project]
+slug = "token_igsm"
+title = "Token-level causal iGSM JEPA"
+research_memory_root = "research/hard_text"
+report_root = "research/reports/token_igsm"
+current_cycle = "research/cycles/hard_text/2026-07-16-hierarchy-gradient-abstraction.md"
+plan_path = "research/hard_text/NEXT_PLAN.json"
+branch = "research/token_igsm"
+worktree = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees/token_igsm"
+prompt = "automation/prompts/projects/token_igsm.md"
+scientifically_active = true
+autonomous_submission = false
+
+[ownership]
+config_patterns = ["configs/experiment/hard_*", "configs/experiment/text_hier_*", "configs/experiment/deltajepa_text_*"]
+run_patterns = ["hard_hier_*", "text_hier_*", "deltajepa_text_*", "*token-prior*", "*oracle-cem*", "*semantic-boundary*"]
+
+[budget]
+guaranteed_active_gpus = 1
+maximum_active_gpus = 6
+maximum_pending_jobs = 4
+maximum_gpu_hours_per_round = 16.0
+maximum_gpu_hours_7d = 60.0

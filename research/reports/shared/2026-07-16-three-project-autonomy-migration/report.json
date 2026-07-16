@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-16-three-project-autonomy-migration",
+  "project": "shared",
+  "title": "TextJEPA now has three guarded research lanes",
+  "created_at": "2026-07-16T12:00:00+02:00",
+  "status": "migration",
+  "decision": "Operate in assisted-autonomy mode with isolated project directors and manual experiment admission.",
+  "plain_summary": "One controller safely watches all existing jobs, while three separate research directors prepare project-specific reports and plans without submitting experiments automatically.",
+  "report": "REPORT.md",
+  "review_required": true,
+  "artifacts": ["figures/three-lanes.svg", "../../../../docs/THREE_PROJECT_MIGRATION.md"]
+}

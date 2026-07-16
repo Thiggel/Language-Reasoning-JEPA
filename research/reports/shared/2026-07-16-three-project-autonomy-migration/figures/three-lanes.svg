@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500" role="img" aria-labelledby="title desc">
+  <title id="title">One controller routes evidence into three isolated research lanes</title>
+  <desc id="desc">A central guarded controller watches existing jobs and routes terminal results to separate intent phrase, token iGSM, and sequence edit directors. Human review gates all new submissions.</desc>
+  <rect width="1000" height="500" fill="#f7f4ed"/>
+  <rect x="350" y="35" width="300" height="90" rx="18" fill="#26384a"/>
+  <text x="500" y="72" text-anchor="middle" fill="white" font-family="sans-serif" font-size="25">One guarded controller</text>
+  <text x="500" y="102" text-anchor="middle" fill="white" font-family="sans-serif" font-size="17">observe · retrieve · account · route</text>
+  <path d="M500 125 V175 M500 175 H175 V215 M500 175 V215 M500 175 H825 V215" stroke="#536878" stroke-width="5" fill="none"/>
+  <g font-family="sans-serif">
+    <rect x="55" y="215" width="240" height="125" rx="18" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+    <text x="175" y="255" text-anchor="middle" font-size="23">Intent phrases</text><text x="175" y="287" text-anchor="middle" font-size="16">own memory + plan</text><text x="175" y="314" text-anchor="middle" font-size="16">fresh Codex context</text>
+    <rect x="380" y="215" width="240" height="125" rx="18" fill="#dcfce7" stroke="#16a34a" stroke-width="3"/>
+    <text x="500" y="255" text-anchor="middle" font-size="23">Token iGSM</text><text x="500" y="287" text-anchor="middle" font-size="16">own memory + plan</text><text x="500" y="314" text-anchor="middle" font-size="16">fresh Codex context</text>
+    <rect x="705" y="215" width="240" height="125" rx="18" fill="#fae8ff" stroke="#a21caf" stroke-width="3"/>
+    <text x="825" y="255" text-anchor="middle" font-size="23">Sequence edits</text><text x="825" y="287" text-anchor="middle" font-size="16">own memory + plan</text><text x="825" y="314" text-anchor="middle" font-size="16">fresh Codex context</text>
+    <path d="M175 340 V392 H825 M500 340 V392 M825 340 V392" stroke="#536878" stroke-width="5" fill="none"/>
+    <rect x="300" y="392" width="400" height="75" rx="18" fill="#fef3c7" stroke="#d97706" stroke-width="3"/>
+    <text x="500" y="423" text-anchor="middle" font-size="23">Human review and steering</text><text x="500" y="449" text-anchor="middle" font-size="16">New experiments still require explicit approval</text>
+  </g>
+</svg>

@@ -14,3 +14,7 @@ Current artifacts:
 Historical console logs remain locally under `research/archive/edit_track/`.
 They are intentionally not duplicated here. A new active experiment cycle
 should add `waves/`, `logs/README.md`, and `BACKLOG.md` under this directory.
+
+Active cycle: non-symbolic token edits and causal edit hierarchy on official
+hard/full iGSM, documented in
+[`../cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md`](../cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md).

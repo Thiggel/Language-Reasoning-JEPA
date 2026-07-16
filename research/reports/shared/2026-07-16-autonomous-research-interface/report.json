@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-16-autonomous-research-interface",
+  "project": "shared",
+  "title": "How the autonomous TextJEPA research system works",
+  "created_at": "2026-07-16T12:00:00+02:00",
+  "status": "system-explanation",
+  "review_required": false,
+  "decision": "Use three isolated research directors, a trusted controller, and a human reading-and-steering loop.",
+  "plain_summary": "Codex does the scientific thinking in small, separate rounds. A conventional controller watches jobs and limits resources. You receive self-contained reports, read them in order, and periodically tell the appropriate project what matters next.",
+  "report": "REPORT.md",
+  "artifacts": ["figures/research-loop.svg"],
+  "tags": ["autonomy", "interface", "steering"]
+}
