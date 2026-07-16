@@ -1,0 +1,63 @@
+defaults:
+  - data: igsm
+  - _self_
+
+run_name: semantic_token_hierarchy
+seed: 0
+device: cuda:0
+boundary_mode: semantic
+
+model:
+  d_model: 256
+  encoder_layers: 4
+  predictor_layers: 2
+  n_heads: 8
+  ff_mult: 4
+  max_len: 768
+  d_action: 64
+  level_dims: [32, 16]
+  low_dense_depth: 2
+  high_dense_depth: 2
+  use_token_prior: false
+  token_prior_hidden: 0
+  token_prior_detach_state: false
+
+objective:
+  low_prediction: 1.0
+  low_dense: 1.0
+  low_value: 0.25
+  goal_prediction: 1.0
+  high_prediction: 1.0
+  high_dense: 1.0
+  high_level_weights: [1.0, 1.0]
+  reachability: 0.25
+  high_value: 1.0
+  macro_prior: 0.05
+  support: 0.1
+  vicreg: 1.0
+  covariance: 0.04
+  dense_discount: 0.7
+  token_prior: 0.0
+  token_prior_rollout: 0.0
+  token_prior_rollout_discount: 0.7
+  token_prior_label_smoothing: 0.0
+
+train:
+  batch_size: 24
+  num_workers: 0
+  epochs: 3
+  lr: 3.0e-4
+  weight_decay: 0.05
+  warmup_steps: 200
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 50
+  eval_batches: 20
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  output_subdir: null
+  job:
+    chdir: false

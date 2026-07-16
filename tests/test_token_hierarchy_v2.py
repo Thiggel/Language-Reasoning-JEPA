@@ -1,6 +1,7 @@
 import torch
 
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
+from textjepa.models.action import MacroActionModel
 from textjepa.planning.token_hierarchy import (
     feedback_levels_to_invalidate,
     macro_codes,
@@ -139,6 +140,20 @@ def test_three_level_phase_augmentation_uses_available_lower_macro_grid():
 
 def test_token_mpc_horizon_counts_down_to_fixed_boundary():
     assert [remaining_to_boundary(p, 8) for p in range(9)] == [8, 7, 6, 5, 4, 3, 2, 1, 8]
+
+
+def test_transformer_macro_encoder_ignores_padded_actions():
+    torch.manual_seed(3)
+    model = MacroActionModel(
+        d_action=8, d_state=16, d_macro=6, span=8, kind="transformer"
+    ).eval()
+    actions = torch.randn(2, 5, 8)
+    valid = torch.tensor([[True, True, True, False, False]] * 2)
+    actions[1, :3] = actions[0, :3]
+    actions[1, 3:] = 100 * torch.randn_like(actions[1, 3:])
+    states = torch.randn(2, 16)
+    code, _ = model.training_code(actions, states, valid)
+    assert torch.allclose(code[0], code[1], atol=1e-6)
 
 
 def test_state_conditioned_token_prior_shape_and_detached_encoder_gradient():

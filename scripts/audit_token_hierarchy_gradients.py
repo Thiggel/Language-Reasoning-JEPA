@@ -14,6 +14,8 @@ from torch.utils.data import DataLoader
 from train_token_hierarchy_v2 import compute_losses
 from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.lm import LMDataset, collate_lm
+from textjepa.data.semantic_lm import SemanticBoundaryLMDataset, collate_semantic_lm
+from textjepa.models.semantic_token_hierarchy import SemanticBoundaryTokenHierarchyJEPA
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
 
 
@@ -51,27 +53,45 @@ def main():
     payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(payload["cfg"])
     vocab = build_vocab(cfg.data.modulus)
-    model = MultilevelTokenHierarchyJEPA(
-        vocab_size=len(vocab), pad_id=vocab.pad_id, **cfg.model
-    ).to(args.device)
+    semantic = "boundary_mode" in cfg
+    model_class = (
+        SemanticBoundaryTokenHierarchyJEPA if semantic
+        else MultilevelTokenHierarchyJEPA
+    )
+    model = model_class(vocab_size=len(vocab), pad_id=vocab.pad_id, **cfg.model).to(args.device)
     model.load_state_dict(payload["model"])
     model.train()
-    dataset = LMDataset(
-        vocab, size=args.batch_size, seed=cfg.data.val_seed + 7919,
-        modulus=cfg.data.modulus,
-        n_vars_range=tuple(cfg.data.n_vars_range),
-        leaf_prob=cfg.data.leaf_prob,
-        steps_range=tuple(cfg.data.steps_range),
+    dataset_class = SemanticBoundaryLMDataset if semantic else LMDataset
+    dataset_kwargs = dict(
+        modulus=cfg.data.modulus, n_vars_range=tuple(cfg.data.n_vars_range),
+        leaf_prob=cfg.data.leaf_prob, steps_range=tuple(cfg.data.steps_range),
         distractor_prob=cfg.data.distractor_prob,
         max_distractors=cfg.data.max_distractors,
     )
+    if semantic:
+        dataset_kwargs["boundary_mode"] = cfg.boundary_mode
+    dataset = dataset_class(
+        vocab, size=args.batch_size, seed=cfg.data.val_seed + 7919,
+        **dataset_kwargs,
+    )
+    collate_fn = partial(
+        collate_semantic_lm if semantic else collate_lm,
+        pad_id=vocab.pad_id,
+    )
     batch = next(iter(DataLoader(
         dataset, batch_size=args.batch_size,
-        collate_fn=partial(collate_lm, pad_id=vocab.pad_id),
+        collate_fn=collate_fn,
     )))
-    out = model(
-        batch["tokens"].to(args.device), batch["prompt_len"].to(args.device)
-    )
+    if semantic:
+        out = model(
+            batch["tokens"].to(args.device), batch["prompt_len"].to(args.device),
+            batch["phrase_ends"].to(args.device),
+            batch["sentence_ends"].to(args.device),
+        )
+    else:
+        out = model(
+            batch["tokens"].to(args.device), batch["prompt_len"].to(args.device)
+        )
     _, items = compute_losses(out, cfg)
     names = ["low_prediction", "low_dense", "goal_prediction", "vicreg"]
     for index in range(len(out["levels"])):

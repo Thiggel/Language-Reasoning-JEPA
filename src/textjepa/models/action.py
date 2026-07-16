@@ -106,16 +106,33 @@ class MacroActionEncoder(nn.Module):
         self.inp = nn.Linear(d_action, d_hidden)
         self.cls = nn.Parameter(torch.zeros(1, 1, d_hidden))
         nn.init.normal_(self.cls, std=0.02)
-        self.pos = nn.Parameter(torch.zeros(1, 16, d_hidden))
+        self.pos = nn.Parameter(torch.zeros(1, 65, d_hidden))
         nn.init.normal_(self.pos, std=0.02)
         self.encoder = encoder_stack(d_hidden, n_layers, n_heads, 2, 0.0)
         self.out = nn.Linear(d_hidden, d_macro)
 
-    def forward(self, actions: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, actions: torch.Tensor, valid: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """actions: [N, K, d_action] -> [N, d_macro]."""
+        if actions.shape[1] + 1 > self.pos.shape[1]:
+            raise ValueError(
+                f"macro sequence length {actions.shape[1]} exceeds "
+                f"maximum {self.pos.shape[1] - 1}"
+            )
+        if valid is None:
+            valid = torch.ones(
+                actions.shape[:2], dtype=torch.bool, device=actions.device
+            )
+        if valid.shape != actions.shape[:2]:
+            raise ValueError("macro action validity mask has the wrong shape")
         h = self.inp(actions) + self.pos[:, 1 : actions.shape[1] + 1]
         h = torch.cat([self.cls.expand(h.shape[0], 1, -1) + self.pos[:, :1], h], 1)
-        return self.out(self.encoder(h)[:, 0])
+        key_padding = torch.cat([
+            torch.zeros(len(actions), 1, dtype=torch.bool, device=actions.device),
+            ~valid,
+        ], 1)
+        return self.out(self.encoder(h, src_key_padding_mask=key_padding)[:, 0])
 
 
 class ConcatMacroActionEncoder(nn.Module):
@@ -192,9 +209,13 @@ class MacroActionModel(nn.Module):
         mu, logvar = raw.chunk(2, -1)
         return mu, logvar.clamp(-6.0, 2.0)
 
-    def forward(self, actions: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, actions: torch.Tensor, valid: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Posterior mean, preserving the historical deterministic API."""
-        return self.encoder(actions)
+        if valid is not None and not isinstance(self.encoder, MacroActionEncoder):
+            raise ValueError("variable action masks require the transformer encoder")
+        return self.encoder(actions, valid) if valid is not None else self.encoder(actions)
 
     def prior_params(
         self, state: torch.Tensor
@@ -211,9 +232,12 @@ class MacroActionModel(nn.Module):
         return mu.unsqueeze(-2) + eps * (0.5 * logvar).exp().unsqueeze(-2)
 
     def training_code(
-        self, actions: torch.Tensor, state: torch.Tensor
+        self, actions: torch.Tensor, state: torch.Tensor,
+        valid: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-        q_mu = self.encoder(actions)
+        if valid is not None and not isinstance(self.encoder, MacroActionEncoder):
+            raise ValueError("variable action masks require the transformer encoder")
+        q_mu = self.encoder(actions, valid) if valid is not None else self.encoder(actions)
         p_mu, p_logvar = self.prior_params(state)
         if self.variational:
             q_logvar = self.posterior_logvar(q_mu).clamp(-6.0, 2.0)
