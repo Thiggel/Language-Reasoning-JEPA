@@ -107,9 +107,35 @@ def main():
             if name in items
         ])
     gradients = {name: gradient(model, items[name]) for name in names}
+    level_weights = list(getattr(cfg.objective, "high_level_weights", [1.0]))
+    if len(level_weights) == 1:
+        level_weights *= len(out["levels"])
+    coefficients = {
+        "low_prediction": float(cfg.objective.low_prediction),
+        "low_dense": float(cfg.objective.low_dense),
+        "goal_prediction": float(cfg.objective.goal_prediction),
+        "vicreg": float(cfg.objective.vicreg),
+        "token_prior": float(cfg.objective.token_prior),
+        "token_prior_rollout": float(cfg.objective.token_prior_rollout),
+    }
+    level_terms = {
+        "prediction": "high_prediction", "dense": "high_dense",
+        "reachability": "reachability", "value": "high_value",
+    }
+    for index, level_weight in enumerate(level_weights, 1):
+        for suffix, config_name in level_terms.items():
+            coefficients[f"level{index}_{suffix}"] = (
+                float(level_weight) * float(getattr(cfg.objective, config_name))
+            )
+    raw_norms = {name: norm(value) for name, value in gradients.items()}
     result = {
-        "encoder_gradient_norm": {
-            name: norm(value) for name, value in gradients.items()
+        "encoder_gradient_norm": raw_norms,
+        "objective_coefficient": {
+            name: coefficients.get(name, 1.0) for name in names
+        },
+        "effective_encoder_gradient_norm": {
+            name: raw_norms[name] * coefficients.get(name, 1.0)
+            for name in names
         },
         "encoder_gradient_cosine": {
             left: {

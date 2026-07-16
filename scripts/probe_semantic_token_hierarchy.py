@@ -12,7 +12,10 @@ import torch
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
-from probe_token_hierarchy_v2 import classification_probe, regression_probe, token_labels
+try:
+    from probe_token_hierarchy_v2 import classification_probe, regression_probe, token_labels
+except ModuleNotFoundError:  # imported as ``scripts.*``
+    from scripts.probe_token_hierarchy_v2 import classification_probe, regression_probe, token_labels
 from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.semantic_lm import SemanticBoundaryLMDataset, collate_semantic_lm
 from textjepa.models.semantic_token_hierarchy import SemanticBoundaryTokenHierarchyJEPA
