@@ -66,12 +66,11 @@ Jobs can use any preserved exact branch commit. A job plan records the full comm
 
 ## Watcher
 
-Exactly one user systemd timer invokes an idempotent tick every two minutes. A tick refreshes and retrieves existing jobs even while admissions are paused. Under `STOP` or pause it remains observation-only. Terminal rounds wake only their classified project director. The unread-report limit prevents the system from getting ahead of the human. A non-blocking lock prevents overlapping ticks.
+Exactly one durable watcher invokes an idempotent tick every two minutes. A user systemd timer is preferred. On this installation, `~/.config/systemd/user` was an existing empty regular file rather than a directory; it was preserved as user-owned configuration, so the cutover installed one cron entry instead. A tick refreshes and retrieves existing jobs even while admissions are paused. Under `STOP` or pause it remains observation-only. Terminal rounds wake only their classified project director. The unread-report limit prevents the system from getting ahead of the human. A non-blocking lock prevents overlapping ticks.
 
 ```bash
-systemctl --user status textjepa-research-watch.timer
-systemctl --user list-timers textjepa-research-watch.timer
-journalctl --user -u textjepa-research-watch.service -n 100
+crontab -l | grep textjepa-research-watch
+tail -100 .researchctl/watcher.log
 ```
 
 Pause without affecting accepted jobs:
@@ -101,6 +100,6 @@ The migration snapshot is `.researchctl/migrations/20260716T093805Z/`. The execu
 1. Keep admission paused while validation has any failure.
 2. Run compilation, pytest, report/TOML/JSON/schema checks, shell checks, state dry-run/idempotence, status/allocation, UI indexing/API/browser checks, and an observation-only tick.
 3. Compare live jobs again immediately before cutover.
-4. Remove `research/STOP`, resume, and start only the user timer.
+4. Remove `research/STOP`, resume, and start exactly one durable watcher (systemd timer or cron fallback, never both).
 5. Run one tick and confirm no submission occurs.
 6. Leave `auto_submit_after_wake=false` until the human explicitly changes the autonomy level.
