@@ -15,3 +15,5 @@ Run families are `hard_hier_*`, `text_hier_*`, `deltajepa_text_*`, and the
 controller rounds under `runs/autonomy/`. This project's conclusions must not
 be transferred to the observed intent-phrase project without an explicit
 experiment.
+
+Latest report: [`2026-07-16 semantic control gate`](../../research/reports/token_igsm/2026-07-16-semantic-control-gate/REPORT.md).

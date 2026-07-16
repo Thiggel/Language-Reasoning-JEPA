@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-16-semantic-control-gate",
+  "project": "token_igsm",
+  "title": "One missing control blocks the semantic-boundary claim",
+  "created_at": "2026-07-16T14:55:43+02:00",
+  "status": "review_required",
+  "decision": "Recover only the timed-out information-matched semantic flat-objective control before interpreting or scaling the semantic-boundary pilot.",
+  "plain_summary": "Twenty-seven processes completed, but the matched flat control timed out and all compact summaries lack metrics; one bounded recovery job is the only justified next experiment.",
+  "report": "REPORT.md",
+  "review_required": true
+}

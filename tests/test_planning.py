@@ -15,7 +15,9 @@ def test_planner_runs_end_to_end():
     ).eval()
     planner = LatentPlanner(model, vocab, torch.device("cpu"), lookahead=1)
     results = evaluate_planning(planner, ds, n_episodes=3, slack=2)
-    assert set(results) == {"latent_planner", "random_policy", "oracle"}
+    assert set(results) == {
+        "latent_planner", "random_policy", "first_feasible_policy", "oracle"
+    }
     assert results["oracle"]["success"] == 1.0
     for m in results.values():
         assert 0.0 <= m["success"] <= 1.0
