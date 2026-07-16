@@ -36,8 +36,9 @@ esac
 model_dir="$RUN_DIR/model"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/train_token_hierarchy_v2.py" \
   "hydra.run.dir=$model_dir" "run_name=$name" "seed=$seed" \
-  data.train_size=6000 data.val_size=1000 train.epochs=3 \
-  train.num_workers=4 train.eval_batches=20 train.warmup_steps=200 \
+  data.train_size=6000 data.val_size=1000 \
+  "data.n_vars_range=[10,18]" "data.steps_range=[6,12]" \
+  train.epochs=3 train.num_workers=0 train.eval_batches=20 train.warmup_steps=200 \
   model.max_len=768 "model.level_spans=$spans" "model.level_dims=$dims" \
   "model.variational_levels=[false]" \
   "model.phase_augmented_levels=[false]" \
