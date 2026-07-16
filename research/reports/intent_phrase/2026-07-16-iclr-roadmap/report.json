@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-16-iclr-roadmap",
+  "project": "intent_phrase",
+  "title": "Turning the observed intent-phrase study into an ICLR-quality paper",
+  "created_at": "2026-07-16T10:30:00+02:00",
+  "status": "decision_complete",
+  "decision": "Diagnose the causal action-selection gap before recipe combination, scaling, or faithful transfer.",
+  "plain_summary": "The causal JEPA learns useful dynamics but remains below the matched token policy; preference distillation is the dominant gain, so the next work must separate dynamics, teacher, and student failures.",
+  "report": "REPORT.md",
+  "review_required": true
+}

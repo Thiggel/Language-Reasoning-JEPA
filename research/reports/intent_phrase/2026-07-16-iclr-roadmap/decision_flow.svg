@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360" viewBox="0 0 1000 360">
+  <rect width="1000" height="360" fill="#fafafa"/>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#444"/></marker></defs>
+  <g font-family="sans-serif" text-anchor="middle">
+    <rect x="30" y="125" width="190" height="100" rx="14" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+    <text x="125" y="160" font-size="18" font-weight="bold">Observed result</text>
+    <text x="125" y="190" font-size="15">JEPA .588 strict</text><text x="125" y="211" font-size="15">Token policy .827</text>
+    <rect x="290" y="125" width="190" height="100" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+    <text x="385" y="155" font-size="18" font-weight="bold">Localize gap</text>
+    <text x="385" y="183" font-size="14">Dynamics?</text><text x="385" y="204" font-size="14">Teacher or student?</text>
+    <rect x="550" y="25" width="200" height="85" rx="14" fill="#fee2e2" stroke="#dc2626" stroke-width="2"/>
+    <text x="650" y="59" font-size="17" font-weight="bold">Dynamics weak</text><text x="650" y="84" font-size="14">Fix causal optimization</text>
+    <rect x="550" y="137" width="200" height="85" rx="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+    <text x="650" y="171" font-size="17" font-weight="bold">Student weak</text><text x="650" y="196" font-size="14">Calibrate preference loss</text>
+    <rect x="550" y="249" width="200" height="85" rx="14" fill="#fce7f3" stroke="#db2777" stroke-width="2"/>
+    <text x="650" y="283" font-size="17" font-weight="bold">Teacher weak</text><text x="650" y="308" font-size="14">Redesign latent goal</text>
+    <rect x="815" y="125" width="155" height="100" rx="14" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
+    <text x="892" y="160" font-size="17" font-weight="bold">Freeze recipe</text><text x="892" y="187" font-size="14">then transfer to</text><text x="892" y="208" font-size="14">faithful iGSM</text>
+  </g>
+  <g stroke="#444" stroke-width="2" fill="none" marker-end="url(#a)"><path d="M220 175 H290"/><path d="M480 160 C515 130 515 70 550 70"/><path d="M480 175 H550"/><path d="M480 190 C515 220 515 290 550 290"/><path d="M750 70 C790 70 785 150 815 160"/><path d="M750 180 H815"/><path d="M750 292 C790 292 785 205 815 195"/></g>
+</svg>
