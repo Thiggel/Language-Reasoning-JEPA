@@ -167,6 +167,7 @@ class Controller:
         )
         self.state_path = self.state_dir / "state.json"
         self.lock_path = self.state_dir / "controller.lock"
+        self.oversight_lock_path = self.state_dir / "oversight.lock"
         self.stop_path = self.root / self.cfg["controller"].get(
             "stop_file", "research/STOP"
         )
@@ -189,6 +190,18 @@ class Controller:
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 raise ResearchCtlError("another researchctl process holds the lock") from exc
+            handle.write(f"pid={os.getpid()} time={now()}\n")
+            handle.flush()
+            yield
+
+    @contextlib.contextmanager
+    def oversight_lock(self) -> Iterable[None]:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        with self.oversight_lock_path.open("w") as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise ResearchCtlError("another project oversight process is already running") from exc
             handle.write(f"pid={os.getpid()} time={now()}\n")
             handle.flush()
             yield
@@ -1171,7 +1184,7 @@ class Controller:
         )
         return run(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
 
-    def wake(self, project: str) -> None:
+    def _wake(self, project: str) -> None:
         manifest = self.project_manifest(project)
         codex_cfg = self.cfg["codex"]
         if not codex_cfg.get("enabled", False):
@@ -1235,6 +1248,10 @@ class Controller:
                 print("plan awaits human review; auto_submit_after_wake=false")
         else:
             print("oversight produced no NEXT_PLAN.json")
+
+    def wake(self, project: str) -> None:
+        with self.oversight_lock():
+            self._wake(project)
 
     def tick(self) -> None:
         self._local_storage_guard()

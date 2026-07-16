@@ -154,6 +154,16 @@ class ResearchCtlTests(unittest.TestCase):
             paths[:3],
         )
 
+    def test_oversight_lock_is_nonblocking(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctl = researchctl.Controller(ROOT / "automation/config.toml")
+            ctl.state_dir = Path(tmp)
+            ctl.oversight_lock_path = Path(tmp) / "oversight.lock"
+            with ctl.oversight_lock():
+                with self.assertRaisesRegex(researchctl.ResearchCtlError, "already running"):
+                    with ctl.oversight_lock():
+                        pass
+
     def test_too_many_unread_reports_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctl = researchctl.Controller(ROOT / "automation/config.toml")
