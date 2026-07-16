@@ -29,6 +29,14 @@ case "$model_scale" in
       model.n_heads=8 model.ff_mult=4 model.d_action=96 train.batch_size=10
     )
     ;;
+  distinct50)
+    # Approximately 47.5M trainable parameters after adding three separate
+    # two-layer hierarchy state encoders (67.99M including EMA targets).
+    model_args=(
+      model.d_model=384 model.encoder_layers=5 model.predictor_layers=3
+      model.n_heads=8 model.ff_mult=4 model.d_action=96 train.batch_size=12
+    )
+    ;;
   scale100)
     model_args=(
       model.d_model=544 model.encoder_layers=8 model.predictor_layers=4
