@@ -207,7 +207,8 @@ def main(cfg: DictConfig):
         persistent_workers=cfg.train.num_workers > 0,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=cfg.train.batch_size, num_workers=2,
+        val_ds, batch_size=cfg.train.batch_size,
+        num_workers=cfg.train.num_workers,
         collate_fn=collate,
     )
     model = MultilevelTokenHierarchyJEPA(
