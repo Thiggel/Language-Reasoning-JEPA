@@ -1,0 +1,4 @@
+interface:
+  display_name: "Explain Research"
+  short_description: "Write layered, beginner-first research reports"
+  default_prompt: "Use $explain-research to turn this completed TextJEPA cycle into a self-contained beginner-first report."

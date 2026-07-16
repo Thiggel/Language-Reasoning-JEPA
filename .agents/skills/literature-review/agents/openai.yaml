@@ -1,0 +1,4 @@
+interface:
+  display_name: "Literature Review"
+  short_description: "Resolve one experiment-relevant literature gap"
+  default_prompt: "Use -review to resolve the literature uncertainty that affects this TextJEPA design."

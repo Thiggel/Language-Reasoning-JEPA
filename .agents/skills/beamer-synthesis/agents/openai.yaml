@@ -1,0 +1,4 @@
+interface:
+  display_name: "Beamer Synthesis"
+  short_description: "Update the evidence-based research presentation"
+  default_prompt: "Use -synthesis to update the TextJEPA Beamer deck with the latest validated decision."

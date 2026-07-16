@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://textjepa.local/run-plan.schema.json",
+  "title": "TextJEPA research round",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "round_id", "decision", "git_commit", "jobs"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "project": {"enum": ["intent_phrase", "token_igsm", "sequence_edit"]},
+    "round_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"},
+    "decision": {"type": "string", "minLength": 20},
+    "git_commit": {"anyOf": [{"const": "AUTO"}, {"type": "string", "pattern": "^[0-9a-f]{40}$"}]},
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "cluster", "command", "gpus", "walltime_minutes", "purpose", "expected_artifacts"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"},
+          "cluster": {"enum": ["gruenau", "alex", "Lise", "Grete"]},
+          "command": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+          "gpus": {"type": "integer", "minimum": 1},
+          "walltime_minutes": {"anyOf": [{"type": "integer", "minimum": 1}, {"type": "string"}]},
+          "purpose": {"type": "string", "minLength": 10},
+          "expected_artifacts": {"type": "array", "items": {"type": "string"}},
+          "env": {"type": "object", "additionalProperties": {"type": ["string", "number", "boolean"]}},
+          "cpus": {"type": "integer", "minimum": 1},
+          "partition": {"type": "string"},
+          "qos": {"type": "string"},
+          "account": {"type": "string"},
+          "gpu_type": {"type": "string"},
+          "min_gpu_memory_mb": {"type": "integer", "minimum": 0},
+          "node": {"type": "integer", "minimum": 1, "maximum": 12}
+        }
+      }
+    }
+  }
+}

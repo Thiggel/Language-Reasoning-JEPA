@@ -1,0 +1,114 @@
+# Human-controlled policy. Keep an edited copy outside the repository and set
+# RESEARCH_CONFIG to its path before enabling unattended wake/submission.
+
+[project]
+root = "/vol/home-vol2/ml/laitenbf/TextJEPA"
+remote_url = "git@github.com:Thiggel/Language-Reasoning-JEPA.git"
+
+[controller]
+state_dir = ".researchctl"
+run_root = "runs/autonomy"
+plan_path = "research/NEXT_PLAN.json"
+stop_file = "research/STOP"
+project_registry = "projects"
+worktree_root = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees"
+borrow_grace_minutes = 30
+
+[limits]
+max_jobs_per_round = 32
+max_gpus_per_job = 4
+max_gpu_hours_per_round = 48.0
+max_gpu_hours_7d = 240.0
+max_active_jobs = 32
+max_unreviewed_reports = 1
+
+[storage]
+min_free_gb = 100.0
+max_used_percent = 90.0
+remote_min_free_gb = 100.0
+remote_max_used_percent = 90.0
+max_retrieved_file_mb = 256
+retrieve_patterns = [
+  "*/", "run_summary.json", "resolved_config.json", "environment.json",
+  "metrics.json", "metrics.csv", "*.log", "*.out", "*.err", "*.json",
+  "*.csv", "*.md", "*.png", "*.pdf",
+]
+
+[codex]
+enabled = false
+auto_submit_after_wake = false
+max_changed_files = 100
+max_changed_bytes = 5000000
+verification_timeout_seconds = 600
+verification_command = [".venv2/bin/python", "automation/verify_oversight.py"]
+require_explanatory_report = true
+protected_paths = ["AGENTS.md", ".codex", ".agents", "automation", ".gitignore", "research/CHARTER.md", "docs/AUTONOMY_SECURITY.md"]
+executable = "codex"
+model = "gpt-5.6-sol"
+reasoning_effort = "medium"
+sandbox = "workspace-write"
+prompt = "automation/prompts/oversight.md"
+
+[clusters.gruenau]
+kind = "gruenau"
+enabled = true
+ssh = "laitenbf@gruenau1.informatik.hu-berlin.de"
+ssh_template = "laitenbf@gruenau{node}.informatik.hu-berlin.de"
+nodes = [1, 2, 7, 8, 9, 10, 11, 12]
+project_root = "/vol/home-vol2/ml/laitenbf/TextJEPA"
+python = "/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/bin/python"
+cache_root = "/vol/home-vol2/ml/laitenbf/.cache/textjepa"
+free_memory_used_mb = 100
+free_utilization_percent = 5
+max_walltime_minutes = 1440
+setup = []
+
+[clusters.alex]
+kind = "slurm"
+enabled = true
+ssh = "alex"
+project_root = "/home/atuin/c107fa/c107fa12/TextJEPA"
+python = "/home/atuin/c107fa/c107fa12/.venv/bin/python"
+cache_root = "/home/atuin/c107fa/c107fa12/.cache/textjepa"
+partition = "a100"
+account = "c107fa"
+gpu_type = "a100"
+cpus_per_gpu = 16
+max_walltime_minutes = 1440
+export_none = true
+setup = [
+  "module load cuda/12.8.1 >/dev/null 2>&1 || true",
+  "export http_proxy=${http_proxy:-http://proxy:80}",
+  "export https_proxy=${https_proxy:-http://proxy:80}",
+]
+
+[clusters.Lise]
+kind = "slurm"
+enabled = true
+ssh = "Lise"
+project_root = "/scratch/usr/bemflait/TextJEPA"
+python = "/home/bemflait/linear-attention/.venv/bin/python"
+cache_root = "/scratch/usr/bemflait/.cache/textjepa"
+partition = "gpu-a100:shared"
+account = "bem00089"
+gpu_type = "A100"
+cpus_per_gpu = 8
+max_walltime_minutes = 1440
+setup = [
+  "module unload sw.clx.el9 sw.a100.el9 sw.pvc sw.pvc.el9 sw.genoa.el9 >/dev/null 2>&1 || true",
+  "module load sw.a100",
+]
+
+[clusters.Grete]
+kind = "slurm"
+enabled = true
+ssh = "Grete"
+project_root = "/projects/extern/nhr/nhr_be/bem00089/dir.project/TextJEPA"
+python = "/projects/extern/nhr/nhr_be/bem00089/dir.project/babylm/.venv/bin/python"
+cache_root = "/projects/extern/nhr/nhr_be/bem00089/dir.project/.cache/textjepa"
+partition = "grete:shared"
+account = "bem00089"
+gpu_type = "A100"
+cpus_per_gpu = 8
+max_walltime_minutes = 2880
+setup = []

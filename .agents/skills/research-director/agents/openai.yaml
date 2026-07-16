@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Director"
+  short_description: "Choose TextJEPA's next scientific decision"
+  default_prompt: "Use -director to audit current evidence and choose the next highest-value TextJEPA decision."

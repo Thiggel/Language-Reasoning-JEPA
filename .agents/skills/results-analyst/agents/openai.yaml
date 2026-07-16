@@ -1,0 +1,4 @@
+interface:
+  display_name: "Results Analyst"
+  short_description: "Audit validity and synthesize experiment results"
+  default_prompt: "Use -analyst to audit the latest TextJEPA round and update the evidence ledgers."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cluster Orchestrator"
+  short_description: "Run bounded work across four GPU clusters"
+  default_prompt: "Use -orchestrator to inventory capacity and validate this TextJEPA run plan without submitting it."

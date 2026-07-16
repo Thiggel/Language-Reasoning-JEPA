@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TextJEPA compact run result",
+  "type": "object",
+  "required": ["schema_version", "run_id", "process_status", "scientific_validity", "exit_code", "metrics", "artifacts"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "run_id": {"type": "string"},
+    "process_status": {"enum": ["COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"]},
+    "scientific_validity": {"enum": ["valid", "invalid", "incomplete", "not_assessed"]},
+    "exclusion_reason": {"type": ["string", "null"]},
+    "exit_code": {"type": "integer"},
+    "finished_at": {"type": "string"},
+    "resolved_config": {"type": ["object", "null"]},
+    "dataset_identity": {"type": ["object", "null"]},
+    "seed": {"type": ["integer", "null"]},
+    "metrics": {"type": "object"},
+    "artifacts": {"type": "array", "items": {"type": "string"}}
+  }
+}

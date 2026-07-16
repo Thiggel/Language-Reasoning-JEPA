@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>TextJEPA Research Reader</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">TEXTJEPA RESEARCH</span><h1>Your reading desk</h1></div>
+    <div id="sync" class="sync">Loading reports…</div>
+  </header>
+  <div class="layout">
+    <aside>
+      <button id="nextUnread" class="primary">Read next unread report</button>
+      <div class="filter-title">Projects</div>
+      <div id="projects"></div>
+      <div class="filter-title">Reading status</div>
+      <label><input type="radio" name="reading" value="all" checked> All reports</label>
+      <label><input type="radio" name="reading" value="unread"> Unread only</label>
+      <div id="controller" class="controller"></div>
+    </aside>
+    <main>
+      <section id="welcome" class="welcome">
+        <span class="eyebrow">START HERE</span>
+        <h2>Research should be understandable before it is impressive.</h2>
+        <p>Choose a report from the timeline. Every report begins with an ordinary-language explanation, then builds toward the complete technical evidence.</p>
+      </section>
+      <section id="timeline"></section>
+      <article id="reader" hidden>
+        <div class="reader-tools">
+          <button id="back">← Back to timeline</button>
+          <button id="readToggle">Mark as read</button>
+          <a id="raw" target="_blank">Open source report</a>
+        </div>
+        <div id="reportMeta"></div>
+        <div id="reportBody" class="paper"></div>
+        <section class="steering">
+          <span class="eyebrow">YOUR STEERING</span>
+          <h2>Tell the research director what should change</h2>
+          <p>This note goes into the selected project’s oversight inbox. It will be read before that project chooses its next experiment.</p>
+          <textarea id="steeringText" placeholder="For example: I care more about proving that the hierarchy is real than improving the headline score. Please prioritize the strongest falsification test."></textarea>
+          <button id="sendSteering" class="primary">Send steering to Codex inbox</button>
+          <span id="steeringStatus"></span>
+        </section>
+      </article>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
+

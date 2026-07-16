@@ -1,0 +1,19 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-16-hierarchy-measurement-smoke",
+  "decision": "Verify that the hierarchy measurement pipeline produces valid summaries before any scientific sweep.",
+  "git_commit": "AUTO",
+  "jobs": [
+    {
+      "id": "hierarchy-measurement-smoke-seed-1",
+      "cluster": "gruenau",
+      "command": ["{python}", "scripts/train.py", "+experiment=text_hier_screen", "training.max_steps=10", "run_name=autonomy_hierarchy_measurement_smoke_seed_1"],
+      "gpus": 1,
+      "walltime_minutes": 10,
+      "min_gpu_memory_mb": 20000,
+      "purpose": "Exercise training, marker, log, and compact-result contracts at seconds-to-minutes scale.",
+      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log"]
+    }
+  ]
+}

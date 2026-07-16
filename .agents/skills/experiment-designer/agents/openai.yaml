@@ -1,0 +1,4 @@
+interface:
+  display_name: "Experiment Designer"
+  short_description: "Design decisive, compute-bounded experiments"
+  default_prompt: "Use -designer to turn this question into a minimal, controlled TextJEPA experiment."

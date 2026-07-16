@@ -13,6 +13,9 @@ runs/
 runs_*.log
 outputs/
 multirun/
+.researchctl/
+research/NEXT_PLAN.json
+research/STOP
 
 # latex build artifacts
 reports/*.aux

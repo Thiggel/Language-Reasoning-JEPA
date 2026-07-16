@@ -1,0 +1,8 @@
+[Unit]
+Description=Poll TextJEPA research jobs and wake Codex after completed rounds
+
+[Service]
+Type=oneshot
+WorkingDirectory=/vol/home-vol2/ml/laitenbf/TextJEPA
+Environment=RESEARCH_CONFIG=%h/.config/textjepa-research/controller.toml
+ExecStart=/vol/home-vol2/ml/laitenbf/TextJEPA/automation/bin/researchctl tick
