@@ -120,6 +120,11 @@ def infer_legacy_project(round_id: str, jobs: Iterable[str] = ()) -> str:
     return "legacy/unclassified"
 
 
+def protected_path_violations(paths: Iterable[str], protected: Iterable[str]) -> list[str]:
+    roots = tuple(item.rstrip("/") for item in protected)
+    return [path for path in paths if any(path == item or path.startswith(item + "/") for item in roots)]
+
+
 class Controller:
     def __init__(self, config_path: Path | None = None) -> None:
         guessed_root = Path(__file__).resolve().parents[1]
@@ -803,6 +808,20 @@ class Controller:
                 f"while {', '.join(sorted(waiting))} has a runnable plan waiting; cap is {fair_cap}"
             )
 
+    def _global_gpu_hour_guard(self, plan: dict[str, Any], state: dict[str, Any]) -> None:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
+        recent = 0.0
+        for rnd in state.get("rounds", {}).values():
+            with contextlib.suppress(ValueError, TypeError):
+                if rnd.get("created_at") and dt.datetime.fromisoformat(rnd["created_at"]) >= cutoff:
+                    recent += float(rnd.get("projected_gpu_hours", 0))
+        limit = float(self.cfg["limits"].get("max_gpu_hours_7d", 1e30))
+        if recent + float(plan["projected_gpu_hours"]) > limit:
+            raise ResearchCtlError(
+                f"7-day GPU-hour limit would be exceeded: {recent:.2f} reserved + "
+                f"{plan['projected_gpu_hours']:.2f} planned > {limit:.2f}"
+            )
+
     def projects_status(self) -> None:
         for slug, manifest in self.projects.items():
             p = manifest["project"]
@@ -926,20 +945,7 @@ class Controller:
                     f"active-job limit would be exceeded: {active} active + {len(plan['jobs'])} planned"
                 )
             self._fair_admission_guard(plan, state)
-            cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
-            recent_gpu_hours = 0.0
-            for rnd in state.get("rounds", {}).values():
-                created = rnd.get("created_at")
-                if created:
-                    with contextlib.suppress(ValueError):
-                        if dt.datetime.fromisoformat(created) >= cutoff:
-                            recent_gpu_hours += float(rnd.get("projected_gpu_hours", 0))
-            rolling_limit = float(self.cfg["limits"].get("max_gpu_hours_7d", 1e30))
-            if recent_gpu_hours + float(plan["projected_gpu_hours"]) > rolling_limit:
-                raise ResearchCtlError(
-                    f"7-day GPU-hour limit would be exceeded: {recent_gpu_hours:.2f} reserved + "
-                    f"{plan['projected_gpu_hours']:.2f} planned > {rolling_limit:.2f}"
-                )
+            self._global_gpu_hour_guard(plan, state)
             if plan["round_id"] in state["rounds"]:
                 raise ResearchCtlError(f"round already registered: {plan['round_id']}")
             round_state = {
@@ -1086,11 +1092,7 @@ class Controller:
             raise ResearchCtlError(
                 "Codex oversight did not create or update a validated explanatory REPORT.md"
             )
-        protected = tuple(codex_cfg.get("protected_paths", []))
-        violations = [
-            path for path in paths
-            if any(path == item.rstrip("/") or path.startswith(item.rstrip("/") + "/") for item in protected)
-        ]
+        violations = protected_path_violations(paths, codex_cfg.get("protected_paths", []))
         if violations:
             raise ResearchCtlError(
                 "Codex changed protected paths; changes were left for human inspection: "

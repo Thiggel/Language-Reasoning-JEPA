@@ -134,6 +134,35 @@ class ResearchCtlTests(unittest.TestCase):
         state = {"rounds": {plan["round_id"]: {}}}
         self.assertIn(plan["round_id"], state["rounds"])
 
+    def test_protected_path_rejection(self):
+        violations = researchctl.protected_path_violations(
+            ["research/cycles/x.md", "automation/researchctl.py", "AGENTS.md"],
+            ["automation", "AGENTS.md"],
+        )
+        self.assertEqual(violations, ["automation/researchctl.py", "AGENTS.md"])
+
+    def test_too_many_unread_reports_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctl = researchctl.Controller(ROOT / "automation/config.toml")
+            ctl.root = Path(tmp)
+            ctl.state_dir = ctl.root / ".researchctl"
+            for i in range(2):
+                bundle = ctl.root / "research/reports/intent_phrase" / f"r{i}"
+                bundle.mkdir(parents=True)
+                (bundle / "REPORT.md").write_text("unread report")
+                (bundle / "report.json").write_text(json.dumps({"id": f"report-{i}", "review_required": True, "report": "REPORT.md"}))
+            with self.assertRaisesRegex(researchctl.ResearchCtlError, "human review guard"):
+                ctl._human_review_guard()
+
+    def test_global_weekly_gpu_hour_rejection(self):
+        plan = self.controller.validate_plan(copy.deepcopy(self.plan))
+        state = {"rounds": {"recent": {
+            "created_at": researchctl.now(),
+            "projected_gpu_hours": float(self.controller.cfg["limits"]["max_gpu_hours_7d"]),
+        }}}
+        with self.assertRaisesRegex(researchctl.ResearchCtlError, "7-day GPU-hour"):
+            self.controller._global_gpu_hour_guard(plan, state)
+
 
 if __name__ == "__main__":
     unittest.main()
