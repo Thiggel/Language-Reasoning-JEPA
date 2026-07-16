@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "project": "token_igsm",
-  "round_id": "2026-07-16-semantic-flat-control-recovery",
+  "round_id": "2026-07-16-semantic-flat-control-recovery-v2",
   "decision": "Recover only the missing probes from the completed capacity-matched semantic flat-objective checkpoint before interpreting semantic boundaries.",
   "git_commit": "AUTO",
   "jobs": [
