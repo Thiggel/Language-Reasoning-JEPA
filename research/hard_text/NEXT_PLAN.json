@@ -2,7 +2,7 @@
   "schema_version": 2,
   "project": "token_igsm",
   "round_id": "2026-07-16-semantic-flat-control-recovery",
-  "decision": "Recover the timed-out capacity-matched semantic flat-objective control before interpreting whether rendered semantic boundaries improve abstraction over random-matched and flat controls.",
+  "decision": "Recover only the missing probes from the completed capacity-matched semantic flat-objective checkpoint before interpreting semantic boundaries.",
   "git_commit": "AUTO",
   "jobs": [
     {
@@ -10,21 +10,17 @@
       "cluster": "gruenau",
       "command": [
         "bash",
-        "scripts/run_semantic_hierarchy_cell.sh",
+        "scripts/recover_semantic_hierarchy_metrics.sh",
         "{python}",
-        "semantic-flat-objective-seed-0-recovery",
-        "0",
-        "semantic",
-        "[0.0,0.0]"
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/2026-07-16-semantic-boundary-abstraction-pilot/semantic-flat-objective-seed-0/model/best.pt"
       ],
       "gpus": 1,
       "cpus": 4,
-      "walltime_minutes": 50,
+      "walltime_minutes": 40,
       "min_gpu_memory_mb": 16000,
-      "purpose": "Complete the missing information- and capacity-matched flat control so the semantic-boundary pilot can be judged against both required controls.",
+      "purpose": "Run only the missing probes against the already trained flat-control checkpoint; do not retrain the completed model.",
       "expected_artifacts": [
         "model/best.pt",
-        "model/last.pt",
         "model/semantic_representation_probes.json",
         "model/gradient_diagnostics.json",
         "metrics.json",
