@@ -1,0 +1,9 @@
+# @package _global_
+defaults: [edit_token_faithful_h4, _self_]
+run_name: edit_token_faithful_h4_dense
+model:
+  dense_rollout_depth: 4
+  high_dense_rollout_depth: 3
+objective:
+  dense_rollout: {weight: 1.0, horizon_discount: 0.7}
+  high_dense_rollout: {weight: 1.0, horizon_discount: 0.7}

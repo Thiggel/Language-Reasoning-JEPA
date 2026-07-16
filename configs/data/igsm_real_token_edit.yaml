@@ -1,0 +1,22 @@
+name: igsm_real_token_edit
+modulus: 23
+max_op: 21
+max_edge: 28
+op_range: [8, 21]
+train_size: 6000
+val_size: 1000
+test_size: 1000
+train_seed: 1
+val_seed: 2
+test_seed: 3
+fresh_per_epoch: true
+min_edits: 6
+max_edits: 16
+# Compatibility fields unused by the text-only corruption process.
+n_vars_range: [6, 12]
+leaf_prob: 0.35
+steps_range: [3, 9]
+distractor_prob: 0.0
+max_distractors: 0
+shuffle_actions: false
+n_alt: 0

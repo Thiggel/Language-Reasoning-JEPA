@@ -1,0 +1,5 @@
+# @package _global_
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_faithful_h8
+model: {macro_k: 8}
+objective: {hierarchy: {weight: 1.0}}

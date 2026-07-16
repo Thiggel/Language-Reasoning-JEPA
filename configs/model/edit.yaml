@@ -12,6 +12,7 @@ d_action: 16
 fsq_levels: null
 predictor_hidden_mult: 4
 predictor_layers: 2
+predictor_heads: 8
 n_ops: 3
 macro_k: 3
 d_macro: 8
@@ -19,3 +20,11 @@ value_detach: true
 dropout: 0.0
 geo_proj: false
 attn_predictor: false
+predictor_residual: false
+predictor_kind: causal
+high_predictor_kind: causal
+dense_rollout_depth: 0
+high_dense_rollout_depth: 0
+observed_action_ldad: false
+ldad_decoder_layers: 2
+ldad_max_len: 12

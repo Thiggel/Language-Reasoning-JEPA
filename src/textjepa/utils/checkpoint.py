@@ -37,7 +37,11 @@ def load_run(ckpt_path: str, device: str = "cuda:0", random_init: bool = False):
     """Returns (model, vocab, cfg) from a training checkpoint."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(ckpt["cfg"])
-    if cfg.data.get("name", "igsm") == "igsm_real":
+    if cfg.data.get("name", "igsm") == "igsm_real_token_edit":
+        from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
+
+        vocab = faithful_token_edit_vocab()
+    elif cfg.data.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import cached_faithful_vocab
 
         vocab = cached_faithful_vocab()
@@ -85,6 +89,14 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
     else:
         raise ValueError(f"unknown dataset split: {split}")
     size = size or default_size
+    if d.get("name", "igsm") == "igsm_real_token_edit":
+        from textjepa.data.faithful_token_edits import FaithfulTokenEditDataset
+
+        return FaithfulTokenEditDataset(
+            vocab, size=size, seed=seed, max_op=d.max_op,
+            max_edge=d.max_edge, op_range=tuple(d.op_range),
+            min_edits=d.min_edits, max_edits=d.max_edits,
+        )
     if d.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import FaithfulDataset
 
@@ -122,4 +134,8 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
 
 def collate_for(cfg):
     """Returns the collate function matching the configured dataset."""
-    return collate_edits if cfg.data.get("name", "igsm") == "igsm_edit" else collate
+    return (
+        collate_edits
+        if cfg.data.get("name", "igsm") in {"igsm_edit", "igsm_real_token_edit"}
+        else collate
+    )

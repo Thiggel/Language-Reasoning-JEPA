@@ -97,6 +97,14 @@ class EditJEPA(nn.Module):
         chunk_target: str = "none",  # "none" | "frozen" outcome anchor
         geo_proj: bool = False,  # geometry losses act on a learned projection
         attn_predictor: bool = False,  # F attends over buffer sentences
+        predictor_residual: bool = False,
+        predictor_kind: str = "causal",
+        high_predictor_kind: str = "causal",
+        dense_rollout_depth: int = 0,
+        high_dense_rollout_depth: int = 0,
+        observed_action_ldad: bool = False,
+        ldad_decoder_layers: int = 2,
+        ldad_max_len: int = 12,
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -119,9 +127,21 @@ class EditJEPA(nn.Module):
             d_macro=d_macro,
             value_detach=value_detach,
             geo_proj=geo_proj,
-            predictor_kind="causal",
-            high_predictor_kind="causal",
+            residual=predictor_residual,
+            predictor_kind=predictor_kind,
+            high_predictor_kind=high_predictor_kind,
+            dense_rollout_depth=dense_rollout_depth,
+            high_dense_rollout_depth=high_dense_rollout_depth,
         )
+        if observed_action_ldad:
+            from textjepa.models.delta_decoder import ObservedActionDecoder
+
+            self.observed_action_decoder = ObservedActionDecoder(
+                d_model, vocab_size, ldad_max_len,
+                n_layers=ldad_decoder_layers, n_heads=chunk_heads,
+            )
+        else:
+            self.observed_action_decoder = None
         self.attn_pred = (
             AttnEditPredictor(d_model, d_action) if attn_predictor else None
         )
@@ -242,6 +262,10 @@ class EditJEPA(nn.Module):
             action_emb_tgt, batch["step_mask"], step_emb_tgt=step_emb_tgt,
             alt_actions=alt_actions, **overrides,
         )
+        if self.observed_action_decoder is not None:
+            out.extras["observed_action_logits"] = self.observed_action_decoder(
+                out.step_states - out.prev_states
+            )
         if self._slot_tgt is not None:
             out.extras["slot_pred"] = self.core.chunk_head(out.preds)
             out.extras["slot_tgt"] = self._slot_tgt

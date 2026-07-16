@@ -54,7 +54,11 @@ def main(cfg: DictConfig) -> None:
     out_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     print(OmegaConf.to_yaml(cfg))
 
-    if cfg.data.get("name", "igsm") == "igsm_real":
+    if cfg.data.get("name", "igsm") == "igsm_real_token_edit":
+        from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
+
+        vocab = faithful_token_edit_vocab()
+    elif cfg.data.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import cached_faithful_vocab
 
         vocab = cached_faithful_vocab()
