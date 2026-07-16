@@ -9,7 +9,7 @@ branch = "research/intent_phrase"
 worktree = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees/intent_phrase"
 prompt = "automation/prompts/projects/intent_phrase.md"
 scientifically_active = true
-autonomous_submission = false
+autonomous_submission = true
 
 [ownership]
 config_patterns = ["configs/experiment/disc_*", "configs/experiment/paper_causal_*", "configs/experiment/real_*", "configs/experiment/*intent*"]
