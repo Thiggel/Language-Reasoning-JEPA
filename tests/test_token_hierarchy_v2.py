@@ -177,3 +177,43 @@ def test_state_conditioned_token_prior_shape_and_detached_encoder_gradient():
     loss.backward()
     assert all(parameter.grad is None for parameter in model.encoder.parameters())
     assert any(parameter.grad is not None for parameter in model.token_prior.parameters())
+
+
+def test_distinct_level_states_are_causal_and_goal_liftable():
+    torch.manual_seed(17)
+    model = MultilevelTokenHierarchyJEPA(
+        vocab_size=40, pad_id=0, d_model=16, encoder_layers=1,
+        predictor_layers=1, n_heads=2, ff_mult=2, max_len=64,
+        d_action=8, level_spans=[2, 4], level_dims=[6, 4],
+        variational_levels=[False], distinct_level_states=True,
+        level_state_encoder_layers=1,
+    ).eval()
+    assert all(level.state_encoder is not None for level in model.levels)
+    path = torch.randn(2, 9, 16)
+    changed = path.clone()
+    changed[:, 6:] = 100 * torch.randn_like(changed[:, 6:])
+    lifted = model.lift_state_path(path)
+    changed_lifted = model.lift_state_path(changed)
+    assert len(lifted) == 2
+    assert lifted[0].shape == path.shape
+    assert torch.allclose(lifted[0][:, :6], changed_lifted[0][:, :6], atol=1e-5)
+    assert lifted[1].shape[-1] == 16
+    teacher_lifted = model.lift_state_path(path, teacher=True)
+    assert all(not value.requires_grad for value in teacher_lifted)
+
+
+def test_distinct_level_state_teacher_updates_with_ema():
+    model = MultilevelTokenHierarchyJEPA(
+        vocab_size=20, pad_id=0, d_model=16, encoder_layers=1,
+        predictor_layers=1, n_heads=2, ff_mult=2, max_len=32,
+        d_action=8, level_spans=[2], level_dims=[4],
+        variational_levels=[False], distinct_level_states=True,
+        level_state_encoder_layers=1,
+    )
+    online = next(model.levels[0].state_encoder.parameters())
+    target = next(model.levels[0].state_teacher.parameters())
+    with torch.no_grad():
+        online.add_(1.0)
+    before = target.clone()
+    model.update_teacher(0.5)
+    assert not torch.allclose(before, target)

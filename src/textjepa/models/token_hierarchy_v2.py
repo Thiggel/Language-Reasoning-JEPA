@@ -10,9 +10,41 @@ from torch import nn
 from textjepa.models.action import MacroActionModel
 from textjepa.models.ema import EMATeacher
 from textjepa.models.heads import MacroSupportHead, ValueHead
-from textjepa.models.layers import mlp
+from textjepa.models.layers import build_causal_attention_mask, mlp
 from textjepa.models.predictor import CausalHistoryPredictor
 from textjepa.models.token_hierarchy import CausalTokenStateEncoder
+
+
+class CausalLevelStateEncoder(nn.Module):
+    """Causally re-encode a lower-level state path into a new state space."""
+
+    def __init__(self, d_state, n_layers, n_heads, ff_mult, max_steps):
+        super().__init__()
+        self.n_heads = n_heads
+        self.inp = nn.Linear(d_state, d_state)
+        self.pos = nn.Parameter(torch.zeros(1, max_steps, d_state))
+        nn.init.normal_(self.pos, std=0.02)
+        layer = nn.TransformerEncoderLayer(
+            d_state, n_heads, d_state * ff_mult, dropout=0.0,
+            batch_first=True, norm_first=True, activation="gelu",
+        )
+        self.blocks = nn.TransformerEncoder(layer, n_layers)
+        self.norm = nn.LayerNorm(d_state)
+
+    def _positions(self, length):
+        if length <= self.pos.shape[1]:
+            return self.pos[:, :length]
+        return torch.nn.functional.interpolate(
+            self.pos.transpose(1, 2), size=length, mode="linear",
+            align_corners=False,
+        ).transpose(1, 2)
+
+    def forward(self, states, valid):
+        safe_valid = valid.clone()
+        safe_valid[~safe_valid.any(1), 0] = True
+        h = self.inp(states) + self._positions(states.shape[1])
+        mask = build_causal_attention_mask(safe_valid, self.n_heads)
+        return self.norm(self.blocks(h, mask=mask))
 
 
 class TokenHierarchyLevel(nn.Module):
@@ -28,9 +60,21 @@ class TokenHierarchyLevel(nn.Module):
         variational: bool,
         concat_width: int,
         max_steps: int,
+        distinct_state_space: bool,
+        state_encoder_layers: int,
     ):
         super().__init__()
         self.ratio = ratio
+        self.state_encoder = (
+            CausalLevelStateEncoder(
+                d_state, state_encoder_layers, n_heads, ff_mult,
+                max_steps=max_steps * ratio + 1,
+            ) if distinct_state_space else None
+        )
+        self.state_teacher = (
+            EMATeacher(self.state_encoder)
+            if self.state_encoder is not None else None
+        )
         self.action = MacroActionModel(
             d_in_action,
             d_state,
@@ -82,6 +126,8 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
         use_token_prior: bool = False,
         token_prior_hidden: int = 0,
         token_prior_detach_state: bool = False,
+        distinct_level_states: bool = False,
+        level_state_encoder_layers: int = 2,
     ):
         super().__init__()
         spans = tuple(int(x) for x in level_spans)
@@ -115,6 +161,7 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
         self.low_dense_depth = max(1, int(low_dense_depth))
         self.high_dense_depth = max(1, int(high_dense_depth))
         self.token_prior_detach_state = bool(token_prior_detach_state)
+        self.distinct_level_states = bool(distinct_level_states)
         self.encoder = CausalTokenStateEncoder(
             vocab_size, pad_id, d_model, encoder_layers, n_heads, ff_mult, max_len
         )
@@ -151,6 +198,8 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
                 variational=is_variational,
                 concat_width=concat_width,
                 max_steps=max(8, max_len // span),
+                distinct_state_space=self.distinct_level_states,
+                state_encoder_layers=level_state_encoder_layers,
             ))
             previous_span, previous_dim = span, dim
         self.levels = nn.ModuleList(levels)
@@ -160,9 +209,51 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
     @torch.no_grad()
     def update_teacher(self, momentum: float) -> None:
         self.teacher.update(self.encoder, momentum)
+        for level in self.levels:
+            if level.state_teacher is not None:
+                level.state_teacher.update(level.state_encoder, momentum)
 
     def encode_prefix(self, tokens: torch.Tensor) -> torch.Tensor:
         return self.encoder(tokens)[:, -1]
+
+    def lift_state_path(
+        self, state_path: torch.Tensor, through_level: int | None = None,
+        teacher: bool = False,
+    ) -> tuple[torch.Tensor, ...]:
+        """Lift an observed base-state history (optionally ending in a goal).
+
+        Planning can append the encoded terminal goal to the observed base
+        history, call this method, and compare a level's predicted waypoint to
+        the last lifted goal state.  The causal encoders see no states after
+        the position they encode.  The final path element is retained even
+        when it is not exactly on a fixed-span boundary.
+        """
+        if state_path.dim() != 3:
+            raise ValueError("state_path must have shape [batch, time, state]")
+        limit = len(self.levels) if through_level is None else through_level + 1
+        if not 1 <= limit <= len(self.levels):
+            raise ValueError("through_level is outside the configured hierarchy")
+        current = state_path
+        outputs = []
+        previous_span = 1
+        for index, (span, level) in enumerate(
+            zip(self.level_spans[:limit], self.levels[:limit])
+        ):
+            valid = torch.ones(
+                current.shape[:2], dtype=torch.bool, device=current.device
+            )
+            encoder = (
+                level.state_teacher if teacher else level.state_encoder
+            )
+            encoded = encoder(current, valid) if encoder is not None else current
+            outputs.append(encoded)
+            ratio = span // previous_span
+            indices = list(range(0, encoded.shape[1], ratio))
+            if indices[-1] != encoded.shape[1] - 1:
+                indices.append(encoded.shape[1] - 1)
+            current = encoded[:, indices]
+            previous_span = span
+        return tuple(outputs)
 
     def _reasoning_sequences(
         self,
@@ -178,22 +269,27 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
         target = states.new_zeros(batch, width, dim)
         ids = tokens.new_full((batch, width), self.pad_id)
         valid = torch.zeros(batch, width, dtype=torch.bool, device=tokens.device)
-        prompt_state, final_target = [], []
+        prompt_state, prompt_target, final_target = [], [], []
+        online_target = states.new_zeros(batch, width, dim)
         for b in range(batch):
             p, n = int(prompt_len[b]), int(lengths[b])
             prev[b, :n] = states[b, p - 1:p - 1 + n]
             target[b, :n] = targets[b, p:p + n]
+            online_target[b, :n] = states[b, p:p + n]
             ids[b, :n] = tokens[b, p:p + n]
             valid[b, :n] = True
             prompt_state.append(states[b, p - 1])
+            prompt_target.append(targets[b, p - 1])
             final_target.append(targets[b, p + n - 1])
         return {
             "prev": prev,
             "target": target,
+            "online_target": online_target,
             "action_ids": ids,
             "valid": valid,
             "lengths": lengths,
             "prompt_state": torch.stack(prompt_state),
+            "prompt_target": torch.stack(prompt_target),
             "final_target": torch.stack(final_target),
         }
 
@@ -296,6 +392,13 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
         source_actions = token_actions
         source_stride = 1
         source_counts = seq["lengths"]
+        source_width = token_actions.shape[1] + 1
+        source_online_path = states.new_zeros(batch, source_width, self.d_model)
+        source_target_path = states.new_zeros(batch, source_width, self.d_model)
+        source_online_path[:, 0] = seq["prompt_state"]
+        source_target_path[:, 0] = seq["prompt_target"]
+        source_online_path[:, 1:] = seq["online_target"]
+        source_target_path[:, 1:] = seq["target"]
         source_phase_offsets = torch.zeros(
             batch, dtype=torch.long, device=tokens.device
         )
@@ -328,13 +431,28 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
             raw_ids = tokens.new_full((batch, width, span), self.pad_id)
             valid = torch.zeros(batch, width, dtype=torch.bool, device=tokens.device)
             end_positions = tokens.new_zeros(batch, width)
+            path_valid = (
+                torch.arange(source_online_path.shape[1], device=tokens.device)
+                .unsqueeze(0) <= source_counts.unsqueeze(1)
+            )
+            if module.state_encoder is not None:
+                encoded_online_path = module.state_encoder(
+                    source_online_path, path_valid
+                )
+                with torch.no_grad():
+                    encoded_target_path = module.state_teacher(
+                        source_target_path, path_valid
+                    )
+            else:
+                encoded_online_path = source_online_path
+                encoded_target_path = source_target_path
             for b in range(batch):
                 count = int(counts[b])
                 for j in range(count):
                     token_start = int(phase_offsets[b]) + j * span
                     action_start = int(phase_units[b]) + j * ratio
-                    prev[b, j] = seq["prev"][b, token_start]
-                    target[b, j] = seq["target"][b, token_start + span - 1]
+                    prev[b, j] = encoded_online_path[b, action_start]
+                    target[b, j] = encoded_target_path[b, action_start + ratio]
                     windows[b, j] = source_actions[b, action_start:action_start + ratio]
                     raw_windows[b, j] = token_actions[b, token_start:token_start + span]
                     raw_ids[b, j] = seq["action_ids"][b, token_start:token_start + span]
@@ -402,9 +520,26 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
                 "prior_nll": prior,
                 **extras,
             })
+            next_width = max(1, int(counts.max()) + 1)
+            next_online_path = states.new_zeros(
+                batch, next_width, self.d_model
+            )
+            next_target_path = states.new_zeros(
+                batch, next_width, self.d_model
+            )
+            for b in range(batch):
+                count = int(counts[b])
+                start = int(phase_units[b])
+                indices = start + torch.arange(
+                    count + 1, device=tokens.device
+                ) * ratio
+                next_online_path[b, :count + 1] = encoded_online_path[b, indices]
+                next_target_path[b, :count + 1] = encoded_target_path[b, indices]
             source_actions, source_stride = code, span
             source_counts = counts
             source_phase_offsets = phase_offsets
+            source_online_path = next_online_path
+            source_target_path = next_target_path
         return {
             **seq,
             "states": states,

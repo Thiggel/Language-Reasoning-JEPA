@@ -24,6 +24,8 @@ model:
   use_token_prior: false
   token_prior_hidden: 0
   token_prior_detach_state: false
+  distinct_level_states: false
+  level_state_encoder_layers: 2
 
 objective:
   low_prediction: 1.0
