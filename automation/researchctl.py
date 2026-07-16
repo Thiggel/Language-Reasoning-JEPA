@@ -895,6 +895,19 @@ class Controller:
                     rnd["project"] = project
                     rnd["legacy"] = True
                     changed = True
+            already_migrated = (
+                current.get("schema_version") == 2
+                and current.get("migration", {}).get("three_project", {}).get("version") == 1
+            )
+            if already_migrated:
+                print(json.dumps({
+                    "would_change": False,
+                    "rounds": len(current.get("rounds", {})),
+                    "jobs": sum(len(r.get("jobs", {})) for r in current.get("rounds", {}).values()),
+                    "classification": annotations,
+                }, indent=2, sort_keys=True))
+                print("state is already migrated; no write performed")
+                return
             migrated["schema_version"] = 2
             migrated.setdefault("migration", {})["three_project"] = {
                 "version": 1,
@@ -911,9 +924,6 @@ class Controller:
             }, indent=2, sort_keys=True))
             if not execute:
                 print("dry run; state was not modified")
-                return
-            if current.get("schema_version") == 2 and current.get("migration", {}).get("three_project", {}).get("version") == 1:
-                print("state is already migrated; no write performed")
                 return
             backup_dir.mkdir(parents=True, exist_ok=False)
             backup = backup_dir / "state.before-v2.json"
