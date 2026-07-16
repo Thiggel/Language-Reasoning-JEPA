@@ -58,3 +58,17 @@ def test_faithful_token_edit_model_is_causal_hierarchical_and_ldad_trains():
     loss.backward()
     assert torch.isfinite(loss)
     assert model.chunk_encoder.tok.weight.grad is not None
+
+
+def test_faithful_token_edit_encoder_supports_full_length_sentences():
+    """Regression: hard/full iGSM produced a 276-token sentence in a launch."""
+    vocab = faithful_token_edit_vocab()
+    model = EditJEPA(
+        len(vocab), vocab.pad_id, d_model=32, chunk_layers=1,
+        chunk_heads=4, slot_layers=1, slot_heads=4, n_slots=2,
+        max_chunk_len=320, d_action=8, predictor_layers=1,
+        predictor_heads=4,
+    )
+    long_sentence = torch.randint(0, len(vocab), (1, 1, 276))
+    encoded = model.encode_chunks(long_sentence)
+    assert encoded.shape == (1, 1, 32)
