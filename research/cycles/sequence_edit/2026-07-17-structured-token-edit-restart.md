@@ -1,6 +1,6 @@
 # Cycle: structured token-edit JEPA restart
 
-Status: implementation-valid CPU pilot; GPU plan awaiting controller admission
+Status: VICReg screen complete; faithful LDAD coefficient screen next
 
 ## Decision
 

@@ -12,6 +12,7 @@
 | 2026-07-17-faithful-edit-local-outcome-repair | Does exact changed-step supervision restore causal edit sensitivity? | 4 completed | all remain action-blind and lose to persistence; no coefficient selected | [`2026-07-16-faithful-token-hierarchy.md`](cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md) |
 | 2026-07-17-faithful-edit-observed-step-attention | Does direct access to observed step embeddings repair the state interface? | 1 completed | assignment rises to 27.56% but all causal gates fail; state family retired | [`2026-07-16-faithful-token-hierarchy.md`](cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md) |
 | 2026-07-17-structured-token-edit-restart | Do token-aligned pointer dynamics become action-sensitive, and which corruption/stabilizer recipe is healthy? | 14 planned | CPU process fixtures pass; GPU matrix awaiting controller admission | [`2026-07-17-structured-token-edit-restart.md`](cycles/sequence_edit/2026-07-17-structured-token-edit-restart.md) |
+| 2026-07-17-structured-edit-vicreg-coarse-wave1 | Which VICReg weight preserves rank and restores causal action use under curriculum corruption? | 5 completed | none passes action-use gate; only 0.02 stays within rank-loss gate; LDAD repair justified | [`2026-07-17 report`](reports/sequence_edit/2026-07-17-structured-edit-vicreg-screen/REPORT.md) |
 
 Historical waves remain indexed by the subproject READMEs. Add one row per new
 controller round and keep invalid/failed rounds visible.

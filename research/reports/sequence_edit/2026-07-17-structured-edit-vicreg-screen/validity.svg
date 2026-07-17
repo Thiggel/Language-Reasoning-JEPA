@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500" role="img" aria-labelledby="title desc">
+  <title id="title">Curriculum VICReg causal validity and effective rank</title>
+  <desc id="desc">Five shuffled-action ratio bars remain below the 1.05 causal threshold. Effective rank falls from 113.6 without VICReg to about 70 at weights 0.5 and 1.</desc>
+  <rect width="1000" height="500" fill="white"/>
+  <style>text{font-family:sans-serif;fill:#172033}.title{font-size:24px;font-weight:700}.label{font-size:16px}.small{font-size:14px}.axis{stroke:#556070;stroke-width:2}.bar{fill:#4f82b8}.rank{fill:#55a36f}.gate{stroke:#c64d43;stroke-width:3;stroke-dasharray:8 6}</style>
+  <text x="40" y="38" class="title">More variance did not make curriculum edits causally visible</text>
+  <text x="70" y="78" class="label">Shuffled-action error ÷ matched error</text>
+  <line x1="70" y1="360" x2="470" y2="360" class="axis"/><line x1="70" y1="110" x2="70" y2="360" class="axis"/>
+  <line x1="70" y1="152" x2="470" y2="152" class="gate"/><text x="76" y="143" class="small">1.05 causal gate</text>
+  <g class="bar"><rect x="95" y="306" width="52" height="54"/><rect x="170" y="307" width="52" height="53"/><rect x="245" y="303" width="52" height="57"/><rect x="320" y="320" width="52" height="40"/><rect x="395" y="325" width="52" height="35"/></g>
+  <g class="small" text-anchor="middle"><text x="121" y="295">1.013</text><text x="196" y="296">1.013</text><text x="271" y="292">1.014</text><text x="346" y="309">1.010</text><text x="421" y="314">1.009</text></g>
+  <text x="570" y="78" class="label">Effective state rank</text>
+  <line x1="570" y1="360" x2="970" y2="360" class="axis"/><line x1="570" y1="110" x2="570" y2="360" class="axis"/>
+  <g class="rank"><rect x="595" y="123" width="52" height="237"/><rect x="670" y="136" width="52" height="224"/><rect x="745" y="184" width="52" height="176"/><rect x="820" y="214" width="52" height="146"/><rect x="895" y="215" width="52" height="145"/></g>
+  <g class="small" text-anchor="middle"><text x="621" y="116">113.6</text><text x="696" y="129">107.4</text><text x="771" y="177">84.4</text><text x="846" y="207">70.2</text><text x="921" y="208">69.5</text></g>
+  <g class="label" text-anchor="middle"><text x="121" y="390">0</text><text x="196" y="390">.02</text><text x="271" y="390">.1</text><text x="346" y="390">.5</text><text x="421" y="390">1</text><text x="621" y="390">0</text><text x="696" y="390">.02</text><text x="771" y="390">.1</text><text x="846" y="390">.5</text><text x="921" y="390">1</text></g>
+  <text x="500" y="430" text-anchor="middle" class="label">VICReg weight</text>
+  <text x="500" y="465" text-anchor="middle" class="small">All cells use one seed and 256 held-out examples; lower rank loss and higher shuffled-action ratio are desirable.</text>
+</svg>
