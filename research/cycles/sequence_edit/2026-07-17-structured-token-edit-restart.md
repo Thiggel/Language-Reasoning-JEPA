@@ -144,3 +144,13 @@ EMA scores 1.012 after pooling but 3.018 across token-aligned targets. The
 pooled causal gate is therefore invalid for this interface. Freeze training
 and re-audit all five checkpoints and four corruptions before selecting or
 scaling a recipe.
+
+## Token causal re-audit
+
+All five frozen checkpoints completed a 256-example, four-regime re-audit. On
+mixed evaluation, token-level shuffled/matched ratios are 3.12--3.30 for EMA
+recipes and 1.83 for lower-rate LDAD. Fixed versus fresh mixed training remains
+indistinguishable. Single-operation global ratios remain diluted, so the next
+frozen audit separates operation, current-buffer pointer, and content and
+scores a radius-two local window. No scale round is admitted until this
+component gate is resolved.

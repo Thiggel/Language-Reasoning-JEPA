@@ -268,6 +268,31 @@ def shuffled_action_prediction(model, out, batch, return_output: bool = False):
     return prediction[:, :, 0], None, changed_mask
 
 
+def structured_component_prediction(model, batch, valid, key: str):
+    """Change one raw action component while holding the other two fixed."""
+    eligible = valid.clone()
+    if key == "edit_content_token":
+        eligible &= batch["op"].ne(0)  # deletion has no content argument
+    observed = batch[key][eligible]
+    if observed.numel() < 2:
+        return None, None, None
+    best, best_changed = None, None
+    for shift in range(1, observed.numel()):
+        candidate = observed.roll(shift, 0)
+        changed = candidate.ne(observed)
+        if best_changed is None or int(changed.sum()) > int(best_changed.sum()):
+            best, best_changed = candidate, changed
+    if not bool(best_changed.any()):
+        return None, None, None
+    changed_batch = dict(batch)
+    values = batch[key].clone()
+    values[eligible] = best
+    changed_batch[key] = values
+    changed_mask = torch.zeros_like(valid)
+    changed_mask[eligible] = best_changed
+    return model(changed_batch), changed_mask, changed_batch
+
+
 def recursive_horizon_errors(
     model, out, horizons: tuple[int, ...], max_origins: int = 4
 ) -> dict:
@@ -341,6 +366,10 @@ def main():
         "--max-horizon-origins", type=int, default=4,
         help="evenly spaced causal prefixes per horizon and batch; 0 uses all",
     )
+    parser.add_argument(
+        "--component-falsifiers", action="store_true",
+        help="separately derange operation, current-buffer pointer, and content",
+    )
     parser.add_argument("--out")
     args = parser.parse_args()
     horizons = tuple(int(value) for value in args.horizons.split(",") if value)
@@ -365,6 +394,14 @@ def main():
     direct, recursive, persistence = [], [], []
     token_direct, token_shuffled, token_masks, token_shuffle_masks = [], [], [], []
     token_recursive, token_recursive_masks = [], []
+    component_parts = {
+        key: {
+            "matched": [], "shuffled": [],
+            "matched_mask": [], "shuffled_mask": [],
+            "matched_local_mask": [], "shuffled_local_mask": [],
+        }
+        for key in ("op", "edit_position", "edit_content_token")
+    }
     masks, all_ops, states, remaining, ops, delta = [], [], [], [], [], []
     horizon_totals: dict[str, list[dict]] = {}
     high, ldad_correct, ldad_total, goal_distance, goal_remaining = [], 0, 0, [], []
@@ -401,6 +438,46 @@ def main():
                 sensitivity = same_state_action_sensitivity(out)
                 if sensitivity is not None:
                     action_sensitivity_parts.append(sensitivity)
+
+            if args.component_falsifiers and getattr(model, "token_pred", None) is not None:
+                for key, parts in component_parts.items():
+                    component_out, component_changed, component_batch = structured_component_prediction(
+                        model, batch, mask, key
+                    )
+                    if component_out is None:
+                        continue
+                    target_tokens = out.extras["token_targets"]
+                    parts["matched"].append(normalized_l1(
+                        out.extras["token_predictions"], target_tokens
+                    ).cpu())
+                    parts["shuffled"].append(normalized_l1(
+                        component_out.extras["token_predictions"],
+                        component_out.extras["token_targets"],
+                    ).cpu())
+                    matched_mask = (
+                        out.extras["token_prediction_mask"]
+                        & out.extras["token_target_mask"]
+                        & component_changed.unsqueeze(-1)
+                    )
+                    shuffled_mask_component = (
+                        component_out.extras["token_prediction_mask"]
+                        & component_out.extras["token_target_mask"]
+                        & component_changed.unsqueeze(-1)
+                    )
+                    width = matched_mask.shape[-1]
+                    coordinate = torch.arange(width, device=mask.device).view(1, 1, -1)
+                    original_position = batch["edit_position"].unsqueeze(-1)
+                    changed_position = component_batch["edit_position"].unsqueeze(-1)
+                    local = (
+                        coordinate.sub(original_position).abs().le(2)
+                        | coordinate.sub(changed_position).abs().le(2)
+                    )
+                    parts["matched_mask"].append(matched_mask.cpu())
+                    parts["shuffled_mask"].append(shuffled_mask_component.cpu())
+                    parts["matched_local_mask"].append((matched_mask & local).cpu())
+                    parts["shuffled_local_mask"].append((
+                        shuffled_mask_component & local
+                    ).cpu())
 
             if recursive_available:
                 for horizon, summary in recursive_horizon_errors(
@@ -546,6 +623,58 @@ def main():
             ),
         }
 
+    component_controls = None
+    if args.component_falsifiers:
+        component_controls = {}
+        for key, parts in component_parts.items():
+            if not parts["matched"]:
+                component_controls[key] = {"available": False}
+                continue
+            matched = torch.cat([
+                values[mask] for values, mask in zip(
+                    parts["matched"], parts["matched_mask"]
+                )
+            ])
+            perturbed = torch.cat([
+                values[mask] for values, mask in zip(
+                    parts["shuffled"], parts["shuffled_mask"]
+                )
+            ])
+            matched_mean_component = float(matched.mean())
+            perturbed_mean = float(perturbed.mean())
+            matched_local = torch.cat([
+                values[mask] for values, mask in zip(
+                    parts["matched"], parts["matched_local_mask"]
+                )
+            ])
+            perturbed_local = torch.cat([
+                values[mask] for values, mask in zip(
+                    parts["shuffled"], parts["shuffled_local_mask"]
+                )
+            ])
+            matched_local_mean = float(matched_local.mean())
+            perturbed_local_mean = float(perturbed_local.mean())
+            component_controls[key] = {
+                "available": True,
+                "matched_ln_l1": matched_mean_component,
+                "shuffled_ln_l1": perturbed_mean,
+                "over_matched_error_ratio": (
+                    perturbed_mean / matched_mean_component
+                    if matched_mean_component else None
+                ),
+                "matched_tokens": int(matched.numel()),
+                "shuffled_tokens": int(perturbed.numel()),
+                "local_radius_tokens": 2,
+                "local_matched_ln_l1": matched_local_mean,
+                "local_shuffled_ln_l1": perturbed_local_mean,
+                "local_over_matched_error_ratio": (
+                    perturbed_local_mean / matched_local_mean
+                    if matched_local_mean else None
+                ),
+                "local_matched_tokens": int(matched_local.numel()),
+                "local_shuffled_tokens": int(perturbed_local.numel()),
+            }
+
     privileged_geometry = {
         "uses_privileged_true_terminal_buffer": True,
         "available_at_deployment": False,
@@ -580,6 +709,7 @@ def main():
         "persistence_no_change_ln_l1": _summary(persistence_error, step_mask)["ln_l1"],
         "shuffled_action_causal_falsifier": shuffled_control,
         "token_aligned_shuffled_action_falsifier": token_causal_control,
+        "token_aligned_component_falsifiers": component_controls,
         "recursive_ln_l1_by_horizon": horizon_payload,
         "recursive_horizon_origin_sampling": (
             {
