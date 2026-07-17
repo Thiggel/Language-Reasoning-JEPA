@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-17-j3-context-lower-lr-timeout-recovery",
-  "decision": "Complete the two infrastructure-censored seed-0 cells so context-window and learning-rate selection uses the full matched twenty-epoch protocol before any confirmation seeds are admitted.",
+  "round_id": "2026-07-17-j3-context4-seven-hour-recovery",
+  "decision": "Complete the matched context-window-four seed-0 cell without throughput censoring so the causal-history decision can be settled before confirmation seeds are admitted.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "j3-context-4-seed-0-recovery",
+      "id": "j3-context-4-seed-0-seven-hour-recovery",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -16,8 +16,8 @@
         "0"
       ],
       "gpus": 1,
-      "walltime_minutes": 300,
-      "purpose": "Full twenty-epoch recovery of the matched four-step causal-context cell that previously timed out after epoch nine.",
+      "walltime_minutes": 420,
+      "purpose": "Full twenty-epoch replacement for the throughput-censored context-window-four cell, with enough wall time to complete all planning and representation diagnostics.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -31,35 +31,8 @@
       "env": {
         "TMPDIR": "/tmp"
       },
-      "min_gpu_memory_mb": 30000
-    },
-    {
-      "id": "j3-full-lr-1e4-seed-0-recovery",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_paper_causal_short_tmp.sh",
-        "{python}",
-        "paper_causal_j3_lr1e4",
-        "0"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 300,
-      "purpose": "Full twenty-epoch recovery of the matched lower-learning-rate cell that previously timed out after epoch fifteen.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/gar_teacher_audit.json",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json"
-      ],
-      "env": {
-        "TMPDIR": "/tmp"
-      },
-      "min_gpu_memory_mb": 30000
+      "min_gpu_memory_mb": 30000,
+      "node": 11
     }
   ]
 }
