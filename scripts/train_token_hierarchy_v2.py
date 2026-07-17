@@ -246,7 +246,10 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             obj.geo_rank_temperature,
         )
         regression = F.mse_loss(energy, target)
-        low_total = rank + float(obj.geo_rank_regression) * regression
+        low_total = (
+            float(obj.geo_rank_pairwise) * rank
+            + float(obj.geo_rank_regression) * regression
+        )
         total = total + float(obj.geo_rank_low) * low_total
         selection = selection + float(obj.geo_rank_low) * low_total.detach()
         pair, top1, regret = geometric_rank_metrics(
@@ -326,7 +329,10 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
                 obj.geo_rank_temperature,
             )
             regression = F.mse_loss(energy, target)
-            level_total = rank + float(obj.geo_rank_regression) * regression
+            level_total = (
+                float(obj.geo_rank_pairwise) * rank
+                + float(obj.geo_rank_regression) * regression
+            )
             weight = float(obj.geo_rank_high) * level_weight
             total = total + weight * level_total
             selection = selection + weight * level_total.detach()

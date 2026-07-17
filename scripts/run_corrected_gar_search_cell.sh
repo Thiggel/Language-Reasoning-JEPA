@@ -6,6 +6,9 @@ name=${2:?cell name}
 seed=${3:?seed}
 regression_weight=${4:?GAR advantage MSE weight}
 run_search_matrix=${5:?true to run planner matrix}
+pairwise_weight=${6:-1}
+gar_weight=${7:-0.3}
+gar_horizon=${8:-1}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
 model_dir="$run_dir/model"
 
@@ -24,11 +27,12 @@ model_dir="$run_dir/model"
   model.use_token_prior=true model.token_prior_hidden=256 \
   model.token_prior_detach_state=true \
   objective.dense_discount=0.5 "objective.high_level_weights=[1,1,1]" \
-  objective.geo_rank_low=0.3 objective.geo_rank_high=0.3 \
+  "objective.geo_rank_low=$gar_weight" "objective.geo_rank_high=$gar_weight" \
   "objective.geo_rank_level_weights=[1,1,1]" \
-  objective.geo_rank_horizon=1 objective.geo_rank_k=4 \
+  "objective.geo_rank_horizon=$gar_horizon" objective.geo_rank_k=4 \
   objective.geo_rank_continuations=4 objective.geo_rank_label_gap=0.001 \
   objective.geo_rank_objective=pairwise \
+  "objective.geo_rank_pairwise=$pairwise_weight" \
   objective.geo_rank_macro_proposals=conditional \
   "objective.geo_rank_regression=$regression_weight" \
   objective.token_prior=1 objective.token_prior_rollout=1 \

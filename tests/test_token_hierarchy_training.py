@@ -24,7 +24,8 @@ def objective(**overrides):
         geo_rank_macro_proposals="global", geo_rank_conditional_k=8,
         geo_rank_margin=0.5, geo_rank_label_gap=0.0,
         geo_rank_objective="pairwise", geo_rank_temperature=0.1,
-        geo_rank_regression=0.0, geo_rank_detach_prediction=False,
+        geo_rank_pairwise=1.0, geo_rank_regression=0.0,
+        geo_rank_detach_prediction=False,
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -86,6 +87,29 @@ def test_end_to_end_geometry_ranking_updates_encoder_predictors_and_value_heads(
             parameter.grad is not None and parameter.grad.abs().sum() > 0
             for parameter in module.parameters()
         )
+
+
+def test_advantage_mse_can_be_ablated_independently_of_pairwise_ranking():
+    torch.manual_seed(29)
+    model = tiny_model().train()
+    tokens = torch.randint(1, 30, (4, 24))
+    prompt_len = torch.tensor([8, 8, 8, 8])
+    out = model(tokens, prompt_len)
+    cfg = SimpleNamespace(objective=objective(
+        vicreg=0.0, geo_rank_low=1.0, geo_rank_high=1.0,
+        geo_rank_pairwise=0.0, geo_rank_regression=1.0,
+    ))
+    total, items = compute_losses(
+        out, cfg, model=model,
+        batch={"tokens": tokens, "prompt_len": prompt_len},
+    )
+    assert torch.isfinite(total)
+    assert items["geo_low_regression"].item() > 0
+    total.backward()
+    assert any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.low_goal_value.parameters()
+    )
 
 
 def test_all_geometric_preference_objectives_prefer_correct_ordering():

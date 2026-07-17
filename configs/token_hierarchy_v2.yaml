@@ -65,6 +65,7 @@ objective:
   geo_rank_margin: 0.5
   geo_rank_label_gap: 0.02
   geo_rank_objective: pairwise
+  geo_rank_pairwise: 1.0
   geo_rank_temperature: 0.1
   geo_rank_regression: 0.0
   geo_rank_detach_prediction: false
