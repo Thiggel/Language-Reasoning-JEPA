@@ -2,7 +2,10 @@ from types import SimpleNamespace
 
 import torch
 
-from scripts.train_token_hierarchy_v2 import compute_losses
+from scripts.train_token_hierarchy_v2 import (
+    compute_losses,
+    geometric_preference_loss,
+)
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
 
 
@@ -18,7 +21,9 @@ def objective(**overrides):
         geo_rank_low=0.0, geo_rank_high=0.0,
         geo_rank_level_weights=[1.0], geo_rank_k=2,
         geo_rank_horizon=2, geo_rank_continuations=2,
+        geo_rank_macro_proposals="global", geo_rank_conditional_k=8,
         geo_rank_margin=0.5, geo_rank_label_gap=0.0,
+        geo_rank_objective="pairwise", geo_rank_temperature=0.1,
         geo_rank_regression=0.0, geo_rank_detach_prediction=False,
     )
     values.update(overrides)
@@ -81,3 +86,17 @@ def test_end_to_end_geometry_ranking_updates_encoder_predictors_and_value_heads(
             parameter.grad is not None and parameter.grad.abs().sum() > 0
             for parameter in module.parameters()
         )
+
+
+def test_all_geometric_preference_objectives_prefer_correct_ordering():
+    distance = torch.tensor([[0.1, 0.4, 0.9]])
+    correct = torch.tensor([[0.1, 0.4, 0.9]])
+    reversed_energy = correct.flip(1)
+    for name in ("pairwise", "listwise", "regression"):
+        good = geometric_preference_loss(
+            correct, distance, name, 0.1, 0.0, 0.1
+        )
+        bad = geometric_preference_loss(
+            reversed_energy, distance, name, 0.1, 0.0, 0.1
+        )
+        assert good < bad, name

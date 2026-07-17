@@ -61,6 +61,20 @@ def geometric_rank_loss(energy, distance, margin, label_gap):
     return masked_mean(loss, better.float())
 
 
+def geometric_preference_loss(energy, distance, objective, margin, label_gap,
+                              temperature):
+    """Non-symbolic objectives whose targets are EMA geometric distances."""
+    if objective == "pairwise":
+        return geometric_rank_loss(energy, distance, margin, label_gap)
+    if objective == "listwise":
+        teacher = (-distance / float(temperature)).softmax(-1)
+        student = (-energy / float(temperature)).log_softmax(-1)
+        return -(teacher * student).sum(-1).mean()
+    if objective == "regression":
+        return F.smooth_l1_loss(energy, distance)
+    raise ValueError(f"unknown geometric preference objective: {objective}")
+
+
 def geometric_rank_metrics(energy, distance, label_gap):
     delta = distance.unsqueeze(2) - distance.unsqueeze(1)
     energy_delta = energy.unsqueeze(2) - energy.unsqueeze(1)
@@ -80,8 +94,9 @@ def counterfactual_distances(
 ):
     """EMA-encode same-prefix root/continuation chunks and score geometry.
 
-    ``root_chunks`` is [B,C,L]. ``continuation_chunks`` is [B,M,L] or
-    ``None``. Every alternative is appended to the *same* factual prefix;
+    ``root_chunks`` is [B,C,L]. ``continuation_chunks`` is [B,M,S,L] or
+    ``None``, where M continuation proposals each contain S future chunks.
+    Every alternative is appended to the *same* factual prefix;
     chunks borrowed from another batch row are proposals only, never outcome
     labels. This is the token analogue of intent GAR's environment-rendered
     counterfactual next states.
@@ -97,7 +112,7 @@ def counterfactual_distances(
             for m in range(continuations):
                 pieces = [prefix, root_chunks[b, c]]
                 if continuation_chunks is not None:
-                    pieces.append(continuation_chunks[b, m])
+                    pieces.extend(continuation_chunks[b, m].unbind(0))
                 sequence = torch.cat(pieces)
                 rows.append(sequence)
                 owners.append(b)
@@ -107,9 +122,10 @@ def counterfactual_distances(
     for i, sequence in enumerate(rows):
         packed[i, :len(sequence)] = sequence
     encoded = model.teacher(packed)
-    reasoning_length = anchor_tokens + width * (
-        1 + int(continuation_chunks is not None)
-    ) + 1
+    continuation_steps = (
+        0 if continuation_chunks is None else continuation_chunks.shape[2]
+    )
+    reasoning_length = anchor_tokens + width * (1 + continuation_steps) + 1
     base_paths = []
     for i, b in enumerate(owners):
         start = int(prompt_len[b]) - 1
@@ -143,11 +159,24 @@ def primitive_candidates(factual, k, vocabulary_size):
     return torch.cat([factual[:, None], alternatives], 1)
 
 
-def macro_chunk_candidates(level, anchor, k):
-    """Factual chunk plus K samples from the observed macro-action bank."""
+def macro_chunk_candidates(level, anchor, k, mode="global", conditional_k=32):
+    """Factual chunk plus observed, optionally state-conditioned proposals."""
     factual = level["raw_action_ids"][:, anchor]
     pool = level["raw_action_ids"][level["valid"]]
-    ids = torch.randint(len(pool), (len(factual), int(k)), device=factual.device)
+    if mode == "global":
+        ids = torch.randint(len(pool), (len(factual), int(k)), device=factual.device)
+    elif mode == "conditional":
+        pool_states = level["prev"][level["valid"]].detach()
+        roots = level["prev"][:, anchor].detach()
+        neighbours = torch.cdist(roots, pool_states).topk(
+            min(int(conditional_k), len(pool)), largest=False
+        ).indices
+        sampled = torch.randint(
+            neighbours.shape[1], (len(factual), int(k)), device=factual.device
+        )
+        ids = neighbours.gather(1, sampled)
+    else:
+        raise ValueError(f"unknown macro proposal mode: {mode}")
     return torch.cat([factual[:, None], pool[ids]], 1)
 
 
@@ -159,8 +188,8 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         return zero, {}, zero.detach()
     k = int(obj.geo_rank_k)
     horizon = int(obj.geo_rank_horizon)
-    if horizon not in (1, 2):
-        raise ValueError("end-to-end GAR pilot supports horizon 1 or 2")
+    if horizon not in (1, 2, 4):
+        raise ValueError("end-to-end GAR supports horizons 1, 2, or 4")
     tokens = batch["tokens"].to(out["low_pred"].device)
     prompt_len = batch["prompt_len"].to(tokens.device)
     items, total, selection = {}, out["low_pred"].sum() * 0, out["low_pred"].sum() * 0
@@ -173,12 +202,15 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         )
         root_chunks = root_ids.unsqueeze(-1)
         continuation = None
-        if horizon == 2:
-            source = out["action_ids"][:, min(anchor + 1, available - 1)]
-            continuation = primitive_candidates(
-                source, int(obj.geo_rank_continuations) - 1,
-                model.token_action.num_embeddings,
-            ).unsqueeze(-1)
+        if horizon > 1:
+            continuation = torch.stack([
+                primitive_candidates(
+                    out["action_ids"][:, anchor + step],
+                    int(obj.geo_rank_continuations) - 1,
+                    model.token_action.num_embeddings,
+                )
+                for step in range(1, horizon)
+            ], 2).unsqueeze(-1)
         goal = out["final_target"].detach()
         distance = counterfactual_distances(
             model, tokens, prompt_len, root_chunks, continuation,
@@ -197,8 +229,10 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         energy = model.low_goal_value(predicted, goal_rows).reshape(
             batch_size, candidates
         )
-        rank = geometric_rank_loss(
-            energy, distance, obj.geo_rank_margin, obj.geo_rank_label_gap
+        rank = geometric_preference_loss(
+            energy, distance, obj.geo_rank_objective,
+            obj.geo_rank_margin, obj.geo_rank_label_gap,
+            obj.geo_rank_temperature,
         )
         regression = F.smooth_l1_loss(energy, distance)
         low_total = rank + float(obj.geo_rank_regression) * regression
@@ -227,13 +261,21 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             if available < horizon:
                 continue
             anchor = torch.randint(max(1, available - (horizon - 1)), ()).item()
-            roots = macro_chunk_candidates(level, anchor, k)
+            roots = macro_chunk_candidates(
+                level, anchor, k, obj.geo_rank_macro_proposals,
+                obj.geo_rank_conditional_k,
+            )
             continuation = None
-            if horizon == 2:
-                continuation = macro_chunk_candidates(
-                    level, anchor + 1,
-                    int(obj.geo_rank_continuations) - 1,
-                )
+            if horizon > 1:
+                continuation = torch.stack([
+                    macro_chunk_candidates(
+                        level, anchor + step,
+                        int(obj.geo_rank_continuations) - 1,
+                        obj.geo_rank_macro_proposals,
+                        obj.geo_rank_conditional_k,
+                    )
+                    for step in range(1, horizon)
+                ], 2)
             counts = level["valid"].sum(1).long() - 1
             goal = level["target"][
                 torch.arange(len(tokens), device=tokens.device), counts
@@ -261,8 +303,10 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             energy = model.levels[int(level["index"])].goal_value(
                 predicted, goal_rows
             ).reshape(batch_size, candidates)
-            rank = geometric_rank_loss(
-                energy, distance, obj.geo_rank_margin, obj.geo_rank_label_gap
+            rank = geometric_preference_loss(
+                energy, distance, obj.geo_rank_objective,
+                obj.geo_rank_margin, obj.geo_rank_label_gap,
+                obj.geo_rank_temperature,
             )
             regression = F.smooth_l1_loss(energy, distance)
             level_total = rank + float(obj.geo_rank_regression) * regression

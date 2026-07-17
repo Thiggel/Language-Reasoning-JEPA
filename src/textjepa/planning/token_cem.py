@@ -69,6 +69,7 @@ def categorical_cem(
     forbidden: tuple[int, ...] = (),
     extra_cost: Callable[[Tensor, Tensor], tuple[Tensor, dict[str, Tensor]]] | None = None,
     goal_states: Callable[[Tensor], Tensor] | None = None,
+    goal_cost_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
     generator: torch.Generator | None = None,
 ) -> CEMResult:
     """Categorical CEM over discrete token sequences, with no language model."""
@@ -95,7 +96,14 @@ def categorical_cem(
         ], 1)
         states = rollout(tokens)
         scored = goal_states(states) if goal_states is not None else states
-        goal_cost = latent_l1(scored[:, -1], goal.expand(candidates, -1))
+        goal_rows = goal.expand(candidates, -1)
+        goal_cost = (
+            goal_cost_fn(scored[:, -1], goal_rows)
+            if goal_cost_fn is not None
+            else latent_l1(scored[:, -1], goal_rows)
+        )
+        if goal_cost.shape != (candidates,):
+            raise ValueError("goal_cost_fn must return one cost per candidate")
         cost = goal_cost
         diagnostics: dict[str, Tensor] = {"goal_cost": goal_cost.detach()}
         if extra_cost is not None:
@@ -208,6 +216,7 @@ def continuous_cem(
     init_std: Tensor | None = None,
     project_bank: Tensor | None = None,
     goal_states: Callable[[Tensor], Tensor] | None = None,
+    goal_cost_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
     extra_cost: Callable[[Tensor, Tensor], tuple[Tensor, dict[str, Tensor]]] | None = None,
     reachability: Callable[[Tensor], Tensor] | None = None,
     reach_topn: int = 0,
@@ -251,7 +260,14 @@ def continuous_cem(
         else:
             states, scored_actions = rolled, actions
         scored = goal_states(states) if goal_states is not None else states
-        cost = latent_l1(scored[:, -1], goal.expand(candidates, -1))
+        goal_rows = goal.expand(candidates, -1)
+        cost = (
+            goal_cost_fn(scored[:, -1], goal_rows)
+            if goal_cost_fn is not None
+            else latent_l1(scored[:, -1], goal_rows)
+        )
+        if cost.shape != (candidates,):
+            raise ValueError("goal_cost_fn must return one cost per candidate")
         diagnostics: dict[str, Tensor] = {
             "goal_cost": cost.detach(),
             "bank_projection_distance": projection_distance.detach(),

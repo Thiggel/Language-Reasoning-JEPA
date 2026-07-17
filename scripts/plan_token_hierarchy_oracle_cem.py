@@ -209,6 +209,30 @@ class OracleCEMPlanner:
             head.load_state_dict(payload["head"])
             self.advantage_head = head.to(self.device).eval()
 
+    def geometric_goal_cost(self, head):
+        """Return a CEM cost using only JEPA geometry and its learned energy.
+
+        ``combined`` standardizes both signals within the candidate population
+        before adding them.  This avoids treating the arbitrary scale of a
+        ranking-trained value head as calibrated metric distance.
+        """
+        mode = self.args.goal_score
+        if mode == "latent_distance":
+            return None
+
+        def score(states, goals):
+            value = head(states, goals)
+            if mode == "learned_value":
+                return value
+            distance = latent_l1(states, goals)
+
+            def standardized(x):
+                return (x - x.mean()) / x.std(unbiased=False).clamp_min(1e-6)
+
+            return standardized(distance) + self.args.value_weight * standardized(value)
+
+        return score
+
     def lift_low_predictions(self, base_path, predictions, level_index):
         """Map primitive rollout endpoints into a distinct higher state space.
 
@@ -301,6 +325,10 @@ class OracleCEMPlanner:
             transform = lambda states: self.lift_low_predictions(
                 base_path, states, target_level
             )
+        value_head = (
+            self.model.levels[target_level].goal_value
+            if target_level is not None else self.model.low_goal_value
+        )
         result = categorical_cem(
             lambda ids: self.low_rollout(
                 start, ids, state_history, action_history
@@ -314,6 +342,7 @@ class OracleCEMPlanner:
             ),
             extra_cost=(extra_cost if cost_terms else None),
             goal_states=transform,
+            goal_cost_fn=self.geometric_goal_cost(value_head),
         )
         if target_level is not None:
             # Keep primitive predictions for execution-drift diagnostics.  The
@@ -352,7 +381,12 @@ class OracleCEMPlanner:
         token_ids = torch.stack(tokens, 1)
         prior_nll = torch.stack(nlls, 1).mean(1)
         prior_entropy = torch.stack(entropies, 1).mean(1)
-        goal_cost = latent_l1(states[:, -1], target.expand(n, -1))
+        goal_rows = target.expand(n, -1)
+        goal_cost_fn = self.geometric_goal_cost(self.model.low_goal_value)
+        goal_cost = (
+            goal_cost_fn(states[:, -1], goal_rows)
+            if goal_cost_fn is not None else latent_l1(states[:, -1], goal_rows)
+        )
         cost = goal_cost + self.args.token_prior_weight * prior_nll
         selected = int(cost.argmin())
         return CEMResult(
@@ -518,6 +552,11 @@ class OracleCEMPlanner:
             elites=self.args.macro_elites, alpha=self.args.alpha,
             init_mean=init_mean, init_std=init_std, project_bank=projection,
             goal_states=goal_states,
+            goal_cost_fn=self.geometric_goal_cost(
+                self.model.levels[
+                    level_index + 1 if goal_states is not None else level_index
+                ].goal_value
+            ),
             extra_cost=extra_cost,
             reachability=reachability,
             reach_topn=self.args.reach_topn,
@@ -818,6 +857,10 @@ def main():
     parser.add_argument("--epistemic-weight", type=float, default=0.0)
     parser.add_argument("--advantage-head", default=None)
     parser.add_argument("--advantage-weight", type=float, default=1.0)
+    parser.add_argument("--goal-score", choices=[
+        "latent_distance", "learned_value", "combined",
+    ], default="latent_distance")
+    parser.add_argument("--value-weight", type=float, default=1.0)
     parser.add_argument("--bank-cache", default=None)
     parser.add_argument("--output-tag", default="")
     parser.add_argument("--out", default=None)
@@ -896,6 +939,8 @@ def main():
         "flat": args.flat,
         "feedback_mode": args.feedback_mode,
         "oracle_goal": True,
+        "goal_score": args.goal_score,
+        "value_weight": args.value_weight,
         "uses_auxiliary_lm": False,
         "token_proposal": args.token_proposal,
         "success": totals["success"] / args.episodes,

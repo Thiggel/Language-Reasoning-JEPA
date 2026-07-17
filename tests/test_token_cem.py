@@ -88,6 +88,26 @@ def test_categorical_cem_scores_in_transformed_goal_coordinates():
     assert plain.actions.item() != transformed.actions.item()
 
 
+def test_categorical_cem_can_use_learned_geometric_cost():
+    goal = torch.tensor([1.0, -1.0])
+
+    def rollout(tokens):
+        state = torch.stack([tokens[:, 0].float(), -tokens[:, 0].float()], -1)
+        return state[:, None]
+
+    plain = categorical_cem(
+        rollout, goal, 1, 3, candidates=256, iterations=3, elites=16,
+        generator=torch.Generator().manual_seed(42),
+    )
+    learned = categorical_cem(
+        rollout, goal, 1, 3, candidates=256, iterations=3, elites=16,
+        goal_cost_fn=lambda states, goals: -states[:, 0],
+        generator=torch.Generator().manual_seed(42),
+    )
+    assert plain.actions.item() == 1
+    assert learned.actions.item() == 2
+
+
 def test_gmm_nll_prefers_component_centres():
     weights = torch.tensor([0.5, 0.5])
     means = torch.tensor([[0.0, 0.0], [5.0, 5.0]])
@@ -156,6 +176,17 @@ def test_continuous_cem_scores_in_parent_state_coordinates():
         generator=torch.Generator().manual_seed(18),
     )
     assert torch.sign(plain.states[0, 0]) != torch.sign(lifted.states[0, 0])
+
+
+def test_continuous_cem_can_use_learned_geometric_cost():
+    goal = torch.tensor([1.0, -1.0])
+    learned = continuous_cem(
+        lambda actions: actions, goal, 1, 2, candidates=512,
+        iterations=4, elites=32,
+        goal_cost_fn=lambda states, goals: states[:, 0].square(),
+        generator=torch.Generator().manual_seed(21),
+    )
+    assert abs(float(learned.states[0, 0])) < 0.1
 
 
 def test_reachability_retains_enough_candidates_for_all_elites():
