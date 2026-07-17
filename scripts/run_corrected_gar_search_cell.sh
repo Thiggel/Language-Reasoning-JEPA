@@ -10,6 +10,7 @@ pairwise_weight=${6:-1}
 gar_weight=${7:-0.3}
 gar_horizon=${8:-1}
 goal_score=${9:-combined}
+gar_high_weight=${10:-$gar_weight}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
 model_dir="$run_dir/model"
 
@@ -28,7 +29,7 @@ model_dir="$run_dir/model"
   model.use_token_prior=true model.token_prior_hidden=256 \
   model.token_prior_detach_state=true \
   objective.dense_discount=0.5 "objective.high_level_weights=[1,1,1]" \
-  "objective.geo_rank_low=$gar_weight" "objective.geo_rank_high=$gar_weight" \
+  "objective.geo_rank_low=$gar_weight" "objective.geo_rank_high=$gar_high_weight" \
   "objective.geo_rank_level_weights=[1,1,1]" \
   "objective.geo_rank_horizon=$gar_horizon" objective.geo_rank_k=4 \
   objective.geo_rank_continuations=4 objective.geo_rank_label_gap=0.001 \
