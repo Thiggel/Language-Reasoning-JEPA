@@ -9,6 +9,7 @@ run_search_matrix=${5:?true to run planner matrix}
 pairwise_weight=${6:-1}
 gar_weight=${7:-0.3}
 gar_horizon=${8:-1}
+goal_score=${9:-combined}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
 model_dir="$run_dir/model"
 
@@ -64,31 +65,31 @@ common=(
 
 for topk in 5 10 20 40; do
   "$python_bin" scripts/plan_token_hierarchy_oracle_cem.py "${common[@]}" \
-    --goal-score combined --goal-score-scope top --token-proposal prior_topk_cem \
+    --goal-score "$goal_score" --goal-score-scope top --token-proposal prior_topk_cem \
     --token-prior-topk "$topk" --token-prior-refinements 2 \
     --out "$run_dir/top_value_topk${topk}_cem.json"
 done
 "$python_bin" scripts/plan_token_hierarchy_oracle_cem.py "${common[@]}" \
-  --goal-score combined --goal-score-scope all --token-proposal prior_topk_cem \
+  --goal-score "$goal_score" --goal-score-scope all --token-proposal prior_topk_cem \
   --token-prior-refinements 2 --out "$run_dir/all_value_topk_cem.json"
 
 if [[ "$run_search_matrix" == "true" ]]; then
   for iterations in 1 10; do
     "$python_bin" scripts/plan_token_hierarchy_oracle_cem.py "${common[@]}" \
-      --goal-score combined --goal-score-scope top \
+      --goal-score "$goal_score" --goal-score-scope top \
       --token-proposal prior_topk_cem --token-prior-refinements 2 \
       --token-iterations "$iterations" \
       --out "$run_dir/top_value_topk20_cem_iter${iterations}.json"
   done
   for token_planner in prior_beam prior_astar prior_puct; do
     "$python_bin" scripts/plan_token_hierarchy_oracle_cem.py "${common[@]}" \
-      --goal-score combined --goal-score-scope top \
+      --goal-score "$goal_score" --goal-score-scope top \
       --token-proposal "$token_planner" \
       --out "$run_dir/top_value_${token_planner}.json"
   done
   for macro_planner in codebook_beam codebook_puct progressive_puct; do
     "$python_bin" scripts/plan_token_hierarchy_oracle_cem.py "${common[@]}" \
-      --goal-score combined --goal-score-scope top \
+      --goal-score "$goal_score" --goal-score-scope top \
       --token-proposal prior_topk_cem --token-prior-refinements 2 \
       --macro-planner "$macro_planner" \
       --out "$run_dir/top_value_${macro_planner}.json"
