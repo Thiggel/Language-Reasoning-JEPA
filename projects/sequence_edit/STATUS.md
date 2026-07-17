@@ -12,10 +12,16 @@ and the inverse repair path. Counterfactual data now contains only sampled
 current-buffer edits and their mechanically exact outcomes, without preference
 or target-relative quality labels.
 
-The active decision is the minimum useful data and counterfactual coverage,
-before returning to hierarchy. The initial one-seed screen crosses 512, 2,000,
-and 6,000 unique K=0 trajectories and K={0,1,4} at the 2,000-trajectory
-anchor, plus one full-shape H4 smoke. K=8 is implemented but gated because the
-seven-cell plan exceeded the 16 GPU-hour project limit. Follow-ups already
-configured cover matched update exposure, counterfactual weight, short vs
-long repairs, hierarchy, dense rollout, and LDAD removal.
+The six-cell data/counterfactual screen completed, but every cell is
+action-blind: shuffled actions change error by less than 0.015%, and most
+predictors are worse than copying the current buffer. K=4 lowers raw internal
+error but loses 24.5% effective rank and still fails both causal controls, so
+no K or data anchor is selected.
+
+The mechanism audit found that exact global next-buffer targets for four edits
+from the same state are separated by only 0.000228 normalized L1. Exact
+changed-step targets are separated by 0.634. The active decision is therefore
+whether local mechanically exact outcome targets restore action sensitivity.
+Coefficients 0.25, 1, and 4 plus a high-weight learning-rate cross-check are
+implemented. K=8, matched exposure, hierarchy, dense rollout, and LDAD removal
+remain gated.

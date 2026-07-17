@@ -104,6 +104,9 @@ geo_rank:
 counterfactual_outcome:
   _target_: textjepa.objectives.CounterfactualOutcomePrediction
   weight: 0.0  # data-only control: observed alternatives, no preference labels
+counterfactual_slot:
+  _target_: textjepa.objectives.CounterfactualSlotPrediction
+  weight: 0.0  # exact changed-step outcome, no quality or preference label
 macro_cf_dynamics:
   _target_: textjepa.objectives.MacroCounterfactualDynamics
   weight: 0.0

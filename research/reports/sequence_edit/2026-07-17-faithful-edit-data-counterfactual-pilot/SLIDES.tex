@@ -50,16 +50,32 @@
   \textbf{Why it matters:} the model now sees the intended step sequence, but these are data-validity observations, not trained-model results.
 \end{frame}
 
-\begin{frame}{The next pilot varies one data axis at a time}
+\begin{frame}{All six process-valid cells ignore the edit action}
+  \centering
+  \begin{tabular}{lrrr}
+    \toprule
+    Cell & Prediction & No change & Shuffled/matched \\
+    \midrule
+    512 trajectories & .397 & .575 & 1.00014 \\
+    2,000 trajectories & .394 & .302 & 1.00000 \\
+    6,000 trajectories & .224 & .113 & 1.00005 \\
+    K=1 at 2,000 & .287 & .268 & 1.00003 \\
+    K=4 at 2,000 & .175 & .123 & 1.00003 \\
+    \bottomrule
+  \end{tabular}
+  \vfill
+  \textbf{What to notice:} lower raw error does not establish dynamics; most cells lose to copying the current state, and shuffling the action changes nothing.
+\end{frame}
+
+\begin{frame}{One-token effects disappear in the global target}
   \begin{itemize}
-    \item The K=0 data curve uses 512, 2,000, and 6,000 unique trajectories for three passes.
-    \item The admitted counterfactual curve uses K=0, 1, and 4 exact alternative outcomes at the common 2,000-trajectory anchor.
-    \item Alternatives use observed current-buffer tokens and carry no preference, defect, or remaining-distance label.
-    \item A 128-example H4 cell is only a full-shape process smoke; architecture comparisons remain gated.
-    \item K=8 is implemented but gated because seven cells exceeded the sequence-edit 16 GPU-hour round limit.
-    \item We retain the smallest K near the best result only if it improves held-out dynamics without factual-error or rank regression.
+    \item Four exact global next-buffer targets from one state are separated by only .000228 normalized L1.
+    \item The exact changed-step targets for those edits are separated by .634, about 2,775 times more.
+    \item The old K=4 model assigns changed-step outcomes at 24.7\%, chance for four alternatives.
+    \item The repair predicts exact changed-step anchors for expert and mechanical alternative edits, with no quality or preference labels.
+    \item We screen coefficients .25, 1, and 4, plus a lower-learning-rate check at the high coefficient.
   \end{itemize}
   \vfill
-  \textbf{Next decision:} spend later compute on unique diversity, local alternatives, or neither.
+  \textbf{Next decision:} continue only if the correct action beats persistence, shuffled actions, and chance assignment without rank collapse.
 \end{frame}
 \end{document}

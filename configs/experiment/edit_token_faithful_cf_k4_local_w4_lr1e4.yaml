@@ -1,0 +1,6 @@
+# @package _global_
+# Lower learning-rate cross-check for the high local-outcome coefficient.
+defaults: [edit_token_faithful_cf_k4_local_w4, _self_]
+run_name: edit_token_faithful_cf_k4_local_w4_lr1e4
+train:
+  lr: 1.0e-4

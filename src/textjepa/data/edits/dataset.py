@@ -226,10 +226,17 @@ def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
          for outcome in step for sentence in outcome),
         default=1,
     )
+    Lc = max(
+        (len(sentence) for item in batch for step in item.get("alt_changed", [])
+         for sentence in step),
+        default=1,
+    )
     tokens = torch.full((B, T, K, La), pad, dtype=torch.long)
     outcomes = torch.full((B, T, K, C, L), pad, dtype=torch.long)
     outcome_mask = torch.zeros((B, T, K, C), dtype=torch.bool)
     valid = torch.zeros((B, T, K), dtype=torch.bool)
+    changed = torch.full((B, T, K, Lc), pad, dtype=torch.long)
+    changed_valid = torch.zeros((B, T, K), dtype=torch.bool)
     for batch_index, item in enumerate(batch):
         for step_index, (actions, buffers) in enumerate(zip(
             item["alt_actions"], item["alt_buffers"]
@@ -247,11 +254,19 @@ def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
                     outcome_mask[
                         batch_index, step_index, candidate, sentence_index
                     ] = True
+                if "alt_changed" in item:
+                    sentence = item["alt_changed"][step_index][candidate]
+                    changed[batch_index, step_index, candidate, :len(sentence)] = (
+                        torch.tensor(sentence)
+                    )
+                    changed_valid[batch_index, step_index, candidate] = True
     return {
         "alt_tokens": tokens,
         "alt_buffer_tokens": outcomes,
         "alt_buffer_mask": outcome_mask,
         "alt_valid": valid,
+        "alt_changed_tokens": changed,
+        "alt_changed_valid": changed_valid,
     }
 
 

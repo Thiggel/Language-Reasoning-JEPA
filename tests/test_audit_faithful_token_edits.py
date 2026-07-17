@@ -3,10 +3,12 @@ from types import SimpleNamespace
 import torch
 
 from scripts.audit_faithful_token_edits import (
+    combine_action_sensitivity,
     depth_summary,
     operation_summary,
     pad_concat_2d,
     safe_correlation,
+    same_state_action_sensitivity,
     shuffled_action_prediction,
 )
 
@@ -76,3 +78,38 @@ def test_shuffled_control_declines_when_independent_prefix_is_unavailable():
 
 def test_privileged_correlation_is_json_safe_for_constant_values():
     assert safe_correlation(torch.ones(3).numpy(), torch.arange(3).numpy()) is None
+
+
+def test_same_state_sensitivity_detects_action_blind_predictions():
+    target = torch.tensor([[[
+        [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]
+    ]]])
+    prediction = torch.zeros_like(target)
+    out = SimpleNamespace(extras={
+        "cf_chunk_pred": prediction,
+        "cf_chunk_tgt": target,
+        "cf_valid": torch.ones(1, 1, 3, dtype=torch.bool),
+    })
+    payload = combine_action_sensitivity([same_state_action_sensitivity(out)])
+    payload = payload["global_buffer"]
+    assert payload["exact_target_pairwise_ln_l1"] > 0
+    assert payload["predicted_pairwise_ln_l1"] == 0
+    assert payload["prediction_to_target_separation_ratio"] == 0
+    assert payload["nearest_outcome_assignment_accuracy"] == 1 / 3
+
+
+def test_same_state_sensitivity_rewards_exact_assignment():
+    target = torch.tensor([[[
+        [0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]
+    ]]])
+    out = SimpleNamespace(extras={
+        "cf_chunk_pred": target.clone(),
+        "cf_chunk_tgt": target,
+        "cf_valid": torch.ones(1, 1, 3, dtype=torch.bool),
+    })
+    payload = combine_action_sensitivity([same_state_action_sensitivity(out)])
+    payload = payload["global_buffer"]
+    assert payload["prediction_to_target_separation_ratio"] == 1
+    assert payload["matched_assignment_ln_l1"] == 0
+    assert payload["correct_over_wrong_assignment_margin"] > 0
+    assert payload["nearest_outcome_assignment_accuracy"] == 1

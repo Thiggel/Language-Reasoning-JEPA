@@ -79,6 +79,101 @@ def safe_correlation(left: np.ndarray, right: np.ndarray) -> float | None:
     return value if np.isfinite(value) else None
 
 
+def _same_state_assignment_stats(pred, target, valid) -> dict | None:
+    if pred is None or target is None or valid is None or pred.shape[2] < 2:
+        return None
+    candidates = pred.shape[2]
+    eye = torch.eye(candidates, dtype=torch.bool, device=pred.device)
+    pair_mask = (
+        valid.unsqueeze(-1) & valid.unsqueeze(-2) & ~eye.view(1, 1, candidates, candidates)
+    )
+    target_pair = normalized_l1(target.unsqueeze(-2), target.unsqueeze(-3))
+    prediction_pair = normalized_l1(pred.unsqueeze(-2), pred.unsqueeze(-3))
+
+    # [B,T,prediction candidate,target candidate]
+    assignment_error = normalized_l1(pred.unsqueeze(-2), target.unsqueeze(-3))
+    assignment_valid = valid.unsqueeze(-1) & valid.unsqueeze(-2)
+    masked_assignment = assignment_error.masked_fill(~assignment_valid, float("inf"))
+    nearest = masked_assignment.argmin(-1)
+    identity = torch.arange(candidates, device=pred.device).view(1, 1, candidates)
+    accuracy_mask = valid & torch.isfinite(masked_assignment).any(-1)
+
+    matched = assignment_error.diagonal(dim1=-2, dim2=-1)
+    wrong_mask = pair_mask
+    return {
+        "target_pair_sum": float(target_pair[pair_mask].sum()),
+        "prediction_pair_sum": float(prediction_pair[pair_mask].sum()),
+        "pair_count": int(pair_mask.sum()),
+        "matched_sum": float(matched[valid].sum()),
+        "matched_count": int(valid.sum()),
+        "wrong_sum": float(assignment_error[wrong_mask].sum()),
+        "wrong_count": int(wrong_mask.sum()),
+        "assignment_correct": int((nearest.eq(identity) & accuracy_mask).sum()),
+        "assignment_count": int(accuracy_mask.sum()),
+    }
+
+
+def same_state_action_sensitivity(out) -> dict | None:
+    """Test whether distinct actions produce correspondingly distinct states.
+
+    Pointwise next-state loss can be minimized by predicting the local mean
+    when every token edit moves a long-buffer embedding only slightly. Exact
+    same-state alternatives let us measure this failure directly at both the
+    global buffer and exact changed-step granularities.
+    """
+    global_stats = _same_state_assignment_stats(
+        out.extras.get("cf_chunk_pred"),
+        out.extras.get("cf_chunk_tgt"),
+        out.extras.get("cf_valid"),
+    )
+    if global_stats is None:
+        return None
+    local_stats = _same_state_assignment_stats(
+        out.extras.get("cf_slot_pred"),
+        out.extras.get("cf_slot_tgt"),
+        out.extras.get("cf_slot_valid"),
+    )
+    return {"global": global_stats, "local": local_stats}
+
+
+def _combine_assignment_parts(parts: list[dict]) -> dict | None:
+    if not parts:
+        return None
+    totals = {key: sum(part[key] for part in parts) for key in parts[0]}
+    target_pair = totals["target_pair_sum"] / max(totals["pair_count"], 1)
+    prediction_pair = totals["prediction_pair_sum"] / max(totals["pair_count"], 1)
+    matched = totals["matched_sum"] / max(totals["matched_count"], 1)
+    wrong = totals["wrong_sum"] / max(totals["wrong_count"], 1)
+    return {
+        "exact_target_pairwise_ln_l1": target_pair,
+        "predicted_pairwise_ln_l1": prediction_pair,
+        "prediction_to_target_separation_ratio": (
+            prediction_pair / target_pair if target_pair else None
+        ),
+        "matched_assignment_ln_l1": matched,
+        "wrong_assignment_ln_l1": wrong,
+        "correct_over_wrong_assignment_margin": wrong - matched,
+        "nearest_outcome_assignment_accuracy": (
+            totals["assignment_correct"] / max(totals["assignment_count"], 1)
+        ),
+        "candidates": totals["assignment_count"],
+        "interpretation": "same observed buffer; exact mechanically executed outcomes; no quality labels",
+    }
+
+
+def combine_action_sensitivity(parts: list[dict]) -> dict | None:
+    if not parts:
+        return None
+    return {
+        "global_buffer": _combine_assignment_parts([
+            part["global"] for part in parts if part.get("global") is not None
+        ]),
+        "exact_changed_step": _combine_assignment_parts([
+            part["local"] for part in parts if part.get("local") is not None
+        ]),
+    }
+
+
 def probe(x, y, classification=False):
     split = max(1, int(0.7 * len(x)))
     if split >= len(x) or len(np.unique(y[:split])) < 2:
@@ -179,6 +274,10 @@ def main():
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--examples", type=int, default=256)
     parser.add_argument(
+        "--counterfactual-k", type=int,
+        help="override evaluation alternatives per state, including for K=0 checkpoints",
+    )
+    parser.add_argument(
         "--horizons", default="1,2,4,8",
         help="comma-separated recursive horizons",
     )
@@ -195,6 +294,11 @@ def main():
         parser.error("--max-horizon-origins must be nonnegative")
 
     model, vocab, cfg = load_run(args.ckpt, args.device)
+    if args.counterfactual_k is not None:
+        if args.counterfactual_k < 0:
+            parser.error("--counterfactual-k must be nonnegative")
+        cfg.data.counterfactual_k = args.counterfactual_k
+        cfg.data.counterfactual_source = "uniform_local"
     dataset = build_dataset(cfg, vocab, "val", size=args.examples)
     loader = DataLoader(
         dataset, batch_size=min(16, cfg.train.batch_size),
@@ -206,6 +310,7 @@ def main():
     high, ldad_correct, ldad_total, goal_distance, goal_remaining = [], 0, 0, [], []
     shuffled, shuffled_masks, shuffle_unavailable = [], [], set()
     counterfactual_errors = []
+    action_sensitivity_parts = []
     with torch.no_grad():
         for batch in loader:
             batch = {
@@ -231,6 +336,9 @@ def main():
                     out.extras["cf_chunk_pred"], out.extras["cf_chunk_tgt"]
                 )
                 counterfactual_errors.append(cf_error[cf_valid].cpu())
+                sensitivity = same_state_action_sensitivity(out)
+                if sensitivity is not None:
+                    action_sensitivity_parts.append(sensitivity)
 
             for horizon, summary in recursive_horizon_errors(
                 model, out, horizons, args.max_horizon_origins
@@ -328,6 +436,9 @@ def main():
             "target_relative_quality_labels_used": False,
             "candidate_tokens_drawn_from_current_buffer_only": True,
         },
+        "same_state_action_sensitivity": combine_action_sensitivity(
+            action_sensitivity_parts
+        ),
         "persistence_no_change_ln_l1": _summary(persistence_error, step_mask)["ln_l1"],
         "shuffled_action_causal_falsifier": shuffled_control,
         "recursive_ln_l1_by_horizon": horizon_payload,

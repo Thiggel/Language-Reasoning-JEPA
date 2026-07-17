@@ -205,6 +205,7 @@ class FaithfulTokenEditDataset(Dataset):
         actions, op, remaining, changed = [], [], [], []
         alt_actions: list[list[list[int]]] = []
         alt_buffers: list[list[list[list[int]]]] = []
+        alt_changed: list[list[list[int]]] = []
         for step, action in enumerate(repairs):
             if self.counterfactual_k:
                 # Separate keyed streams make alternatives deterministic and
@@ -215,6 +216,7 @@ class FaithfulTokenEditDataset(Dataset):
                 )
                 step_actions = []
                 step_buffers = []
+                step_changed = []
                 sampled = {action}
                 attempts = 0
                 while len(step_actions) < self.counterfactual_k:
@@ -232,17 +234,27 @@ class FaithfulTokenEditDataset(Dataset):
                     sampled.add(alternative)
                     outcome = [list(sentence) for sentence in current]
                     _apply(outcome, alternative)
+                    changed_sentence = next(
+                        after for before, after in zip(current, outcome)
+                        if before != after
+                    )
                     step_actions.append(_render_action(self.vocab, alternative))
                     step_buffers.append(outcome)
+                    step_changed.append(list(changed_sentence))
                 alt_actions.append(step_actions)
                 alt_buffers.append(step_buffers)
+                alt_changed.append(step_changed)
             kind, position, token = action
             actions.append(_render_action(self.vocab, action))
             op.append(OPS[kind])
             _apply(current, action)
             buffers.append([list(sentence) for sentence in current])
             remaining.append(len(repairs) - step - 1)
-            changed.append([])
+            before = buffers[-2]
+            changed.append(next(
+                list(after) for prior, after in zip(before, current)
+                if prior != after
+            ))
         if current != target:
             raise AssertionError("token-edit undo trajectory did not recover target")
         out = {
@@ -267,6 +279,7 @@ class FaithfulTokenEditDataset(Dataset):
             # remaining-edit, defect, preference, or quality fields.
             out["alt_actions"] = alt_actions
             out["alt_buffers"] = alt_buffers
+            out["alt_changed"] = alt_changed
         return out
 
 

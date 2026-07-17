@@ -116,3 +116,34 @@ error is within 2% of the best, provided it improves at least 5% relative to
 K=0 and worsens factual one-step error and effective rank by no more than 2%.
 If no K passes, drop counterfactual outcome prediction. Select the data anchor
 from the earliest clear saturation point before testing architecture.
+
+## Result: the global edit state is action-blind
+
+All six jobs completed successfully from commit `d0b7ebd65298` with finite
+losses and expected artifacts. Process validity passed. The scientific gate
+failed. Shuffling the current action changes one-step error by a factor between
+1.00000 and 1.00014 in every cell. The 2k, 6k, K=1, and K=4 predictors are
+worse than the no-change baseline. K=4 lowers raw error from .394 to .175 at
+the 2k anchor, but rank falls from 105.6 to 79.8 and neither matched action nor
+exact counterfactual assignment is learned. No K or data size is selected.
+
+The newly added same-state diagnostic localizes the issue. Across eight audit
+examples, four exact global next-buffer targets have pairwise LN-L1 separation
+.000228. Exact frozen-anchor embeddings of only the changed official step have
+pairwise separation .634. The old K=4 predictor assigns local outcomes at
+24.7%, chance for four alternatives. Thus a one-token effect is diluted in the
+global solution state; pointwise global outcome prediction admits an
+action-independent solution.
+
+The user asked for immediate analysis, repair, follow-up submission, and a
+one-hour recheck. The next falsifiable decision is whether target granularity,
+not more data or hierarchy, restores causal action use. The local target uses
+the post-edit official step for the expert and exact mechanically executed
+alternatives. It supplies no quality, remaining-distance, defect, or preference
+label. Screen weights .25, 1, and 4; cross-check weight 4 at learning rate
+1e-4 because its gradient scale changes materially.
+
+Continue only if shuffled-action error rises at least 5%, exact K=4 outcome
+assignment exceeds 35%, prediction beats persistence, and effective-rank loss
+is at most 10%. Otherwise redesign the state representation and do not run K=8,
+data exposure, hierarchy, dense rollout, or LDAD experiments.

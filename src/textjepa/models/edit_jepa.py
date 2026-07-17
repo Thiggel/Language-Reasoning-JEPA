@@ -284,6 +284,19 @@ class EditJEPA(nn.Module):
             out.extras["cf_valid"] = (
                 batch["alt_valid"] & out.step_mask.unsqueeze(-1)
             )
+            if "alt_changed_tokens" in batch:
+                with torch.no_grad():
+                    Bc, Tc, Kc, Lc = batch["alt_changed_tokens"].shape
+                    local_targets = self.chunk_anchor(
+                        batch["alt_changed_tokens"].reshape(Bc * Tc * Kc, Lc)
+                    ).reshape(Bc, Tc, Kc, -1)
+                out.extras["cf_slot_pred"] = self.core.chunk_head(
+                    out.extras["alt_preds"]
+                )
+                out.extras["cf_slot_tgt"] = local_targets
+                out.extras["cf_slot_valid"] = (
+                    batch["alt_changed_valid"] & out.step_mask.unsqueeze(-1)
+                )
         if self._slot_tgt is not None:
             out.extras["slot_pred"] = self.core.chunk_head(out.preds)
             out.extras["slot_tgt"] = self._slot_tgt

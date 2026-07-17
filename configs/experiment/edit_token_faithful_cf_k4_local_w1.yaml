@@ -1,0 +1,7 @@
+# @package _global_
+# Exact changed-step counterfactual target at the matched unit coefficient.
+defaults: [edit_token_faithful_cf_k4_data_2k, _self_]
+run_name: edit_token_faithful_cf_k4_local_w1
+objective:
+  counterfactual_slot: {weight: 1.0}
+  slot_anchor: {weight: 1.0}

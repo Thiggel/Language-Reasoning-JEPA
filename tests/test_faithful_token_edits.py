@@ -10,7 +10,11 @@ from textjepa.data.faithful_token_edits import (
     faithful_token_edit_vocab,
 )
 from textjepa.models.edit_jepa import EditJEPA
-from textjepa.objectives.counterfactual import CounterfactualOutcomePrediction
+from textjepa.objectives.counterfactual import (
+    CounterfactualOutcomePrediction,
+    CounterfactualSlotPrediction,
+)
+from textjepa.objectives.chunk_pred import SlotAnchor
 from textjepa.objectives.delta_action import ObservedActionLDAD
 
 
@@ -29,6 +33,7 @@ def test_faithful_token_edits_are_text_only_and_recover_target():
         assert not any(word in action_text for word in ("ancestor", "necessary"))
         assert "target_tokens" not in item
         assert item["buffers"][-1] == dataset.source[index]["steps"]
+        assert all(item["changed"])
         assert all(mask == [] for mask in item["defect_masks"])
 
 
@@ -111,6 +116,7 @@ def test_counterfactual_outcomes_execute_exactly_without_quality_labels():
     item = dataset[0]
     assert "alt_remaining" not in item
     assert "alt_defects" not in item
+    assert len(item["alt_changed"]) == len(item["alt_actions"])
     for before, expert, actions, outcomes in zip(
         item["buffers"], item["actions"], item["alt_actions"],
         item["alt_buffers"]
@@ -145,8 +151,10 @@ def test_counterfactuals_are_deterministic_prefixes_and_do_not_change_expert():
         assert two[key] == zero[key] == five[key]
     assert five["alt_actions"] == repeat["alt_actions"]
     assert five["alt_buffers"] == repeat["alt_buffers"]
+    assert five["alt_changed"] == repeat["alt_changed"]
     assert [step[:2] for step in five["alt_actions"]] == two["alt_actions"]
     assert [step[:2] for step in five["alt_buffers"]] == two["alt_buffers"]
+    assert [step[:2] for step in five["alt_changed"]] == two["alt_changed"]
 
 
 def test_counterfactual_collate_pads_actions_and_nested_buffer_outcomes():
@@ -161,6 +169,8 @@ def test_counterfactual_collate_pads_actions_and_nested_buffer_outcomes():
     assert batch["alt_buffer_tokens"].shape[:3] == batch["alt_tokens"].shape[:3]
     assert batch["alt_buffer_mask"].shape[:3] == batch["alt_tokens"].shape[:3]
     assert batch["alt_valid"].shape == batch["alt_tokens"].shape[:3]
+    assert batch["alt_changed_tokens"].shape[:3] == batch["alt_tokens"].shape[:3]
+    assert torch.equal(batch["alt_changed_valid"], batch["alt_valid"])
     assert batch["alt_valid"].sum() == sum(
         len(step) for index in range(2) for step in dataset[index]["alt_actions"]
     )
@@ -182,13 +192,18 @@ def test_counterfactual_outcomes_supervise_dynamics_without_quality_labels():
         len(vocab), vocab.pad_id, d_model=32, chunk_layers=1,
         chunk_heads=4, slot_layers=1, slot_heads=4, n_slots=2,
         max_chunk_len=128, d_action=8, predictor_layers=1,
-        predictor_heads=4, macro_k=0,
+        predictor_heads=4, macro_k=0, chunk_target="frozen",
     )
     out = model(batch)
     assert out.extras["cf_chunk_pred"].shape == out.extras["cf_chunk_tgt"].shape
     assert out.extras["cf_valid"].shape == batch["alt_valid"].shape
+    assert out.extras["cf_slot_pred"].shape == out.extras["cf_slot_tgt"].shape
     assert "alt_remaining" not in batch
-    loss = CounterfactualOutcomePrediction()(out, batch)
+    loss = (
+        CounterfactualOutcomePrediction()(out, batch)
+        + CounterfactualSlotPrediction()(out, batch)
+        + SlotAnchor()(out, batch)
+    )
     loss.backward()
     assert torch.isfinite(loss)
     assert model.core.predictor.inp.weight.grad is not None

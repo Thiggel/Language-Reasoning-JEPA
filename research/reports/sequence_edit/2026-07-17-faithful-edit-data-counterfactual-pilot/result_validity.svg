@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1050" height="520" viewBox="0 0 1050 520" role="img" aria-labelledby="title desc">
+  <title id="title">Validity checks for the faithful edit pilot</title>
+  <desc id="desc">Prediction error relative to a no-change baseline exceeds one for the 2k, 6k, K1, and K4 cells. Shuffling the action leaves error unchanged in every cell.</desc>
+  <style>text{font-family:sans-serif;fill:#172033}.t{font-size:25px;font-weight:700}.l{font-size:16px}.s{font-size:14px}.axis{stroke:#59677c;stroke-width:2}.bad{fill:#d96b5f}.good{fill:#4f9d69}.shuffle{fill:#497eb5}.gate{stroke:#222;stroke-width:2;stroke-dasharray:7 5}</style>
+  <text x="40" y="40" class="t">Raw error improves, but causal edit validity fails</text>
+  <text x="40" y="72" class="l">Prediction error ÷ no-change error (lower is better)</text>
+  <line x1="85" y1="390" x2="980" y2="390" class="axis"/><line x1="85" y1="105" x2="85" y2="390" class="axis"/>
+  <line x1="85" y1="247" x2="980" y2="247" class="gate"/><text x="92" y="240" class="s">1.0: ties persistence</text>
+  <text x="55" y="395" class="s">0</text><text x="48" y="252" class="s">1.0</text><text x="48" y="110" class="s">2.0</text>
+  <rect x="135" y="291" width="85" height="99" class="good"/><text x="178" y="285" text-anchor="middle" class="s">0.69</text><text x="178" y="420" text-anchor="middle" class="l">512</text>
+  <rect x="290" y="203" width="85" height="187" class="bad"/><text x="333" y="197" text-anchor="middle" class="s">1.31</text><text x="333" y="420" text-anchor="middle" class="l">2k</text>
+  <rect x="445" y="108" width="85" height="282" class="bad"/><text x="488" y="102" text-anchor="middle" class="s">1.98</text><text x="488" y="420" text-anchor="middle" class="l">6k</text>
+  <rect x="600" y="237" width="85" height="153" class="bad"/><text x="643" y="231" text-anchor="middle" class="s">1.07</text><text x="643" y="420" text-anchor="middle" class="l">K=1</text>
+  <rect x="755" y="189" width="85" height="201" class="bad"/><text x="798" y="183" text-anchor="middle" class="s">1.41</text><text x="798" y="420" text-anchor="middle" class="l">K=4</text>
+  <rect x="900" y="245" width="28" height="145" class="shuffle"/><text x="914" y="238" text-anchor="middle" class="s">1.000</text><text x="914" y="420" text-anchor="middle" class="l">shuffled</text>
+  <text x="40" y="470" class="l">Red cells predict worse than copying the current state. The blue bar summarizes that shuffling actions changes no cell.</text>
+  <text x="40" y="498" class="s">One seed, 256 validation examples per cell; H4 smoke omitted because it is not a matched science cell.</text>
+</svg>
