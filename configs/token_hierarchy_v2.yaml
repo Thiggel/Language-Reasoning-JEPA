@@ -47,6 +47,9 @@ objective:
   vicreg: 1.0
   covariance: 0.04
   dense_discount: 0.7
+  # Optional level-specific overrides. Null preserves dense_discount.
+  low_dense_discount: null
+  high_dense_discount: null
   token_prior: 0.0
   token_prior_rollout: 0.0
   token_prior_rollout_discount: 0.7
@@ -59,7 +62,17 @@ objective:
   geo_rank_level_weights: [1.0]
   geo_rank_k: 2
   geo_rank_horizon: 2
+  # Optional primitive/macro overrides. Null preserves geo_rank_horizon.
+  geo_rank_low_horizon: null
+  geo_rank_high_horizon: null
   geo_rank_continuations: 2
+  # random: full-vocabulary negatives; prior/mixed: planner-supported hard negatives.
+  geo_rank_primitive_proposals: random
+  # sampled takes the best exact outcome among sampled continuation sequences.
+  # oracle_beam searches prior-supported continuations by exact EMA goal distance.
+  geo_rank_low_policy: sampled
+  geo_rank_beam_width: 4
+  geo_rank_beam_branch: 4
   geo_rank_macro_proposals: global
   geo_rank_conditional_k: 32
   geo_rank_margin: 0.5

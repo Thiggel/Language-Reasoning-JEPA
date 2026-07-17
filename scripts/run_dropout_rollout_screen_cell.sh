@@ -6,6 +6,9 @@ name=${2:?cell name}
 seed=${3:?seed}
 dense_depth=${4:?dense rollout depth}
 dense_discount=${5:?horizon discount}
+high_dense_depth=${6:-$dense_depth}
+low_dense_discount=${7:-$dense_discount}
+high_dense_discount=${8:-$dense_discount}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
 model_dir="$run_dir/model"
 
@@ -20,8 +23,10 @@ model_dir="$run_dir/model"
   "model.level_spans=[4,16,64]" "model.level_dims=[32,16,8]" \
   "model.variational_levels=[false]" "model.phase_augmented_levels=[false]" \
   model.distinct_level_states=true model.level_state_encoder_layers=2 \
-  "model.low_dense_depth=$dense_depth" "model.high_dense_depth=$dense_depth" \
+  "model.low_dense_depth=$dense_depth" "model.high_dense_depth=$high_dense_depth" \
   "objective.dense_discount=$dense_discount" \
+  "objective.low_dense_discount=$low_dense_discount" \
+  "objective.high_dense_discount=$high_dense_discount" \
   "objective.high_level_weights=[1,1,1]"
 
 ckpt="$model_dir/best.pt"

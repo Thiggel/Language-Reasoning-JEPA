@@ -145,18 +145,112 @@ def counterfactual_distances(
     return distance.reshape(batch, candidates, continuations).amin(-1)
 
 
-def primitive_candidates(factual, k, vocabulary_size):
+def normalized_goal_distance(rows, goals):
+    return (
+        F.layer_norm(rows, rows.shape[-1:])
+        - F.layer_norm(goals, goals.shape[-1:])
+    ).abs().mean(-1)
+
+
+def primitive_candidates(
+    factual, k, vocabulary_size, mode="random", prior_logits=None,
+):
     """Observed token plus K non-symbolic full-vocabulary alternatives."""
-    alternatives = torch.randint(
-        1, int(vocabulary_size), (len(factual), int(k)),
-        device=factual.device,
-    )
+    k = int(k)
+    if mode not in {"random", "prior", "mixed"}:
+        raise ValueError(f"unknown primitive proposal mode: {mode}")
+    prior_count = k if mode == "prior" else (k // 2 if mode == "mixed" else 0)
+    random_count = k - prior_count
+    pieces = []
+    if prior_count:
+        if prior_logits is None:
+            raise ValueError(f"{mode} primitive proposals require token-prior logits")
+        logits = prior_logits.detach().clone()
+        logits[:, 0] = -torch.inf
+        logits.scatter_(1, factual[:, None], -torch.inf)
+        pieces.append(logits.topk(prior_count, dim=1).indices)
+    if random_count:
+        pieces.append(torch.randint(
+            1, int(vocabulary_size), (len(factual), random_count),
+            device=factual.device,
+        ))
+    alternatives = torch.cat(pieces, 1) if pieces else factual[:, :0]
     # Avoid a silent factual duplicate without introducing any semantic rule.
     duplicate = alternatives.eq(factual[:, None])
     alternatives[duplicate] = alternatives[duplicate].remainder(
         int(vocabulary_size) - 1
     ).add(1)
     return torch.cat([factual[:, None], alternatives], 1)
+
+
+@torch.no_grad()
+def primitive_oracle_beam_distances(
+    model, batch_tokens, prompt_len, root_ids, anchor_tokens, goal,
+    horizon, beam_width, branch,
+):
+    """Approximate an optimal continuation inside token-prior support.
+
+    Each root action gets its own beam. At every later step the prior supplies
+    plausible branches and exact EMA-encoded goal distance prunes the beam.
+    This is privileged target construction, not a deployable planner, and it
+    never uses symbolic feasibility or remaining-step labels.
+    """
+    if model.token_prior is None:
+        raise ValueError("oracle-beam GAR requires a token prior")
+    batch, candidates = root_ids.shape
+    sequences, groups = [], []
+    group_goals = []
+    for b in range(batch):
+        prefix_end = int(prompt_len[b]) + int(anchor_tokens)
+        prefix = batch_tokens[b, :prefix_end]
+        for c in range(candidates):
+            sequences.append(torch.cat([prefix, root_ids[b, c:c + 1]]))
+            groups.append(b * candidates + c)
+            group_goals.append(goal[b])
+    group_goals = torch.stack(group_goals)
+
+    def encode_last(rows):
+        lengths = torch.tensor([len(row) for row in rows], device=batch_tokens.device)
+        packed = batch_tokens.new_full((len(rows), int(lengths.max())), model.pad_id)
+        for index, row in enumerate(rows):
+            packed[index, :len(row)] = row
+        encoded = model.teacher(packed)
+        return encoded[torch.arange(len(rows), device=packed.device), lengths - 1]
+
+    for _ in range(1, int(horizon)):
+        last = encode_last(sequences)
+        logits = model.token_prior(last)
+        logits[:, model.pad_id] = -torch.inf
+        proposals = logits.topk(min(int(branch), logits.shape[1] - 1), 1).indices
+        expanded, expanded_groups = [], []
+        for row, group, choices in zip(sequences, groups, proposals):
+            for token in choices:
+                expanded.append(torch.cat([row, token.view(1)]))
+                expanded_groups.append(group)
+        outcomes = encode_last(expanded)
+        owner = torch.tensor(expanded_groups, device=outcomes.device)
+        costs = normalized_goal_distance(
+            outcomes, group_goals.index_select(0, owner)
+        )
+        kept_sequences, kept_groups = [], []
+        for group in range(batch * candidates):
+            indices = (owner == group).nonzero().flatten()
+            keep = indices[costs[indices].topk(
+                min(int(beam_width), len(indices)), largest=False
+            ).indices]
+            kept_sequences.extend(expanded[int(index.item())] for index in keep)
+            kept_groups.extend([group] * len(keep))
+        sequences, groups = kept_sequences, kept_groups
+
+    outcomes = encode_last(sequences)
+    owner = torch.tensor(groups, device=outcomes.device)
+    costs = normalized_goal_distance(
+        outcomes, group_goals.index_select(0, owner)
+    )
+    result = costs.new_full((batch * candidates,), torch.inf)
+    for group in range(batch * candidates):
+        result[group] = costs[owner == group].min()
+    return result.reshape(batch, candidates)
 
 
 def macro_chunk_candidates(level, anchor, k, mode="global", conditional_k=32):
@@ -187,35 +281,68 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         zero = out["low_pred"].sum() * 0
         return zero, {}, zero.detach()
     k = int(obj.geo_rank_k)
-    horizon = int(obj.geo_rank_horizon)
-    if horizon not in (1, 2, 4):
-        raise ValueError("end-to-end GAR supports horizons 1, 2, or 4")
+    low_horizon = int(
+        obj.geo_rank_low_horizon
+        if getattr(obj, "geo_rank_low_horizon", None) is not None
+        else obj.geo_rank_horizon
+    )
+    high_horizon = int(
+        obj.geo_rank_high_horizon
+        if getattr(obj, "geo_rank_high_horizon", None) is not None
+        else obj.geo_rank_horizon
+    )
+    if low_horizon not in (1, 2, 4, 8) or high_horizon not in (1, 2, 4, 8):
+        raise ValueError("end-to-end GAR supports horizons 1, 2, 4, or 8")
     tokens = batch["tokens"].to(out["low_pred"].device)
     prompt_len = batch["prompt_len"].to(tokens.device)
     items, total, selection = {}, out["low_pred"].sum() * 0, out["low_pred"].sum() * 0
 
     if float(obj.geo_rank_low) > 0:
+        horizon = low_horizon
         available = int(out["valid"].sum(1).min())
+        if available < horizon:
+            raise ValueError(
+                f"primitive GAR horizon {horizon} exceeds shortest reasoning "
+                f"sequence ({available} tokens)"
+            )
         anchor = torch.randint(max(1, available - (horizon - 1)), ()).item()
+        proposal_mode = str(getattr(obj, "geo_rank_primitive_proposals", "random"))
+        root_prior = (
+            None if out["token_prior_logits"] is None
+            else out["token_prior_logits"][:, anchor]
+        )
         root_ids = primitive_candidates(
-            out["action_ids"][:, anchor], k, model.token_action.num_embeddings
+            out["action_ids"][:, anchor], k, model.token_action.num_embeddings,
+            proposal_mode, root_prior,
         )
         root_chunks = root_ids.unsqueeze(-1)
         continuation = None
-        if horizon > 1:
+        low_policy = str(getattr(obj, "geo_rank_low_policy", "sampled"))
+        if horizon > 1 and low_policy == "sampled":
             continuation = torch.stack([
                 primitive_candidates(
                     out["action_ids"][:, anchor + step],
                     int(obj.geo_rank_continuations) - 1,
                     model.token_action.num_embeddings,
+                    proposal_mode,
+                    None if out["token_prior_logits"] is None else
+                    out["token_prior_logits"][:, anchor + step],
                 )
                 for step in range(1, horizon)
             ], 2).unsqueeze(-1)
+        elif low_policy not in {"sampled", "oracle_beam"}:
+            raise ValueError(f"unknown low GAR continuation policy: {low_policy}")
         goal = out["final_target"].detach()
-        distance = counterfactual_distances(
-            model, tokens, prompt_len, root_chunks, continuation,
-            anchor, goal, None,
-        )
+        if horizon > 1 and low_policy == "oracle_beam":
+            distance = primitive_oracle_beam_distances(
+                model, tokens, prompt_len, root_ids, anchor, goal, horizon,
+                int(obj.geo_rank_beam_width), int(obj.geo_rank_beam_branch),
+            )
+        else:
+            distance = counterfactual_distances(
+                model, tokens, prompt_len, root_chunks, continuation,
+                anchor, goal, None,
+            )
         baseline = (
             out["prompt_target"] if anchor == 0 else out["target"][:, anchor - 1]
         )
@@ -267,6 +394,7 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
     if len(level_weights) != len(out["levels"]):
         raise ValueError("geo_rank_level_weights must broadcast or match levels")
     if float(obj.geo_rank_high) > 0:
+        horizon = high_horizon
         for level, configured_weight in zip(out["levels"], level_weights):
             level_weight = float(configured_weight)
             if level_weight == 0:
@@ -350,10 +478,20 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
 
 def compute_losses(out, cfg, model=None, batch=None):
     obj = cfg.objective
+    low_dense_discount = (
+        float(obj.low_dense_discount)
+        if getattr(obj, "low_dense_discount", None) is not None
+        else float(obj.dense_discount)
+    )
+    high_dense_discount = (
+        float(obj.high_dense_discount)
+        if getattr(obj, "high_dense_discount", None) is not None
+        else float(obj.dense_discount)
+    )
     low = normalized_mse(out["low_pred"], out["target"], out["valid"])
     low_dense = dense_loss(
         out["low_dense_predictions"], out["low_dense_targets"],
-        out["low_dense_masks"], obj.dense_discount,
+        out["low_dense_masks"], low_dense_discount,
     )
     low_value = masked_mean(
         F.smooth_l1_loss(
@@ -452,7 +590,7 @@ def compute_losses(out, cfg, model=None, batch=None):
         high = normalized_mse(level["pred"], level["target"], mask)
         high_dense = dense_loss(
             level["dense_predictions"], level["dense_targets"],
-            level["dense_masks"], obj.dense_discount,
+            level["dense_masks"], high_dense_discount,
         )
         reachability = normalized_mse(
             level["pred"], level["recursive_low_endpoint"].detach(), mask

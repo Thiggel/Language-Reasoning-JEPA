@@ -11,14 +11,24 @@ gar_weight=${7:-0.3}
 gar_horizon=${8:-1}
 goal_score=${9:-combined}
 gar_high_weight=${10:-$gar_weight}
+primitive_proposals=${11:-random}
+low_policy=${12:-sampled}
+continuations=${13:-4}
+gar_k=${14:-4}
+gar_high_horizon=${15:-$gar_horizon}
+gar_beam_width=${16:-4}
+gar_beam_branch=${17:-4}
+train_size=${18:-2000}
+epochs=${19:-2}
+batch_size=${20:-12}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
 model_dir="$run_dir/model"
 
 "$python_bin" scripts/train_token_hierarchy_v2.py \
   "hydra.run.dir=$model_dir" "run_name=$name" "seed=$seed" \
-  data.train_size=2000 data.val_size=256 \
+  "data.train_size=$train_size" data.val_size=256 \
   "data.n_vars_range=[10,18]" "data.steps_range=[6,12]" \
-  train.epochs=2 train.batch_size=12 train.num_workers=0 \
+  "train.epochs=$epochs" "train.batch_size=$batch_size" train.num_workers=0 \
   train.eval_batches=8 train.warmup_steps=100 \
   model.max_len=768 model.d_model=256 model.encoder_layers=4 \
   model.predictor_layers=2 model.n_heads=8 model.ff_mult=4 model.d_action=64 \
@@ -31,8 +41,16 @@ model_dir="$run_dir/model"
   objective.dense_discount=0.5 "objective.high_level_weights=[1,1,1]" \
   "objective.geo_rank_low=$gar_weight" "objective.geo_rank_high=$gar_high_weight" \
   "objective.geo_rank_level_weights=[1,1,1]" \
-  "objective.geo_rank_horizon=$gar_horizon" objective.geo_rank_k=4 \
-  objective.geo_rank_continuations=4 objective.geo_rank_label_gap=0.001 \
+  "objective.geo_rank_horizon=$gar_horizon" \
+  "objective.geo_rank_low_horizon=$gar_horizon" \
+  "objective.geo_rank_high_horizon=$gar_high_horizon" \
+  "objective.geo_rank_k=$gar_k" \
+  "objective.geo_rank_continuations=$continuations" \
+  "objective.geo_rank_primitive_proposals=$primitive_proposals" \
+  "objective.geo_rank_low_policy=$low_policy" \
+  "objective.geo_rank_beam_width=$gar_beam_width" \
+  "objective.geo_rank_beam_branch=$gar_beam_branch" \
+  objective.geo_rank_label_gap=0.001 \
   objective.geo_rank_objective=pairwise \
   "objective.geo_rank_pairwise=$pairwise_weight" \
   objective.geo_rank_macro_proposals=conditional \
@@ -47,6 +65,9 @@ ckpt="$model_dir/best.pt"
   --ckpt "$ckpt" --device cuda:0 --batch-size 8
 "$python_bin" scripts/audit_token_selection.py \
   --ckpt "$ckpt" --device cuda:0 --examples 64 --positions 128
+"$python_bin" scripts/audit_token_planner_interface.py \
+  --ckpt "$ckpt" --device cuda:0 --examples 16 --positions 64 \
+  --topk 20 --goal-horizons 1 4 16 0
 "$python_bin" scripts/probe_token_hierarchy_v2.py \
   --ckpt "$ckpt" --device cuda:0 --examples 256 --max-points 10000
 
@@ -101,7 +122,7 @@ fi
 import json, pathlib, sys
 model, run = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
 result = {}
-for name in ("predictor_drift_curves.json", "gradient_diagnostics.json", "token_selection_audit.json", "representation_probes.json"):
+for name in ("predictor_drift_curves.json", "gradient_diagnostics.json", "token_selection_audit.json", "planner_interface_audit.json", "representation_probes.json"):
     path = model / name
     if path.exists():
         result[path.stem] = json.loads(path.read_text())
