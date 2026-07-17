@@ -3,13 +3,11 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
-from matplotlib.patches import ArrowStyle
 from typing import Dict, Callable, Any, Tuple
 import numpy as np
 import random, copy
 import networkx as nx
 from tools.tools import random_topological_sort
-from matplotlib.lines import Line2D
 
 class Graph():
     def __init__(self, d, w0, w1, e, p, perm=True, dist: Dict[str, Callable[[], Any]]=None) -> None:
@@ -643,6 +641,8 @@ class Graph():
 
     def draw_template(self, ax=None, labels=False, rotate_seed = None):
         import matplotlib.patches as mpatches
+        from matplotlib.lines import Line2D
+        from matplotlib.patches import ArrowStyle
         from tools.tools import wrap_label
         # define color map:
         color = {

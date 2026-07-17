@@ -60,6 +60,29 @@ cell passes all causal gates. The token-to-span/phrase/sentence hierarchy and
 factored beam/CEM planner are implemented only after this selection because
 otherwise they would build on a rejected transition model.
 
+## Stabilizer coefficient screen
+
+The initial inherited coefficients were VICReg `1.0` and observed-action LDAD
+`0.2`.  VICReg uses standard-deviation target `1.0`, covariance multiplier
+`0.04`, and action-variance multiplier `0.1`; EMA momentum is cosine-scheduled
+from `0.99` to `0.999`.  These were not calibrated for the new token-aligned
+objective.
+
+The coarse screen keeps curriculum corruption, data, seed, optimizer, EMA,
+zero dropout, and all dynamics losses fixed.  First compare EMA alone against
+VICReg weights `{0.02, 0.1, 0.5, 1.0}`.  Then compare LDAD weights
+`{1, 10, 20}` at the healthiest VICReg coefficient, retaining the no-LDAD
+cell as the matched control.  Add a `1e-4` learning-rate cross-check for any
+LDAD coefficient whose gradients are finite but materially alter the total
+loss scale.  This staged screen avoids spending a full Cartesian product on
+collapsed or action-blind regions while still testing the paper-aligned LDAD
+range requested by the user.
+
+The Grete pre-training failures were caused by module-level visualization
+imports in the bundled iGSM generator.  Matplotlib imports are now lazy and
+confined to drawing methods; a headless import fixture and 13 targeted
+faithful-edit/LDAD tests pass.
+
 ## Implementation validation
 
 - Five new structured-recipe tests pass, including exact corruption recovery,
@@ -70,4 +93,3 @@ otherwise they would build on a rejected transition model.
 - A tiny end-to-end CPU train/evaluate/checkpoint/audit run completed with
   finite token one-step and recursive losses. Its two-example metrics are a
   process smoke only, not scientific evidence.
-

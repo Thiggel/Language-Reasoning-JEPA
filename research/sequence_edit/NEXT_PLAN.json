@@ -1,117 +1,59 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-17-structured-token-edit-restart-wave1-v3",
-  "decision": "Test all four structured corruption regimes with EMA and isolate online VICReg on the curriculum anchor within the controller pending-job cap.",
+  "round_id": "2026-07-17-structured-edit-vicreg-coarse-wave1",
+  "decision": "Repair the headless iGSM launch and select the lowest curriculum VICReg coefficient that passes action-sensitivity, persistence, recursive-rollout, and rank gates before the LDAD sweep.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-mask-ema-seed-0",
+      "id": "edit-curriculum-ema-recovery-seed-0",
       "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=mask"
-      ],
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema", "0", "data.corruption_mode=curriculum"],
       "gpus": 1,
       "walltime_minutes": 60,
-      "purpose": "Measure token-aligned mask corruption with ema under matched primitive dynamics.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ],
+      "purpose": "Recover the matched curriculum EMA-only control after the Grete visualization-dependency failure.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
       "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-replace-ema-seed-0",
-      "cluster": "alex",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=replace"
-      ],
+      "id": "edit-curriculum-vicreg-w002-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.02"],
       "gpus": 1,
       "walltime_minutes": 60,
-      "purpose": "Measure token-aligned replace corruption with ema under matched primitive dynamics.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ],
-      "partition": "rtxpro6k",
-      "gpu_type": "rtxpro6k"
+      "purpose": "Test weak online VICReg under the matched curriculum primitive-dynamics protocol.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
+      "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-remove-ema-seed-0",
-      "cluster": "Lise",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=remove"
-      ],
+      "id": "edit-curriculum-vicreg-w01-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.1"],
       "gpus": 1,
       "walltime_minutes": 60,
-      "purpose": "Measure token-aligned remove corruption with ema under matched primitive dynamics.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
+      "purpose": "Test moderate online VICReg under the matched curriculum primitive-dynamics protocol.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
+      "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-curriculum-ema-seed-0",
-      "cluster": "Grete",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=curriculum"
-      ],
+      "id": "edit-curriculum-vicreg-w05-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.5"],
       "gpus": 1,
       "walltime_minutes": 60,
-      "purpose": "Measure token-aligned curriculum corruption with ema under matched primitive dynamics.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
+      "purpose": "Test intermediate online VICReg under the matched curriculum primitive-dynamics protocol.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
+      "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-curriculum-ema-vicreg-seed-0",
-      "cluster": "Grete",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema_vicreg",
-        "0",
-        "data.corruption_mode=curriculum"
-      ],
+      "id": "edit-curriculum-vicreg-w1-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=1.0"],
       "gpus": 1,
       "walltime_minutes": 60,
-      "purpose": "Measure token-aligned curriculum corruption with ema-vicreg under matched primitive dynamics.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
+      "purpose": "Retest the inherited online VICReg coefficient on a functioning matched backend.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
+      "min_gpu_memory_mb": 40000
     }
   ]
 }

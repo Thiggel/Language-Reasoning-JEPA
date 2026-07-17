@@ -23,6 +23,11 @@ claim, verify the primary source and current publication status.
     VICReg, or another distribution regularizer.
   - Its multi-step decoder receives `z(t+H)-z(t)`, uses learned action queries,
     and injects the displacement through adaptive normalization.
+  - The main experiments use action-reconstruction weight `10`.  The paper's
+    Push-T sensitivity sweep is `{0, 0.1, 1, 10, 20, 50, 100, 1000}`; its best
+    reported point is `50`, while very weak and excessively strong weights are
+    worse.  These values multiply continuous-action mean-squared error and are
+    therefore anchors, not directly calibrated text-token coefficients.
 - Limitations:
   - The paper studies continuous robot controls and MSE action reconstruction.
     Text edits have discrete operation, pointer, and token fields. Complete
@@ -34,6 +39,9 @@ claim, verify the primary source and current publication status.
   - Keep the text LDAD input strictly to the online state displacement and
     decode the complete observed edit action. Compare EMA, EMA+VICReg, and
     EMA+VICReg+LDAD with identical zero-dropout dynamics.
+  - Screen text LDAD at `{1, 10, 20}` plus the matched zero control.  Calibrate
+    VICReg separately at `{0.02, 0.1, 0.5, 1.0}` because its normalized
+    variance/covariance loss has a different scale from token cross-entropy.
   - Force EMA modules to remain in evaluation mode even when the parent model
     enters training mode. Treat LDAD accuracy as a health diagnostic; retain
     it only if transition or recursive planning metrics improve.

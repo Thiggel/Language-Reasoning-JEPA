@@ -14,7 +14,7 @@ mkdir -p "$TMPDIR"
 model_dir="$RUN_DIR/model"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/train.py" \
   "+experiment=$condition" "hydra.run.dir=$model_dir" \
-  "run_name=${condition}_s${seed}" "seed=$seed" "device=${DEVICE:-cuda:0}" \
+  "run_name=${RUN_ID:-${condition}_s${seed}}" "seed=$seed" "device=${DEVICE:-cuda:0}" \
   "$@"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/audit_faithful_token_edits.py" \
   --ckpt "$model_dir/best.pt" --device "${DEVICE:-cuda:0}" \
