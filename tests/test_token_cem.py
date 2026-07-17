@@ -108,6 +108,29 @@ def test_categorical_cem_can_use_learned_geometric_cost():
     assert learned.actions.item() == 2
 
 
+def test_categorical_cem_microbatching_preserves_search_result():
+    goal = torch.tensor([1.0, -1.0])
+
+    def rollout(tokens):
+        state = torch.stack([tokens[:, 0].float(), -tokens[:, 0].float()], -1)
+        return state[:, None]
+
+    kwargs = dict(
+        rollout=rollout, goal=goal, horizon=1, vocab_size=5,
+        candidates=257, iterations=4, elites=32,
+    )
+    plain = categorical_cem(
+        **kwargs, generator=torch.Generator().manual_seed(117)
+    )
+    chunked = categorical_cem(
+        **kwargs, rollout_batch_size=17,
+        generator=torch.Generator().manual_seed(117),
+    )
+    assert torch.equal(plain.actions, chunked.actions)
+    assert torch.equal(plain.states, chunked.states)
+    assert plain.cost == chunked.cost
+
+
 def test_gmm_nll_prefers_component_centres():
     weights = torch.tensor([0.5, 0.5])
     means = torch.tensor([[0.0, 0.0], [5.0, 5.0]])
@@ -189,6 +212,34 @@ def test_continuous_cem_can_use_learned_geometric_cost():
     assert abs(float(learned.states[0, 0])) < 0.1
 
 
+def test_continuous_cem_microbatching_preserves_tuple_rollout_and_costs():
+    goal = torch.tensor([1.0, -1.0])
+
+    def rollout(noise):
+        actions = 2.0 * noise
+        return actions, actions
+
+    kwargs = dict(
+        rollout=rollout, goal=goal, horizon=2, action_dim=2,
+        candidates=257, iterations=4, elites=32,
+        extra_cost=lambda actions, states: (
+            actions.square().mean((1, 2)),
+            {"action_energy": actions.square().mean((1, 2))},
+        ),
+    )
+    plain = continuous_cem(
+        **kwargs, generator=torch.Generator().manual_seed(118)
+    )
+    chunked = continuous_cem(
+        **kwargs, rollout_batch_size=19,
+        generator=torch.Generator().manual_seed(118),
+    )
+    assert torch.equal(plain.actions, chunked.actions)
+    assert torch.equal(plain.states, chunked.states)
+    assert plain.cost == chunked.cost
+    assert plain.diagnostics == chunked.diagnostics
+
+
 def test_reachability_retains_enough_candidates_for_all_elites():
     goal = torch.tensor([1.0, -1.0])
     result = continuous_cem(
@@ -241,3 +292,25 @@ def test_batched_reachability_can_lift_rollouts_before_scoring():
         generator=torch.Generator().manual_seed(7),
     )
     assert torch.allclose(cost, torch.zeros_like(cost))
+
+
+def test_batched_reachability_microbatching_preserves_residuals():
+    vocab, horizon = 5, 2
+    goals = torch.randn(3, vocab * horizon)
+
+    def rollout(tokens):
+        states = F.one_hot(tokens, vocab).float().flatten(1)
+        return states[:, None]
+
+    kwargs = dict(
+        rollout=rollout, goals=goals, horizon=horizon, vocab_size=vocab,
+        candidates=101, iterations=3, elites=12,
+    )
+    plain = batched_categorical_min_cost(
+        **kwargs, generator=torch.Generator().manual_seed(119)
+    )
+    chunked = batched_categorical_min_cost(
+        **kwargs, rollout_batch_size=23,
+        generator=torch.Generator().manual_seed(119),
+    )
+    assert torch.equal(plain, chunked)

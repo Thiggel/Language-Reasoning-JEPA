@@ -11,6 +11,7 @@ common=(
   --high-horizon 2 --flat-horizon 32
   --macro-candidates 1000 --macro-iterations 20 --macro-elites 100
   --token-candidates 1000 --token-iterations 20 --token-elites 100
+  --cem-rollout-batch-size 64
   --reach-topn 32 --reach-weight 1.0 --reach-budget-scale 0.25
   --bank-examples 256 --bank-size 2048 --conditional-bank-k 256
 )

@@ -343,6 +343,7 @@ class OracleCEMPlanner:
             extra_cost=(extra_cost if cost_terms else None),
             goal_states=transform,
             goal_cost_fn=self.geometric_goal_cost(value_head),
+            rollout_batch_size=self.args.cem_rollout_batch_size,
         )
         if target_level is not None:
             # Keep primitive predictions for execution-drift diagnostics.  The
@@ -539,6 +540,7 @@ class OracleCEMPlanner:
                             base_path, states, level_index
                         )) if self.model.distinct_level_states else None
                     ),
+                    rollout_batch_size=self.args.cem_rollout_batch_size,
                 )
 
         init_mean = init_std = None
@@ -557,6 +559,7 @@ class OracleCEMPlanner:
                     level_index + 1 if goal_states is not None else level_index
                 ].goal_value
             ),
+            rollout_batch_size=self.args.cem_rollout_batch_size,
             extra_cost=extra_cost,
             reachability=reachability,
             reach_topn=self.args.reach_topn,
@@ -834,6 +837,10 @@ def main():
     parser.add_argument("--token-candidates", type=int, default=256)
     parser.add_argument("--token-iterations", type=int, default=5)
     parser.add_argument("--token-elites", type=int, default=32)
+    parser.add_argument(
+        "--cem-rollout-batch-size", type=int, default=0,
+        help="microbatch model rollouts without changing the CEM population",
+    )
     parser.add_argument("--token-proposal", choices=[
         "uniform", "prior_energy", "prior_shooting", "prior_greedy",
     ], default="uniform")

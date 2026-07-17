@@ -16,6 +16,34 @@ import torch.nn.functional as F
 Tensor = torch.Tensor
 
 
+def _batched_tensor_call(function, value: Tensor, batch_size: int):
+    """Call a tensor/tuple-returning function in exact, ordered microbatches."""
+    if batch_size <= 0 or len(value) <= batch_size:
+        return function(value)
+    outputs = [function(value[start:start + batch_size])
+               for start in range(0, len(value), batch_size)]
+    if isinstance(outputs[0], tuple):
+        return tuple(torch.cat(parts, 0) for parts in zip(*outputs))
+    return torch.cat(outputs, 0)
+
+
+def _batched_cost_call(function, actions: Tensor, states: Tensor, batch_size: int):
+    """Microbatch an extra-cost callback and preserve every diagnostic row."""
+    if batch_size <= 0 or len(actions) <= batch_size:
+        return function(actions, states)
+    costs, diagnostics = [], {}
+    for start in range(0, len(actions), batch_size):
+        cost, items = function(
+            actions[start:start + batch_size], states[start:start + batch_size]
+        )
+        costs.append(cost)
+        for name, value in items.items():
+            diagnostics.setdefault(name, []).append(value)
+    return torch.cat(costs), {
+        name: torch.cat(values) for name, values in diagnostics.items()
+    }
+
+
 def latent_l1(x: Tensor, y: Tensor) -> Tensor:
     return (
         F.layer_norm(x, x.shape[-1:])
@@ -70,6 +98,7 @@ def categorical_cem(
     extra_cost: Callable[[Tensor, Tensor], tuple[Tensor, dict[str, Tensor]]] | None = None,
     goal_states: Callable[[Tensor], Tensor] | None = None,
     goal_cost_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
+    rollout_batch_size: int = 0,
     generator: torch.Generator | None = None,
 ) -> CEMResult:
     """Categorical CEM over discrete token sequences, with no language model."""
@@ -94,8 +123,11 @@ def categorical_cem(
             )
             for t in range(horizon)
         ], 1)
-        states = rollout(tokens)
-        scored = goal_states(states) if goal_states is not None else states
+        states = _batched_tensor_call(rollout, tokens, rollout_batch_size)
+        scored = (
+            _batched_tensor_call(goal_states, states, rollout_batch_size)
+            if goal_states is not None else states
+        )
         goal_rows = goal.expand(candidates, -1)
         goal_cost = (
             goal_cost_fn(scored[:, -1], goal_rows)
@@ -107,7 +139,9 @@ def categorical_cem(
         cost = goal_cost
         diagnostics: dict[str, Tensor] = {"goal_cost": goal_cost.detach()}
         if extra_cost is not None:
-            addition, extra = extra_cost(tokens, states)
+            addition, extra = _batched_cost_call(
+                extra_cost, tokens, states, rollout_batch_size
+            )
             if addition.shape != cost.shape:
                 raise ValueError("categorical extra_cost must return one cost per candidate")
             cost = cost + addition
@@ -151,6 +185,7 @@ def batched_categorical_min_cost(
     alpha: float = 0.1,
     forbidden: tuple[int, ...] = (),
     goal_states: Callable[[Tensor], Tensor] | None = None,
+    rollout_batch_size: int = 0,
     generator: torch.Generator | None = None,
 ) -> Tensor:
     """Minimum categorical-CEM residual for several subgoals in parallel."""
@@ -171,8 +206,14 @@ def batched_categorical_min_cost(
             )
             for step in range(horizon)
         ], -1)
-        states = rollout(tokens.reshape(groups * candidates, horizon))
-        scored = goal_states(states) if goal_states is not None else states
+        states = _batched_tensor_call(
+            rollout, tokens.reshape(groups * candidates, horizon),
+            rollout_batch_size,
+        )
+        scored = (
+            _batched_tensor_call(goal_states, states, rollout_batch_size)
+            if goal_states is not None else states
+        )
         final = scored[:, -1].reshape(groups, candidates, -1)
         cost = latent_l1(final, goals[:, None].expand_as(final))
         best = torch.minimum(best, cost.amin(1))
@@ -217,6 +258,7 @@ def continuous_cem(
     project_bank: Tensor | None = None,
     goal_states: Callable[[Tensor], Tensor] | None = None,
     goal_cost_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
+    rollout_batch_size: int = 0,
     extra_cost: Callable[[Tensor, Tensor], tuple[Tensor, dict[str, Tensor]]] | None = None,
     reachability: Callable[[Tensor], Tensor] | None = None,
     reach_topn: int = 0,
@@ -254,12 +296,15 @@ def continuous_cem(
         if project_bank is not None:
             actions, distance = project_to_bank(raw, project_bank)
             projection_distance = distance.mean(-1)
-        rolled = rollout(actions)
+        rolled = _batched_tensor_call(rollout, actions, rollout_batch_size)
         if isinstance(rolled, tuple):
             states, scored_actions = rolled
         else:
             states, scored_actions = rolled, actions
-        scored = goal_states(states) if goal_states is not None else states
+        scored = (
+            _batched_tensor_call(goal_states, states, rollout_batch_size)
+            if goal_states is not None else states
+        )
         goal_rows = goal.expand(candidates, -1)
         cost = (
             goal_cost_fn(scored[:, -1], goal_rows)
@@ -273,7 +318,9 @@ def continuous_cem(
             "bank_projection_distance": projection_distance.detach(),
         }
         if extra_cost is not None:
-            addition, extra = extra_cost(scored_actions, states)
+            addition, extra = _batched_cost_call(
+                extra_cost, scored_actions, states, rollout_batch_size
+            )
             cost = cost + addition
             diagnostics.update(extra)
         if reachability is not None and reach_topn > 0 and reach_weight > 0:
