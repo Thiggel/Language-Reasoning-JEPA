@@ -210,7 +210,9 @@ def collect_primitive(model, cfg, vocab, device, args):
             candidate_ids = torch.tensor(chosen, device=device)
             candidate = model.token_action(candidate_ids)
             state_hist = online[:, prompt - 1:pos + 1]
-            old_ids = torch.tensor([ids[prompt:pos + 1]], device=device)
+            old_ids = torch.tensor(
+                [ids[prompt:pos + 1]], device=device, dtype=torch.long
+            )
             old_actions = model.token_action(old_ids)
             outcome = model.low_predictor(
                 state_hist.expand(len(chosen), -1, -1),
