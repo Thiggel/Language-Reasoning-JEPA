@@ -8,6 +8,19 @@ two external-cluster counterfactual jobs failed because their exact snapshot
 lacked the requested configuration; seed 0 is not terminal. Current work is
 still unresolved, so no new round is planned from this audit.
 
+An evening steering update authorizes one minimal recovery: rerun only the
+four-step geometry-teacher seed with `TMPDIR=/tmp`, compare it with the
+existing matched two-step seed, and leave the active Alex counterfactual job
+untouched. This is a pending test, not new evidence.
+
+The subsequent three-seed J3 checkpoint audit supersedes that pending
+recovery. Teacher top-1 is `.890 +/- .036` and student-versus-oracle top-1 is
+`.907 +/- .006`, while strict success remains `.588 +/- .013`. State variance
+and effective rank are healthy, but task-value decodability falls from 1.000
+in observed states to `.380 +/- .014` after one prediction and `.263 +/- .004`
+under recursive rollout. The next decision is therefore a matched causal-
+context and learning-rate screen, not deeper teacher lookahead.
+
 ## Defensible observations
 
 | Observation | Status |

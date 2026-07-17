@@ -2,6 +2,15 @@
 
 See `STATUS.md` for the current causal matrix. Accurate transition prediction alone does not yield strong action selection; latent-goal preference distillation is the largest supported gain. Hierarchy is excluded from the paper-facing claim.
 
+The three-seed J3 artifact audit finds a strong two-step teacher
+(`.890 +/- .036` top-1 versus a privileged symbolic oracle) and strong student
+ranking (`.907 +/- .006` top-1 versus oracle), but only `.588 +/- .013` strict
+closed-loop success. Task-value decodability falls from 1.000 in observed
+states to `.380 +/- .014` after one predicted transition and `.263 +/- .004`
+under recursive rollout. State variance and effective rank are healthy. This
+supports testing predictor fidelity and compounding deployment error before
+increasing teacher horizon.
+
 The 2026-07-16 GAR geometry launch is infrastructure-invalid: all seven jobs
 timed out before optimization because the multiprocessing Unix-socket path was
 too long. The external-cluster counterfactual repair seeds 1 and 2 are also

@@ -3,6 +3,7 @@ import torch
 
 from textjepa.data.igsm.dataset import IGSMDataset, build_vocab, collate
 from textjepa.models import DiscourseJEPA
+from textjepa.models.predictor import CausalHistoryPredictor
 from textjepa.objectives import (
     CompositeObjective,
     DeltaAction,
@@ -60,6 +61,49 @@ def test_default_predictor_is_causal_and_uses_history(setup):
     changed_future[:, 4] += 3.0
     future_output = predictor(changed_future, actions, valid)
     torch.testing.assert_close(reference[:, :4], future_output[:, :4])
+
+
+@pytest.mark.parametrize("context_window", [1, 4])
+def test_causal_predictor_context_window_blocks_older_states(context_window):
+    predictor = CausalHistoryPredictor(
+        d_state=32,
+        d_action=8,
+        n_layers=1,
+        n_heads=4,
+        context_window=context_window,
+    ).eval()
+    length = 6
+    states = torch.randn(2, length, 32)
+    actions = torch.randn(2, length, 8)
+    reference = predictor(states, actions)
+
+    changed = states.clone()
+    changed[:, 0] += 10.0
+    output = predictor(changed, actions)
+    first_blocked_position = context_window
+    torch.testing.assert_close(
+        reference[:, first_blocked_position:],
+        output[:, first_blocked_position:],
+    )
+    assert not torch.allclose(reference[:, 0], output[:, 0])
+
+
+def test_causal_context_window_stays_finite_with_right_padding():
+    predictor = CausalHistoryPredictor(
+        d_state=32,
+        d_action=8,
+        n_layers=1,
+        n_heads=4,
+        context_window=1,
+    ).eval()
+    states = torch.randn(2, 6, 32)
+    actions = torch.randn(2, 6, 8)
+    valid = torch.tensor([
+        [True, True, False, False, False, False],
+        [True, True, True, True, False, False],
+    ])
+    output = predictor(states, actions, valid)
+    assert torch.isfinite(output).all()
 
 
 def test_causal_rollout_retains_observed_prefix(setup):

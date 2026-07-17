@@ -33,6 +33,7 @@ geo_proj: false
 state_target: ema
 predictor_residual: true
 predictor_kind: causal
+predictor_context_window: null
 action_encoder_kind: pooled  # pooled | token_bottleneck
 action_token_dim: 8          # per-token width before fixed-order concatenation
 variational_actions: false

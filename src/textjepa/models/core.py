@@ -48,6 +48,7 @@ class LatentDynamicsCore(nn.Module):
         residual: bool = True,
         detach_targets: bool = True,
         predictor_kind: str = "causal",
+        predictor_context_window: int | None = None,
         macro_encoder_kind: str = "transformer",
         macro_variational: bool = False,
         macro_concat_width: int = 8,
@@ -77,6 +78,7 @@ class LatentDynamicsCore(nn.Module):
                 predictor_hidden_mult,
                 max_steps=64,
                 residual=residual,
+                context_window=predictor_context_window,
             )
         elif predictor_kind in {"concat", "film"}:
             # Retained only to load and audit historical checkpoints. New

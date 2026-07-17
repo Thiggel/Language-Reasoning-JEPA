@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-16-four-step-gar-recovery",
+  "project": "intent_phrase",
+  "title": "A one-cell recovery asks whether looking farther helps action ranking",
+  "created_at": "2026-07-16T21:00:00+02:00",
+  "status": "superseded",
+  "decision": "Run one infrastructure-safe four-step geometry-teacher cell before deciding whether to continue horizon experiments.",
+  "plain_summary": "Nine terminal process failures contain no scientific evidence; one short-path retry is the smallest test that can decide whether deeper lookahead deserves more compute.",
+  "report": "REPORT.md",
+  "review_required": false
+}

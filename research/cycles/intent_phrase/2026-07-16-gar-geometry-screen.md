@@ -115,3 +115,35 @@ schema version 2 and project `intent_phrase`.
 
 Human-facing report:
 `research/reports/intent_phrase/2026-07-16-terminal-run-validity-audit/REPORT.md`.
+
+## Recovery decision (2026-07-16 evening)
+
+The second steering note authorizes small autonomous recovery runs until
+2026-07-17 08:30 Europe/Berlin and identifies the socket failure as
+infrastructure. The new allocation snapshot reports one active GPU, no pending
+jobs, one guaranteed GPU, and 16.0 GPU-hours remaining. It supersedes the
+earlier budget blocker without creating scientific evidence.
+
+The narrow next decision is whether four-step geometric lookahead (`H=4,
+K=2`) is worth pursuing relative to the existing matched `H=2, K=2` seed. Run
+only seed 0 with `TMPDIR=/tmp`, the same command and frozen protocol as the
+invalid attempt, and a three-hour ceiling. Do not duplicate the scheduler-active
+Alex counterfactual seed.
+
+The recovery is valid only if optimization occurs, declared metrics and the
+GAR audit are present and finite, at least 100 audit anchors exist, and state
+variance/effective rank plus transition and shuffle diagnostics remain
+interpretable. Advance deeper-horizon work only if strict success improves by
+at least 0.05 over matched seed 0, or teacher quality improves materially
+without worse student alignment. Otherwise retain `H=2, K=2` and stop the
+horizon branch. A repeated pre-optimization failure remains infrastructure,
+not a negative scientific result.
+
+Steering effects are explicit: the easy-domain note keeps the matched token
+policy (`.827`) as a paper gate and forbids presenting the current JEPA result
+as a win; the overnight note prioritizes the smallest safe recovery, supplies
+the short-temporary-directory mitigation, forbids duplicating Alex seed 0,
+and favors this one-cell decision over the original seven-cell screen.
+
+Human-facing report:
+`research/reports/intent_phrase/2026-07-16-four-step-gar-recovery/REPORT.md`.

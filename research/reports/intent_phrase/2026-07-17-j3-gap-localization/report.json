@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-17-j3-gap-localization",
+  "project": "intent_phrase",
+  "title": "The action teacher is strong, but predicted states lose useful task information",
+  "created_at": "2026-07-17T10:30:00+02:00",
+  "status": "decision_complete",
+  "decision": "Stop deeper teacher-lookahead recovery and test matched causal-context and learning-rate controls for transition fidelity.",
+  "plain_summary": "Across three checkpoints, teacher and student action rankings are near 90 percent accurate, but task-value information falls sharply after predicted transitions and recursive rollout, making dynamics and compounding deployment errors the next mechanism to test.",
+  "report": "REPORT.md",
+  "review_required": true
+}

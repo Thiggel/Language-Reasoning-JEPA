@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="220" viewBox="0 0 900 220" role="img" aria-labelledby="title desc">
+  <title id="title">Recovery decision flow</title>
+  <desc id="desc">Nine invalid jobs lead to one short-path four-step retry, which either continues or stops horizon experiments.</desc>
+  <defs><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#334155"/></marker></defs>
+  <rect width="900" height="220" rx="18" fill="#f8fafc"/>
+  <g font-family="sans-serif" text-anchor="middle">
+    <rect x="35" y="65" width="220" height="90" rx="12" fill="#fee2e2" stroke="#b91c1c"/>
+    <text x="145" y="100" font-size="18" fill="#7f1d1d">9 terminal failures</text><text x="145" y="128" font-size="15" fill="#7f1d1d">0 scientific metrics</text>
+    <path d="M265 110 H360" stroke="#334155" stroke-width="3" marker-end="url(#a)"/>
+    <rect x="370" y="65" width="220" height="90" rx="12" fill="#dbeafe" stroke="#1d4ed8"/>
+    <text x="480" y="98" font-size="18" fill="#1e3a8a">One H=4 retry</text><text x="480" y="126" font-size="15" fill="#1e3a8a">short /tmp path, ≤3 GPU-h</text>
+    <path d="M600 110 H690" stroke="#334155" stroke-width="3" marker-end="url(#a)"/>
+    <rect x="700" y="40" width="165" height="60" rx="12" fill="#dcfce7" stroke="#15803d"/><text x="782" y="76" font-size="16" fill="#14532d">Gain ≥ .05: continue</text>
+    <rect x="700" y="120" width="165" height="60" rx="12" fill="#f1f5f9" stroke="#475569"/><text x="782" y="156" font-size="16" fill="#334155">Otherwise: stop</text>
+    <path d="M650 110 V70 H690" stroke="#334155" stroke-width="2" marker-end="url(#a)"/><path d="M650 110 V150 H690" stroke="#334155" stroke-width="2" marker-end="url(#a)"/>
+  </g>
+</svg>
