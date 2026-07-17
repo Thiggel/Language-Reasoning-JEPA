@@ -1301,7 +1301,10 @@ class Controller:
         with self.oversight_lock():
             self._wake(project)
 
-    def tick(self, project_filter: str | None = None) -> None:
+    def tick(
+        self, project_filter: str | None = None,
+        after: dt.datetime | None = None,
+    ) -> None:
         self._local_storage_guard()
         self.refresh()
         state = self.load_state()
@@ -1321,6 +1324,13 @@ class Controller:
             and (
                 project_filter is None
                 or self._round_project(rid, rnd) == project_filter
+            )
+            and (
+                after is None
+                or (
+                    rnd.get("finished_at")
+                    and dt.datetime.fromisoformat(rnd["finished_at"]) >= after
+                )
             )
         ]
         if not terminal:
@@ -1365,6 +1375,7 @@ def parser() -> argparse.ArgumentParser:
         sub.add_parser(name)
     tick = sub.add_parser("tick")
     tick.add_argument("--project", choices=PROJECTS)
+    tick.add_argument("--after", help="ignore rounds finished before this ISO timestamp")
     status = sub.add_parser("status")
     status.add_argument("--project", choices=PROJECTS)
     status.add_argument("--all", action="store_true")
@@ -1410,7 +1421,11 @@ def main() -> int:
         elif args.command == "wake":
             ctl.wake(args.project)
         elif args.command == "tick":
-            ctl.tick(args.project)
+            after = (
+                dt.datetime.fromisoformat(args.after.replace("Z", "+00:00"))
+                if args.after else None
+            )
+            ctl.tick(args.project, after)
         elif args.command == "projects":
             ctl.projects_status()
         elif args.command == "migrate-state":
