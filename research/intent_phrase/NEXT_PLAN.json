@@ -1,14 +1,14 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-17-j3-context-optimization-screen",
+  "round_id": "2026-07-17-j3-context-optimization-screen-v2",
   "decision": "Test whether shorter causal history or a matched learning-rate change preserves more future-relevant information and improves strict closed-loop control over the existing full-history J3 seed-0 reference.",
   "git_commit": "AUTO",
   "jobs": [
     {
       "id": "j3-context-1-seed-0",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_single_cell.sh", "{python}", "paper_causal_j3_context1", "0"],
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_context1", "0"],
       "gpus": 1,
       "walltime_minutes": 180,
       "purpose": "Matched one-step causal Transformer control that removes long-history optimization while retaining the J3 architecture and parameter count.",
@@ -19,7 +19,7 @@
     {
       "id": "j3-context-4-seed-0",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_single_cell.sh", "{python}", "paper_causal_j3_context4", "0"],
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_context4", "0"],
       "gpus": 1,
       "walltime_minutes": 180,
       "purpose": "Matched short-history causal Transformer control between the one-step and unrestricted-history J3 predictors.",
@@ -30,7 +30,7 @@
     {
       "id": "j3-full-lr-1e4-seed-0",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_single_cell.sh", "{python}", "paper_causal_j3_lr1e4", "0"],
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr1e4", "0"],
       "gpus": 1,
       "walltime_minutes": 180,
       "purpose": "Full-history lower-learning-rate control around the existing 3e-4 J3 reference.",
@@ -41,7 +41,7 @@
     {
       "id": "j3-full-lr-1e3-seed-0",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_single_cell.sh", "{python}", "paper_causal_j3_lr1e3", "0"],
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr1e3", "0"],
       "gpus": 1,
       "walltime_minutes": 180,
       "purpose": "Full-history higher-learning-rate control around the existing 3e-4 J3 reference.",

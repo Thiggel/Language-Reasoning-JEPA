@@ -5,6 +5,9 @@ See `research/intent_phrase/README.md`, its wave documents, and controller round
 - `2026-07-17-j3-gap-audit`: three-seed artifact-only localization; teacher
   and student rankings are strong, predicted/rollout task information is weak;
   causal-context and learning-rate diagnostic selected.
+- `2026-07-17-j3-context-optimization-screen`: four jobs submitted from exact
+  commit; infrastructure-invalid before optimization because the controller
+  overwrote plan-level `TMPDIR`; corrected v2 awaits slot termination.
 
 - `2026-07-16-gar-geometry-screen`: seven first-launch jobs terminal but
   infrastructure-invalid (`AF_UNIX path too long`); zero scientific results;

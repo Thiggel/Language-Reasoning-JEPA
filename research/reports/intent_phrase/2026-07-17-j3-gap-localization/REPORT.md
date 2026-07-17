@@ -88,6 +88,15 @@ We also cannot claim JEPA beats language modeling, that the stylized mechanism t
 
 ## What happens next
 
+The first attempted four-cell launch produced no scientific result. All four
+jobs reached model construction but failed before the first optimizer step
+with the known Unix-socket path error. Although the plan supplied
+`TMPDIR=/tmp`, the Grünau controller wrapper replaced it with a long
+run-directory path afterward. These jobs remain visible as infrastructure-
+invalid and must not enter any average. The corrected v2 plan invokes the
+repository's post-controller short-path wrapper and waits until the invalid
+slots terminate or are explicitly cancelled.
+
 Run four seed-0 cells: context windows one and four at the current learning rate, plus full-history controls at `1e-4` and `1e-3`. Compare them with the existing full-history `3e-4` seed-0 checkpoint. Every cell must train from an exact snapshot, use identical shuffled menus and examples, and emit planning, teacher/student, transition, rollout, state-health, configuration, and compact-summary artifacts.
 
 Advance a cell only if strict success rises by at least 0.05 over matched seed 0 while teacher quality and representation health remain intact, or if one-step and recursive task information improve materially without a behavioral regression. Then and only then run seeds 1 and 2 for the selected setting. If none passes, retain full-history J3 and move to preference/deployment calibration; do not widen the context or learning-rate sweep.

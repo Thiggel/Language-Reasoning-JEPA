@@ -21,6 +21,13 @@ in observed states to `.380 +/- .014` after one prediction and `.263 +/- .004`
 under recursive rollout. The next decision is therefore a matched causal-
 context and learning-rate screen, not deeper teacher lookahead.
 
+The first four-cell diagnostic launch is infrastructure-invalid: the Grünau
+controller overwrote plan-level `TMPDIR=/tmp` with its long run-directory
+temporary path, and all four jobs reproduced the Unix-socket path failure
+before optimization. A v2 plan uses the repository's post-controller short-
+path wrapper and waits for those invalid slots to terminate or be explicitly
+cancelled.
+
 ## Defensible observations
 
 | Observation | Status |
