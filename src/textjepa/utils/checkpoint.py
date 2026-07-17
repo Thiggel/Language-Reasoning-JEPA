@@ -106,6 +106,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
                 else d.get("corruption_mode", "mixed")
             ),
             curriculum_epochs=d.get("curriculum_epochs", 3),
+            fresh_per_epoch=d.get("fresh_per_epoch", False),
         )
     if d.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import FaithfulDataset

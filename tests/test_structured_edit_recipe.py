@@ -63,6 +63,27 @@ def test_curriculum_changes_corruption_family_by_epoch():
     assert dataset._active_corruption_mode() == "mixed"
 
 
+def test_fresh_per_epoch_is_explicit_and_reproducible():
+    vocab = faithful_token_edit_vocab()
+    common = dict(
+        vocab=vocab, size=4, seed=43, min_edits=8, max_edits=8,
+        corruption_mode="mixed",
+    )
+    fixed = FaithfulTokenEditDataset(**common, fresh_per_epoch=False)
+    before = [fixed[index]["buffers"][0] for index in range(len(fixed))]
+    fixed.set_epoch(1)
+    assert [fixed[index]["buffers"][0] for index in range(len(fixed))] == before
+
+    fresh = FaithfulTokenEditDataset(**common, fresh_per_epoch=True)
+    before = [fresh[index]["buffers"][0] for index in range(len(fresh))]
+    fresh.set_epoch(1)
+    after = [fresh[index]["buffers"][0] for index in range(len(fresh))]
+    assert after != before
+    repeat = FaithfulTokenEditDataset(**common, fresh_per_epoch=True)
+    repeat.set_epoch(1)
+    assert [repeat[index]["buffers"][0] for index in range(len(repeat))] == after
+
+
 def test_pointer_action_is_invariant_to_prefix_shift():
     torch.manual_seed(0)
     predictor = TokenAlignedEditPredictor(16, 8, n_layers=1, n_heads=4)

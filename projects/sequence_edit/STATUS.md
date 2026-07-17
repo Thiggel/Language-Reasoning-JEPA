@@ -42,3 +42,13 @@ in evaluation mode. A CPU train/evaluate/audit fixture and 19 focused tests
 pass. The active GPU decision is the four-corruption by three-stabilizer pilot
 plus H=1/H=4 goal-advantage distillation; hierarchy remains gated on primitive
 action sensitivity.
+
+The curriculum VICReg and faithful text LDAD screens have now completed. LDAD
+substantially improves one-step and recursive prediction and preserves rank,
+but every tested coefficient remains below the shuffled-action causal gate.
+The earlier mask-only action signal is also distribution-specific: a small
+cross-evaluation loses it on mixed edits. A data audit found that
+non-curriculum runs repeated corruptions despite `fresh_per_epoch: true`; the
+dataset path and cross-corruption audit are now fixed and tested. The next
+decision is a matched fixed-versus-fresh mixed/mask/curriculum comparison plus
+one lower-learning-rate LDAD-20 control, not hierarchy or planning.

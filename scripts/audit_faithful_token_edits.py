@@ -325,6 +325,11 @@ def main():
         help="override evaluation alternatives per state, including for K=0 checkpoints",
     )
     parser.add_argument(
+        "--corruption-mode",
+        choices=("mixed", "mask", "replace", "remove"),
+        help="override the validation corruption family for a matched cross-regime audit",
+    )
+    parser.add_argument(
         "--horizons", default="1,2,4,8",
         help="comma-separated recursive horizons",
     )
@@ -346,6 +351,8 @@ def main():
             parser.error("--counterfactual-k must be nonnegative")
         cfg.data.counterfactual_k = args.counterfactual_k
         cfg.data.counterfactual_source = "uniform_local"
+    if args.corruption_mode is not None:
+        cfg.data.corruption_mode = args.corruption_mode
     dataset = build_dataset(cfg, vocab, "val", size=args.examples)
     loader = DataLoader(
         dataset, batch_size=min(16, cfg.train.batch_size),
@@ -472,6 +479,7 @@ def main():
     }
     payload = {
         "examples": len(dataset),
+        "evaluation_corruption_mode": dataset.corruption_mode,
         "one_step_ln_l1": matched_mean,
         "recursive_ln_l1": (
             _summary(recursive_error, step_mask)["ln_l1"]

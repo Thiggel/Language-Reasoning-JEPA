@@ -139,6 +139,7 @@ class FaithfulTokenEditDataset(Dataset):
                  max_edits: int = 16, counterfactual_k: int = 0,
                  counterfactual_source: str = "uniform_local",
                  corruption_mode: str = "mixed", curriculum_epochs: int = 3,
+                 fresh_per_epoch: bool = False,
                  **_):
         self.vocab = vocab
         self.seed = seed
@@ -148,6 +149,7 @@ class FaithfulTokenEditDataset(Dataset):
         self.counterfactual_source = str(counterfactual_source)
         self.corruption_mode = str(corruption_mode)
         self.curriculum_epochs = max(1, int(curriculum_epochs))
+        self.fresh_per_epoch = bool(fresh_per_epoch)
         self.epoch = 0
         if self.corruption_mode not in {
             "mixed", "mask", "replace", "remove", "curriculum"
@@ -183,8 +185,9 @@ class FaithfulTokenEditDataset(Dataset):
         prompt = source["prompt"]
         target = [list(sentence) for sentence in source["steps"]]
         mode = self._active_corruption_mode()
+        epoch_key = self.epoch if self.fresh_per_epoch else 0
         rng = random.Random(
-            f"faithful-token-edit:{self.seed}:{index}:{mode}:{self.epoch if self.corruption_mode == 'curriculum' else 0}"
+            f"faithful-token-edit:{self.seed}:{index}:{mode}:{epoch_key}"
         )
         current = [list(sentence) for sentence in target]
         undo: list[tuple[str, int, int | None]] = []

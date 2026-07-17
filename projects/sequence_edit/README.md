@@ -39,3 +39,4 @@ Current entry points:
 - [`faithful-token cycle`](../../research/cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md)
 - [`data and counterfactual pilot report`](../../research/reports/sequence_edit/2026-07-17-faithful-edit-data-counterfactual-pilot/REPORT.md)
 - [`token-aligned VICReg screen report`](../../research/reports/sequence_edit/2026-07-17-structured-edit-vicreg-screen/REPORT.md)
+- [`token-aligned LDAD screen report`](../../research/reports/sequence_edit/2026-07-17-structured-edit-ldad-screen/REPORT.md)

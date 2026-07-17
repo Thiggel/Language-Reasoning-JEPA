@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="430" viewBox="0 0 1000 430" role="img" aria-labelledby="title desc">
+  <title id="title">LDAD improves recursive error but not causal action sensitivity</title>
+  <desc id="desc">Two panels compare the no-LDAD curriculum baseline with five LDAD settings. Recursive error is lower for LDAD, while every shuffled-action ratio remains below the causal threshold of 1.05.</desc>
+  <rect width="1000" height="430" fill="white"/>
+  <style>text{font-family:DejaVu Sans,Arial,sans-serif;fill:#172033}.title{font-size:22px;font-weight:700}.label{font-size:14px}.small{font-size:12px}.axis{stroke:#65728a;stroke-width:1}.bar{fill:#3977b8}.base{fill:#aab4c3}.gate{stroke:#c43d3d;stroke-width:3;stroke-dasharray:8 5}</style>
+  <text class="title" x="40" y="34">Lower error did not create an action-conditional transition</text>
+  <text class="label" x="92" y="70">Recursive normalized error (lower is better)</text>
+  <line class="axis" x1="80" y1="340" x2="460" y2="340"/>
+  <rect class="base" x="105" y="95" width="42" height="245"/><text class="small" x="94" y="362">No LDAD</text><text class="small" x="110" y="88">.349</text>
+  <rect class="bar" x="170" y="242" width="42" height="98"/><text class="small" x="164" y="362">NoV+10</text><text class="small" x="176" y="235">.140</text>
+  <rect class="bar" x="235" y="207" width="42" height="133"/><text class="small" x="237" y="362">.02+1</text><text class="small" x="241" y="200">.190</text>
+  <rect class="bar" x="300" y="242" width="42" height="98"/><text class="small" x="296" y="362">.02+10</text><text class="small" x="306" y="235">.140</text>
+  <rect class="bar" x="365" y="246" width="42" height="94"/><text class="small" x="361" y="362">.02+20</text><text class="small" x="371" y="239">.134</text>
+  <text class="label" x="570" y="70">Shuffled / matched action error (higher is better)</text>
+  <line class="axis" x1="550" y1="340" x2="950" y2="340"/>
+  <line class="gate" x1="550" y1="110" x2="950" y2="110"/><text class="small" x="840" y="100" fill="#c43d3d">causal gate 1.05</text>
+  <rect class="base" x="575" y="279" width="42" height="61"/><text class="small" x="566" y="362">No LDAD</text><text class="small" x="579" y="272">1.013</text>
+  <rect class="bar" x="640" y="309" width="42" height="31"/><text class="small" x="634" y="362">NoV+10</text><text class="small" x="644" y="302">1.007</text>
+  <rect class="bar" x="705" y="294" width="42" height="46"/><text class="small" x="707" y="362">.02+1</text><text class="small" x="709" y="287">1.010</text>
+  <rect class="bar" x="770" y="307" width="42" height="33"/><text class="small" x="766" y="362">.02+10</text><text class="small" x="774" y="300">1.007</text>
+  <rect class="bar" x="835" y="310" width="42" height="30"/><text class="small" x="831" y="362">.02+20</text><text class="small" x="839" y="303">1.006</text>
+  <text class="small" x="40" y="405">NoV = no VICReg. LDAD labels show VICReg weight + LDAD weight. All values use 256 held-out mixed-corruption examples.</text>
+</svg>

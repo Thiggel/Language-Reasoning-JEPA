@@ -1,0 +1,65 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{default}
+\usepackage{booktabs}
+\definecolor{editblue}{RGB}{38,117,168}
+\setbeamercolor{structure}{fg=editblue}
+\title{Can action reconstruction make an editor obey?}
+\subtitle{Token-aligned sequence-edit JEPA: LDAD coefficient screen}
+\date{17 July 2026}
+\begin{document}
+\frame{\titlepage}
+
+\begin{frame}{Low prediction error is not enough}
+  \begin{itemize}
+    \item The model sees a damaged solution and a literal insert, delete, or replace action.
+    \item It should predict the state produced by that particular edit.
+    \item An action-blind model can predict an average nearby state and still obtain low error.
+    \item We therefore swap the action at evaluation; a causal predictor should become at least 5\% worse.
+  \end{itemize}
+  \vfill
+  \textbf{Question:} does reconstructing the action from the observed latent change force the forward model to use its action?
+\end{frame}
+
+\begin{frame}{Latent Difference Action Decoding adds an auxiliary task}
+  \begin{itemize}
+    \item LDAD means Latent Difference Action Decoding.
+    \item A decoder receives only the online latent difference between consecutive observed states.
+    \item It reconstructs the complete observed edit phrase, including operation, position, and content.
+    \item Five matched cells test LDAD weights 1, 10, and 20 and two representation-regularization controls.
+    \item All runs use seed 0, 2,000 curriculum trajectories, three epochs, zero dropout, and 256 held-out examples.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{LDAD improves dynamics but misses the causal gate}
+  \centering
+  \begin{tabular}{lrrrr}
+    \toprule
+    Condition & One-step & Recursive & Shuf./match & Rank \\
+    \midrule
+    No VICReg, LDAD 10 & .078 & .140 & 1.007 & 137.6 \\
+    VICReg .02, LDAD 1 & .106 & .190 & 1.010 & 131.2 \\
+    VICReg .02, LDAD 10 & .078 & .140 & 1.007 & 137.5 \\
+    VICReg .02, LDAD 20 & \textbf{.076} & \textbf{.134} & 1.006 & \textbf{137.9} \\
+    VICReg .1, LDAD 10 & .089 & .159 & \textbf{1.011} & 136.8 \\
+    \bottomrule
+  \end{tabular}
+  \vfill
+  \begin{itemize}
+    \item Every model beats persistence and reconstructs about 82\% of action tokens.
+    \item No shuffled-action ratio approaches the required 1.05 threshold.
+    \item LDAD 20 has the best errors but a peak pre-clipping gradient norm of 241.7.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{What to notice and why it matters}
+  \begin{itemize}
+    \item The auxiliary decoder can read actions from observed state changes while the forward predictor still underuses the supplied action.
+    \item LDAD is provisionally useful as a dynamics regularizer, not as a causal-action solution.
+    \item Mask-only action sensitivity disappears when that checkpoint is evaluated on mixed edits, exposing a distribution confound.
+    \item Non-curriculum runs also repeated corruptions despite a configuration requesting fresh examples; this is now fixed and tested.
+    \item Next: matched fixed/fresh data controls, common cross-regime evaluation, and one lower-learning-rate LDAD-20 control.
+  \end{itemize}
+  \vfill
+  \textbf{Gate:} no hierarchy or planning claim until mixed-edit action sensitivity reaches 1.05.
+\end{frame}
+\end{document}

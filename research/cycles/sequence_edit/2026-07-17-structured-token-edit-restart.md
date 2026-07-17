@@ -1,6 +1,6 @@
 # Cycle: structured token-edit JEPA restart
 
-Status: VICReg screen complete; faithful LDAD coefficient screen next
+Status: VICReg and LDAD screens complete; matched corruption/exposure control next
 
 ## Decision
 
@@ -93,3 +93,43 @@ faithful-edit/LDAD tests pass.
 - A tiny end-to-end CPU train/evaluate/checkpoint/audit run completed with
   finite token one-step and recursive losses. Its two-example metrics are a
   process smoke only, not scientific evidence.
+
+## LDAD result
+
+All five faithful text LDAD cells completed from commit
+`dda1305ff9b18a5a01daf36e3a1b0683eda8319f`. LDAD weights 10 and 20 sharply
+improve one-step and recursive mixed-corruption error and preserve effective
+rank, but every shuffled/matched ratio remains between 1.006 and 1.011. The
+action decoder reaches about 82% token accuracy without forcing the forward
+predictor to use the supplied action. LDAD 20 has the best raw errors and a
+peak pre-clipping gradient norm of 241.7, so it is retained only for a narrow
+`1e-4` learning-rate falsifier. The decision-grade report is
+[`2026-07-17-structured-edit-ldad-screen`](../../reports/sequence_edit/2026-07-17-structured-edit-ldad-screen/REPORT.md).
+
+## Corruption and exposure audit
+
+The nominal four-way comparison was not information/protocol matched.
+Mask-only, replacement-only, removal-only, and mixed datasets ignored
+`fresh_per_epoch: true` and repeated the same corruption trajectories, while
+curriculum incorporated epoch into its random seed. Moreover, mask checkpoints
+were evaluated on mask corruption and curriculum checkpoints on mixed
+corruption. In a 64-example diagnostic, mask EMA obtains shuffled/matched
+`1.163` on mask but only `1.003` on mixed edits; curriculum EMA obtains
+`1.013` on mask and `1.014` on mixed. Thus mask action sensitivity is
+distribution-specific rather than evidence of transferable mixed editing.
+
+The dataset now has an explicit, tested `fresh_per_epoch` option, checkpoint
+construction passes it through, and the model audit accepts an explicit
+evaluation corruption override. Seventeen relevant structured/faithful edit
+tests pass. These changes do not alter or retroactively relabel old snapshots.
+
+## Next falsifiable decision
+
+Ask whether transferable mixed-edit action sensitivity is controlled by
+corruption family or fresh trajectory exposure. Compare fixed and fresh mixed
+EMA, fresh mask EMA, and the existing fresh curriculum protocol under common
+mask and mixed evaluation. Include one LDAD-20 `1e-4` optimization control
+because its loss scale materially changed gradients. Advance only a condition
+that reaches shuffled/matched `1.05` on mixed evaluation, beats persistence,
+retains rank, and remains recursively stable. Counterfactual density,
+hierarchy, GAR, MPC, and structured action-field LDAD remain gated.

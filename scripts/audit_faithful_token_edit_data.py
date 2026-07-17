@@ -75,6 +75,13 @@ def main() -> None:
     parser.add_argument("--op-max", type=int, default=21)
     parser.add_argument("--counterfactual-k", type=int, default=0)
     parser.add_argument(
+        "--corruption-mode",
+        choices=("mixed", "mask", "replace", "remove", "curriculum"),
+        default="mixed",
+    )
+    parser.add_argument("--epoch", type=int, default=0)
+    parser.add_argument("--fresh-per-epoch", action="store_true")
+    parser.add_argument(
         "--counterfactual-source",
         choices=("uniform_local", "mixed"),
         default="uniform_local",
@@ -94,7 +101,10 @@ def main() -> None:
         max_edits=args.max_edits,
         counterfactual_k=args.counterfactual_k,
         counterfactual_source=args.counterfactual_source,
+        corruption_mode=args.corruption_mode,
+        fresh_per_epoch=args.fresh_per_epoch,
     )
+    dataset.set_epoch(args.epoch)
 
     metrics: dict[str, list[int | float]] = {
         "official_solution_tokens": [],
@@ -161,6 +171,10 @@ def main() -> None:
     payload = {
         "schema_version": 1,
         "examples": len(dataset),
+        "configured_corruption_mode": dataset.corruption_mode,
+        "active_corruption_mode": dataset._active_corruption_mode(),
+        "epoch": dataset.epoch,
+        "fresh_per_epoch": dataset.fresh_per_epoch,
         "source_contract": {
             "problem_and_gold_solution": "official iGSM",
             "buffer_corruption": "synthetic literal token edits",

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-17-structured-edit-ldad-screen",
+  "project": "sequence_edit",
+  "title": "Can action reconstruction make the token editor obey its edit?",
+  "created_at": "2026-07-17T19:20:00+02:00",
+  "status": "cycle-complete-causal-gate-failed",
+  "review_required": true,
+  "decision": "Retain LDAD only as a provisional dynamics regularizer, reject every tested coefficient as a primitive causal-action solution, and next isolate corruption distribution and fresh-data exposure with a lower-learning-rate LDAD optimization control.",
+  "plain_summary": "All five LDAD runs completed and substantially reduced prediction error while preserving rank, but shuffled actions changed error by only 0.6 to 1.1 percent, far below the predeclared 5 percent causal-use gate. LDAD 20 had the best raw error and the largest gradient spike.",
+  "report": "REPORT.md",
+  "artifacts": ["ldad_tradeoff.svg", "SLIDES.tex", "SLIDES.pdf"],
+  "tags": ["sequence-edit", "token-aligned", "ldad", "causal-validity", "oracle-denoising"]
+}
