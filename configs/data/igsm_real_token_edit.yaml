@@ -12,6 +12,10 @@ test_seed: 3
 fresh_per_epoch: true
 min_edits: 6
 max_edits: 16
+# Exact mechanically executed alternatives from the current buffer only.
+# They carry outcome buffers but no target-relative quality label.
+counterfactual_k: 0
+counterfactual_source: uniform_local
 # Compatibility fields unused by the text-only corruption process.
 n_vars_range: [6, 12]
 leaf_prob: 0.35

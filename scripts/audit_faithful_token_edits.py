@@ -1,4 +1,8 @@
-"""Representation and drift audit for the non-symbolic faithful token editor."""
+"""Representation and drift audit for the non-symbolic faithful token editor.
+
+Terminal-buffer geometry is intentionally reported only as a privileged
+diagnostic: the true repaired buffer is unavailable to a deployed editor.
+"""
 
 from __future__ import annotations
 
@@ -18,8 +22,61 @@ from textjepa.utils.checkpoint import build_dataset, collate_for, load_run
 from textjepa.utils.metrics import effective_rank, feature_std
 
 
+OPERATION_NAMES = {0: "delete", 1: "insert", 2: "replace"}
+
+
+def normalized_l1(prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Per-item L1 after independently normalizing each latent vector."""
+    norm = lambda value: F.layer_norm(value, value.shape[-1:])
+    return (norm(prediction) - norm(target)).abs().mean(-1)
+
+
 def masked_mean(values, mask):
     return float(values[mask].mean()) if mask.any() else 0.0
+
+
+def _summary(values: torch.Tensor, mask: torch.Tensor) -> dict:
+    selected = values[mask]
+    return {
+        "ln_l1": float(selected.mean()) if selected.numel() else None,
+        "steps": int(selected.numel()),
+    }
+
+
+def pad_concat_2d(tensors: list[torch.Tensor], fill: float | int | bool = 0):
+    """Concatenate batches whose padded trajectory widths may differ."""
+    width = max(tensor.shape[1] for tensor in tensors)
+    padded = [
+        F.pad(tensor, (0, width - tensor.shape[1]), value=fill)
+        for tensor in tensors
+    ]
+    return torch.cat(padded)
+
+
+def depth_summary(values: torch.Tensor, mask: torch.Tensor) -> dict[str, dict]:
+    """Summarize open-loop error at each one-indexed trajectory depth."""
+    return {
+        str(depth + 1): _summary(values[:, depth], mask[:, depth])
+        for depth in range(values.shape[1])
+        if bool(mask[:, depth].any())
+    }
+
+
+def operation_summary(
+    values: torch.Tensor, mask: torch.Tensor, operations: torch.Tensor
+) -> dict[str, dict]:
+    result = {}
+    for label in sorted(int(value) for value in operations[mask].unique()):
+        name = OPERATION_NAMES.get(label, f"unknown_{label}")
+        result[name] = _summary(values, mask & operations.eq(label))
+    return result
+
+
+def safe_correlation(left: np.ndarray, right: np.ndarray) -> float | None:
+    if len(left) < 2 or np.std(left) == 0 or np.std(right) == 0:
+        return None
+    value = float(np.corrcoef(left, right)[0, 1])
+    return value if np.isfinite(value) else None
 
 
 def probe(x, y, classification=False):
@@ -38,21 +95,117 @@ def probe(x, y, classification=False):
     )
 
 
+def shuffled_action_prediction(model, out):
+    """Predict with a deranged current action and each sample's true prefix.
+
+    ``LatentDynamicsCore._predict_counterfactuals`` constructs an independent
+    causal sequence for every (trajectory, step) pair.  Thus a replacement at
+    step t cannot leak another candidate or alter the observed actions before
+    t.  Attention-over-buffer predictors are excluded because their separate
+    prediction path cannot be reproduced by the shared dynamics core.
+    """
+    valid = out.step_mask
+    count = int(valid.sum())
+    if count < 2:
+        return None, "fewer_than_two_valid_actions", None
+    if getattr(model, "attn_pred", None) is not None:
+        return None, "attention_buffer_predictor_not_supported", None
+    core = getattr(model, "core", None)
+    if core is None or not hasattr(core, "_predict_counterfactuals"):
+        return None, "independent_causal_prefix_api_unavailable", None
+    alternatives = out.actions.detach().clone()
+    observed = alternatives[valid]
+    best, best_changed = None, None
+    for shift in range(1, count):
+        candidate = observed.roll(shift, 0)
+        changed = ~torch.isclose(candidate, observed).all(-1)
+        if best_changed is None or int(changed.sum()) > int(best_changed.sum()):
+            best, best_changed = candidate, changed
+    if not bool(best_changed.any()):
+        return None, "fewer_than_two_distinct_action_codes", None
+    alternatives[valid] = best
+    changed_mask = valid.clone()
+    changed_mask[valid] = best_changed
+    prediction = core._predict_counterfactuals(
+        out.prev_states, out.actions, alternatives.unsqueeze(2), valid
+    )
+    return prediction[:, :, 0], None, changed_mask
+
+
+def recursive_horizon_errors(
+    model, out, horizons: tuple[int, ...], max_origins: int = 4
+) -> dict:
+    """Measure true h-step rollouts from evenly spaced observed prefixes.
+
+    Causal-transformer rollout cost grows with both prefix and horizon.  The
+    explicit origin cap keeps the post-training audit bounded; zero requests
+    every feasible prefix.
+    """
+    result = {}
+    batch, width = out.step_mask.shape
+    for horizon in sorted(set(horizons)):
+        if horizon < 1 or horizon > width:
+            continue
+        predictions, targets, masks = [], [], []
+        n_origins = width - horizon + 1
+        if max_origins and n_origins > max_origins:
+            origin_indices = torch.linspace(
+                0, n_origins - 1, max_origins
+            ).round().long().unique().tolist()
+        else:
+            origin_indices = range(n_origins)
+        for origin in origin_indices:
+            codes = out.actions[:, origin:origin + horizon]
+            if getattr(model.predictor, "causal_sequence", False):
+                rollout = model.predictor.rollout(
+                    out.prev_states[:, origin], codes,
+                    state_history=out.prev_states[:, :origin + 1],
+                    action_history=out.actions[:, :origin],
+                )
+            else:
+                rollout = model.core._rollout(out.prev_states[:, origin], codes)
+            predictions.append(rollout[:, -1])
+            targets.append(out.step_states_tgt[:, origin + horizon - 1])
+            masks.append(out.step_mask[:, origin:origin + horizon].all(1))
+        error = normalized_l1(torch.stack(predictions, 1), torch.stack(targets, 1))
+        mask = torch.stack(masks, 1)
+        result[str(horizon)] = _summary(error, mask)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt", required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--examples", type=int, default=256)
+    parser.add_argument(
+        "--horizons", default="1,2,4,8",
+        help="comma-separated recursive horizons",
+    )
+    parser.add_argument(
+        "--max-horizon-origins", type=int, default=4,
+        help="evenly spaced causal prefixes per horizon and batch; 0 uses all",
+    )
     parser.add_argument("--out")
     args = parser.parse_args()
+    horizons = tuple(int(value) for value in args.horizons.split(",") if value)
+    if any(value < 1 for value in horizons):
+        parser.error("--horizons must contain positive integers")
+    if args.max_horizon_origins < 0:
+        parser.error("--max-horizon-origins must be nonnegative")
+
     model, vocab, cfg = load_run(args.ckpt, args.device)
     dataset = build_dataset(cfg, vocab, "val", size=args.examples)
     loader = DataLoader(
         dataset, batch_size=min(16, cfg.train.batch_size),
         collate_fn=partial(collate_for(cfg), pad_id=vocab.pad_id),
     )
-    direct, recursive, states, remaining, ops, delta = [], [], [], [], [], []
+    direct, recursive, persistence = [], [], []
+    masks, all_ops, states, remaining, ops, delta = [], [], [], [], [], []
+    horizon_totals: dict[str, list[dict]] = {}
     high, ldad_correct, ldad_total, goal_distance, goal_remaining = [], 0, 0, [], []
+    shuffled, shuffled_masks, shuffle_unavailable = [], [], set()
+    counterfactual_errors = []
     with torch.no_grad():
         for batch in loader:
             batch = {
@@ -61,20 +214,45 @@ def main():
             }
             out = model(batch)
             mask = out.step_mask
-            norm = lambda x: F.layer_norm(x, x.shape[-1:])
-            direct.append((norm(out.preds) - norm(out.step_states_tgt)).abs().mean(-1)[mask])
-            recursive.append((norm(out.rollout) - norm(out.step_states_tgt)).abs().mean(-1)[mask])
-            states.append(out.step_states[mask])
-            remaining.append(batch["remaining"][mask])
-            ops.append(batch["op"][mask])
-            delta.append((out.step_states - out.prev_states)[mask])
+            direct_error = normalized_l1(out.preds, out.step_states_tgt)
+            recursive_error = normalized_l1(out.rollout, out.step_states_tgt)
+            direct.append(direct_error.cpu())
+            recursive.append(recursive_error.cpu())
+            persistence.append(normalized_l1(out.prev_states, out.step_states_tgt).cpu())
+            masks.append(mask.cpu())
+            all_ops.append(batch["op"].cpu())
+            states.append(out.step_states[mask].cpu())
+            remaining.append(batch["remaining"][mask].cpu())
+            ops.append(batch["op"][mask].cpu())
+            delta.append((out.step_states - out.prev_states)[mask].cpu())
+            if "cf_chunk_pred" in out.extras:
+                cf_valid = out.extras["cf_valid"]
+                cf_error = normalized_l1(
+                    out.extras["cf_chunk_pred"], out.extras["cf_chunk_tgt"]
+                )
+                counterfactual_errors.append(cf_error[cf_valid].cpu())
+
+            for horizon, summary in recursive_horizon_errors(
+                model, out, horizons, args.max_horizon_origins
+            ).items():
+                horizon_totals.setdefault(horizon, []).append(summary)
+
+            shuffled_prediction, reason, changed_mask = shuffled_action_prediction(
+                model, out
+            )
+            if shuffled_prediction is None:
+                shuffle_unavailable.add(reason)
+            else:
+                shuffled.append(normalized_l1(shuffled_prediction, out.step_states_tgt).cpu())
+                shuffled_masks.append(changed_mask.cpu())
+
             last = mask.sum(1).clamp_min(1) - 1
             goal = out.step_states_tgt[torch.arange(mask.shape[0], device=mask.device), last]
-            distance = (norm(out.step_states_tgt) - norm(goal).unsqueeze(1)).abs().mean(-1)
-            goal_distance.append(distance[mask])
-            goal_remaining.append(batch["remaining"][mask])
+            distance = normalized_l1(out.step_states_tgt, goal.unsqueeze(1))
+            goal_distance.append(distance[mask].cpu())
+            goal_remaining.append(batch["remaining"][mask].cpu())
             if out.hi_preds is not None:
-                high.append((norm(out.hi_preds) - norm(out.hi_targets)).abs().mean(-1)[out.hi_mask])
+                high.append(normalized_l1(out.hi_preds, out.hi_targets)[out.hi_mask].cpu())
             logits = out.extras.get("observed_action_logits")
             if logits is not None:
                 length = min(logits.shape[-2], batch["action_tokens"].shape[-1])
@@ -82,30 +260,102 @@ def main():
                 valid = mask.unsqueeze(-1) & target.ne(vocab.pad_id)
                 ldad_correct += int(logits[..., :length, :].argmax(-1)[valid].eq(target[valid]).sum())
                 ldad_total += int(valid.sum())
+
+    direct_error = pad_concat_2d(direct)
+    recursive_error = pad_concat_2d(recursive)
+    persistence_error = pad_concat_2d(persistence)
+    step_mask = pad_concat_2d(masks, False)
+    operation = pad_concat_2d(all_ops, -1)
     state = torch.cat(states)
-    rem = torch.cat(remaining).cpu().numpy()
-    op = torch.cat(ops).cpu().numpy()
-    displacement = torch.cat(delta).cpu().numpy()
-    geometry = torch.cat(goal_distance).cpu().numpy()
-    geometry_remaining = torch.cat(goal_remaining).cpu().numpy()
+    rem = torch.cat(remaining).numpy()
+    op = torch.cat(ops).numpy()
+    displacement = torch.cat(delta).numpy()
+    geometry = torch.cat(goal_distance).numpy()
+    geometry_remaining = torch.cat(goal_remaining).numpy()
+
+    # Combine batch summaries without biasing toward a short final batch.
+    horizon_payload = {}
+    for horizon, summaries in horizon_totals.items():
+        count = sum(item["steps"] for item in summaries)
+        horizon_payload[horizon] = {
+            "ln_l1": (
+                sum(item["ln_l1"] * item["steps"] for item in summaries if item["ln_l1"] is not None)
+                / count if count else None
+            ),
+            "steps": count,
+        }
+
+    matched_mean = _summary(direct_error, step_mask)["ln_l1"]
+    if shuffled:
+        shuffled_error = pad_concat_2d(shuffled)
+        shuffled_mask = pad_concat_2d(shuffled_masks, False)
+        shuffled_summary = _summary(shuffled_error, shuffled_mask)
+        shuffled_control = {
+            **shuffled_summary,
+            "over_matched_error_ratio": (
+                shuffled_summary["ln_l1"] / matched_mean
+                if matched_mean and shuffled_summary["ln_l1"] is not None else None
+            ),
+            "construction": "current action deranged across valid steps; unchanged duplicate codes excluded; independent true causal prefix",
+        }
+    else:
+        shuffled_control = {
+            "ln_l1": None, "steps": 0, "over_matched_error_ratio": None,
+            "unavailable_reasons": sorted(reason for reason in shuffle_unavailable if reason),
+        }
+
+    privileged_geometry = {
+        "uses_privileged_true_terminal_buffer": True,
+        "available_at_deployment": False,
+        "purpose": "diagnostic_only_not_a_planning_metric",
+        "distance_remaining_edit_correlation": safe_correlation(
+            geometry, geometry_remaining
+        ),
+    }
     payload = {
         "examples": len(dataset),
-        "one_step_ln_l1": float(torch.cat(direct).mean()),
-        "recursive_ln_l1": float(torch.cat(recursive).mean()),
+        "one_step_ln_l1": matched_mean,
+        "recursive_ln_l1": _summary(recursive_error, step_mask)["ln_l1"],
+        "counterfactual_one_step_ln_l1": (
+            float(torch.cat(counterfactual_errors).mean())
+            if counterfactual_errors else None
+        ),
+        "counterfactual_candidates": (
+            int(sum(values.numel() for values in counterfactual_errors))
+        ),
+        "counterfactual_contract": {
+            "mechanically_executed_exact_outcomes": True,
+            "target_relative_quality_labels_used": False,
+            "candidate_tokens_drawn_from_current_buffer_only": True,
+        },
+        "persistence_no_change_ln_l1": _summary(persistence_error, step_mask)["ln_l1"],
+        "shuffled_action_causal_falsifier": shuffled_control,
+        "recursive_ln_l1_by_horizon": horizon_payload,
+        "recursive_horizon_origin_sampling": {
+            "method": "evenly_spaced_observed_causal_prefixes",
+            "maximum_origins_per_horizon_per_batch": args.max_horizon_origins,
+            "zero_means_all": True,
+        },
+        "open_loop_ln_l1_by_trajectory_depth": depth_summary(recursive_error, step_mask),
+        "open_loop_ln_l1_by_operation": operation_summary(
+            recursive_error, step_mask, operation
+        ),
         "macro_ln_l1": float(torch.cat(high).mean()) if high else None,
         "state_std": float(feature_std(state)),
         "state_effective_rank": float(effective_rank(state[:4096])),
-        "remaining_edit_probe_r2": probe(state.cpu().numpy(), rem),
+        "remaining_edit_probe_r2": probe(state.numpy(), rem),
         "operation_from_displacement_accuracy": probe(displacement, op, True),
-        "terminal_geometry_remaining_correlation": float(
-            np.corrcoef(geometry, geometry_remaining)[0, 1]
-        ),
+        "privileged_terminal_goal_diagnostics": privileged_geometry,
+        # Backward-compatible key, now explicitly duplicated under the labelled block.
+        "terminal_geometry_remaining_correlation": privileged_geometry[
+            "distance_remaining_edit_correlation"
+        ],
         "ldad_token_accuracy": ldad_correct / max(ldad_total, 1),
         "symbolic_reasoning_labels_used": False,
     }
     destination = Path(args.out or Path(args.ckpt).parent / "token_edit_audit.json")
-    destination.write_text(json.dumps(payload, indent=2) + "\n")
-    print(json.dumps(payload, indent=2))
+    destination.write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n")
+    print(json.dumps(payload, indent=2, allow_nan=False))
 
 
 if __name__ == "__main__":

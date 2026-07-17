@@ -96,6 +96,10 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             vocab, size=size, seed=seed, max_op=d.max_op,
             max_edge=d.max_edge, op_range=tuple(d.op_range),
             min_edits=d.min_edits, max_edits=d.max_edits,
+            counterfactual_k=d.get("counterfactual_k", 0),
+            counterfactual_source=d.get(
+                "counterfactual_source", "uniform_local"
+            ),
         )
     if d.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import FaithfulDataset

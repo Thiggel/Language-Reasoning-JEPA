@@ -169,7 +169,10 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
     step_mask = snapshot_mask[:, 1:]
     from textjepa.data.igsm.dataset import _pad_alt
 
-    extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
+    if "alt_buffers" in batch[0]:
+        extra = _pad_alt_buffers(batch, pad_id)
+    else:
+        extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
     return {
         **extra,
         "prompt_tokens": prompt_tokens,
@@ -197,6 +200,58 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
              for b in batch]
         ),
         "defect_mask": _pad_defects([b["defect_masks"] for b in batch]),
+    }
+
+
+def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
+    """Pad unlabeled edit outcomes without manufacturing quality labels."""
+    B = len(batch)
+    T = max(len(item["alt_actions"]) for item in batch)
+    K = max(
+        (len(step) for item in batch for step in item["alt_actions"]),
+        default=1,
+    )
+    La = max(
+        (len(action) for item in batch for step in item["alt_actions"]
+         for action in step),
+        default=1,
+    )
+    C = max(
+        (len(outcome) for item in batch for step in item["alt_buffers"]
+         for outcome in step),
+        default=1,
+    )
+    L = max(
+        (len(sentence) for item in batch for step in item["alt_buffers"]
+         for outcome in step for sentence in outcome),
+        default=1,
+    )
+    tokens = torch.full((B, T, K, La), pad, dtype=torch.long)
+    outcomes = torch.full((B, T, K, C, L), pad, dtype=torch.long)
+    outcome_mask = torch.zeros((B, T, K, C), dtype=torch.bool)
+    valid = torch.zeros((B, T, K), dtype=torch.bool)
+    for batch_index, item in enumerate(batch):
+        for step_index, (actions, buffers) in enumerate(zip(
+            item["alt_actions"], item["alt_buffers"]
+        )):
+            for candidate, (action, buffer) in enumerate(zip(actions, buffers)):
+                valid[batch_index, step_index, candidate] = True
+                tokens[batch_index, step_index, candidate, :len(action)] = (
+                    torch.tensor(action)
+                )
+                for sentence_index, sentence in enumerate(buffer):
+                    outcomes[
+                        batch_index, step_index, candidate, sentence_index,
+                        :len(sentence)
+                    ] = torch.tensor(sentence)
+                    outcome_mask[
+                        batch_index, step_index, candidate, sentence_index
+                    ] = True
+    return {
+        "alt_tokens": tokens,
+        "alt_buffer_tokens": outcomes,
+        "alt_buffer_mask": outcome_mask,
+        "alt_valid": valid,
     }
 
 

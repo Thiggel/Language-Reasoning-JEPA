@@ -1,0 +1,7 @@
+# @package _global_
+# Eight exact unlabeled alternatives per state at the medium data anchor.
+defaults: [edit_token_faithful_cf_k8, _self_]
+run_name: edit_token_faithful_cf_k8_data_2k
+data:
+  train_size: 2000
+  fresh_per_epoch: false

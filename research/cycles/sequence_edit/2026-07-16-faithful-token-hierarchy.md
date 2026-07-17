@@ -1,6 +1,7 @@
 # Cycle: non-symbolic token-edit hierarchy on faithful iGSM
 
-Status: corrected relaunch blocked only by rolling GPU-hour limit
+Status: invalidated before optimization; superseded by the data and
+counterfactual pilot below
 
 ## Decision
 
@@ -36,12 +37,13 @@ not the fractional live limit. The unchanged five-cell matrix is therefore
 capped at 205 minutes per cell, or 17.08 projected GPU-hours.
 
 Launch v3 exposed a full-scale-only positional-cap bug before its first
-optimizer step: one official rendered sentence was 276 GPT-2 tokens but the
-encoder inherited a 128-token table. The cap is now explicit at 320, guarded
-by a regression test, and an end-to-end faithful H4 training smoke passes.
-The corrected v4 plan is validated and finalized, but the controller reports
-119.58 GPU-hours already reserved in the seven-day window; launching the
-17.08-hour matrix therefore requires an explicit budget increase.
+optimizer step. A deeper audit then showed that this was not merely a short
+position table: the data adapter split an already tokenized official solution
+on a standalone period token, although official iGSM steps commonly end in
+fused tokens such as `6.`. Multi-step solutions consequently collapsed into
+one long chunk. All five v3 runs are implementation-invalid and support no
+architecture comparison. Official nested step boundaries are now preserved;
+the positional table remains a conservative 320-token guard.
 
 All cells retain EMA targets, online-state VICReg, the frozen continuous
 outcome target, and geometry-to-value self-distillation. Symbolic ranking,
@@ -65,3 +67,49 @@ operation recovery from displacement, and raw action-token LDAD accuracy.
 
 No unread sequence-edit steering note was present. The user explicitly
 approved the faithful-iGSM transfer and prohibited symbolic supervision.
+
+## Superseding decision: actual data and counterfactual coverage
+
+The user explicitly requested that transferable ideas from the sibling
+projects be tested in parallel, with special attention to the actual training
+distribution and the amount of counterfactual data. The smallest current
+decision is therefore: **how many unique synthetic repair trajectories, and
+how many exact alternative outcomes per visited buffer, are required before
+architecture experiments are meaningful?**
+
+The audited task is oracle denoising, not naturally observed editing. Official
+iGSM provides the problem and clean solution text. We corrupt the clean text
+with literal token insertions, deletions, and replacements, then train on the
+exact inverse stack. Corruption insert/replace tokens are sampled from that
+example's gold-solution token pool, so trajectory generation is
+candidate-privileged. The pool is not exposed in the model batch. The terminal
+clean buffer is an EMA prediction target and is terminal-privileged. The
+configured `fresh_per_epoch` flag previously changed only sampling order:
+the trajectory for a seed and index is deterministic, so three epochs repeat
+the same unique trajectories.
+
+A 128-example audit after the boundary repair found exact terminal recovery
+1.0 and multi-step collapse 0.0. Solutions contain a median 166.5 tokens and
+9 official steps; the p95 maximum step is 43 tokens. Trajectories contain a
+mean 11.14 edits, with delete/insert/replace fractions .341/.336/.323. Their
+length is close to minimal token edit distance (mean ratio 1.029, maximum
+1.25).
+
+Counterfactual supervision now consists only of an action sampled from the
+observed current buffer and its exactly executed next buffer. It has no
+target-relative quality, defect, preference, or remaining-distance label.
+This transfers the sibling projects' useful action-contrast idea without
+transferring their candidate-privileged ranking signal.
+
+The first round uses one seed and seven cells: a 128-example H4 process smoke;
+flat K=0 at 512, 2,000, and 6,000 unique trajectories for three passes; and
+K=1, 4, and 8 at the common 2,000-trajectory anchor. All K cells use the same
+uniform-local alternative sampler. This round deliberately precedes hierarchy,
+dense-rollout, LDAD-removal, counterfactual-weight, repair-length, and
+matched-update diversity comparisons.
+
+Continue with the smallest K whose held-out exact-counterfactual or recursive
+error is within 2% of the best, provided it improves at least 5% relative to
+K=0 and worsens factual one-step error and effective rank by no more than 2%.
+If no K passes, drop counterfactual outcome prediction. Select the data anchor
+from the earliest clear saturation point before testing architecture.

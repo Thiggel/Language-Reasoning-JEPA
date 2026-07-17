@@ -1,0 +1,64 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{default}
+\usepackage{booktabs}
+\definecolor{editblue}{RGB}{38,117,168}
+\setbeamercolor{structure}{fg=editblue}
+\title{How much edit experience should the model receive?}
+\subtitle{Sequence-edit JEPA validity audit and bounded pilot}
+\date{17 July 2026}
+\begin{document}
+\frame{\titlepage}
+
+\begin{frame}{The task is synthetic typo repair}
+  \begin{itemize}
+    \item Official iGSM supplies a problem and its clean, multi-step worked solution.
+    \item We damage that solution with token insertions, deletions, and replacements.
+    \item The expert path is the exact reverse of those corruptions, so it is oracle denoising rather than naturally observed editing.
+    \item More independent damaged solutions add breadth; more alternative edits per state add local action coverage.
+  \end{itemize}
+  \vfill
+  \textbf{Why it matters:} we must establish healthy primitive dynamics before asking whether hierarchy helps.
+\end{frame}
+
+\begin{frame}{The old hierarchy round is invalid}
+  \begin{itemize}
+    \item All five jobs failed before their first optimizer step, so they provide no architectural evidence.
+    \item The immediate symptom was a 276-token ``sentence'' exceeding a 128-position table.
+    \item The cause was deeper: official steps often end in fused tokens such as \texttt{6.}, while the adapter split only on standalone \texttt{.}.
+    \item The corrected adapter preserves official nested steps and exactly reverses every audited corruption.
+  \end{itemize}
+  \vfill
+  \textbf{What to notice:} this is an invalid result, not evidence against hierarchy.
+\end{frame}
+
+\begin{frame}{The corrected data contract passes its first gate}
+  \centering
+  \begin{tabular}{lr}
+    \toprule
+    Audit check & Observed result \\
+    \midrule
+    Exact terminal recovery & 128/128 \\
+    Multi-step solution collapse & 0/128 \\
+    Official solution length & median 166.5 tokens \\
+    Official steps & median 9 \\
+    Maximum step length & p95 43 tokens \\
+    Repairs per trajectory & mean 11.14 \\
+    Repair/minimum-distance ratio & mean 1.029 \\
+    \bottomrule
+  \end{tabular}
+  \vfill
+  \textbf{Why it matters:} the model now sees the intended step sequence, but these are data-validity observations, not trained-model results.
+\end{frame}
+
+\begin{frame}{The next pilot varies one data axis at a time}
+  \begin{itemize}
+    \item The K=0 data curve uses 512, 2,000, and 6,000 unique trajectories for three passes.
+    \item The counterfactual curve uses K=0, 1, 4, and 8 exact alternative outcomes at the common 2,000-trajectory anchor.
+    \item Alternatives use observed current-buffer tokens and carry no preference, defect, or remaining-distance label.
+    \item A 128-example H4 cell is only a full-shape process smoke; architecture comparisons remain gated.
+    \item We retain the smallest K near the best result only if it improves held-out dynamics without factual-error or rank regression.
+  \end{itemize}
+  \vfill
+  \textbf{Next decision:} spend later compute on unique diversity, local alternatives, or neither.
+\end{frame}
+\end{document}

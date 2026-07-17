@@ -1,0 +1,13 @@
+# @package _global_
+# Full-shape process smoke after boundary and counterfactual implementation.
+defaults: [edit_token_faithful_h4, _self_]
+run_name: edit_token_faithful_h4_smoke
+data:
+  train_size: 128
+  val_size: 64
+  fresh_per_epoch: false
+train:
+  epochs: 1
+  batch_size: 8
+  warmup_steps: 5
+  eval_batches: 2

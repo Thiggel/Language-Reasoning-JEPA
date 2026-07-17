@@ -1,0 +1,9 @@
+# @package _global_
+# K=2 is the density selected by the sibling intent-phrase experiments.
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_faithful_cf_k2
+data:
+  counterfactual_k: 2
+  counterfactual_source: uniform_local
+objective:
+  counterfactual_outcome: {weight: 1.0}

@@ -266,6 +266,24 @@ class EditJEPA(nn.Module):
             out.extras["observed_action_logits"] = self.observed_action_decoder(
                 out.step_states - out.prev_states
             )
+        if "alt_buffer_tokens" in batch and "alt_preds" in out.extras:
+            # Mechanical counterfactuals carry exact post-edit buffers but no
+            # target-relative quality label. Encode every alternative outcome
+            # independently with the EMA target and supervise dynamics only.
+            B, T, K, C, L = batch["alt_buffer_tokens"].shape
+            with torch.no_grad():
+                alt_targets = self.encode_buffers(
+                    batch["prompt_tokens"],
+                    batch["prompt_mask"],
+                    batch["alt_buffer_tokens"].reshape(B, T * K, C, L),
+                    batch["alt_buffer_mask"].reshape(B, T * K, C),
+                    teacher=True,
+                ).reshape(B, T, K, -1)
+            out.extras["cf_chunk_pred"] = out.extras["alt_preds"]
+            out.extras["cf_chunk_tgt"] = alt_targets
+            out.extras["cf_valid"] = (
+                batch["alt_valid"] & out.step_mask.unsqueeze(-1)
+            )
         if self._slot_tgt is not None:
             out.extras["slot_pred"] = self.core.chunk_head(out.preds)
             out.extras["slot_tgt"] = self._slot_tgt

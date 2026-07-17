@@ -1,0 +1,6 @@
+# @package _global_
+# Coarse high-weight control for fair counterfactual-outcome tuning.
+defaults: [edit_token_faithful_cf_k2, _self_]
+run_name: edit_token_faithful_cf_k2_w4
+objective:
+  counterfactual_outcome: {weight: 4.0}

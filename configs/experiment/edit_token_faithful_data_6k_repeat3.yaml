@@ -1,0 +1,9 @@
+# @package _global_
+# Diversity control: 6k unique problems repeated three times = 18k examples.
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_faithful_data_6k_repeat3
+data:
+  train_size: 6000
+  fresh_per_epoch: false
+train:
+  epochs: 3

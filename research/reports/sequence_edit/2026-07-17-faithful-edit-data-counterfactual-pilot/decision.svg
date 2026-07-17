@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="500" viewBox="0 0 1080 500" role="img" aria-labelledby="title desc">
+  <title id="title">Two axes of faithful edit training data</title>
+  <desc id="desc">A clean multi-step solution is synthetically corrupted into independent trajectories. Each state has an exact expert repair and K mechanically executed alternative outcomes. The experiment separately varies unique trajectories and alternatives per state.</desc>
+  <style>
+    text { font-family: sans-serif; fill: #172033; }
+    .title { font-size: 25px; font-weight: 700; }
+    .label { font-size: 18px; font-weight: 600; }
+    .small { font-size: 15px; }
+    .box { fill: #f7f9fc; stroke: #557099; stroke-width: 2; rx: 12; }
+    .gold { fill: #fff5cc; stroke: #b88400; stroke-width: 2; rx: 12; }
+    .state { fill: #e6f3ff; stroke: #2675a8; stroke-width: 2; rx: 12; }
+    .alt { fill: #e9f8ee; stroke: #2e8b57; stroke-width: 2; rx: 10; }
+    .arrow { stroke: #58677d; stroke-width: 3; fill: none; marker-end: url(#head); }
+    .dashed { stroke-dasharray: 8 6; }
+  </style>
+  <defs><marker id="head" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#58677d"/></marker></defs>
+  <text x="40" y="42" class="title">Separate breadth from local alternative coverage</text>
+  <rect x="40" y="80" width="220" height="105" class="gold"/>
+  <text x="150" y="111" text-anchor="middle" class="label">Clean official solution</text>
+  <text x="60" y="141" class="small">step 1: … 6.</text><text x="60" y="166" class="small">step 2: … 14.</text>
+  <path d="M260 132 L350 132" class="arrow"/>
+  <text x="305" y="112" text-anchor="middle" class="small">synthetic edits</text>
+  <rect x="350" y="80" width="235" height="105" class="state"/>
+  <text x="468" y="111" text-anchor="middle" class="label">Observed damaged buffer</text>
+  <text x="370" y="142" class="small">official steps retained</text><text x="370" y="166" class="small">6–16 token edits away</text>
+  <path d="M585 112 L705 112" class="arrow"/>
+  <text x="645" y="93" text-anchor="middle" class="small">exact inverse edit</text>
+  <rect x="705" y="70" width="325" height="75" class="gold"/>
+  <text x="868" y="102" text-anchor="middle" class="label">Expert next buffer</text>
+  <text x="868" y="128" text-anchor="middle" class="small">oracle repair trajectory</text>
+  <path d="M585 158 C650 205 650 225 705 240" class="arrow dashed"/>
+  <path d="M585 158 C650 250 650 305 705 325" class="arrow dashed"/>
+  <path d="M585 158 C650 300 650 385 705 410" class="arrow dashed"/>
+  <rect x="705" y="205" width="325" height="65" class="alt"/><text x="868" y="234" text-anchor="middle" class="label">Alternative outcome 1</text><text x="868" y="256" text-anchor="middle" class="small">exactly execute sampled edit</text>
+  <rect x="705" y="292" width="325" height="65" class="alt"/><text x="868" y="321" text-anchor="middle" class="label">Alternative outcome 2</text><text x="868" y="343" text-anchor="middle" class="small">no quality or preference label</text>
+  <rect x="705" y="379" width="325" height="65" class="alt"/><text x="868" y="408" text-anchor="middle" class="label">… up to K outcomes</text><text x="868" y="430" text-anchor="middle" class="small">K = 0, 1, 4, 8</text>
+  <rect x="40" y="240" width="545" height="190" class="box"/>
+  <text x="63" y="275" class="label">Axis A: independent trajectory breadth</text>
+  <text x="63" y="307" class="small">512 → 2,000 → 6,000 unique corrupted solutions</text>
+  <text x="63" y="340" class="label">Axis B: same-state action coverage</text>
+  <text x="63" y="372" class="small">K = 0 → 1 → 4 → 8 at 2,000 trajectories</text>
+  <text x="63" y="405" class="small">Later gate: match update exposure and test architecture</text>
+  <text x="40" y="475" class="small">Yellow uses the clean target and is privileged; green outcomes are mechanical, exact, and unlabeled.</text>
+</svg>

@@ -1,0 +1,9 @@
+# @package _global_
+# Counterfactual K=2 at medium unique-problem diversity and matched updates.
+defaults: [edit_token_faithful_cf_k2, _self_]
+run_name: edit_token_faithful_cf_k2_data_6k_repeat3
+data:
+  train_size: 6000
+  fresh_per_epoch: false
+train:
+  epochs: 3

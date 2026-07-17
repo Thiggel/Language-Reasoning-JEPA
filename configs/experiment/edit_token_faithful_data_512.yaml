@@ -1,0 +1,7 @@
+# @package _global_
+# Small unique-trajectory anchor for the first faithful data scaling curve.
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_faithful_data_512
+data:
+  train_size: 512
+  fresh_per_epoch: false

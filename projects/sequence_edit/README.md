@@ -16,10 +16,18 @@ The research index is
 [`research/sequence_edit/`](../../research/sequence_edit/README.md). Historical
 raw logs remain locally under `research/archive/edit_track/` until a new
 sequence-edit cycle is opened. The track is a current scientific subproject
-and now has an active non-symbolic faithful-iGSM token-edit hierarchy pilot.
+and now has an active faithful-iGSM data and counterfactual-coverage pilot.
 
 The new interface uses official solution sentences as the mutable buffer and
 literal token insert/delete/replace operations as primitive actions. It does
 not use the earlier symbolic defect-count ranking or oracle feasible edit
-menu. See
-[`2026-07-16-faithful-token-hierarchy.md`](../../research/cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md).
+menu. It is nevertheless candidate-privileged oracle denoising: the gold
+solution supplies corruption tokens and the exact inverse repair path.
+Counterfactual outcomes are mechanically executed from the current buffer and
+carry no target-relative quality label.
+
+Current entry points:
+
+- [`STATUS.md`](STATUS.md)
+- [`faithful-token cycle`](../../research/cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md)
+- [`data and counterfactual pilot report`](../../research/reports/sequence_edit/2026-07-17-faithful-edit-data-counterfactual-pilot/REPORT.md)

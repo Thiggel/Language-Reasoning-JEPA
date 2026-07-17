@@ -1,0 +1,9 @@
+# @package _global_
+# Saturation/noise control for the same-state counterfactual density sweep.
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_faithful_cf_k4
+data:
+  counterfactual_k: 4
+  counterfactual_source: uniform_local
+objective:
+  counterfactual_outcome: {weight: 1.0}

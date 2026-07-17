@@ -31,27 +31,103 @@ def faithful_token_edit_vocab(max_position: int = 1024) -> Vocab:
     return Vocab(words)
 
 
-def _sentences(tokens: list[int], period_id: int) -> list[list[int]]:
-    chunks, start = [], 0
-    for index, token in enumerate(tokens):
-        if token == period_id:
-            chunks.append(tokens[start:index + 1])
-            start = index + 1
-    if start < len(tokens):
-        chunks.append(tokens[start:])
-    return chunks or [[]]
+def _flat_length(buffer: list[list[int]]) -> int:
+    return sum(len(sentence) for sentence in buffer)
 
 
-def _apply(tokens: list[int], action: tuple[str, int, int | None]) -> None:
+def _position(
+    buffer: list[list[int]], position: int
+) -> tuple[int, int]:
+    """Map a flattened token position to its official step and offset.
+
+    A position exactly on a step boundary belongs to the step on its right.
+    Corrupting deletions therefore avoid the final token of a step: otherwise
+    its inverse insertion would be ambiguous from the literal token position
+    alone.  Insertions at boundaries and deletions of the first token of a
+    step remain fully causal and invertible.
+    """
+    if position < 0 or position >= _flat_length(buffer):
+        raise IndexError(position)
+    start = 0
+    for sentence_index, sentence in enumerate(buffer):
+        end = start + len(sentence)
+        if position < end:
+            return sentence_index, position - start
+        start = end
+    raise AssertionError("unreachable flattened token position")
+
+
+def _apply(
+    buffer: list[list[int]], action: tuple[str, int, int | None]
+) -> None:
+    """Apply one literal edit while retaining official step boundaries."""
     kind, position, token = action
     if kind == "delete":
-        tokens.pop(position)
+        sentence, offset = _position(buffer, position)
+        if len(buffer[sentence]) <= 1:
+            raise AssertionError("token edit unexpectedly emptied a step")
+        buffer[sentence].pop(offset)
     elif kind == "insert":
-        tokens.insert(position, int(token))
+        if position == _flat_length(buffer):
+            sentence, offset = len(buffer) - 1, len(buffer[-1])
+        else:
+            sentence, offset = _position(buffer, position)
+        buffer[sentence].insert(offset, int(token))
     elif kind == "replace":
-        tokens[position] = int(token)
+        sentence, offset = _position(buffer, position)
+        buffer[sentence][offset] = int(token)
     else:
         raise ValueError(kind)
+
+
+def _render_action(
+    vocab: Vocab, action: tuple[str, int, int | None]
+) -> list[int]:
+    kind, position, token = action
+    rendered = f"{kind} token position {position}"
+    if token is not None:
+        rendered += f" with {vocab.id_to_token[int(token)]}"
+    return vocab.encode(rendered + " .")
+
+
+def _counterfactual_action(
+    buffer: list[list[int]], rng: random.Random, source: str, candidate: int
+) -> tuple[str, int, int | None]:
+    """Sample an unlabeled, mechanically executable edit from observed text."""
+    token_pool = list(dict.fromkeys(
+        token for sentence in buffer for token in sentence
+    ))
+    replaceable = []
+    deletable = []
+    start = 0
+    for sentence in buffer:
+        replaceable.extend(range(start, start + len(sentence)))
+        if len(sentence) > 1:
+            deletable.extend(range(start, start + len(sentence)))
+        start += len(sentence)
+    valid = ["insert"]
+    if len(token_pool) > 1 and replaceable:
+        valid.append("replace")
+    if deletable:
+        valid.append("delete")
+    if source == "uniform_local":
+        kind = rng.choice(valid)
+    elif source == "mixed":
+        # A stable operation-balanced prefix makes small-K versus large-K
+        # comparisons vary coverage rather than the expert trajectory.
+        preferred = ("replace", "insert", "delete")[candidate % 3]
+        kind = preferred if preferred in valid else rng.choice(valid)
+    else:
+        raise ValueError(f"unknown counterfactual_source: {source}")
+
+    if kind == "insert":
+        return kind, rng.randrange(_flat_length(buffer) + 1), rng.choice(token_pool)
+    position = rng.choice(deletable if kind == "delete" else replaceable)
+    if kind == "delete":
+        return kind, position, None
+    sentence, offset = _position(buffer, position)
+    old = buffer[sentence][offset]
+    return kind, position, rng.choice([token for token in token_pool if token != old])
 
 
 class FaithfulTokenEditDataset(Dataset):
@@ -59,78 +135,124 @@ class FaithfulTokenEditDataset(Dataset):
 
     def __init__(self, vocab: Vocab, size: int, seed: int, max_op: int = 21,
                  max_edge: int = 28, op_range=(8, 21), min_edits: int = 6,
-                 max_edits: int = 16, **_):
+                 max_edits: int = 16, counterfactual_k: int = 0,
+                 counterfactual_source: str = "uniform_local", **_):
         self.vocab = vocab
         self.seed = seed
         self.min_edits = int(min_edits)
         self.max_edits = int(max_edits)
+        self.counterfactual_k = max(0, int(counterfactual_k))
+        self.counterfactual_source = str(counterfactual_source)
+        if self.counterfactual_source not in {"uniform_local", "mixed"}:
+            raise ValueError(
+                f"unknown counterfactual_source: {self.counterfactual_source}"
+            )
         self.source = FaithfulDataset(
             vocab, size=size, seed=seed, max_op=max_op, max_edge=max_edge,
             op_range=tuple(op_range), distractor_prob=0.0,
             max_distractors=0,
         )
-        self.period_id = vocab.token_to_id["."]
-
     def __len__(self):
         return len(self.source)
 
     def __getitem__(self, index: int) -> dict:
         source = self.source[index]
         prompt = source["prompt"]
-        target = [token for sentence in source["steps"] for token in sentence]
+        target = [list(sentence) for sentence in source["steps"]]
         rng = random.Random(f"faithful-token-edit:{self.seed}:{index}")
-        current = list(target)
+        current = [list(sentence) for sentence in target]
         undo: list[tuple[str, int, int | None]] = []
-        upper = min(self.max_edits, max(self.min_edits, len(target) // 8))
+        n_tokens = _flat_length(target)
+        upper = min(self.max_edits, max(self.min_edits, n_tokens // 8))
         count = rng.randint(min(self.min_edits, upper), upper)
-        token_pool = list(dict.fromkeys(target))
+        token_pool = list(dict.fromkeys(
+            token for sentence in target for token in sentence
+        ))
         for _ in range(count):
             allowed = ["replace", "insert"]
-            if len(current) > 2:
+            # Deleting a step-final token would erase which side of the
+            # structural boundary owns its inverse insertion.  Every other
+            # token, including the first token after a boundary, is safe.
+            deletable = []
+            start = 0
+            for sentence in current:
+                deletable.extend(range(start, start + len(sentence) - 1))
+                start += len(sentence)
+            if deletable:
                 allowed.append("delete")
             kind = rng.choice(allowed)
             if kind == "replace":
-                position = rng.randrange(len(current))
-                old = current[position]
+                position = rng.randrange(_flat_length(current))
+                sentence, offset = _position(current, position)
+                old = current[sentence][offset]
                 alternatives = [token for token in token_pool if token != old]
                 if not alternatives:
                     continue
-                current[position] = rng.choice(alternatives)
+                current[sentence][offset] = rng.choice(alternatives)
                 undo.append(("replace", position, old))
             elif kind == "delete":
-                position = rng.randrange(len(current))
-                old = current.pop(position)
+                position = rng.choice(deletable)
+                sentence, offset = _position(current, position)
+                old = current[sentence].pop(offset)
                 undo.append(("insert", position, old))
             else:
-                position = rng.randrange(len(current) + 1)
-                current.insert(position, rng.choice(token_pool))
+                position = rng.randrange(_flat_length(current) + 1)
+                _apply(current, ("insert", position, rng.choice(token_pool)))
                 undo.append(("delete", position, None))
 
         repairs = list(reversed(undo))
-        buffers = [_sentences(current, self.period_id)]
+        buffers = [[list(sentence) for sentence in current]]
         actions, op, remaining, changed = [], [], [], []
+        alt_actions: list[list[list[int]]] = []
+        alt_buffers: list[list[list[list[int]]]] = []
         for step, action in enumerate(repairs):
+            if self.counterfactual_k:
+                # Separate keyed streams make alternatives deterministic and
+                # prefix-stable without perturbing expert corruption/repair.
+                alt_rng = random.Random(
+                    f"faithful-token-edit-cf:{self.seed}:{index}:{step}:"
+                    f"{self.counterfactual_source}"
+                )
+                step_actions = []
+                step_buffers = []
+                sampled = {action}
+                attempts = 0
+                while len(step_actions) < self.counterfactual_k:
+                    candidate = len(step_actions)
+                    alternative = _counterfactual_action(
+                        current, alt_rng, self.counterfactual_source, candidate
+                    )
+                    attempts += 1
+                    if alternative in sampled:
+                        if attempts >= 10_000:
+                            raise RuntimeError(
+                                "could not sample enough distinct edit alternatives"
+                            )
+                        continue
+                    sampled.add(alternative)
+                    outcome = [list(sentence) for sentence in current]
+                    _apply(outcome, alternative)
+                    step_actions.append(_render_action(self.vocab, alternative))
+                    step_buffers.append(outcome)
+                alt_actions.append(step_actions)
+                alt_buffers.append(step_buffers)
             kind, position, token = action
-            rendered = f"{kind} token position {position}"
-            if token is not None:
-                rendered += f" with {self.vocab.id_to_token[int(token)]}"
-            rendered += " ."
-            actions.append(self.vocab.encode(rendered))
+            actions.append(_render_action(self.vocab, action))
             op.append(OPS[kind])
             _apply(current, action)
-            buffers.append(_sentences(current, self.period_id))
+            buffers.append([list(sentence) for sentence in current])
             remaining.append(len(repairs) - step - 1)
             changed.append([])
         if current != target:
             raise AssertionError("token-edit undo trajectory did not recover target")
-        return {
+        out = {
             "prompt": prompt,
             "buffers": buffers,
             "actions": actions,
             "op": op,
             "value": [0] * len(actions),
             "remaining": remaining,
-            "resolved_n": [sum(len(s) for s in b) for b in buffers[1:]],
+            "resolved_n": [_flat_length(b) for b in buffers[1:]],
             "necessary": [1] * len(actions),
             "answer": int(source["answer"]),
             "n_necessary": len(actions),
@@ -139,8 +261,13 @@ class FaithfulTokenEditDataset(Dataset):
             "edit_pos": [min(action[1], 15) for action in repairs],
             "changed": changed,
             "defect_masks": [[] for _ in repairs],
-            "target_tokens": target,
         }
+        if self.counterfactual_k:
+            # Outcomes are deliberately unlabeled: no target-relative
+            # remaining-edit, defect, preference, or quality fields.
+            out["alt_actions"] = alt_actions
+            out["alt_buffers"] = alt_buffers
+        return out
 
 
 __all__ = [

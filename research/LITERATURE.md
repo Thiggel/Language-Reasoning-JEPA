@@ -8,6 +8,47 @@ Existing conceptual anchors are I-JEPA, HWM, Delta-JEPA, variational JEPA,
 VICReg, and SIGReg. Before using a method as a baseline or making a novelty
 claim, verify the primary source and current publication status.
 
+## 2026-07-17 — counterfactual coverage for faithful token edits
+
+- Query: how much alternative-action data an offline action-conditioned world
+  model should receive, and when synthetic counterfactuals become unsafe.
+- Primary sources:
+  - MoCoDA: <https://openreview.net/forum?id=okFF_tsUGZi>
+  - The Edge-of-Reach Problem in Offline Model-Based Reinforcement Learning:
+    <https://openreview.net/forum?id=3dn1hINA6o>
+  - Budgeting Counterfactual for Offline RL:
+    <https://openreview.net/forum?id=1MUxtSBUox>
+- Applicable claims:
+  - MoCoDA supports controlling the augmented state-action distribution rather
+    than treating arbitrary synthetic alternatives as interchangeable. Its
+    positive results rely on known or learned local factorization, which the
+    current text-buffer model has not established.
+  - Edge-of-Reach shows that even accurate learned dynamics do not make
+    model-generated off-support rollouts automatically safe. Edit experiments
+    must measure empirical action support and separate observed exact outcomes
+    from recursively imagined outcomes.
+  - Budgeting Counterfactual argues that counterfactual decisions should be
+    bounded because extrapolation error compounds with horizon. This motivates
+    a small alternatives-per-state screen rather than assuming more candidates
+    are always better.
+- Limitations:
+  - These papers study offline reinforcement learning, not reconstruction-free
+    latent prediction over text edits. None supplies a transferable numerical
+    counterfactual ratio.
+  - Faithful token edits have exact executable alternative outcomes during data
+    construction, while target-derived edit quality and the clean terminal
+    buffer remain candidate-privileged supervision.
+- Design change:
+  - Do not import a fixed ratio. Ablate `K={0,1,4,8}` exact alternative edits
+    per visited state and report performance per unique problem, exact
+    transition, optimizer update, and GPU-hour.
+  - Separate mechanical counterfactual dynamics from preference supervision.
+    Cross unique-anchor count against alternatives per anchor at approximately
+    matched total transition exposure, and include shuffled-outcome plus
+    on-support/hard-negative composition controls.
+  - Keep recursive model-generated alternatives out of the first screen; add
+    them only after exact-outcome dynamics and support gates pass.
+
 ## 2026-07-16 — transfer benchmarks and anticipated review concerns
 
 - Query: language reasoning environments with explicit actions, outcomes, and

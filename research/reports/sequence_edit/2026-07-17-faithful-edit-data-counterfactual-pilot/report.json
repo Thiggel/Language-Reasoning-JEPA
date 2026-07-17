@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-17-faithful-edit-data-counterfactual-pilot",
+  "project": "sequence_edit",
+  "title": "How much edit experience should the model receive?",
+  "created_at": "2026-07-17T11:00:00+02:00",
+  "status": "pilot-ready",
+  "review_required": true,
+  "decision": "Measure unique-trajectory scale and exact same-state alternative density before resuming edit hierarchy comparisons.",
+  "plain_summary": "The old jobs were invalid because solution steps collapsed. The repaired data pipeline passes its audits, and a seven-cell one-seed pilot will select a data anchor and counterfactual density.",
+  "report": "REPORT.md",
+  "artifacts": ["decision.svg", "SLIDES.tex", "SLIDES.pdf"],
+  "tags": ["sequence-edit", "data-scale", "counterfactuals", "validity"]
+}

@@ -1,0 +1,9 @@
+# @package _global_
+# Diversity control: 18k unique problems, one pass, matched 18k examples.
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_faithful_data_18k_once
+data:
+  train_size: 18000
+  fresh_per_epoch: false
+train:
+  epochs: 1

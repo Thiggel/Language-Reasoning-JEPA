@@ -1,0 +1,10 @@
+# @package _global_
+# One exact, mechanically executed same-state alternative per visited buffer.
+# No preference/remaining-distance label is used.
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_faithful_cf_k1
+data:
+  counterfactual_k: 1
+  counterfactual_source: uniform_local
+objective:
+  counterfactual_outcome: {weight: 1.0}
