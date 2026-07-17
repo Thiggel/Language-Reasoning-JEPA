@@ -1301,7 +1301,7 @@ class Controller:
         with self.oversight_lock():
             self._wake(project)
 
-    def tick(self) -> None:
+    def tick(self, project_filter: str | None = None) -> None:
         self._local_storage_guard()
         self.refresh()
         state = self.load_state()
@@ -1316,7 +1316,12 @@ class Controller:
             return
         terminal = [
             (rid, rnd) for rid, rnd in state.get("rounds", {}).items()
-            if rnd.get("state") == "TERMINAL" and not rnd.get("oversight_woken")
+            if rnd.get("state") == "TERMINAL"
+            and not rnd.get("oversight_woken")
+            and (
+                project_filter is None
+                or self._round_project(rid, rnd) == project_filter
+            )
         ]
         if not terminal:
             print("no completed round awaiting oversight")
@@ -1356,8 +1361,10 @@ def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--config", type=Path, help="controller TOML (or set RESEARCH_CONFIG)")
     sub = p.add_subparsers(dest="command", required=True)
-    for name in ("init", "doctor", "inventory", "storage", "refresh", "resume", "tick", "projects", "allocation"):
+    for name in ("init", "doctor", "inventory", "storage", "refresh", "resume", "projects", "allocation"):
         sub.add_parser(name)
+    tick = sub.add_parser("tick")
+    tick.add_argument("--project", choices=PROJECTS)
     status = sub.add_parser("status")
     status.add_argument("--project", choices=PROJECTS)
     status.add_argument("--all", action="store_true")
@@ -1402,6 +1409,8 @@ def main() -> int:
             ctl.status(args.project)
         elif args.command == "wake":
             ctl.wake(args.project)
+        elif args.command == "tick":
+            ctl.tick(args.project)
         elif args.command == "projects":
             ctl.projects_status()
         elif args.command == "migrate-state":
