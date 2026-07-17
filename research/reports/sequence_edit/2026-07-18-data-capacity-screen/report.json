@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-18-data-capacity-screen",
+  "project": "sequence_edit",
+  "title": "More training examples help; more unique problems do not yet",
+  "created_at": "2026-07-18T01:05:00+02:00",
+  "status": "process-complete-component-audit-required",
+  "review_required": true,
+  "decision": "Treat total example exposure, not unique clean-problem count, as the active scale factor; audit local action components before extending the curve.",
+  "plain_summary": "At matched exposure, 2k versus 6k and 6k versus 18k unique problems are tied. Tripling total presentations nearly halves token and recursive error. Width and LDAD comparisons need optimizer-step matching.",
+  "report": "REPORT.md",
+  "artifacts": ["exposure.svg"],
+  "tags": ["sequence-edit", "data-scale", "exposure", "capacity"]
+}

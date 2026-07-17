@@ -17,6 +17,7 @@
 | 2026-07-17-structured-edit-corruption-exposure-wave3 | Do fresh corruptions or corruption family explain the apparent action-use gap? | 5 completed | fresh mixed equals fixed mixed; mask is specialized; pooled causal metric is invalid for token-aligned states and full re-audit is required | [`2026-07-17 report`](reports/sequence_edit/2026-07-17-corruption-exposure-screen/REPORT.md) |
 | 2026-07-17-structured-edit-token-metric-reaudit-wave4b | Are frozen structured checkpoints causal when evaluated at token resolution? | 5 completed | mixed token causal ratios 1.83--3.30; component-local audit required before recipe selection | [`2026-07-17 report`](reports/sequence_edit/2026-07-17-token-causal-reaudit/REPORT.md) |
 | 2026-07-17-structured-edit-component-local-audit-wave5 | Which action components does each frozen structured recipe use? | 5 completed | all use operation, pointer, and local content; fixed mixed EMA selected; LDAD has an error/sensitivity tradeoff | [`2026-07-17 report`](reports/sequence_edit/2026-07-17-token-causal-reaudit/REPORT.md) |
+| 2026-07-17-structured-edit-data-capacity-wave6 | Do unique problems, exposure, width, or LDAD drive primitive error? | 5 completed | total exposure drives error; unique count is neutral when matched; width and LDAD need step matching | [`2026-07-18 report`](reports/sequence_edit/2026-07-18-data-capacity-screen/REPORT.md) |
 
 Historical waves remain indexed by the subproject READMEs. Add one row per new
 controller round and keep invalid/failed rounds visible.

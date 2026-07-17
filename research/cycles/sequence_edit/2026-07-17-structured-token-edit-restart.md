@@ -165,3 +165,14 @@ ratios to 1.58/1.61/1.25. Select fixed mixed EMA for the unique-data/exposure
 and capacity screen. The token-aligned forward path does not consume existing
 pooled counterfactual fields, so no K ablation is admissible until structured
 alternative transitions and targets are implemented.
+
+## Data and capacity result
+
+All five wave-6 jobs completed. Exposure-matched 2k×3 versus 6k×1 and 6k×3
+versus 18k×1 pairs are effectively identical. Increasing total presentations
+from 6k to 18k improves matched token error from about 0.185 to 0.095 and
+recursive token error from about 0.309 to 0.182. The d512 diagnostic improves
+error but used batch four and twice as many optimizer steps; it is not an
+isolated width result. LDAD 20 is worse after only 6k presentations, so its
+earlier advantage depends on adequate optimization. Run frozen component-local
+audits before extending scale.

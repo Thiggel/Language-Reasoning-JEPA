@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="240" viewBox="0 0 720 240" role="img" aria-label="Exposure, not uniqueness, lowers recursive token error">
+  <rect width="720" height="240" fill="#fff"/>
+  <text x="30" y="28" font-family="sans-serif" font-size="18">Recursive token error</text>
+  <g fill="#4c78a8"><rect x="65" y="55" width="90" height="139"/><rect x="175" y="55" width="90" height="139"/></g>
+  <g fill="#59a14f"><rect x="410" y="112" width="90" height="82"/><rect x="520" y="112" width="90" height="82"/></g>
+  <g font-family="sans-serif" font-size="14" text-anchor="middle"><text x="110" y="218">2k×3</text><text x="220" y="218">6k×1</text><text x="455" y="218">6k×3</text><text x="565" y="218">18k×1</text></g>
+  <text x="110" y="48" font-family="sans-serif" font-size="14">6k presentations: ≈0.308</text>
+  <text x="440" y="104" font-family="sans-serif" font-size="14">18k presentations: ≈0.182</text>
+</svg>
