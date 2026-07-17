@@ -133,3 +133,14 @@ because its loss scale materially changed gradients. Advance only a condition
 that reaches shuffled/matched `1.05` on mixed evaluation, beats persistence,
 retains rank, and remains recursively stable. Counterfactual density,
 hierarchy, GAR, MPC, and structured action-field LDAD remain gated.
+
+## Corruption exposure result and metric correction
+
+All five wave-3 jobs completed. Fixed and fresh mixed EMA are effectively
+tied, mask sensitivity remains mask-specific, and lower-rate LDAD 20 remains
+pooled-action-insensitive while reaching a peak gradient norm of 951. A direct
+token-level shuffled-action smoke audit changes the conclusion: fresh mixed
+EMA scores 1.012 after pooling but 3.018 across token-aligned targets. The
+pooled causal gate is therefore invalid for this interface. Freeze training
+and re-audit all five checkpoints and four corruptions before selecting or
+scaling a recipe.

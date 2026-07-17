@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-17-corruption-exposure-screen",
+  "project": "sequence_edit",
+  "title": "Fresh edit examples do not explain the missing action signal",
+  "created_at": "2026-07-17T20:45:00+02:00",
+  "status": "process-complete-metric-reaudit-required",
+  "review_required": true,
+  "decision": "Reject fresh-versus-repeated exposure as the main cause, retain mask as distribution-specific, and re-audit token-aligned checkpoints with a token-level causal metric before any new training or scale increase.",
+  "plain_summary": "Five runs completed. Fresh and fixed mixed training are nearly identical, mask sensitivity does not transfer, and lower-rate LDAD remains pooled-action-insensitive. An eight-example diagnostic finds token-level shuffled error triples while pooled error rises only one percent, so the pooled causal gate is invalid for token-aligned models and a full re-audit is required.",
+  "report": "REPORT.md",
+  "artifacts": ["metric_dilution.svg"],
+  "tags": ["sequence-edit", "corruption", "fresh-data", "metric-validity"]
+}

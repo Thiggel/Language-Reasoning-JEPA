@@ -190,7 +190,7 @@ def probe(x, y, classification=False):
     )
 
 
-def shuffled_action_prediction(model, out, batch):
+def shuffled_action_prediction(model, out, batch, return_output: bool = False):
     """Predict with a deranged current action and each sample's true prefix.
 
     ``LatentDynamicsCore._predict_counterfactuals`` constructs an independent
@@ -237,7 +237,11 @@ def shuffled_action_prediction(model, out, batch):
             | shuffled_batch["edit_position"].ne(batch["edit_position"])
             | shuffled_batch["edit_content_token"].ne(batch["edit_content_token"])
         ) & valid
-        return shuffled_out.preds, None, tuple_changed
+        return (
+            shuffled_out if return_output else shuffled_out.preds,
+            None,
+            tuple_changed,
+        )
     if getattr(model, "attn_pred", None) is not None:
         batch_size, states, chunks, length = batch["buffer_tokens"].shape
         steps = states - 1
@@ -359,6 +363,8 @@ def main():
         collate_fn=partial(collate_for(cfg), pad_id=vocab.pad_id),
     )
     direct, recursive, persistence = [], [], []
+    token_direct, token_shuffled, token_masks, token_shuffle_masks = [], [], [], []
+    token_recursive, token_recursive_masks = [], []
     masks, all_ops, states, remaining, ops, delta = [], [], [], [], [], []
     horizon_totals: dict[str, list[dict]] = {}
     high, ldad_correct, ldad_total, goal_distance, goal_remaining = [], 0, 0, [], []
@@ -402,14 +408,50 @@ def main():
                 ).items():
                     horizon_totals.setdefault(horizon, []).append(summary)
 
-            shuffled_prediction, reason, changed_mask = shuffled_action_prediction(
-                model, out, batch
+            shuffled_result, reason, changed_mask = shuffled_action_prediction(
+                model, out, batch,
+                return_output=getattr(model, "token_pred", None) is not None,
             )
-            if shuffled_prediction is None:
+            if shuffled_result is None:
                 shuffle_unavailable.add(reason)
             else:
+                shuffled_prediction = (
+                    shuffled_result.preds
+                    if getattr(model, "token_pred", None) is not None
+                    else shuffled_result
+                )
                 shuffled.append(normalized_l1(shuffled_prediction, out.step_states_tgt).cpu())
                 shuffled_masks.append(changed_mask.cpu())
+                if getattr(model, "token_pred", None) is not None:
+                    target_tokens = out.extras["token_targets"]
+                    recursive_token_mask = (
+                        out.extras["token_rollout_mask"]
+                        & out.extras["token_target_mask"]
+                        & out.step_mask.unsqueeze(-1)
+                    )
+                    token_recursive.append(normalized_l1(
+                        out.extras["token_rollout_predictions"], target_tokens
+                    ).cpu())
+                    token_recursive_masks.append(recursive_token_mask.cpu())
+                    direct_token_mask = (
+                        out.extras["token_prediction_mask"]
+                        & out.extras["token_target_mask"]
+                        & changed_mask.unsqueeze(-1)
+                    )
+                    shuffled_token_mask = (
+                        shuffled_result.extras["token_prediction_mask"]
+                        & shuffled_result.extras["token_target_mask"]
+                        & changed_mask.unsqueeze(-1)
+                    )
+                    token_direct.append(normalized_l1(
+                        out.extras["token_predictions"], target_tokens
+                    ).cpu())
+                    token_shuffled.append(normalized_l1(
+                        shuffled_result.extras["token_predictions"],
+                        shuffled_result.extras["token_targets"],
+                    ).cpu())
+                    token_masks.append(direct_token_mask.cpu())
+                    token_shuffle_masks.append(shuffled_token_mask.cpu())
 
             last = mask.sum(1).clamp_min(1) - 1
             goal = out.step_states_tgt[torch.arange(mask.shape[0], device=mask.device), last]
@@ -469,6 +511,41 @@ def main():
             "unavailable_reasons": sorted(reason for reason in shuffle_unavailable if reason),
         }
 
+    token_causal_control = None
+    if token_direct:
+        direct_token_error = torch.cat([
+            values[mask] for values, mask in zip(token_direct, token_masks)
+        ])
+        shuffled_token_error = torch.cat([
+            values[mask] for values, mask in zip(token_shuffled, token_shuffle_masks)
+        ])
+        direct_token_mean = float(direct_token_error.mean())
+        shuffled_token_mean = float(shuffled_token_error.mean())
+        token_causal_control = {
+            "matched_ln_l1": direct_token_mean,
+            "shuffled_ln_l1": shuffled_token_mean,
+            "over_matched_error_ratio": (
+                shuffled_token_mean / direct_token_mean
+                if direct_token_mean else None
+            ),
+            "matched_tokens": int(direct_token_error.numel()),
+            "shuffled_tokens": int(shuffled_token_error.numel()),
+            "recursive_matched_ln_l1": (
+                float(torch.cat([
+                    values[mask] for values, mask in zip(
+                        token_recursive, token_recursive_masks
+                    )
+                ]).mean()) if token_recursive else None
+            ),
+            "recursive_matched_tokens": int(sum(
+                mask.sum().item() for mask in token_recursive_masks
+            )),
+            "construction": (
+                "token-aligned EMA targets; current structured action tuple "
+                "deranged; only valid predicted and target tokens scored"
+            ),
+        }
+
     privileged_geometry = {
         "uses_privileged_true_terminal_buffer": True,
         "available_at_deployment": False,
@@ -502,6 +579,7 @@ def main():
         ),
         "persistence_no_change_ln_l1": _summary(persistence_error, step_mask)["ln_l1"],
         "shuffled_action_causal_falsifier": shuffled_control,
+        "token_aligned_shuffled_action_falsifier": token_causal_control,
         "recursive_ln_l1_by_horizon": horizon_payload,
         "recursive_horizon_origin_sampling": (
             {

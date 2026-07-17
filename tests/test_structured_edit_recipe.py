@@ -13,6 +13,7 @@ from textjepa.models.edit_jepa import EditJEPA
 from textjepa.models.ema import EMATeacher
 from textjepa.models.predictor import TokenAlignedEditPredictor
 from textjepa.objectives import GoalAdvantageDistill
+from scripts.audit_faithful_token_edits import shuffled_action_prediction
 
 
 def _dataset(mode: str):
@@ -123,3 +124,12 @@ def test_structured_model_forward_and_recursive_shapes():
     assert out.extras["gar_action_value"].shape == out.step_mask.shape
     assert not out.extras["gar_action_target"].requires_grad
     assert torch.isfinite(GoalAdvantageDistill()(out, batch))
+
+    shuffled, reason, changed = shuffled_action_prediction(
+        model, out, batch, return_output=True
+    )
+    assert reason is None
+    assert bool(changed.any())
+    assert shuffled.extras["token_predictions"].shape == out.extras[
+        "token_predictions"
+    ].shape

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="360" viewBox="0 0 960 360" role="img" aria-labelledby="t d">
+ <title id="t">Pooling hides a local edit</title><desc id="d">A long row of token boxes contains one strongly changed token. Averaging all boxes yields a small difference, while direct token comparison shows the large local effect.</desc>
+ <rect width="960" height="360" fill="white"/><style>text{font-family:DejaVu Sans,Arial;fill:#172033}.h{font-size:23px;font-weight:bold}.p{font-size:16px}.tok{fill:#dce8f5;stroke:#3977b8}.chg{fill:#f5b6ad;stroke:#b83c2f;stroke-width:3}.arrow{stroke:#52647a;stroke-width:3;fill:none}</style>
+ <text class="h" x="35" y="38">One edit can vanish when a long sequence is averaged</text>
+ <text class="p" x="35" y="83">Matched token states</text>
+ <g transform="translate(35,100)"><rect class="tok" width="55" height="45"/><rect class="tok" x="65" width="55" height="45"/><rect class="tok" x="130" width="55" height="45"/><rect class="chg" x="195" width="55" height="45"/><rect class="tok" x="260" width="55" height="45"/><rect class="tok" x="325" width="55" height="45"/><rect class="tok" x="390" width="55" height="45"/><rect class="tok" x="455" width="55" height="45"/><rect class="tok" x="520" width="55" height="45"/><rect class="tok" x="585" width="55" height="45"/></g>
+ <path class="arrow" d="M700 123 L780 123"/><text class="p" x="795" y="116">pool first:</text><text class="p" x="795" y="140">small change</text>
+ <text class="p" x="35" y="205">Shuffled action states</text>
+ <g transform="translate(35,220)"><rect class="tok" width="55" height="45"/><rect class="tok" x="65" width="55" height="45"/><rect class="tok" x="130" width="55" height="45"/><rect class="chg" x="195" width="55" height="45"/><rect class="tok" x="260" width="55" height="45"/><rect class="tok" x="325" width="55" height="45"/><rect class="tok" x="390" width="55" height="45"/><rect class="tok" x="455" width="55" height="45"/><rect class="tok" x="520" width="55" height="45"/><rect class="tok" x="585" width="55" height="45"/></g>
+ <path class="arrow" d="M250 285 L250 318 L700 318"/><text class="p" x="715" y="324">compare tokens: large local error</text>
+</svg>
