@@ -87,6 +87,16 @@ def geometric_rank_metrics(energy, distance, label_gap):
     return pair, (selected <= best + 1e-7).float().mean(), (selected - best).mean()
 
 
+def candidate_unique_fraction(candidates):
+    """Mean within-state fraction of distinct candidate action rows."""
+    flattened = candidates.reshape(candidates.shape[0], candidates.shape[1], -1)
+    fractions = [
+        torch.unique(row, dim=0).shape[0] / row.shape[0]
+        for row in flattened
+    ]
+    return candidates.new_tensor(fractions, dtype=torch.float32).mean()
+
+
 @torch.no_grad()
 def counterfactual_distances(
     model, batch_tokens, prompt_len, root_chunks, continuation_chunks,
@@ -265,10 +275,17 @@ def macro_chunk_candidates(level, anchor, k, mode="global", conditional_k=32):
         neighbours = torch.cdist(roots, pool_states).topk(
             min(int(conditional_k), len(pool)), largest=False
         ).indices
-        sampled = torch.randint(
-            neighbours.shape[1], (len(factual), int(k)), device=factual.device
-        )
-        ids = neighbours.gather(1, sampled)
+        if int(k) <= neighbours.shape[1]:
+            # Without-replacement sampling makes a larger K genuinely expose
+            # the head to more observed chunks rather than duplicate rows.
+            scores = torch.rand(neighbours.shape, device=factual.device)
+            sampled = scores.topk(int(k), dim=1).indices
+            ids = neighbours.gather(1, sampled)
+        else:
+            sampled = torch.randint(
+                neighbours.shape[1], (len(factual), int(k)), device=factual.device
+            )
+            ids = neighbours.gather(1, sampled)
     else:
         raise ValueError(f"unknown macro proposal mode: {mode}")
     return torch.cat([factual[:, None], pool[ids]], 1)
@@ -281,6 +298,14 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         zero = out["low_pred"].sum() * 0
         return zero, {}, zero.detach()
     k = int(obj.geo_rank_k)
+    low_k = (
+        int(obj.geo_rank_low_k)
+        if getattr(obj, "geo_rank_low_k", None) is not None else k
+    )
+    high_k = (
+        int(obj.geo_rank_high_k)
+        if getattr(obj, "geo_rank_high_k", None) is not None else k
+    )
     low_horizon = int(
         obj.geo_rank_low_horizon
         if getattr(obj, "geo_rank_low_horizon", None) is not None
@@ -312,7 +337,8 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             else out["token_prior_logits"][:, anchor]
         )
         root_ids = primitive_candidates(
-            out["action_ids"][:, anchor], k, model.token_action.num_embeddings,
+            out["action_ids"][:, anchor], low_k,
+            model.token_action.num_embeddings,
             proposal_mode, root_prior,
         )
         root_chunks = root_ids.unsqueeze(-1)
@@ -386,6 +412,7 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             "geo_low_rank": rank, "geo_low_regression": regression,
             "geo_low_pair": pair, "geo_low_top1": top1,
             "geo_low_regret": regret,
+            "geo_low_candidate_unique": candidate_unique_fraction(root_ids),
         })
 
     level_weights = list(obj.geo_rank_level_weights)
@@ -404,7 +431,7 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
                 continue
             anchor = torch.randint(max(1, available - (horizon - 1)), ()).item()
             roots = macro_chunk_candidates(
-                level, anchor, k, obj.geo_rank_macro_proposals,
+                level, anchor, high_k, obj.geo_rank_macro_proposals,
                 obj.geo_rank_conditional_k,
             )
             continuation = None
@@ -472,6 +499,7 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
                 f"{prefix}_rank": rank, f"{prefix}_regression": regression,
                 f"{prefix}_pair": pair, f"{prefix}_top1": top1,
                 f"{prefix}_regret": regret,
+                f"{prefix}_candidate_unique": candidate_unique_fraction(roots),
             })
     return total, items, selection
 

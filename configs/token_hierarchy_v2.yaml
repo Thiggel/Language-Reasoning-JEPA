@@ -61,6 +61,10 @@ objective:
   geo_rank_high: 0.0
   geo_rank_level_weights: [1.0]
   geo_rank_k: 2
+  # Optional primitive/macro overrides. A single legacy value still
+  # broadcasts when these are null.
+  geo_rank_low_k: null
+  geo_rank_high_k: null
   geo_rank_horizon: 2
   # Optional primitive/macro overrides. Null preserves geo_rank_horizon.
   geo_rank_low_horizon: null

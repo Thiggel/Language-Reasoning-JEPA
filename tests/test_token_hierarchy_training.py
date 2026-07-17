@@ -3,8 +3,10 @@ from types import SimpleNamespace
 import torch
 
 from scripts.train_token_hierarchy_v2 import (
+    candidate_unique_fraction,
     compute_losses,
     geometric_preference_loss,
+    macro_chunk_candidates,
     primitive_candidates,
     primitive_oracle_beam_distances,
 )
@@ -23,6 +25,7 @@ def objective(**overrides):
         token_prior_label_smoothing=0.0,
         geo_rank_low=0.0, geo_rank_high=0.0,
         geo_rank_level_weights=[1.0], geo_rank_k=2,
+        geo_rank_low_k=None, geo_rank_high_k=None,
         geo_rank_horizon=2, geo_rank_continuations=2,
         geo_rank_low_horizon=None, geo_rank_high_horizon=None,
         geo_rank_primitive_proposals="random", geo_rank_low_policy="sampled",
@@ -83,6 +86,8 @@ def test_end_to_end_geometry_ranking_updates_encoder_predictors_and_value_heads(
     total, items = compute_losses(out, cfg, model=model, batch=batch)
     assert torch.isfinite(total)
     assert "geo_low_pair" in items and "geo_level1_pair" in items
+    assert items["geo_low_candidate_unique"] > 0
+    assert items["geo_level1_candidate_unique"] > 0
     total.backward()
     modules = (
         model.encoder, model.low_predictor, model.low_goal_value,
@@ -142,6 +147,22 @@ def test_prior_primitive_candidates_are_hard_supported_and_keep_factual():
     assert candidates.shape == (2, 4)
     assert not candidates[:, 1:].eq(factual[:, None]).any()
     assert not candidates[:, 1:].eq(0).any()
+
+
+def test_conditional_macro_candidates_sample_indices_without_replacement():
+    raw = torch.arange(48).reshape(8, 2, 3)
+    level = {
+        "raw_action_ids": raw,
+        "valid": torch.ones(8, 2, dtype=torch.bool),
+        "prev": torch.arange(64, dtype=torch.float).reshape(8, 2, 4),
+    }
+    candidates = macro_chunk_candidates(
+        level, anchor=0, k=8, mode="conditional", conditional_k=12
+    )
+    assert candidates.shape == (8, 9, 3)
+    # The prepended factual row may occur in the observed neighbour bank, but
+    # the eight sampled bank indices themselves must not repeat.
+    assert candidate_unique_fraction(candidates[:, 1:]).item() == 1.0
 
 
 def test_oracle_beam_advantage_targets_are_finite_per_root():
