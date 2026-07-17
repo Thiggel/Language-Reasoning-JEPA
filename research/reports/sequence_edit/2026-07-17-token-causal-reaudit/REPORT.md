@@ -2,7 +2,7 @@
 
 ## The one-sentence answer
 
-All five frozen models react strongly to edit type and current-buffer position, while whole-sequence averaging undercounts the one-token content effect; a local component audit is required before selecting a recipe.
+All five frozen models react to every action component; fixed mixed EMA has the strongest balanced component sensitivity, while LDAD lowers rollout error but weakens causal separation.
 
 ## First, the idea in everyday language
 
@@ -30,7 +30,15 @@ The current buffer, prompt, target, checkpoint, and example set remain fixed. On
 | Mask, fresh | 0.196 | 0.611 | 3.12 | 0.375 |
 | LDAD 20, lower LR | 0.184 | 0.337 | 1.83 | 0.214 |
 
-Fresh versus repeated corruption again makes essentially no difference. LDAD improves recursive error but reduces action separation. In single-operation mask and replacement evaluation, whole-sequence token ratios are near 1.03. A small component smoke test shows why: operation ratio 3.55, pointer ratio 2.02, but content ratio 1.02 globally and 1.40 within two tokens of the edit.
+Fresh versus repeated corruption again makes essentially no difference. LDAD improves recursive error but reduces action separation. The full component audit confirms that content is local rather than absent:
+
+| Recipe | Operation local ratio | Pointer local ratio | Content local ratio | Recursive token error |
+|---|---:|---:|---:|---:|
+| Mixed, fixed | 2.69 | 2.63 | 1.39 | 0.308 |
+| Mixed, fresh | 2.68 | 2.63 | 1.39 | 0.308 |
+| Curriculum, fresh | 2.67 | 2.62 | 1.40 | 0.310 |
+| Mask, fresh | 2.59 | 2.53 | 1.39 | 0.375 |
+| LDAD 20, lower LR | 1.58 | 1.61 | 1.25 | 0.214 |
 
 ## The intuitive picture
 
@@ -54,7 +62,7 @@ We cannot yet rank recipes for content fidelity, claim planning success, or infe
 
 ## What happens next
 
-Run the component-local audit on all five frozen checkpoints. If content-local ratios remain meaningfully above one, select the best matched-error/sensitivity tradeoff for controlled data and counterfactual ablations. If not, add an explicit local content target before scale.
+Use fixed mixed EMA as the primitive baseline because fresh exposure and curriculum add no measurable benefit. Next compare 2,000, 6,000, and 18,000 unique reasoning problems with exposure-matched controls, one 512-dimensional capacity cell, and one LDAD interaction cell. Counterfactual breadth remains gated until exact structured alternative transitions are implemented; the old pooled-model K fields are not consumed by this token path.
 
 ## Words used in this report
 

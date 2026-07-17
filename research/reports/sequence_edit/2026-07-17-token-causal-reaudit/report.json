@@ -4,10 +4,10 @@
   "project": "sequence_edit",
   "title": "Token-level editing is causal, but content is the weakest action component",
   "created_at": "2026-07-17T21:25:00+02:00",
-  "status": "process-complete-component-audit-required",
+  "status": "complete",
   "review_required": true,
-  "decision": "Accept the token-aligned interface as operation- and pointer-sensitive, reject pooled metrics for recipe selection, and run local component falsifiers before scale.",
-  "plain_summary": "Five frozen checkpoints pass a token-level action test on mixed edits. Fresh exposure has no effect; LDAD improves recursive error but weakens action separation. A local audit is needed because content changes affect only a few tokens.",
+  "decision": "Select fixed mixed EMA as the primitive baseline and advance to matched unique-data, exposure, capacity, and LDAD-interaction tests.",
+  "plain_summary": "Five frozen checkpoints use operation, pointer, and content. Fresh exposure and curriculum have no benefit. LDAD improves recursive error but weakens all component effects, so fixed mixed EMA is the clean scale baseline.",
   "report": "REPORT.md",
   "artifacts": ["local_metric.svg"],
   "tags": ["sequence-edit", "causal-audit", "token-aligned", "metric-validity"]

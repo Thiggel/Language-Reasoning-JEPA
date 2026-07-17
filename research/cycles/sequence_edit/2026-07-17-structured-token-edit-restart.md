@@ -154,3 +154,14 @@ indistinguishable. Single-operation global ratios remain diluted, so the next
 frozen audit separates operation, current-buffer pointer, and content and
 scores a radius-two local window. No scale round is admitted until this
 component gate is resolved.
+
+## Component-local result
+
+Five 256-example frozen audits completed. Fixed mixed EMA gives local
+operation/pointer/content shuffled-to-matched ratios 2.69/2.63/1.39. Fresh
+mixed and curriculum are effectively tied with it. Lower-rate LDAD improves
+recursive token error from about 0.308 to 0.214 but weakens the three causal
+ratios to 1.58/1.61/1.25. Select fixed mixed EMA for the unique-data/exposure
+and capacity screen. The token-aligned forward path does not consume existing
+pooled counterfactual fields, so no K ablation is admissible until structured
+alternative transitions and targets are implemented.
