@@ -15,6 +15,11 @@ def objective(**overrides):
         dense_discount=0.7, token_prior=0.0,
         token_prior_rollout=0.0, token_prior_rollout_discount=0.7,
         token_prior_label_smoothing=0.0,
+        geo_rank_low=0.0, geo_rank_high=0.0,
+        geo_rank_level_weights=[1.0], geo_rank_k=2,
+        geo_rank_horizon=2, geo_rank_continuations=2,
+        geo_rank_margin=0.5, geo_rank_label_gap=0.0,
+        geo_rank_regression=0.0, geo_rank_detach_prediction=False,
     )
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -50,3 +55,29 @@ def test_high_level_weights_must_match_active_levels():
         assert "high_level_weights" in str(error)
     else:
         raise AssertionError("mismatched level weights must be rejected")
+
+
+def test_end_to_end_geometry_ranking_updates_encoder_predictors_and_value_heads():
+    torch.manual_seed(23)
+    model = tiny_model().train()
+    tokens = torch.randint(1, 30, (4, 24))
+    prompt_len = torch.tensor([8, 8, 8, 8])
+    batch = {"tokens": tokens, "prompt_len": prompt_len}
+    out = model(tokens, prompt_len)
+    cfg = SimpleNamespace(objective=objective(
+        vicreg=0.0, geo_rank_low=1.0, geo_rank_high=1.0,
+        geo_rank_horizon=2,
+    ))
+    total, items = compute_losses(out, cfg, model=model, batch=batch)
+    assert torch.isfinite(total)
+    assert "geo_low_pair" in items and "geo_level1_pair" in items
+    total.backward()
+    modules = (
+        model.encoder, model.low_predictor, model.low_goal_value,
+        model.levels[0].predictor, model.levels[0].goal_value,
+    )
+    for module in modules:
+        assert any(
+            parameter.grad is not None and parameter.grad.abs().sum() > 0
+            for parameter in module.parameters()
+        )

@@ -92,7 +92,11 @@ def main():
         out = model(
             batch["tokens"].to(args.device), batch["prompt_len"].to(args.device)
         )
-    _, items = compute_losses(out, cfg)
+    _, items = compute_losses(
+        out, cfg,
+        model=(None if semantic else model),
+        batch=(None if semantic else batch),
+    )
     names = ["low_prediction", "low_dense", "goal_prediction", "vicreg"]
     for index in range(len(out["levels"])):
         names.extend([
@@ -106,10 +110,19 @@ def main():
             name for name in ("token_prior", "token_prior_rollout")
             if name in items
         ])
+    names.extend(sorted(
+        name for name in items
+        if name.startswith("geo_") and name.endswith("_rank")
+    ))
     gradients = {name: gradient(model, items[name]) for name in names}
     level_weights = list(getattr(cfg.objective, "high_level_weights", [1.0]))
     if len(level_weights) == 1:
         level_weights *= len(out["levels"])
+    geo_level_weights = list(getattr(
+        cfg.objective, "geo_rank_level_weights", [1.0]
+    ))
+    if len(geo_level_weights) == 1:
+        geo_level_weights *= len(out["levels"])
     coefficients = {
         "low_prediction": float(cfg.objective.low_prediction),
         "low_dense": float(cfg.objective.low_dense),
@@ -117,6 +130,7 @@ def main():
         "vicreg": float(cfg.objective.vicreg),
         "token_prior": float(cfg.objective.token_prior),
         "token_prior_rollout": float(cfg.objective.token_prior_rollout),
+        "geo_low_rank": float(getattr(cfg.objective, "geo_rank_low", 0.0)),
     }
     level_terms = {
         "prediction": "high_prediction", "dense": "high_dense",
@@ -127,6 +141,10 @@ def main():
             coefficients[f"level{index}_{suffix}"] = (
                 float(level_weight) * float(getattr(cfg.objective, config_name))
             )
+        coefficients[f"geo_level{index}_rank"] = (
+            float(getattr(cfg.objective, "geo_rank_high", 0.0))
+            * float(geo_level_weights[index - 1])
+        )
     raw_norms = {name: norm(value) for name, value in gradients.items()}
     result = {
         "encoder_gradient_norm": raw_norms,

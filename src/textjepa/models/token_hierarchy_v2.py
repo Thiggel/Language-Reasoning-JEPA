@@ -94,6 +94,11 @@ class TokenHierarchyLevel(nn.Module):
             residual=False,
         )
         self.value = ValueHead(d_state)
+        # Unlike ``value`` (normalized remaining-position regression), this
+        # head is explicitly conditioned on an encoded terminal goal.  GAR
+        # trains it on predicted outcomes so preference gradients regularize
+        # the predictor and online representation end to end.
+        self.goal_value = ValueHead(d_state)
         self.support = MacroSupportHead(d_state, d_action)
 
 
@@ -205,6 +210,7 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
         self.levels = nn.ModuleList(levels)
         self.goal_head = mlp([d_model, 2 * d_model], d_model)
         self.low_value = ValueHead(d_model)
+        self.low_goal_value = ValueHead(d_model)
 
     @torch.no_grad()
     def update_teacher(self, momentum: float) -> None:

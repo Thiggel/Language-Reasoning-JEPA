@@ -73,7 +73,10 @@ def main() -> None:
         [i for i in range(len(vocab)) if i != vocab.pad_id],
         device=args.device,
     )
-    ranks = {"next_state": [], "terminal_goal": [], "value": [], "prior": []}
+    ranks = {
+        "next_state": [], "terminal_goal": [], "remaining_value": [],
+        "geometric_value": [], "prior": [],
+    }
     with torch.no_grad():
         for batch in loader:
             out = model(
@@ -108,9 +111,15 @@ def main() -> None:
                 value_score = model.low_value(
                     predicted, out["prompt_state"].expand(count, -1)
                 )
+                geometric_value = model.low_goal_value(predicted, goal)
                 ranks["next_state"].append(rank_of_true(next_score, true_candidate))
                 ranks["terminal_goal"].append(rank_of_true(goal_score, true_candidate))
-                ranks["value"].append(rank_of_true(value_score, true_candidate))
+                ranks["remaining_value"].append(
+                    rank_of_true(value_score, true_candidate)
+                )
+                ranks["geometric_value"].append(
+                    rank_of_true(geometric_value, true_candidate)
+                )
                 if out["token_prior_logits"] is not None:
                     logits = out["token_prior_logits"][0, position, candidate_ids]
                     ranks["prior"].append(rank_of_true(-logits, true_candidate))

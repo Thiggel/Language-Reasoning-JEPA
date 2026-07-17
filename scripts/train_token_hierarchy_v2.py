@@ -15,6 +15,7 @@ from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.lm import LMDataset, collate_lm
 from textjepa.data.sampling import FreshEpochSampler
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
+from textjepa.planning.token_hierarchy import macro_codes
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup, ema_momentum
 from textjepa.utils import seed_everything
@@ -51,7 +52,236 @@ def vicreg(states, covariance):
     return variance + covariance * cov.square().sum() / states.shape[-1]
 
 
-def compute_losses(out, cfg):
+def geometric_rank_loss(energy, distance, margin, label_gap):
+    """Same-state hinge: lower energy for the EMA outcome nearer the goal."""
+    delta = distance.unsqueeze(2) - distance.unsqueeze(1)
+    energy_delta = energy.unsqueeze(2) - energy.unsqueeze(1)
+    better = delta < -float(label_gap)
+    loss = F.relu(float(margin) + energy_delta)
+    return masked_mean(loss, better.float())
+
+
+def geometric_rank_metrics(energy, distance, label_gap):
+    delta = distance.unsqueeze(2) - distance.unsqueeze(1)
+    energy_delta = energy.unsqueeze(2) - energy.unsqueeze(1)
+    valid = delta.abs() > float(label_gap)
+    correct = (energy_delta.sign() == delta.sign()) & valid
+    pair = correct.sum() / valid.sum().clamp_min(1)
+    chosen = energy.argmin(1)
+    selected = distance.gather(1, chosen[:, None]).squeeze(1)
+    best = distance.min(1).values
+    return pair, (selected <= best + 1e-7).float().mean(), (selected - best).mean()
+
+
+@torch.no_grad()
+def counterfactual_distances(
+    model, batch_tokens, prompt_len, root_chunks, continuation_chunks,
+    anchor_tokens, goal, level_index,
+):
+    """EMA-encode same-prefix root/continuation chunks and score geometry.
+
+    ``root_chunks`` is [B,C,L]. ``continuation_chunks`` is [B,M,L] or
+    ``None``. Every alternative is appended to the *same* factual prefix;
+    chunks borrowed from another batch row are proposals only, never outcome
+    labels. This is the token analogue of intent GAR's environment-rendered
+    counterfactual next states.
+    """
+    device = batch_tokens.device
+    batch, candidates, width = root_chunks.shape
+    continuations = 1 if continuation_chunks is None else continuation_chunks.shape[1]
+    rows, owners, actual_lengths = [], [], []
+    for b in range(batch):
+        prefix_end = int(prompt_len[b]) + int(anchor_tokens)
+        prefix = batch_tokens[b, :prefix_end]
+        for c in range(candidates):
+            for m in range(continuations):
+                pieces = [prefix, root_chunks[b, c]]
+                if continuation_chunks is not None:
+                    pieces.append(continuation_chunks[b, m])
+                sequence = torch.cat(pieces)
+                rows.append(sequence)
+                owners.append(b)
+                actual_lengths.append(len(sequence))
+    maximum = max(actual_lengths)
+    packed = batch_tokens.new_full((len(rows), maximum), model.pad_id)
+    for i, sequence in enumerate(rows):
+        packed[i, :len(sequence)] = sequence
+    encoded = model.teacher(packed)
+    reasoning_length = anchor_tokens + width * (
+        1 + int(continuation_chunks is not None)
+    ) + 1
+    base_paths = []
+    for i, b in enumerate(owners):
+        start = int(prompt_len[b]) - 1
+        base_paths.append(encoded[i, start:start + reasoning_length])
+    base_paths = torch.stack(base_paths)
+    if level_index is None:
+        outcome = base_paths[:, -1]
+    else:
+        outcome = model.lift_state_path(
+            base_paths, through_level=level_index, teacher=True
+        )[level_index][:, -1]
+    owner = torch.tensor(owners, device=device, dtype=torch.long)
+    distance = (
+        F.layer_norm(outcome, outcome.shape[-1:])
+        - F.layer_norm(goal.index_select(0, owner), goal.shape[-1:])
+    ).abs().mean(-1)
+    return distance.reshape(batch, candidates, continuations).amin(-1)
+
+
+def primitive_candidates(factual, k, vocabulary_size):
+    """Observed token plus K non-symbolic full-vocabulary alternatives."""
+    alternatives = torch.randint(
+        1, int(vocabulary_size), (len(factual), int(k)),
+        device=factual.device,
+    )
+    # Avoid a silent factual duplicate without introducing any semantic rule.
+    duplicate = alternatives.eq(factual[:, None])
+    alternatives[duplicate] = alternatives[duplicate].remainder(
+        int(vocabulary_size) - 1
+    ).add(1)
+    return torch.cat([factual[:, None], alternatives], 1)
+
+
+def macro_chunk_candidates(level, anchor, k):
+    """Factual chunk plus K samples from the observed macro-action bank."""
+    factual = level["raw_action_ids"][:, anchor]
+    pool = level["raw_action_ids"][level["valid"]]
+    ids = torch.randint(len(pool), (len(factual), int(k)), device=factual.device)
+    return torch.cat([factual[:, None], pool[ids]], 1)
+
+
+def end_to_end_geometric_preferences(model, batch, out, cfg):
+    """Intent-style GAR at the primitive and every macro hierarchy level."""
+    obj = cfg.objective
+    if float(obj.geo_rank_low) == 0 and float(obj.geo_rank_high) == 0:
+        zero = out["low_pred"].sum() * 0
+        return zero, {}, zero.detach()
+    k = int(obj.geo_rank_k)
+    horizon = int(obj.geo_rank_horizon)
+    if horizon not in (1, 2):
+        raise ValueError("end-to-end GAR pilot supports horizon 1 or 2")
+    tokens = batch["tokens"].to(out["low_pred"].device)
+    prompt_len = batch["prompt_len"].to(tokens.device)
+    items, total, selection = {}, out["low_pred"].sum() * 0, out["low_pred"].sum() * 0
+
+    if float(obj.geo_rank_low) > 0:
+        available = int(out["valid"].sum(1).min())
+        anchor = torch.randint(max(1, available - (horizon - 1)), ()).item()
+        root_ids = primitive_candidates(
+            out["action_ids"][:, anchor], k, model.token_action.num_embeddings
+        )
+        root_chunks = root_ids.unsqueeze(-1)
+        continuation = None
+        if horizon == 2:
+            source = out["action_ids"][:, min(anchor + 1, available - 1)]
+            continuation = primitive_candidates(
+                source, int(obj.geo_rank_continuations) - 1,
+                model.token_action.num_embeddings,
+            ).unsqueeze(-1)
+        goal = out["final_target"].detach()
+        distance = counterfactual_distances(
+            model, tokens, prompt_len, root_chunks, continuation,
+            anchor, goal, None,
+        )
+        batch_size, candidates = root_ids.shape
+        histories = out["prev"][:, :anchor + 1].repeat_interleave(candidates, 0)
+        previous = model.token_action(out["action_ids"][:, :anchor])
+        previous = previous.repeat_interleave(candidates, 0)
+        actions = model.token_action(root_ids.reshape(-1))[:, None]
+        action_history = torch.cat([previous, actions], 1)
+        predicted = model.low_predictor(histories, action_history)[:, -1]
+        if bool(obj.geo_rank_detach_prediction):
+            predicted = predicted.detach()
+        goal_rows = goal.repeat_interleave(candidates, 0)
+        energy = model.low_goal_value(predicted, goal_rows).reshape(
+            batch_size, candidates
+        )
+        rank = geometric_rank_loss(
+            energy, distance, obj.geo_rank_margin, obj.geo_rank_label_gap
+        )
+        regression = F.smooth_l1_loss(energy, distance)
+        low_total = rank + float(obj.geo_rank_regression) * regression
+        total = total + float(obj.geo_rank_low) * low_total
+        selection = selection + float(obj.geo_rank_low) * low_total.detach()
+        pair, top1, regret = geometric_rank_metrics(
+            energy.detach(), distance, obj.geo_rank_label_gap
+        )
+        items.update({
+            "geo_low_rank": rank, "geo_low_regression": regression,
+            "geo_low_pair": pair, "geo_low_top1": top1,
+            "geo_low_regret": regret,
+        })
+
+    level_weights = list(obj.geo_rank_level_weights)
+    if len(level_weights) == 1:
+        level_weights *= len(out["levels"])
+    if len(level_weights) != len(out["levels"]):
+        raise ValueError("geo_rank_level_weights must broadcast or match levels")
+    if float(obj.geo_rank_high) > 0:
+        for level, configured_weight in zip(out["levels"], level_weights):
+            level_weight = float(configured_weight)
+            if level_weight == 0:
+                continue
+            available = int(level["valid"].sum(1).min())
+            if available < horizon:
+                continue
+            anchor = torch.randint(max(1, available - (horizon - 1)), ()).item()
+            roots = macro_chunk_candidates(level, anchor, k)
+            continuation = None
+            if horizon == 2:
+                continuation = macro_chunk_candidates(
+                    level, anchor + 1,
+                    int(obj.geo_rank_continuations) - 1,
+                )
+            counts = level["valid"].sum(1).long() - 1
+            goal = level["target"][
+                torch.arange(len(tokens), device=tokens.device), counts
+            ].detach()
+            distance = counterfactual_distances(
+                model, tokens, prompt_len, roots, continuation,
+                anchor * int(level["span"]), goal, int(level["index"]),
+            )
+            batch_size, candidates = roots.shape[:2]
+            flat_roots = roots.reshape(-1, roots.shape[-1])
+            codes = macro_codes(
+                model, flat_roots, through_level=int(level["index"])
+            )[int(level["index"])][:, 0]
+            state_history = level["prev"][:, :anchor + 1].repeat_interleave(
+                candidates, 0
+            )
+            previous = level["codes"][:, :anchor].repeat_interleave(candidates, 0)
+            action_history = torch.cat([previous, codes[:, None]], 1)
+            predicted = model.levels[int(level["index"])].predictor(
+                state_history, action_history
+            )[:, -1]
+            if bool(obj.geo_rank_detach_prediction):
+                predicted = predicted.detach()
+            goal_rows = goal.repeat_interleave(candidates, 0)
+            energy = model.levels[int(level["index"])].goal_value(
+                predicted, goal_rows
+            ).reshape(batch_size, candidates)
+            rank = geometric_rank_loss(
+                energy, distance, obj.geo_rank_margin, obj.geo_rank_label_gap
+            )
+            regression = F.smooth_l1_loss(energy, distance)
+            level_total = rank + float(obj.geo_rank_regression) * regression
+            weight = float(obj.geo_rank_high) * level_weight
+            total = total + weight * level_total
+            selection = selection + weight * level_total.detach()
+            pair, top1, regret = geometric_rank_metrics(
+                energy.detach(), distance, obj.geo_rank_label_gap
+            )
+            prefix = f"geo_level{int(level['index']) + 1}"
+            items.update({
+                f"{prefix}_rank": rank, f"{prefix}_regression": regression,
+                f"{prefix}_pair": pair, f"{prefix}_top1": top1,
+                f"{prefix}_regret": regret,
+            })
+    return total, items, selection
+
+
+def compute_losses(out, cfg, model=None, batch=None):
     obj = cfg.objective
     low = normalized_mse(out["low_pred"], out["target"], out["valid"])
     low_dense = dense_loss(
@@ -192,6 +422,13 @@ def compute_losses(out, cfg):
             + obj.high_dense * high_dense.detach()
             + obj.reachability * reachability.detach()
         )
+    if model is not None and batch is not None:
+        geo_total, geo_items, geo_selection = end_to_end_geometric_preferences(
+            model, batch, out, cfg
+        )
+        total = total + geo_total
+        selection = selection + geo_selection
+        items.update(geo_items)
     items["loss"] = total
     items["selection"] = selection
     return total, items
@@ -243,7 +480,7 @@ def main(cfg: DictConfig):
                     step, total_steps, cfg.train.warmup_steps
                 )
             out = model(batch["tokens"].to(cfg.device), batch["prompt_len"].to(cfg.device))
-            loss, items = compute_losses(out, cfg)
+            loss, items = compute_losses(out, cfg, model=model, batch=batch)
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.grad_clip)
@@ -261,7 +498,7 @@ def main(cfg: DictConfig):
                 if index >= cfg.train.eval_batches:
                     break
                 out = model(batch["tokens"].to(cfg.device), batch["prompt_len"].to(cfg.device))
-                _, items = compute_losses(out, cfg)
+                _, items = compute_losses(out, cfg, model=model, batch=batch)
                 for name, value in items.items():
                     sums[name] = sums.get(name, 0.0) + float(value)
                 state_features.append(out["target"][out["valid"]])
