@@ -143,6 +143,21 @@ def test_cem_can_optimize_base_noise_through_action_transform():
     assert torch.allclose(returned_cost, torch.tensor(result.cost), atol=1e-6)
 
 
+def test_continuous_cem_scores_in_parent_state_coordinates():
+    goal = torch.tensor([1.0, -1.0])
+    plain = continuous_cem(
+        lambda actions: actions, goal, 1, 2, candidates=512,
+        iterations=4, elites=32,
+        generator=torch.Generator().manual_seed(18),
+    )
+    lifted = continuous_cem(
+        lambda actions: actions, goal, 1, 2, candidates=512,
+        iterations=4, elites=32, goal_states=lambda states: -states,
+        generator=torch.Generator().manual_seed(18),
+    )
+    assert torch.sign(plain.states[0, 0]) != torch.sign(lifted.states[0, 0])
+
+
 def test_reachability_retains_enough_candidates_for_all_elites():
     goal = torch.tensor([1.0, -1.0])
     result = continuous_cem(

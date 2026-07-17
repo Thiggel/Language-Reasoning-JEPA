@@ -222,6 +222,19 @@ class OracleCEMPlanner:
         lifted = self.model.lift_state_path(path, through_level=level_index)
         return lifted[level_index][:, -1:]
 
+    def lift_level_predictions(self, level_path, predictions, source_level):
+        """Lift a rollout one hierarchy level for recursive subgoal scoring."""
+        if source_level + 1 >= len(self.model.levels):
+            raise ValueError("top-level rollouts cannot be lifted further")
+        n = len(predictions)
+        path = torch.cat([
+            level_path.expand(n, -1, -1), predictions
+        ], 1)
+        valid = torch.ones(path.shape[:2], dtype=torch.bool, device=path.device)
+        encoder = self.model.levels[source_level + 1].state_encoder
+        lifted = encoder(path, valid) if encoder is not None else path
+        return lifted[:, -1:]
+
     def low_rollout(self, start, tokens, state_history, action_history):
         actions = self.model.token_action(tokens)
         return self.model.low_predictor.rollout(
@@ -353,7 +366,8 @@ class OracleCEMPlanner:
         )
 
     def macro_plan(self, level_index, start, target, horizon,
-                   state_history, action_history, low_history, base_path=None):
+                   state_history, action_history, low_history, base_path=None,
+                   goal_states=None):
         level = self.model.levels[level_index]
         bank = self.banks[level_index]
         mode = self.args.support_mode
@@ -503,6 +517,7 @@ class OracleCEMPlanner:
             iterations=self.args.macro_iterations,
             elites=self.args.macro_elites, alpha=self.args.alpha,
             init_mean=init_mean, init_std=init_std, project_bank=projection,
+            goal_states=goal_states,
             extra_cost=extra_cost,
             reachability=reachability,
             reach_topn=self.args.reach_topn,
@@ -527,55 +542,64 @@ class OracleCEMPlanner:
             if oracle_level_goals is None:
                 raise ValueError("distinct hierarchy requires level-specific goals")
             self.oracle_level_goals = oracle_level_goals
-            level_index = len(self.model.levels) - 1
-            span = self.model.level_spans[level_index]
+            top_level = len(self.model.levels) - 1
             base_path = prefix_states[:, prompt_len - 1:]
-            lifted = self.model.lift_state_path(
-                base_path, through_level=level_index
-            )[level_index]
-            ratio = span // (self.model.level_spans[level_index - 1]
-                             if level_index else 1)
-            boundary_ids = list(range(0, lifted.shape[1], ratio))
-            if boundary_ids[-1] != lifted.shape[1] - 1:
-                boundary_ids.append(lifted.shape[1] - 1)
-            high_history = lifted[:, boundary_ids]
-            high_start = high_history[:, -1]
-            complete = len(generated) // span
-            if complete:
-                ids = torch.tensor(
-                    [generated[:complete * span]], device=self.device
-                )
-                high_actions = macro_codes(
-                    self.model, ids, through_level=level_index
-                )[level_index]
-            else:
-                high_actions = high_start.new_zeros(
-                    1, 0, self.model.level_dims[level_index]
-                )
-            # At off-boundary MPC updates there is no completed macro action
-            # joining the old history to the current state, so restart from
-            # the freshly lifted causal state.
-            if position % span:
-                high_history = high_start[:, None]
-                high_actions = high_start.new_zeros(
-                    1, 0, self.model.level_dims[level_index]
-                )
-            result = self.macro_plan(
-                level_index, high_start, oracle_level_goals[level_index],
-                self.args.high_horizon, high_history, high_actions,
-                (start, *low_history), base_path=base_path,
+            lifted_paths = self.model.lift_state_path(
+                base_path, through_level=top_level
             )
-            subgoal = result.states[0:1]
+            parent_target = oracle_level_goals[top_level]
+            for level_index in reversed(range(len(self.model.levels))):
+                span = self.model.level_spans[level_index]
+                previous = self.model.level_spans[level_index - 1] if level_index else 1
+                ratio = span // previous
+                level_path = lifted_paths[level_index]
+                boundary_ids = list(range(0, level_path.shape[1], ratio))
+                if boundary_ids[-1] != level_path.shape[1] - 1:
+                    boundary_ids.append(level_path.shape[1] - 1)
+                state_history = level_path[:, boundary_ids]
+                level_start = state_history[:, -1]
+                complete = len(generated) // span
+                if complete:
+                    ids = torch.tensor(
+                        [generated[:complete * span]], device=self.device
+                    )
+                    action_history = macro_codes(
+                        self.model, ids, through_level=level_index
+                    )[level_index]
+                else:
+                    action_history = level_start.new_zeros(
+                        1, 0, self.model.level_dims[level_index]
+                    )
+                if position % span:
+                    state_history = level_start[:, None]
+                    action_history = level_start.new_zeros(
+                        1, 0, self.model.level_dims[level_index]
+                    )
+                transform = None
+                if level_index < top_level:
+                    transform = lambda states, li=level_index, lp=level_path: (
+                        self.lift_level_predictions(lp, states, li)
+                    )
+                horizon = (
+                    self.args.high_horizon if level_index == top_level
+                    else self.model.level_spans[level_index + 1] // span
+                )
+                result = self.macro_plan(
+                    level_index, level_start, parent_target, horizon,
+                    state_history, action_history, (start, *low_history),
+                    base_path=base_path, goal_states=transform,
+                )
+                parent_target = result.states[0:1]
+                self.pending.append({
+                    "end": position + span, "level": level_index + 1,
+                    "predicted": parent_target[0].detach().cpu(),
+                    **result.diagnostics,
+                })
             token_result = self.token_plan(
-                start, subgoal, remaining_to_boundary(position, span),
-                *low_history, target_level=level_index, base_path=base_path,
+                start, parent_target,
+                remaining_to_boundary(position, self.model.level_spans[0]),
+                *low_history, target_level=0, base_path=base_path,
             )
-            self.pending.append({
-                "end": position + len(token_result.actions),
-                "level": level_index + 1,
-                "predicted": subgoal[0].detach().cpu(),
-                **result.diagnostics,
-            })
             execute = (
                 min(self.args.token_execution_chunk, len(token_result.actions))
                 if self.args.token_execution_chunk > 0

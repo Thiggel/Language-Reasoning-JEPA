@@ -207,6 +207,7 @@ def continuous_cem(
     init_mean: Tensor | None = None,
     init_std: Tensor | None = None,
     project_bank: Tensor | None = None,
+    goal_states: Callable[[Tensor], Tensor] | None = None,
     extra_cost: Callable[[Tensor, Tensor], tuple[Tensor, dict[str, Tensor]]] | None = None,
     reachability: Callable[[Tensor], Tensor] | None = None,
     reach_topn: int = 0,
@@ -249,7 +250,8 @@ def continuous_cem(
             states, scored_actions = rolled
         else:
             states, scored_actions = rolled, actions
-        cost = latent_l1(states[:, -1], goal.expand(candidates, -1))
+        scored = goal_states(states) if goal_states is not None else states
+        cost = latent_l1(scored[:, -1], goal.expand(candidates, -1))
         diagnostics: dict[str, Tensor] = {
             "goal_cost": cost.detach(),
             "bank_projection_distance": projection_distance.detach(),
