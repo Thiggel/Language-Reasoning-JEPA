@@ -40,6 +40,7 @@ from textjepa.planning.token_hierarchy import (
     macro_codes,
     remaining_to_boundary,
 )
+from textjepa.planning.tree_search import best_first_search, puct_search
 
 
 def load_model(path, device):
@@ -229,7 +230,7 @@ class OracleCEMPlanner:
             head.load_state_dict(payload["head"])
             self.advantage_head = head.to(self.device).eval()
 
-    def geometric_goal_cost(self, head, scope):
+    def geometric_goal_cost(self, head, scope, level_index=None):
         """Return a CEM cost using only JEPA geometry and its learned energy.
 
         ``combined`` standardizes both signals within the candidate population
@@ -237,7 +238,13 @@ class OracleCEMPlanner:
         ranking-trained value head as calibrated metric distance.
         """
         mode = self.args.goal_score
-        enabled = self.args.goal_score_scope in ("all", scope)
+        configured = self.args.goal_score_scope
+        enabled = configured in ("all", scope)
+        if configured == "top":
+            enabled = (
+                scope == "macro"
+                and level_index == len(self.model.levels) - 1
+            )
         if mode == "latent_distance" or not enabled:
             return None
 
@@ -303,6 +310,21 @@ class OracleCEMPlanner:
                 start, target, horizon, state_history, action_history,
                 candidates=(1 if mode == "prior_greedy" else candidates),
                 greedy=(mode == "prior_greedy"),
+                target_level=target_level, base_path=base_path,
+            )
+
+        if mode == "prior_topk_cem":
+            return self.prior_topk_cem_plan(
+                start, target, horizon, state_history, action_history,
+                candidates=candidates, iterations=iterations,
+                target_level=target_level, base_path=base_path,
+            )
+
+        if mode in ("prior_beam", "prior_astar", "prior_puct"):
+            return self.prior_tree_plan(
+                start, target, horizon, state_history, action_history,
+                mode=mode.removeprefix("prior_"),
+                target_level=target_level, base_path=base_path,
             )
 
         cost_terms = []
@@ -375,7 +397,8 @@ class OracleCEMPlanner:
         return result
 
     def prior_token_plan(self, start, target, horizon, state_history,
-                         action_history, candidates, greedy=False):
+                         action_history, candidates, greedy=False,
+                         target_level=None, base_path=None):
         """Autoregressive proposals from the JEPA's state-conditioned prior."""
         n = int(candidates)
         states_hist = state_history.expand(n, -1, -1)
@@ -403,13 +426,22 @@ class OracleCEMPlanner:
         token_ids = torch.stack(tokens, 1)
         prior_nll = torch.stack(nlls, 1).mean(1)
         prior_entropy = torch.stack(entropies, 1).mean(1)
+        scored = states
+        if target_level is not None:
+            if base_path is None:
+                raise ValueError("distinct-level prior planning requires base_path")
+            scored = self.lift_low_predictions(base_path, states, target_level)
         goal_rows = target.expand(n, -1)
+        value_head = (
+            self.model.levels[target_level].goal_value
+            if target_level is not None else self.model.low_goal_value
+        )
         goal_cost_fn = self.geometric_goal_cost(
-            self.model.low_goal_value, "low"
+            value_head, "low"
         )
         goal_cost = (
-            goal_cost_fn(states[:, -1], goal_rows)
-            if goal_cost_fn is not None else latent_l1(states[:, -1], goal_rows)
+            goal_cost_fn(scored[:, -1], goal_rows)
+            if goal_cost_fn is not None else latent_l1(scored[:, -1], goal_rows)
         )
         cost = goal_cost + self.args.token_prior_weight * prior_nll
         selected = int(cost.argmin())
@@ -422,6 +454,142 @@ class OracleCEMPlanner:
                 "shooting_candidates": float(n),
             },
         )
+
+    def prior_topk_cem_plan(
+        self, start, target, horizon, state_history, action_history,
+        candidates, iterations, target_level=None, base_path=None,
+    ):
+        """Categorical CEM on a hard, prior-supported token alphabet.
+
+        At each horizon position the admissible alphabet is the prior's top-k
+        tokens at a reference rollout state.  CEM operates only on those local
+        token IDs and is initialized by the renormalized prior probabilities.
+        After each outer refinement, the best simulated trajectory supplies
+        the next reference states.  This makes arbitrary off-prior tokens
+        impossible while retaining consequence-based CEM refitting.
+        """
+        k = int(self.args.token_prior_topk)
+        if k <= 0:
+            raise ValueError("prior_topk_cem requires --token-prior-topk > 0")
+        k = min(k, len(self.vocab) - 2)
+        forbidden = (self.vocab.pad_id, self.vocab.token_to_id[self.vocab.UNK])
+        reference_states = None
+        result = None
+        refinements = max(1, int(self.args.token_prior_refinements))
+        for refinement in range(refinements):
+            if reference_states is None:
+                greedy = self.prior_token_plan(
+                    start, target, horizon, state_history, action_history,
+                    candidates=1, greedy=True, target_level=target_level,
+                    base_path=base_path,
+                )
+                reference_states = greedy.states
+            starts = torch.cat([start[:, None], reference_states[None, :-1]], 1)[0]
+            logits = self.model.token_prior(starts) / self.args.token_prior_temperature
+            logits[:, list(forbidden)] = -torch.inf
+            top = logits.topk(k, -1)
+            allowed = top.indices
+            initial = top.values.softmax(-1)
+
+            def decode(local_ids):
+                return allowed[None].expand(len(local_ids), -1, -1).gather(
+                    2, local_ids[..., None]
+                ).squeeze(-1)
+
+            def rollout(local_ids):
+                return self.low_rollout(
+                    start, decode(local_ids), state_history, action_history
+                )
+
+            transform = None
+            if target_level is not None:
+                if base_path is None:
+                    raise ValueError("distinct-level prior CEM requires base_path")
+                transform = lambda states: self.lift_low_predictions(
+                    base_path, states, target_level
+                )
+            value_head = (
+                self.model.levels[target_level].goal_value
+                if target_level is not None else self.model.low_goal_value
+            )
+            local_result = categorical_cem(
+                rollout, target, horizon, k,
+                candidates=candidates, iterations=iterations,
+                elites=min(self.args.token_elites, candidates),
+                alpha=self.args.alpha, initial_probs=initial,
+                goal_states=transform,
+                goal_cost_fn=self.geometric_goal_cost(value_head, "low"),
+                rollout_batch_size=self.args.cem_rollout_batch_size,
+            )
+            actual = decode(local_result.actions[None])[0]
+            full_distribution = initial.new_zeros(horizon, len(self.vocab))
+            full_distribution.scatter_(1, allowed, local_result.distribution)
+            result = CEMResult(
+                actual, local_result.states, local_result.cost,
+                {
+                    **local_result.diagnostics,
+                    "prior_topk": float(k),
+                    "prior_refinement": float(refinement + 1),
+                },
+                full_distribution,
+            )
+            reference_states = result.states
+        assert result is not None
+        return result
+
+    def prior_tree_plan(
+        self, start, target, horizon, state_history, action_history, mode,
+        target_level=None, base_path=None,
+    ):
+        """Search prior-supported token branches with beam/A* or PUCT."""
+        forbidden = (self.vocab.pad_id, self.vocab.token_to_id[self.vocab.UNK])
+        topk = min(int(self.args.token_prior_topk), len(self.vocab) - 2)
+        if topk <= 0:
+            raise ValueError("prior tree search requires --token-prior-topk > 0")
+
+        def transition(actions):
+            return self.low_rollout(
+                start, actions[None], state_history, action_history
+            )[0]
+
+        def propose(state, limit):
+            logits = self.model.token_prior(state[None])[0]
+            logits[list(forbidden)] = -torch.inf
+            selected = logits.topk(min(limit, topk))
+            return selected.indices, selected.values.softmax(-1)
+
+        value_head = (
+            self.model.levels[target_level].goal_value
+            if target_level is not None else self.model.low_goal_value
+        )
+        learned = self.geometric_goal_cost(value_head, "low")
+
+        def leaf_cost(states):
+            scored = states
+            if target_level is not None:
+                if base_path is None:
+                    raise ValueError("distinct-level tree search requires base_path")
+                scored = self.lift_low_predictions(
+                    base_path, states[:, None], target_level
+                )[:, 0]
+            goals = target.expand(len(scored), -1)
+            return learned(scored, goals) if learned is not None else latent_l1(scored, goals)
+
+        example = torch.zeros(1, dtype=torch.long, device=self.device)
+        if mode in ("beam", "astar"):
+            tree = best_first_search(
+                transition, propose, leaf_cost, start[0], example,
+                horizon=horizon, width=self.args.tree_width,
+                topk=topk, prior_weight=self.args.token_prior_weight,
+                mode=mode,
+            )
+        else:
+            tree = puct_search(
+                transition, propose, leaf_cost, start[0], example,
+                horizon=horizon, simulations=self.args.tree_simulations,
+                topk=topk, c_puct=self.args.tree_c_puct,
+            )
+        return CEMResult(tree.actions, tree.states, tree.cost, tree.diagnostics)
 
     def macro_plan(self, level_index, start, target, horizon,
                    state_history, action_history, low_history, base_path=None,
@@ -485,6 +653,12 @@ class OracleCEMPlanner:
         else:
             rollout = ordinary_rollout
         real_support = bank["support"]
+
+        if self.args.macro_planner != "cem":
+            return self.macro_tree_plan(
+                level_index, start, target, horizon, state_history,
+                action_history, bank, goal_states,
+            )
 
         def extra_cost(codes, predicted):
             starts = torch.cat([start.expand(len(codes), -1)[:, None], predicted[:, :-1]], 1)
@@ -582,6 +756,7 @@ class OracleCEMPlanner:
                     level_index + 1 if goal_states is not None else level_index
                 ].goal_value,
                 "macro",
+                level_index=level_index,
             ),
             rollout_batch_size=self.args.cem_rollout_batch_size,
             extra_cost=extra_cost,
@@ -591,6 +766,79 @@ class OracleCEMPlanner:
         )
         result.diagnostics.update(level=level_index + 1, horizon=horizon)
         return result
+
+    def macro_tree_plan(
+        self, level_index, start, target, horizon, state_history,
+        action_history, bank, goal_states,
+    ):
+        """Codebook or prior-progressive tree search at one macro level."""
+        level = self.model.levels[level_index]
+
+        def transition(actions):
+            return level.predictor.rollout(
+                start, actions[None], state_history=state_history,
+                action_history=action_history,
+            )[0]
+
+        def codebook_proposal(state, limit):
+            k = min(max(limit, self.args.macro_tree_topk), len(bank["states"]))
+            ids = torch.cdist(state[None], bank["states"]).squeeze(0).topk(
+                k, largest=False
+            ).indices
+            actions = bank["actions"][ids]
+            mu, logvar = level.action.prior_params(state[None])
+            nll = 0.5 * (
+                logvar + (actions - mu).square() * (-logvar).exp()
+            ).sum(-1)
+            selected = (-nll).topk(min(limit, len(actions)))
+            return actions[selected.indices], selected.values.softmax(-1)
+
+        def progressive_proposal(state, limit):
+            actions = level.action.sample_prior(state[None], n=limit)[0]
+            return actions, actions.new_full((len(actions),), 1.0 / len(actions))
+
+        value_head = self.model.levels[
+            level_index + 1 if goal_states is not None else level_index
+        ].goal_value
+        learned = self.geometric_goal_cost(
+            value_head, "macro", level_index=level_index
+        )
+
+        def leaf_cost(states):
+            scored = states
+            if goal_states is not None:
+                scored = goal_states(states[:, None])[:, -1]
+            goals = target.expand(len(scored), -1)
+            return learned(scored, goals) if learned is not None else latent_l1(scored, goals)
+
+        example = bank["actions"][:1]
+        planner = self.args.macro_planner
+        if planner == "codebook_beam":
+            tree = best_first_search(
+                transition, codebook_proposal, leaf_cost, start[0], example,
+                horizon=horizon, width=self.args.tree_width,
+                topk=self.args.macro_tree_topk,
+                prior_weight=self.args.macro_prior_tree_weight,
+                mode="beam",
+            )
+        else:
+            progressive = planner == "progressive_puct"
+            tree = puct_search(
+                transition,
+                progressive_proposal if progressive else codebook_proposal,
+                leaf_cost, start[0], example, horizon=horizon,
+                simulations=self.args.tree_simulations,
+                topk=self.args.macro_tree_topk,
+                c_puct=self.args.tree_c_puct,
+                progressive=progressive,
+                widening_c=self.args.widening_c,
+                widening_alpha=self.args.widening_alpha,
+            )
+        return CEMResult(
+            tree.actions, tree.states, tree.cost,
+            {**tree.diagnostics, "level": level_index + 1,
+             "horizon": horizon},
+        )
 
     @torch.no_grad()
     def plan_chunk(self, prompt, generated, oracle_goal, oracle_level_goals=None):
@@ -858,6 +1106,15 @@ def main():
     parser.add_argument("--macro-candidates", type=int, default=256)
     parser.add_argument("--macro-iterations", type=int, default=5)
     parser.add_argument("--macro-elites", type=int, default=32)
+    parser.add_argument(
+        "--macro-planner",
+        choices=["cem", "codebook_beam", "codebook_puct", "progressive_puct"],
+        default="cem",
+    )
+    parser.add_argument("--macro-tree-topk", type=int, default=16)
+    parser.add_argument("--macro-prior-tree-weight", type=float, default=0.1)
+    parser.add_argument("--widening-c", type=float, default=2.0)
+    parser.add_argument("--widening-alpha", type=float, default=0.5)
     parser.add_argument("--token-candidates", type=int, default=256)
     parser.add_argument("--token-iterations", type=int, default=5)
     parser.add_argument("--token-elites", type=int, default=32)
@@ -867,10 +1124,15 @@ def main():
     )
     parser.add_argument("--token-proposal", choices=[
         "uniform", "prior_energy", "prior_shooting", "prior_greedy",
+        "prior_topk_cem", "prior_beam", "prior_astar", "prior_puct",
     ], default="uniform")
     parser.add_argument("--token-prior-weight", type=float, default=0.0)
     parser.add_argument("--token-prior-temperature", type=float, default=1.0)
     parser.add_argument("--token-prior-topk", type=int, default=0)
+    parser.add_argument("--token-prior-refinements", type=int, default=1)
+    parser.add_argument("--tree-width", type=int, default=64)
+    parser.add_argument("--tree-simulations", type=int, default=256)
+    parser.add_argument("--tree-c-puct", type=float, default=1.5)
     parser.add_argument(
         "--token-execution-chunk", type=int, default=0,
         help="execute this many planned tokens before replanning; 0 executes the span",
@@ -893,7 +1155,7 @@ def main():
     ], default="latent_distance")
     parser.add_argument("--value-weight", type=float, default=1.0)
     parser.add_argument(
-        "--goal-score-scope", choices=["all", "low", "macro"], default="all",
+        "--goal-score-scope", choices=["all", "low", "macro", "top"], default="all",
         help="apply learned goal energy at primitive, macro, or all planner levels",
     )
     parser.add_argument("--bank-cache", default=None)
@@ -934,7 +1196,12 @@ def main():
                 members.append(member)
             ensembles.append(members)
     dataset = make_dataset(cfg, vocab, args.episodes, cfg.data.val_seed)
-    totals = {"success": 0, "valid": 0, "invalid": 0, "tokens": 0}
+    totals = {
+        "success": 0, "valid": 0, "invalid": 0, "tokens": 0,
+        "reference_correct": 0, "reference_count": 0,
+        "distribution_count": 0, "distribution_top1": 0,
+        "distribution_top5": 0, "distribution_top20": 0,
+    }
     all_records = []
     for episode in range(args.episodes):
         item = dataset[episode]
@@ -958,6 +1225,20 @@ def main():
             )
             before = list(generated)
             generated.extend(chunk)
+            reference = item["tokens"][item["prompt_len"]:]
+            for offset, token in enumerate(chunk):
+                position = len(before) + offset
+                if position >= len(reference):
+                    break
+                expected = int(reference[position])
+                totals["reference_count"] += 1
+                totals["reference_correct"] += int(int(token) == expected)
+                if result.distribution is not None and offset < len(result.distribution):
+                    order = result.distribution[offset].argsort(descending=True)
+                    totals["distribution_count"] += 1
+                    totals["distribution_top1"] += int(expected in order[:1])
+                    totals["distribution_top5"] += int(expected in order[:5])
+                    totals["distribution_top20"] += int(expected in order[:20])
             planner.observe_chunk(prompt, before, chunk, result)
             solved, valid, invalid = replay(problem, vocab, generated)
             if solved:
@@ -983,6 +1264,15 @@ def main():
         "valid_sentences_per_episode": totals["valid"] / args.episodes,
         "invalid_sentences_per_episode": totals["invalid"] / args.episodes,
         "tokens_per_episode": totals["tokens"] / args.episodes,
+        "reference_token_accuracy": (
+            totals["reference_correct"] / max(1, totals["reference_count"])
+        ),
+        "planning_distribution_reference_recall": {
+            "n": totals["distribution_count"],
+            "top1": totals["distribution_top1"] / max(1, totals["distribution_count"]),
+            "top5": totals["distribution_top5"] / max(1, totals["distribution_count"]),
+            "top20": totals["distribution_top20"] / max(1, totals["distribution_count"]),
+        },
         "diagnostics": aggregate_records(all_records),
         "execution_drift_by_token_horizon": grouped_drift(
             all_records, "low_drift_horizon", "low_drift"

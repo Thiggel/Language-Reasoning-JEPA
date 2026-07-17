@@ -180,6 +180,24 @@ def test_state_conditioned_token_prior_shape_and_detached_encoder_gradient():
     assert any(parameter.grad is not None for parameter in model.token_prior.parameters())
 
 
+def test_ema_target_is_deterministic_and_stays_in_eval_mode():
+    model = MultilevelTokenHierarchyJEPA(
+        vocab_size=30, pad_id=0, d_model=16, encoder_layers=1,
+        predictor_layers=1, n_heads=2, ff_mult=2, max_len=64,
+        d_action=8, level_spans=[4], level_dims=[6],
+        variational_levels=[False], concat_width=2,
+    ).train()
+    tokens = torch.randint(1, 30, (2, 24))
+    with torch.no_grad():
+        first = model.teacher(tokens)
+        second = model.teacher(tokens)
+    assert not model.teacher.training
+    assert not model.teacher.module.training
+    assert torch.equal(first, second)
+    transformer_layer = model.encoder.blocks.layers[0]
+    assert transformer_layer.dropout.p == 0.0
+
+
 def test_distinct_level_states_are_causal_and_goal_liftable():
     torch.manual_seed(17)
     model = MultilevelTokenHierarchyJEPA(

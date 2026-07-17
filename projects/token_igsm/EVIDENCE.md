@@ -9,3 +9,11 @@
   terminal state alone adds no scientific claim.
 - The semantic-boundary pilot is not fairly interpretable until its timed-out,
   capacity-matched flat-objective control is recovered.
+- End-to-end GAR learns above-chance on-distribution macro ordering but has not
+  produced a solved trace. Learned low-level scoring is optimizer-exploitable.
+- A detached token prior reached 84.4% top-1 and 91.4% top-5 reference-token
+  accuracy in a 128-position audit and reduced rollout drift, but the prior
+  shooting evaluation used the wrong distinct-level coordinates.
+- Historical token-hierarchy training used stochastic base EMA targets because
+  the encoder inherited dropout 0.1 and the EMA copy entered train mode. Treat
+  prior drift and GAR planning conclusions as diagnostic pending correction.

@@ -57,6 +57,7 @@ class CEMResult:
     states: Tensor
     cost: float
     diagnostics: dict[str, float]
+    distribution: Tensor | None = None
 
 
 def project_to_bank(actions: Tensor, bank: Tensor) -> tuple[Tensor, Tensor]:
@@ -100,6 +101,7 @@ def categorical_cem(
     goal_cost_fn: Callable[[Tensor, Tensor], Tensor] | None = None,
     rollout_batch_size: int = 0,
     generator: torch.Generator | None = None,
+    initial_probs: Tensor | None = None,
 ) -> CEMResult:
     """Categorical CEM over discrete token sequences, with no language model."""
     if horizon < 1 or vocab_size < 2:
@@ -107,7 +109,15 @@ def categorical_cem(
     if candidates < 1 or iterations < 1 or elites < 1:
         raise ValueError("candidates, iterations, and elites must be positive")
     device = goal.device
-    probs = torch.ones(horizon, vocab_size, device=device)
+    probs = (
+        initial_probs.to(device=device).clone()
+        if initial_probs is not None
+        else torch.ones(horizon, vocab_size, device=device)
+    )
+    if probs.shape != (horizon, vocab_size):
+        raise ValueError("initial_probs must have shape [horizon, vocab_size]")
+    if bool((probs < 0).any()):
+        raise ValueError("initial_probs must be nonnegative")
     if forbidden:
         probs[:, list(forbidden)] = 0
     if bool((probs.sum(-1) == 0).any()):
@@ -171,6 +181,7 @@ def categorical_cem(
     return CEMResult(
         best_tokens, best_states, best_cost,
         {**best_diag, "categorical_entropy": float(entropy)},
+        probs.detach().clone(),
     )
 
 

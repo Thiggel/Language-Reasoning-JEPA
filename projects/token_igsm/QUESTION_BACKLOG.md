@@ -4,6 +4,10 @@
 2. Are planned macro-actions on the empirical conditional support?
 3. Can every selected subgoal be reached by the lower-level controller?
 4. Does dense multistep supervision reduce recursive drift at each level?
+5. Does MSE-calibrated geometric advantage avoid optimizer exploitation?
+6. Does hard top-k prior support improve the post-search token distribution?
+7. Is topmost-only value guidance safer than learned scoring at every level?
+8. Does codebook PUCT or prior progressive widening add value beyond CEM?
 5. Do rendered semantic boundaries improve future/progress or answer probes
    over both random-matched boundaries and a capacity-matched flat objective?
 6. After coordinate-correct distinct-state validation, can a state-action

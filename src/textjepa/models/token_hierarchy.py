@@ -32,6 +32,7 @@ class CausalTokenStateEncoder(nn.Module):
             d_model,
             n_heads,
             d_model * ff_mult,
+            dropout=0.0,
             batch_first=True,
             norm_first=True,
             activation="gelu",

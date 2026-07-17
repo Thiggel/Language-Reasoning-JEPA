@@ -12,6 +12,20 @@ from textjepa.planning.token_cem import (
 )
 
 
+def test_categorical_cem_respects_hard_initial_support():
+    goal = torch.tensor([[1.0]])
+    initial = torch.tensor([[0.0, 0.0, 1.0]])
+
+    def rollout(tokens):
+        return tokens.float().unsqueeze(-1)
+
+    result = categorical_cem(
+        rollout, goal, horizon=1, vocab_size=3, candidates=32,
+        iterations=2, elites=4, initial_probs=initial,
+    )
+    assert result.actions.tolist() == [2]
+
+
 def test_projection_returns_exact_bank_members_and_raw_distance():
     bank = torch.tensor([[0.0, 0.0], [2.0, 0.0], [0.0, 3.0]])
     raw = torch.tensor([[[1.9, 0.1], [0.0, 2.5]]])

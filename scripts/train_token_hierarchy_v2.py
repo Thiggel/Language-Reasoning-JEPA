@@ -71,7 +71,7 @@ def geometric_preference_loss(energy, distance, objective, margin, label_gap,
         student = (-energy / float(temperature)).log_softmax(-1)
         return -(teacher * student).sum(-1).mean()
     if objective == "regression":
-        return F.smooth_l1_loss(energy, distance)
+        return F.mse_loss(energy, distance)
     raise ValueError(f"unknown geometric preference objective: {objective}")
 
 
@@ -216,6 +216,17 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             model, tokens, prompt_len, root_chunks, continuation,
             anchor, goal, None,
         )
+        baseline = (
+            out["prompt_target"] if anchor == 0 else out["target"][:, anchor - 1]
+        )
+        baseline_distance = (
+            F.layer_norm(baseline, baseline.shape[-1:])
+            - F.layer_norm(goal, goal.shape[-1:])
+        ).abs().mean(-1)
+        # A cost advantage: negative means that the candidate moved closer to
+        # the terminal goal.  Pairwise ordering is unchanged, while the MSE
+        # term now calibrates the magnitude of progress across states.
+        target = distance - baseline_distance[:, None]
         batch_size, candidates = root_ids.shape
         histories = out["prev"][:, :anchor + 1].repeat_interleave(candidates, 0)
         previous = model.token_action(out["action_ids"][:, :anchor])
@@ -230,16 +241,16 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             batch_size, candidates
         )
         rank = geometric_preference_loss(
-            energy, distance, obj.geo_rank_objective,
+            energy, target, obj.geo_rank_objective,
             obj.geo_rank_margin, obj.geo_rank_label_gap,
             obj.geo_rank_temperature,
         )
-        regression = F.smooth_l1_loss(energy, distance)
+        regression = F.mse_loss(energy, target)
         low_total = rank + float(obj.geo_rank_regression) * regression
         total = total + float(obj.geo_rank_low) * low_total
         selection = selection + float(obj.geo_rank_low) * low_total.detach()
         pair, top1, regret = geometric_rank_metrics(
-            energy.detach(), distance, obj.geo_rank_label_gap
+            energy.detach(), target, obj.geo_rank_label_gap
         )
         items.update({
             "geo_low_rank": rank, "geo_low_regression": regression,
@@ -284,6 +295,12 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
                 model, tokens, prompt_len, roots, continuation,
                 anchor * int(level["span"]), goal, int(level["index"]),
             )
+            baseline = level["teacher_prev"][:, anchor]
+            baseline_distance = (
+                F.layer_norm(baseline, baseline.shape[-1:])
+                - F.layer_norm(goal, goal.shape[-1:])
+            ).abs().mean(-1)
+            target = distance - baseline_distance[:, None]
             batch_size, candidates = roots.shape[:2]
             flat_roots = roots.reshape(-1, roots.shape[-1])
             codes = macro_codes(
@@ -304,17 +321,17 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
                 predicted, goal_rows
             ).reshape(batch_size, candidates)
             rank = geometric_preference_loss(
-                energy, distance, obj.geo_rank_objective,
+                energy, target, obj.geo_rank_objective,
                 obj.geo_rank_margin, obj.geo_rank_label_gap,
                 obj.geo_rank_temperature,
             )
-            regression = F.smooth_l1_loss(energy, distance)
+            regression = F.mse_loss(energy, target)
             level_total = rank + float(obj.geo_rank_regression) * regression
             weight = float(obj.geo_rank_high) * level_weight
             total = total + weight * level_total
             selection = selection + weight * level_total.detach()
             pair, top1, regret = geometric_rank_metrics(
-                energy.detach(), distance, obj.geo_rank_label_gap
+                energy.detach(), target, obj.geo_rank_label_gap
             )
             prefix = f"geo_level{int(level['index']) + 1}"
             items.update({

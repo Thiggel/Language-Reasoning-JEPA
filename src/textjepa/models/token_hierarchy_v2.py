@@ -438,6 +438,7 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
             width = max(1, int(counts.max()))
             prev = states.new_zeros(batch, width, self.d_model)
             target = states.new_zeros(batch, width, self.d_model)
+            teacher_prev = states.new_zeros(batch, width, self.d_model)
             windows = source_actions.new_zeros(
                 batch, width, ratio, source_actions.shape[-1]
             )
@@ -468,6 +469,7 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
                     token_start = int(phase_offsets[b]) + j * span
                     action_start = int(phase_units[b]) + j * ratio
                     prev[b, j] = encoded_online_path[b, action_start]
+                    teacher_prev[b, j] = encoded_target_path[b, action_start]
                     target[b, j] = encoded_target_path[b, action_start + ratio]
                     windows[b, j] = source_actions[b, action_start:action_start + ratio]
                     raw_windows[b, j] = token_actions[b, token_start:token_start + span]
@@ -519,6 +521,7 @@ class MultilevelTokenHierarchyJEPA(nn.Module):
                 "span": span,
                 "phase_offsets": phase_offsets,
                 "prev": prev,
+                "teacher_prev": teacher_prev,
                 "target": target,
                 "valid": valid,
                 "action_windows": windows,
