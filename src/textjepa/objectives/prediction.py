@@ -70,6 +70,28 @@ class TokenAlignedRolloutPrediction(Objective):
         return masked_mean(distance, mask.float())
 
 
+class TokenAlignedCounterfactualPrediction(Objective):
+    """Exact alternative token transitions without preference or goal labels."""
+
+    def __init__(self, kind: str = "smooth_l1", norm_targets: bool = True):
+        super().__init__()
+        self.kind, self.norm_targets = kind, norm_targets
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("cf_token_pred")
+        if pred is None:
+            return out.preds.sum() * 0.0
+        distance = latent_distance(
+            pred, out.extras["cf_token_tgt"], self.kind, self.norm_targets
+        )
+        mask = (
+            out.extras["cf_token_pred_mask"]
+            & out.extras["cf_token_tgt_mask"]
+            & out.extras["cf_token_valid"].unsqueeze(-1)
+        )
+        return masked_mean(distance, mask.float())
+
+
 class RolloutPrediction(Objective):
     """Open-loop rollout from s0 through teacher actions vs EMA targets.
 

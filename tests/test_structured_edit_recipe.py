@@ -12,7 +12,9 @@ from textjepa.data.faithful_token_edits import (
 from textjepa.models.edit_jepa import EditJEPA
 from textjepa.models.ema import EMATeacher
 from textjepa.models.predictor import TokenAlignedEditPredictor
-from textjepa.objectives import GoalAdvantageDistill
+from textjepa.objectives import (
+    GoalAdvantageDistill, TokenAlignedCounterfactualPrediction,
+)
 from scripts.audit_faithful_token_edits import shuffled_action_prediction
 
 
@@ -133,3 +135,32 @@ def test_structured_model_forward_and_recursive_shapes():
     assert shuffled.extras["token_predictions"].shape == out.extras[
         "token_predictions"
     ].shape
+
+
+def test_structured_counterfactuals_supervise_exact_token_outcomes():
+    vocab = faithful_token_edit_vocab()
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=2, seed=47, min_edits=3, max_edits=4,
+        corruption_mode="mixed", counterfactual_k=2,
+    )
+    batch = next(iter(DataLoader(
+        dataset, batch_size=2,
+        collate_fn=partial(collate_edits, pad_id=vocab.pad_id),
+    )))
+    assert batch["alt_op"].shape == batch["alt_valid"].shape
+    assert batch["alt_edit_position"].shape == batch["alt_valid"].shape
+    assert batch["alt_edit_content_token"].shape == batch["alt_valid"].shape
+    model = EditJEPA(
+        len(vocab), vocab.pad_id, d_model=32, chunk_layers=1,
+        chunk_heads=4, slot_layers=1, slot_heads=4, n_slots=2,
+        predictor_layers=1, predictor_heads=4, max_chunk_len=320,
+        max_buffer_len=16, d_action=8, macro_k=0, token_aligned=True,
+        token_predictor_layers=1, dropout=0.0,
+    )
+    out = model(batch)
+    assert out.extras["cf_token_pred"].shape == out.extras["cf_token_tgt"].shape
+    assert out.extras["cf_token_valid"].shape == batch["alt_valid"].shape
+    loss = TokenAlignedCounterfactualPrediction()(out, batch)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.token_pred.out.weight.grad is not None

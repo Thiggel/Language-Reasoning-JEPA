@@ -422,6 +422,52 @@ class EditJEPA(nn.Module):
             "token_targets": token_targets[:, 1:].detach(),
             "token_target_mask": target_mask[:, 1:],
         })
+        if "alt_op" in batch:
+            B, T, K = batch["alt_op"].shape
+            current = token_states[:, :-1].unsqueeze(2).expand(-1, -1, K, -1, -1)
+            current_mask = token_mask[:, :-1].unsqueeze(2).expand(-1, -1, K, -1)
+            alt_content = self.chunk_encoder.tok(batch["alt_edit_content_token"])
+            alt_prompt = prompt_emb[:, None, None].expand(-1, T, K, -1)
+            cf_pred, cf_pred_mask = self.token_pred(
+                current.reshape(B * T * K, current.shape[-2], current.shape[-1]),
+                current_mask.reshape(B * T * K, current_mask.shape[-1]),
+                batch["alt_op"].reshape(-1),
+                batch["alt_edit_position"].reshape(-1),
+                alt_content.reshape(B * T * K, -1),
+                alt_prompt.reshape(B * T * K, -1),
+            )
+            C, L = batch["alt_buffer_tokens"].shape[-2:]
+            with torch.no_grad():
+                cf_target, cf_target_mask = self.encode_token_buffers(
+                    batch["alt_buffer_tokens"].reshape(B, T * K, C, L),
+                    mode="teacher",
+                )
+            cf_pred = cf_pred.reshape(B, T, K, cf_pred.shape[-2], cf_pred.shape[-1])
+            cf_pred_mask = cf_pred_mask.reshape(B, T, K, -1)
+            cf_target = cf_target.reshape(B, T, K, cf_target.shape[-2], cf_target.shape[-1])
+            cf_target_mask = cf_target_mask.reshape(B, T, K, -1)
+            width = max(cf_pred.shape[-2], cf_target.shape[-2])
+            if cf_pred.shape[-2] < width:
+                cf_pred = torch.nn.functional.pad(
+                    cf_pred, (0, 0, 0, width - cf_pred.shape[-2])
+                )
+                cf_pred_mask = torch.nn.functional.pad(
+                    cf_pred_mask, (0, width - cf_pred_mask.shape[-1])
+                )
+            if cf_target.shape[-2] < width:
+                cf_target = torch.nn.functional.pad(
+                    cf_target, (0, 0, 0, width - cf_target.shape[-2])
+                )
+                cf_target_mask = torch.nn.functional.pad(
+                    cf_target_mask, (0, width - cf_target_mask.shape[-1])
+                )
+            out.extras.update({
+                "cf_token_pred": cf_pred,
+                "cf_token_pred_mask": cf_pred_mask,
+                "cf_token_tgt": cf_target.detach(),
+                "cf_token_tgt_mask": cf_target_mask,
+                "cf_token_valid": batch["alt_valid"] & out.step_mask.unsqueeze(-1),
+            })
         # The clean terminal embedding is a privileged training target only.
         # The learned action-value head receives (state, action), not the goal.
         goal_index = batch["step_mask"].sum(1).long().clamp(min=1)

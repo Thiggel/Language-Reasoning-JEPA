@@ -1,0 +1,10 @@
+# @package _global_
+# Same-state mechanical alternative transitions for the token-aligned editor.
+# Alternatives contain no goal distance, preference, or quality labels.
+defaults: [edit_token_structured_ema, _self_]
+run_name: edit_token_structured_cf
+data:
+  counterfactual_k: 1
+  counterfactual_source: uniform_local
+objective:
+  counterfactual_token: {weight: 1.0}

@@ -176,3 +176,13 @@ error but used batch four and twice as many optimizer steps; it is not an
 isolated width result. LDAD 20 is worse after only 6k presentations, so its
 earlier advantage depends on adequate optimization. Run frozen component-local
 audits before extending scale.
+
+## Scale component audit and structured alternatives
+
+All five frozen component audits completed. The exposure-matched 6k×3 and
+18k×1 cells again agree, including operation/pointer/content local ratios near
+2.92/3.24/1.28. D512 is strongest at 3.33/3.45/1.48 but remains confounded by
+twice the optimizer steps. Exact token-aligned mechanical alternative actions
+and EMA outcome targets are now implemented without goal, preference, or
+quality labels. An 18-test process suite and a CPU training smoke pass. Admit a
+common-batch K={0,1,4,8} pilot before any counterfactual scale claim.

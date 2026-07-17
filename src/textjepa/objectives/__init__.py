@@ -10,6 +10,7 @@ from textjepa.objectives.prediction import (
     MacroPrior,
     RolloutPrediction,
     TokenAlignedPrediction,
+    TokenAlignedCounterfactualPrediction,
     TokenAlignedRolloutPrediction,
 )
 from textjepa.objectives.vicreg import SIGReg, VICReg
@@ -90,6 +91,7 @@ __all__ = [
     "DenseHierarchyValueRegression",
     "RolloutPrediction",
     "TokenAlignedPrediction",
+    "TokenAlignedCounterfactualPrediction",
     "TokenAlignedRolloutPrediction",
     "HierarchyPrediction",
     "HierarchyValueDistill",

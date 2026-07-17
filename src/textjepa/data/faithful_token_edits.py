@@ -258,6 +258,9 @@ class FaithfulTokenEditDataset(Dataset):
         alt_actions: list[list[list[int]]] = []
         alt_buffers: list[list[list[list[int]]]] = []
         alt_changed: list[list[list[int]]] = []
+        alt_ops: list[list[int]] = []
+        alt_positions: list[list[int]] = []
+        alt_content_tokens: list[list[int]] = []
         for step, action in enumerate(repairs):
             if self.counterfactual_k:
                 # Separate keyed streams make alternatives deterministic and
@@ -269,6 +272,9 @@ class FaithfulTokenEditDataset(Dataset):
                 step_actions = []
                 step_buffers = []
                 step_changed = []
+                step_ops = []
+                step_positions = []
+                step_content_tokens = []
                 sampled = {action}
                 attempts = 0
                 while len(step_actions) < self.counterfactual_k:
@@ -293,9 +299,18 @@ class FaithfulTokenEditDataset(Dataset):
                     step_actions.append(_render_action(self.vocab, alternative))
                     step_buffers.append(outcome)
                     step_changed.append(list(changed_sentence))
+                    alt_kind, alt_position, alt_token = alternative
+                    step_ops.append(OPS[alt_kind])
+                    step_positions.append(alt_position)
+                    step_content_tokens.append(
+                        self.vocab.pad_id if alt_token is None else int(alt_token)
+                    )
                 alt_actions.append(step_actions)
                 alt_buffers.append(step_buffers)
                 alt_changed.append(step_changed)
+                alt_ops.append(step_ops)
+                alt_positions.append(step_positions)
+                alt_content_tokens.append(step_content_tokens)
             kind, position, token = action
             actions.append(_render_action(self.vocab, action))
             op.append(OPS[kind])
@@ -338,6 +353,9 @@ class FaithfulTokenEditDataset(Dataset):
             out["alt_actions"] = alt_actions
             out["alt_buffers"] = alt_buffers
             out["alt_changed"] = alt_changed
+            out["alt_op"] = alt_ops
+            out["alt_edit_position"] = alt_positions
+            out["alt_edit_content_token"] = alt_content_tokens
         return out
 
 

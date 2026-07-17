@@ -35,6 +35,8 @@ The 2k-by-3 versus 6k-by-1 pair matches presentations at 6,000. The 6k-by-3 vers
 
 The exposure-matched pairs agree to within 0.001 on the headline errors. Tripling presentations nearly halves matched token error and recursive error. LDAD is under-optimized at one epoch and reverses its earlier advantage.
 
+The frozen component audit preserves the exposure conclusion. The 6k×3 and 18k×1 cells again match: operation 2.92, pointer 3.24, content 1.28, and recursive token error 0.182. The d512 cell reaches 3.33/3.45/1.48 with recursive error 0.202, the strongest balanced causal ratios in this round, but its doubled optimizer-step count remains a confound. The one-epoch LDAD cell is weak at 1.53/1.52/1.20 and recursive error 0.493.
+
 ## The intuitive picture
 
 ![Two pairs of bars: within each exposure count, unique and repeated data have equal height; the 18k exposure pair has lower error.](exposure.svg)
@@ -51,11 +53,11 @@ Total example presentations drive the observed improvement from 6k to 18k. Withi
 
 ## What we cannot conclude
 
-We do not yet know whether the lower errors preserve each action component locally. We cannot isolate width from optimizer steps, extrapolate beyond 18k, or conclude that diversity never matters. Counterfactual alternatives remain unimplemented for the structured path.
+The lower-error exposure cells preserve each action component locally, but content-ratio improvement is not monotonic. We cannot isolate width from optimizer steps, extrapolate beyond 18k, or conclude that diversity never matters. Structured counterfactual alternatives were not part of these runs.
 
 ## What happens next
 
-Audit operation, pointer, and content locally on all new checkpoints. Then run an optimizer-step-matched width comparison and extend the exposure curve only if causal sensitivity remains healthy. In parallel, implement exact structured alternative transitions before testing counterfactual K.
+Run a batch- and optimizer-step-matched width comparison. Exact structured alternative transitions are now implemented and process-tested; next ablate K={0,1,4,8} at a common batch, state count, epoch count, and objective coefficient before extending scale.
 
 ## Words used in this report
 
