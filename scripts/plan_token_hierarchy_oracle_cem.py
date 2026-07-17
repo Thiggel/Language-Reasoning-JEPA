@@ -49,7 +49,27 @@ def load_model(path, device):
     model = MultilevelTokenHierarchyJEPA(
         vocab_size=len(vocab), pad_id=vocab.pad_id, **cfg.model
     ).to(device)
-    model.load_state_dict(payload["model"])
+    missing, unexpected = model.load_state_dict(payload["model"], strict=False)
+    permitted_missing = {
+        "low_goal_value.net.0.weight", "low_goal_value.net.0.bias",
+        "low_goal_value.net.1.0.weight", "low_goal_value.net.1.0.bias",
+        "low_goal_value.net.1.2.weight", "low_goal_value.net.1.2.bias",
+    }
+    for index in range(len(model.levels)):
+        permitted_missing.update({
+            f"levels.{index}.goal_value.net.0.weight",
+            f"levels.{index}.goal_value.net.0.bias",
+            f"levels.{index}.goal_value.net.1.0.weight",
+            f"levels.{index}.goal_value.net.1.0.bias",
+            f"levels.{index}.goal_value.net.1.2.weight",
+            f"levels.{index}.goal_value.net.1.2.bias",
+        })
+    disallowed_missing = set(missing) - permitted_missing
+    if disallowed_missing or unexpected:
+        raise RuntimeError(
+            "incompatible hierarchy checkpoint: "
+            f"missing={sorted(disallowed_missing)}, unexpected={sorted(unexpected)}"
+        )
     model.eval()
     return model, vocab, cfg
 
