@@ -53,9 +53,10 @@
 \begin{frame}{The next pilot varies one data axis at a time}
   \begin{itemize}
     \item The K=0 data curve uses 512, 2,000, and 6,000 unique trajectories for three passes.
-    \item The counterfactual curve uses K=0, 1, 4, and 8 exact alternative outcomes at the common 2,000-trajectory anchor.
+    \item The admitted counterfactual curve uses K=0, 1, and 4 exact alternative outcomes at the common 2,000-trajectory anchor.
     \item Alternatives use observed current-buffer tokens and carry no preference, defect, or remaining-distance label.
     \item A 128-example H4 cell is only a full-shape process smoke; architecture comparisons remain gated.
+    \item K=8 is implemented but gated because seven cells exceeded the sequence-edit 16 GPU-hour round limit.
     \item We retain the smallest K near the best result only if it improves held-out dynamics without factual-error or rank regression.
   \end{itemize}
   \vfill

@@ -4,7 +4,7 @@
 
 We do not yet know the useful amount: the previous model runs were invalid,
 but the repaired data pipeline now passes its validity checks and a bounded
-seven-cell pilot can measure both unique-data and counterfactual-density effects.
+six-cell pilot can measure both unique-data and counterfactual-density effects.
 
 ## First, the idea in everyday language
 
@@ -38,7 +38,7 @@ The audit checked step preservation, exact recovery, edit composition, text
 length, and distance from a minimum token-edit path. It also generated four
 alternative edits per visited state to verify exact execution and count them.
 
-The planned one-seed GPU pilot has seven independent cells:
+The admitted one-seed GPU pilot has six independent cells:
 
 | Cell | Unique train trajectories | Passes | Alternatives per state | Purpose |
 |---|---:|---:|---:|---|
@@ -48,7 +48,6 @@ The planned one-seed GPU pilot has seven independent cells:
 | flat-base | 6,000 | 3 | 0 | initial data-curve endpoint |
 | CF-1 | 2,000 | 3 | 1 | sparse alternative outcome |
 | CF-4 | 2,000 | 3 | 4 | moderate alternative outcome |
-| CF-8 | 2,000 | 3 | 8 | saturation/compute endpoint |
 
 ## What a fair comparison means here
 
@@ -125,12 +124,18 @@ seeds 1 and 2 are reserved for a chosen conclusion. Raw outputs will live
 under `research/sequence_edit/logs/<run-name>/` with run summary, metrics,
 stdout, and stderr artifacts.
 
+The K=8 saturation cell is implemented but not in this round: the controller
+rejected the seven-cell design at 18.92 projected GPU-hours because the
+sequence-edit project allows 16 per round. The admitted six cells reserve
+13.92 GPU-hours without using unrealistic timeout caps. K=8 runs only if K=4
+improves without saturation and a later round is scientifically justified.
+
 ## What we can conclude
 
 The old hierarchy result is invalid rather than negative. The repaired adapter
 faithfully preserves the official step structure and exact synthetic recovery
 on the audited sample. Exact unlabeled alternative outcomes are implemented
-without target-relative quality labels. The seven-cell pilot is technically
+without target-relative quality labels. The six-cell pilot is technically
 ready and answers a concrete selection question.
 
 ## What we cannot conclude
@@ -144,9 +149,10 @@ off-support editing, autonomous proposal, closed-loop correction, or planning.
 
 ## What happens next
 
-Run the seven cells in parallel within controller resource guards. Then choose
+Run the six cells in parallel within controller resource guards. Then choose
 the earliest data saturation point and smallest passing K. Only then run the
-fixed-exposure diversity cross and counterfactual-weight check; add a learning-
+K=8 endpoint, if K=4 has not saturated, followed by the fixed-exposure
+diversity cross and counterfactual-weight check; add a learning-
 rate cross-check only if counterfactual gradients exceed twice baseline. After
 those gates, test flat versus H4/H8, dense rollout, and LDAD removal, followed
 by short/standard/long repair strata and confirmation seeds.

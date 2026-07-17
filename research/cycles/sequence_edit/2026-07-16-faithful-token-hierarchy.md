@@ -101,10 +101,13 @@ target-relative quality, defect, preference, or remaining-distance label.
 This transfers the sibling projects' useful action-contrast idea without
 transferring their candidate-privileged ranking signal.
 
-The first round uses one seed and seven cells: a 128-example H4 process smoke;
+The first round uses one seed and six cells: a 128-example H4 process smoke;
 flat K=0 at 512, 2,000, and 6,000 unique trajectories for three passes; and
-K=1, 4, and 8 at the common 2,000-trajectory anchor. All K cells use the same
-uniform-local alternative sampler. This round deliberately precedes hierarchy,
+K=1 and 4 at the common 2,000-trajectory anchor. All K cells use the same
+uniform-local alternative sampler. K=8 is implemented as a saturation
+follow-up but was removed when the controller rejected the seven-cell design
+at 18.92 GPU-hours against the sequence-edit 16-hour round limit. The admitted
+six-cell round reserves 13.92 GPU-hours. This round deliberately precedes hierarchy,
 dense-rollout, LDAD-removal, counterfactual-weight, repair-length, and
 matched-update diversity comparisons.
 

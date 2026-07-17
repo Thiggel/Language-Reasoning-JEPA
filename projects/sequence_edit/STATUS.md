@@ -14,7 +14,8 @@ or target-relative quality labels.
 
 The active decision is the minimum useful data and counterfactual coverage,
 before returning to hierarchy. The initial one-seed screen crosses 512, 2,000,
-and 6,000 unique K=0 trajectories and K={0,1,4,8} at the 2,000-trajectory
-anchor, plus one full-shape H4 smoke. Follow-ups already configured but gated
-on this screen cover matched update exposure, counterfactual weight, short vs
+and 6,000 unique K=0 trajectories and K={0,1,4} at the 2,000-trajectory
+anchor, plus one full-shape H4 smoke. K=8 is implemented but gated because the
+seven-cell plan exceeded the 16 GPU-hour project limit. Follow-ups already
+configured cover matched update exposure, counterfactual weight, short vs
 long repairs, hierarchy, dense rollout, and LDAD removal.
