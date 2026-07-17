@@ -8,6 +8,8 @@ Primitive edit prediction improves sharply with total training-example exposure,
 
 Suppose an editor practices 18,000 corrections. We can give it 18,000 different documents once, or 6,000 documents three times. The resulting edit model performs almost identically. At this scale, doing more correction practice matters; document variety has not yet become the bottleneck.
 
+The distinction is like learning piano from many songs versus repeating a smaller songbook. Both can provide the same number of keystrokes. Here the number of practiced corrections predicts progress better than the size of the songbook. That does not mean variety is useless forever; it means the current model has not exhausted what repetition teaches it.
+
 ## Why this question matters
 
 The project needs to know what the actual training data buys us before generating expensive counterfactual trajectories. If unique reasoning problems matter, data generation should broaden. If exposure matters, optimization length and action coverage should receive priority.
