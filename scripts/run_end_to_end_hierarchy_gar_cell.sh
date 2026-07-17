@@ -15,6 +15,11 @@ legacy_value_weight=${11:-0}
 distinct_states=${12:-true}
 rank_objective=${13:-pairwise}
 macro_proposals=${14:-global}
+use_token_prior=${15:-false}
+token_prior_hidden=${16:-0}
+token_prior_detach=${17:-false}
+token_prior_weight=${18:-0}
+token_prior_rollout=${19:-0}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
 model_dir="$run_dir/model"
 
@@ -29,6 +34,9 @@ model_dir="$run_dir/model"
   "model.level_spans=[4,16,64]" "model.level_dims=[32,16,8]" \
   "model.variational_levels=[false]" "model.phase_augmented_levels=[false]" \
   "model.distinct_level_states=$distinct_states" model.level_state_encoder_layers=2 \
+  "model.use_token_prior=$use_token_prior" \
+  "model.token_prior_hidden=$token_prior_hidden" \
+  "model.token_prior_detach_state=$token_prior_detach" \
   model.low_dense_depth=2 model.high_dense_depth=2 \
   "objective.high_level_weights=[1,1,1]" \
   "objective.low_value=$legacy_value_weight" \
@@ -40,6 +48,8 @@ model_dir="$run_dir/model"
   objective.geo_rank_label_gap=0.001 \
   "objective.geo_rank_objective=$rank_objective" \
   "objective.geo_rank_macro_proposals=$macro_proposals" \
+  "objective.token_prior=$token_prior_weight" \
+  "objective.token_prior_rollout=$token_prior_rollout" \
   "objective.geo_rank_detach_prediction=$detach"
 
 ckpt="$model_dir/best.pt"
@@ -76,6 +86,20 @@ common=(
   --reach-topn 16 --reach-budget-scale 0.25 \
   --goal-score combined --bank-cache "$run_dir/macro_bank.pt" \
   --out "$run_dir/hierarchical_combined_cem.json"
+if [[ "$use_token_prior" == "true" ]]; then
+  "$python_bin" scripts/plan_token_hierarchy_oracle_cem.py "${common[@]}" \
+    --support-mode conditional_bank --reachability-refine \
+    --reach-topn 16 --reach-budget-scale 0.25 \
+    --token-proposal prior_energy --token-prior-weight 0.3 \
+    --bank-cache "$run_dir/macro_bank.pt" \
+    --out "$run_dir/hierarchical_prior_energy_cem.json"
+  "$python_bin" scripts/plan_token_hierarchy_oracle_cem.py "${common[@]}" \
+    --support-mode conditional_bank --reachability-refine \
+    --reach-topn 16 --reach-budget-scale 0.25 \
+    --token-proposal prior_shooting --token-prior-weight 0.3 \
+    --bank-cache "$run_dir/macro_bank.pt" \
+    --out "$run_dir/hierarchical_prior_shooting_cem.json"
+fi
 
 "$python_bin" - "$model_dir" "$run_dir/metrics.json" <<'PY'
 import csv, json, pathlib, sys
@@ -89,7 +113,7 @@ for name in ("predictor_drift_curves.json", "gradient_diagnostics.json", "token_
     path = model / name
     if path.exists():
         result[path.stem] = json.loads(path.read_text())
-for name in ("flat_oracle_cem.json", "hierarchical_oracle_cem.json", "hierarchical_learned_value_cem.json", "hierarchical_combined_cem.json"):
+for name in ("flat_oracle_cem.json", "hierarchical_oracle_cem.json", "hierarchical_learned_value_cem.json", "hierarchical_combined_cem.json", "hierarchical_prior_energy_cem.json", "hierarchical_prior_shooting_cem.json"):
     path = destination.parent / name
     if path.exists():
         result[path.stem] = json.loads(path.read_text())

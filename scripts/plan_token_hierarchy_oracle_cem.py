@@ -229,7 +229,7 @@ class OracleCEMPlanner:
             head.load_state_dict(payload["head"])
             self.advantage_head = head.to(self.device).eval()
 
-    def geometric_goal_cost(self, head):
+    def geometric_goal_cost(self, head, scope):
         """Return a CEM cost using only JEPA geometry and its learned energy.
 
         ``combined`` standardizes both signals within the candidate population
@@ -237,7 +237,8 @@ class OracleCEMPlanner:
         ranking-trained value head as calibrated metric distance.
         """
         mode = self.args.goal_score
-        if mode == "latent_distance":
+        enabled = self.args.goal_score_scope in ("all", scope)
+        if mode == "latent_distance" or not enabled:
             return None
 
         def score(states, goals):
@@ -362,7 +363,7 @@ class OracleCEMPlanner:
             ),
             extra_cost=(extra_cost if cost_terms else None),
             goal_states=transform,
-            goal_cost_fn=self.geometric_goal_cost(value_head),
+            goal_cost_fn=self.geometric_goal_cost(value_head, "low"),
             rollout_batch_size=self.args.cem_rollout_batch_size,
         )
         if target_level is not None:
@@ -403,7 +404,9 @@ class OracleCEMPlanner:
         prior_nll = torch.stack(nlls, 1).mean(1)
         prior_entropy = torch.stack(entropies, 1).mean(1)
         goal_rows = target.expand(n, -1)
-        goal_cost_fn = self.geometric_goal_cost(self.model.low_goal_value)
+        goal_cost_fn = self.geometric_goal_cost(
+            self.model.low_goal_value, "low"
+        )
         goal_cost = (
             goal_cost_fn(states[:, -1], goal_rows)
             if goal_cost_fn is not None else latent_l1(states[:, -1], goal_rows)
@@ -577,7 +580,8 @@ class OracleCEMPlanner:
             goal_cost_fn=self.geometric_goal_cost(
                 self.model.levels[
                     level_index + 1 if goal_states is not None else level_index
-                ].goal_value
+                ].goal_value,
+                "macro",
             ),
             rollout_batch_size=self.args.cem_rollout_batch_size,
             extra_cost=extra_cost,
@@ -888,6 +892,10 @@ def main():
         "latent_distance", "learned_value", "combined",
     ], default="latent_distance")
     parser.add_argument("--value-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--goal-score-scope", choices=["all", "low", "macro"], default="all",
+        help="apply learned goal energy at primitive, macro, or all planner levels",
+    )
     parser.add_argument("--bank-cache", default=None)
     parser.add_argument("--output-tag", default="")
     parser.add_argument("--out", default=None)
@@ -967,6 +975,7 @@ def main():
         "feedback_mode": args.feedback_mode,
         "oracle_goal": True,
         "goal_score": args.goal_score,
+        "goal_score_scope": args.goal_score_scope,
         "value_weight": args.value_weight,
         "uses_auxiliary_lm": False,
         "token_proposal": args.token_proposal,
