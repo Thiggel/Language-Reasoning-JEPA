@@ -1,0 +1,67 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{default}
+\usepackage{booktabs}
+\definecolor{editblue}{RGB}{38,117,168}
+\setbeamercolor{structure}{fg=editblue}
+\title{Can representation spreading make edits causally visible?}
+\subtitle{Token-aligned sequence-edit JEPA: curriculum VICReg screen}
+\date{17 July 2026}
+\begin{document}
+\frame{\titlepage}
+
+\begin{frame}{The editor must care which edit we request}
+  \begin{itemize}
+    \item The model receives a damaged worked solution and a literal insert, delete, or replace action.
+    \item It predicts the next internal representation without reconstructing every output token.
+    \item A collapsed model can look accurate while treating many actions as equivalent.
+    \item Variance-Invariance-Covariance Regularization (VICReg) spreads internal states and reduces redundant features.
+  \end{itemize}
+  \vfill
+  \textbf{Question:} does stronger VICReg make the transition predictor depend on the requested edit?
+\end{frame}
+
+\begin{frame}{Five cells differ only in VICReg strength}
+  \begin{itemize}
+    \item All cells use 2,000 curriculum-corrupted oracle trajectories, seed 0, three epochs, and zero dropout.
+    \item All cells share the token-pointer action interface, recursive depth-four predictor, and exponential-moving-average target.
+    \item Tested whole-loss weights are 0, .02, .1, .5, and 1.0.
+    \item The causal test swaps actions across valid states; error must rise by at least 5\%.
+    \item Effective-rank loss must remain within 10\% of the healthiest control.
+  \end{itemize}
+  \vfill
+  \textbf{Why it matters:} hierarchy remains blocked until primitive edit dynamics pass both gates.
+\end{frame}
+
+\begin{frame}{Every cell predicts, but every cell underuses the action}
+  \centering
+  \begin{tabular}{lrrrr}
+    \toprule
+    VICReg & One-step & No change & Shuf./match & Rank \\
+    \midrule
+    0 & .149 & .256 & 1.013 & 113.6 \\
+    .02 & .153 & .263 & 1.013 & 107.4 \\
+    .1 & .151 & .320 & 1.014 & 84.4 \\
+    .5 & .149 & .346 & 1.010 & 70.2 \\
+    1.0 & .160 & .272 & 1.009 & 69.5 \\
+    \bottomrule
+  \end{tabular}
+  \vfill
+  \begin{itemize}
+    \item Every cell beats copying the current state, so optimization is functioning.
+    \item No shuffled-action ratio approaches the 1.05 causal threshold.
+    \item Weight .02 is the only nonzero setting within the rank-loss gate.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{The next test directly supervises action geometry}
+  \begin{itemize}
+    \item Strong VICReg spreads values but removes 26--39\% of effective rank; it is not selected.
+    \item Weight .02 remains only as a low-cost combination anchor, not as a successful result.
+    \item Latent Difference Action Decoding (LDAD) reconstructs the complete observed edit phrase only from the online state displacement.
+    \item The next screen tests LDAD weights 1, 10, and 20, plus no-VICReg and moderate-VICReg interaction controls at weight 10.
+    \item LDAD continues only if it improves causal action use and recursive prediction, not merely action-token decoding.
+  \end{itemize}
+  \vfill
+  \textbf{Limitation:} this remains one-seed, candidate-privileged oracle denoising, not autonomous reasoning.
+\end{frame}
+\end{document}

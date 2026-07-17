@@ -9,6 +9,6 @@
   "decision": "Reject VICReg weights 0.1 through 1.0 for the curriculum anchor, retain 0.02 only as the rank-safe combination point, and test faithful LDAD as the next causal repair.",
   "plain_summary": "All five runs completed and beat persistence, but shuffled actions increased error by only 0.9 to 1.4 percent. Strong VICReg lost 26 to 39 percent effective rank; weight 0.02 lost 5.4 percent and is the only nonzero carry-forward anchor.",
   "report": "REPORT.md",
-  "artifacts": ["validity.svg"],
+  "artifacts": ["validity.svg", "SLIDES.tex", "SLIDES.pdf"],
   "tags": ["sequence-edit", "token-aligned", "vicreg", "causal-validity"]
 }
