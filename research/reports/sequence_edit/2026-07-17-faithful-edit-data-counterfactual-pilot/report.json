@@ -4,11 +4,11 @@
   "project": "sequence_edit",
   "title": "How much edit experience should the model receive?",
   "created_at": "2026-07-17T11:00:00+02:00",
-  "status": "result-analyzed-follow-up-ready",
+  "status": "local-repair-rejected-representation-test-ready",
   "review_required": true,
-  "decision": "Reject the data/K selection because all cells are action-blind; test exact changed-step targets before any further scale or hierarchy work.",
-  "plain_summary": "All six jobs completed, but shuffled edits produce the same predictions and most models lose to a no-change baseline. Global targets barely distinguish one-token outcomes; exact changed-step targets preserve the missing signal.",
+  "decision": "Reject data/K selection and local-loss reweighting because both remain action-blind; test direct observed-step attention once before retiring the state family.",
+  "plain_summary": "Ten jobs completed across two rounds. Exact local targets are well separated, but all four local-loss variants remain at chance action assignment, lose to persistence, and damage rank. The bottleneck is the pooled state interface, not too little local-loss weight.",
   "report": "REPORT.md",
-  "artifacts": ["decision.svg", "result_validity.svg", "SLIDES.tex", "SLIDES.pdf"],
+  "artifacts": ["decision.svg", "result_validity.svg", "local_repair.svg", "SLIDES.tex", "SLIDES.pdf"],
   "tags": ["sequence-edit", "data-scale", "counterfactuals", "validity"]
 }

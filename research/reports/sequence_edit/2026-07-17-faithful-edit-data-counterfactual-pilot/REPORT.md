@@ -172,13 +172,33 @@ granularity. Coefficients 0.25, 1, and 4 form a coarse method-appropriate
 screen, with a 1e-4 learning-rate cross-check for coefficient 4 because the
 tiny smoke showed materially larger gradients.
 
+All four local-outcome jobs completed cleanly from commit `779fbc558452`.
+The table reports the held-out decision metrics; assignment chance is 25%.
+
+| Local coefficient | One-step error | Persistence | Shuffled / matched | Local assignment | Effective rank |
+|---:|---:|---:|---:|---:|---:|
+| 0.25 | .173 | .130 | 1.00004 | 24.92% | 80.0 |
+| 1 | .173 | .146 | 1.00003 | 24.85% | 81.4 |
+| 4 | .186 | .150 | 1.00151 | 25.04% | 77.8 |
+| 4, learning rate $10^{-4}$ | .354 | .177 | 1.00041 | 25.00% | 93.4 |
+
+![The four local-target variants remain at chance outcome assignment and far below the predeclared continuation gate.](local_repair.svg)
+
+The result is not an optimization crash. Losses were finite, checkpoints and
+audits completed, and the action decoder retained 75.9--81.5% token accuracy.
+Instead, the local branch produced almost the same prediction for all four
+actions: predicted pairwise separation was only 1.1--10.3% of the exact local
+target separation.
+
 ## What we can conclude
 
-The old hierarchy result remains invalid rather than negative. The repaired
-six-cell round is process-valid, but its scientific gate fails: apparent data
-and K improvements do not represent action-conditioned edit dynamics. The
-global state target makes one-token alternatives almost indistinguishable,
-while the exact changed-step target retains a strong measurable signal.
+The old hierarchy result remains invalid rather than negative. Both repaired
+rounds are process-valid, but their scientific gates fail. Apparent data and K
+improvements do not represent action-conditioned edit dynamics. Exact local
+targets preserve a strong measurable signal, yet merely projecting a pooled
+global-state prediction into that target space does not recover it. The
+bottleneck is therefore the state/predictor interface, not too little local
+loss weight.
 
 ## What we cannot conclude
 
@@ -188,16 +208,20 @@ enough to overturn the persistence and shuffled-action failures. The entire trai
 candidate-privileged oracle denoising. One seed cannot support a final effect
 claim. Exact one-step alternatives do not validate recursively imagined
 off-support editing, autonomous proposal, closed-loop correction, or planning.
+The negative coefficient screen also does not prove that token editing is
+unlearnable; it rejects this pooled-state interface under the tested recipe.
 
 ## What happens next
 
-Run the three local-outcome coefficients and high-weight learning-rate
-cross-check at the common K=4, 2,000-trajectory anchor. Continue only if the
-correct action increases shuffled error by at least 5%, nearest-outcome
-assignment exceeds 35%, and factual prediction is no worse than persistence,
-without effective-rank loss greater than 10%. Otherwise stop the global-state
-edit formulation and redesign the state representation. K=8, fixed-exposure
-data, hierarchy, dense rollout, and LDAD ablations remain blocked.
+Do not confirm any coefficient: all four miss every causal gate. The smallest
+representation test exposes the current official-step embeddings directly to
+the existing action-conditioned attention predictor at K=4 and coefficient 4.
+It uses the observed buffer and literal edit text only; no changed-step index,
+target-relative quality, or future state enters the predictor. Continue only
+under the same gates: shuffled-action error rises at least 5%, local assignment
+exceeds 35%, prediction beats persistence, and effective-rank loss is at most
+10%. Otherwise retire this edit-state family before any K=8, exposure, data,
+hierarchy, rollout, or LDAD experiment.
 
 ## Words used in this report
 
@@ -211,5 +235,5 @@ data, hierarchy, dense rollout, and LDAD ablations remain blocked.
 
 ## Questions for you
 
-- If local targets restore action sensitivity, should the next test integrate local and global state representations, or first confirm the local result across seeds?
+- If direct step attention also remains action-blind, should this synthetic edit track be retired or rebuilt around token-aligned states?
 - Is the main long-term goal a scientifically clean synthetic dynamics result, or should we prioritize replacing oracle inverse repairs with naturally proposed edits?

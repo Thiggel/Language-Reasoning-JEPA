@@ -4,7 +4,7 @@
 \definecolor{editblue}{RGB}{38,117,168}
 \setbeamercolor{structure}{fg=editblue}
 \title{How much edit experience should the model receive?}
-\subtitle{Sequence-edit JEPA validity audit and bounded pilot}
+\subtitle{Sequence-edit JEPA validity audit and representation decision}
 \date{17 July 2026}
 \begin{document}
 \frame{\titlepage}
@@ -73,9 +73,30 @@
     \item The exact changed-step targets for those edits are separated by .634, about 2,775 times more.
     \item The old K=4 model assigns changed-step outcomes at 24.7\%, chance for four alternatives.
     \item The repair predicts exact changed-step anchors for expert and mechanical alternative edits, with no quality or preference labels.
-    \item We screen coefficients .25, 1, and 4, plus a lower-learning-rate check at the high coefficient.
+    \item Coefficients .25, 1, and 4 plus a lower-learning-rate check all completed cleanly.
   \end{itemize}
   \vfill
-  \textbf{Next decision:} continue only if the correct action beats persistence, shuffled actions, and chance assignment without rank collapse.
+  \textbf{Question:} does stronger local supervision make the pooled predictor use the action?
+\end{frame}
+
+\begin{frame}{Local supervision still leaves the model action-blind}
+  \centering
+  \begin{tabular}{lrrrr}
+    \toprule
+    Weight & Pred. & Persist. & Shuf./match & Assignment \\
+    \midrule
+    .25 & .173 & .130 & 1.00004 & 24.92\% \\
+    1 & .173 & .146 & 1.00003 & 24.85\% \\
+    4 & .186 & .150 & 1.00151 & 25.04\% \\
+    4, low LR & .354 & .177 & 1.00041 & 25.00\% \\
+    \bottomrule
+  \end{tabular}
+  \vfill
+  \begin{itemize}
+    \item Assignment stays at 25\% chance; every cell loses to persistence.
+    \item Rank falls 11.6--26.4\%; no coefficient deserves confirmation.
+    \item The ``local'' head still projects one pooled global-state prediction.
+  \end{itemize}
+  \textbf{Next decision:} one direct observed-step attention test under the unchanged gates; otherwise retire this state family.
 \end{frame}
 \end{document}

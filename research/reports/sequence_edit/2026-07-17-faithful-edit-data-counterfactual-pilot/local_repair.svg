@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430" role="img" aria-labelledby="title desc">
+  <title id="title">Local outcome assignment remains at chance</title>
+  <desc id="desc">Four bars at about 25 percent, below a dashed 35 percent continuation gate.</desc>
+  <rect width="900" height="430" fill="white"/>
+  <text x="450" y="34" text-anchor="middle" font-family="sans-serif" font-size="23" fill="#222">Exact changed-step supervision did not restore action assignment</text>
+  <line x1="95" y1="355" x2="855" y2="355" stroke="#333" stroke-width="2"/>
+  <line x1="95" y1="75" x2="95" y2="355" stroke="#333" stroke-width="2"/>
+  <line x1="95" y1="110" x2="855" y2="110" stroke="#c43c39" stroke-width="3" stroke-dasharray="10 8"/>
+  <text x="850" y="101" text-anchor="end" font-family="sans-serif" font-size="17" fill="#c43c39">35% continuation gate</text>
+  <line x1="95" y1="180" x2="855" y2="180" stroke="#777" stroke-width="2" stroke-dasharray="5 7"/>
+  <text x="850" y="171" text-anchor="end" font-family="sans-serif" font-size="17" fill="#555">25% chance</text>
+  <g fill="#2675a8">
+    <rect x="150" y="180.6" width="115" height="174.4"/>
+    <rect x="335" y="181.1" width="115" height="173.9"/>
+    <rect x="520" y="179.7" width="115" height="175.3"/>
+    <rect x="705" y="180" width="115" height="175"/>
+  </g>
+  <g font-family="sans-serif" font-size="18" text-anchor="middle" fill="#222">
+    <text x="207" y="170">24.92%</text><text x="392" y="170">24.85%</text><text x="577" y="170">25.04%</text><text x="762" y="170">25.00%</text>
+    <text x="207" y="385">weight .25</text><text x="392" y="385">weight 1</text><text x="577" y="385">weight 4</text><text x="762" y="385">weight 4, low LR</text>
+  </g>
+  <g font-family="sans-serif" font-size="16" text-anchor="end" fill="#444">
+    <text x="83" y="360">0%</text><text x="83" y="185">25%</text><text x="83" y="115">35%</text><text x="83" y="80">40%</text>
+  </g>
+</svg>

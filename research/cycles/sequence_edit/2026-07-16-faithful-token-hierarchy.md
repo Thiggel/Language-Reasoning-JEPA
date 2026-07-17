@@ -147,3 +147,21 @@ Continue only if shuffled-action error rises at least 5%, exact K=4 outcome
 assignment exceeds 35%, prediction beats persistence, and effective-rank loss
 is at most 10%. Otherwise redesign the state representation and do not run K=8,
 data exposure, hierarchy, dense rollout, or LDAD experiments.
+
+## Result: local targets do not repair the pooled state
+
+All four jobs completed from commit `779fbc558452`. Shuffled/matched error is
+1.00003--1.00151, exact changed-step assignment is 24.85--25.04% (chance), and
+every predictor loses to persistence. Effective rank is 77.8--93.4 versus
+105.6 for the flat 2k anchor, a loss of 11.6--26.4%. The lower-learning-rate
+cell has the best rank but the worst prediction error. No coefficient passes,
+so confirmation seeds and all K/data/hierarchy expansions remain blocked.
+
+The local objective still applies `chunk_head` to a single pooled global-state
+prediction. Exact local targets are well separated, but predicted alternatives
+reach only 1.1--10.3% of their pairwise separation. The smallest next decision
+is whether direct access to the observed per-step embeddings repairs this
+interface. Test the existing action-conditioned attention-over-buffer
+predictor in one K=4, 2k, weight-4 cell. This is observed-buffer information,
+not an oracle changed-step index. Retain the same four continuation gates; if
+it fails, retire this state family rather than tune it further.

@@ -9,7 +9,7 @@
 | 2026-07-16-gar-geometry-screen | Does deeper/wider JEPA-geometric preference supervision improve strict causal control? | 7 attempted; 7 retries finalized | first launch infrastructure-invalid before optimization; v2 waits for slots | [`2026-07-16-gar-geometry-screen.md`](cycles/intent_phrase/2026-07-16-gar-geometry-screen.md) |
 | 2026-07-16-faithful-token-edit-hierarchy | Does non-symbolic edit hierarchy improve faithful token-buffer dynamics? | 5 submitted | all failed before optimization; invalid boundary construction discovered | [`2026-07-16-faithful-token-hierarchy.md`](cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md) |
 | 2026-07-17-faithful-edit-data-counterfactual-pilot | How much unique data and exact same-state alternative coverage is useful before edit architecture tests? | 6 completed | no K/data selection: all action-blind; most lose to persistence; local target proposed | [`2026-07-16-faithful-token-hierarchy.md`](cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md) |
-| 2026-07-17-faithful-edit-local-outcome-repair | Does exact changed-step supervision restore causal edit sensitivity? | 4 planned | weights .25/1/4 plus high-weight LR cross-check | [`2026-07-16-faithful-token-hierarchy.md`](cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md) |
+| 2026-07-17-faithful-edit-local-outcome-repair | Does exact changed-step supervision restore causal edit sensitivity? | 4 completed | all remain action-blind and lose to persistence; no coefficient selected | [`2026-07-16-faithful-token-hierarchy.md`](cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md) |
 
 Historical waves remain indexed by the subproject READMEs. Add one row per new
 controller round and keep invalid/failed rounds visible.

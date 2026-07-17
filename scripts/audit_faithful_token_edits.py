@@ -190,23 +190,22 @@ def probe(x, y, classification=False):
     )
 
 
-def shuffled_action_prediction(model, out):
+def shuffled_action_prediction(model, out, batch):
     """Predict with a deranged current action and each sample's true prefix.
 
     ``LatentDynamicsCore._predict_counterfactuals`` constructs an independent
     causal sequence for every (trajectory, step) pair.  Thus a replacement at
     step t cannot leak another candidate or alter the observed actions before
-    t.  Attention-over-buffer predictors are excluded because their separate
-    prediction path cannot be reproduced by the shared dynamics core.
+    t. Attention-over-buffer predictors use the same deranged action codes
+    with fixed observed current-step embeddings, so only the current action
+    changes in either predictor family.
     """
     valid = out.step_mask
     count = int(valid.sum())
     if count < 2:
         return None, "fewer_than_two_valid_actions", None
-    if getattr(model, "attn_pred", None) is not None:
-        return None, "attention_buffer_predictor_not_supported", None
     core = getattr(model, "core", None)
-    if core is None or not hasattr(core, "_predict_counterfactuals"):
+    if core is None:
         return None, "independent_causal_prefix_api_unavailable", None
     alternatives = out.actions.detach().clone()
     observed = alternatives[valid]
@@ -221,6 +220,26 @@ def shuffled_action_prediction(model, out):
     alternatives[valid] = best
     changed_mask = valid.clone()
     changed_mask[valid] = best_changed
+    if getattr(model, "attn_pred", None) is not None:
+        batch_size, states, chunks, length = batch["buffer_tokens"].shape
+        steps = states - 1
+        sentence_embeddings = model.encode_chunks(
+            batch["buffer_tokens"][:, :-1].reshape(
+                batch_size * steps, chunks, length
+            )
+        )
+        sentence_mask = batch["buffer_mask"][:, :-1].reshape(
+            batch_size * steps, chunks
+        )
+        prediction = model.attn_pred(
+            sentence_embeddings,
+            sentence_mask,
+            out.prev_states.reshape(batch_size * steps, -1),
+            alternatives.reshape(batch_size * steps, -1),
+        ).reshape(batch_size, steps, -1)
+        return prediction, None, changed_mask
+    if not hasattr(core, "_predict_counterfactuals"):
+        return None, "independent_causal_prefix_api_unavailable", None
     prediction = core._predict_counterfactuals(
         out.prev_states, out.actions, alternatives.unsqueeze(2), valid
     )
@@ -346,7 +365,7 @@ def main():
                 horizon_totals.setdefault(horizon, []).append(summary)
 
             shuffled_prediction, reason, changed_mask = shuffled_action_prediction(
-                model, out
+                model, out, batch
             )
             if shuffled_prediction is None:
                 shuffle_unavailable.add(reason)

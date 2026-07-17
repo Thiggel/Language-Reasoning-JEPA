@@ -1,0 +1,8 @@
+# @package _global_
+# Representation repair: expose current official steps directly to an
+# action-conditioned attention predictor. Exact changed-step outcomes remain
+# mechanically executed and carry no oracle step index or quality label.
+defaults: [edit_token_faithful_cf_k4_local_w4, _self_]
+run_name: edit_token_faithful_cf_k4_local_attn_w4
+model:
+  attn_predictor: true

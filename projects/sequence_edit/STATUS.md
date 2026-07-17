@@ -22,6 +22,10 @@ The mechanism audit found that exact global next-buffer targets for four edits
 from the same state are separated by only 0.000228 normalized L1. Exact
 changed-step targets are separated by 0.634. The active decision is therefore
 whether local mechanically exact outcome targets restore action sensitivity.
-Coefficients 0.25, 1, and 4 plus a high-weight learning-rate cross-check are
-implemented. K=8, matched exposure, hierarchy, dense rollout, and LDAD removal
-remain gated.
+Coefficients 0.25, 1, and 4 plus a high-weight learning-rate cross-check all
+completed, but assignment remains at chance, shuffled actions change error by
+at most 0.15%, every predictor loses to persistence, and rank drops 11.6--26.4%.
+The pooled state is therefore rejected under this recipe. The next and final
+bounded interface test exposes current official-step embeddings directly to
+the existing action-conditioned attention predictor. K=8, matched exposure,
+hierarchy, dense rollout, and LDAD removal remain gated.

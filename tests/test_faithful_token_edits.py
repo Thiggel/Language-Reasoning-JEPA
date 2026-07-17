@@ -3,6 +3,7 @@ from functools import partial
 import torch
 from torch.utils.data import DataLoader
 
+from scripts.audit_faithful_token_edits import shuffled_action_prediction
 from textjepa.data.edits.dataset import collate_edits
 from textjepa.data.faithful_token_edits import (
     FaithfulTokenEditDataset,
@@ -207,6 +208,37 @@ def test_counterfactual_outcomes_supervise_dynamics_without_quality_labels():
     loss.backward()
     assert torch.isfinite(loss)
     assert model.core.predictor.inp.weight.grad is not None
+
+
+def test_attention_buffer_predictor_preserves_local_counterfactual_outputs():
+    torch.manual_seed(17)
+    vocab = faithful_token_edit_vocab()
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=2, seed=131, max_op=6, max_edge=12,
+        op_range=(3, 6), min_edits=4, max_edits=4,
+        counterfactual_k=2, counterfactual_source="mixed",
+    )
+    batch = next(iter(DataLoader(
+        dataset, batch_size=2,
+        collate_fn=partial(collate_edits, pad_id=vocab.pad_id),
+    )))
+    model = EditJEPA(
+        len(vocab), vocab.pad_id, d_model=32, chunk_layers=1,
+        chunk_heads=4, slot_layers=1, slot_heads=4, n_slots=2,
+        max_chunk_len=128, d_action=8, predictor_layers=1,
+        predictor_heads=4, macro_k=0, chunk_target="frozen",
+        attn_predictor=True,
+    )
+    out = model(batch)
+    assert out.extras["cf_slot_pred"].shape == out.extras["cf_slot_tgt"].shape
+    shuffled, reason, changed = shuffled_action_prediction(model, out, batch)
+    assert reason is None
+    assert shuffled.shape == out.preds.shape
+    assert bool(changed.any())
+    loss = CounterfactualSlotPrediction()(out, batch) + SlotAnchor()(out, batch)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.attn_pred.a_proj.weight.grad is not None
 
 
 def test_faithful_token_edit_model_is_causal_hierarchical_and_ldad_trains():
