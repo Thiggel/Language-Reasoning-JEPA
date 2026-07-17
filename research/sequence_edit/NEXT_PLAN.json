@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-17-structured-token-edit-restart-wave1-v2",
-  "decision": "Test all four structured corruption regimes with EMA and isolate VICReg and faithful LDAD on the curriculum anchor within the six-GPU project cap.",
+  "round_id": "2026-07-17-structured-token-edit-restart-wave1-v3",
+  "decision": "Test all four structured corruption regimes with EMA and isolate online VICReg on the curriculum anchor within the controller pending-job cap.",
   "git_commit": "AUTO",
   "jobs": [
     {
@@ -106,27 +106,6 @@
       "gpus": 1,
       "walltime_minutes": 60,
       "purpose": "Measure token-aligned curriculum corruption with ema-vicreg under matched primitive dynamics.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
-    },
-    {
-      "id": "edit-curriculum-ema-vicreg-ldad-seed-0",
-      "cluster": "Grete",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema_vicreg_ldad",
-        "0",
-        "data.corruption_mode=curriculum"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 60,
-      "purpose": "Measure token-aligned curriculum corruption with ema-vicreg-ldad under matched primitive dynamics.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
