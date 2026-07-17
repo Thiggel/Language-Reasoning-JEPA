@@ -190,6 +190,16 @@ Instead, the local branch produced almost the same prediction for all four
 actions: predicted pairwise separation was only 1.1--10.3% of the exact local
 target separation.
 
+The single direct-step-attention test also completed cleanly from commit
+`398f4350b95f`. It moves local assignment modestly above chance, from about
+25% to 27.56%, and raises predicted local separation to 15.9% of target
+separation. That is not enough: shuffled/matched error is 0.99933, one-step
+error is .123 versus .090 for persistence, and effective rank is 80.95 (23.4%
+below the flat anchor). Its raw recursive score is excluded: the attention
+branch has no recursive rollout API, so the audit had inadvertently evaluated
+the dormant core predictor instead. The four valid causal gates already reject
+the cell without that metric.
+
 ## What we can conclude
 
 The old hierarchy result remains invalid rather than negative. Both repaired
@@ -198,7 +208,8 @@ improvements do not represent action-conditioned edit dynamics. Exact local
 targets preserve a strong measurable signal, yet merely projecting a pooled
 global-state prediction into that target space does not recover it. The
 bottleneck is therefore the state/predictor interface, not too little local
-loss weight.
+loss weight. Even direct observed-step access does not make this model reliably
+use literal edit actions.
 
 ## What we cannot conclude
 
@@ -213,15 +224,12 @@ unlearnable; it rejects this pooled-state interface under the tested recipe.
 
 ## What happens next
 
-Do not confirm any coefficient: all four miss every causal gate. The smallest
-representation test exposes the current official-step embeddings directly to
-the existing action-conditioned attention predictor at K=4 and coefficient 4.
-It uses the observed buffer and literal edit text only; no changed-step index,
-target-relative quality, or future state enters the predictor. Continue only
-under the same gates: shuffled-action error rises at least 5%, local assignment
-exceeds 35%, prediction beats persistence, and effective-rank loss is at most
-10%. Otherwise retire this edit-state family before any K=8, exposure, data,
-hierarchy, rollout, or LDAD experiment.
+Stop this edit-state family. Neither pooled-state local supervision nor direct
+observed-step attention passes the unchanged causal gates. Do not run
+confirmation seeds, K=8, matched exposure, more unique data, hierarchy, dense
+rollout, or LDAD ablations. A future restart requires a new token-aligned state
+and recursive transition interface with a CPU-scale causal fixture before any
+GPU round; that is a new formulation, not another hyperparameter setting.
 
 ## Words used in this report
 
@@ -235,5 +243,5 @@ hierarchy, rollout, or LDAD experiment.
 
 ## Questions for you
 
-- If direct step attention also remains action-blind, should this synthetic edit track be retired or rebuilt around token-aligned states?
+- Should the sequence-edit track remain retired, or should a later cycle design a token-aligned recursive state from scratch?
 - Is the main long-term goal a scientifically clean synthetic dynamics result, or should we prioritize replacing oracle inverse repairs with naturally proposed edits?

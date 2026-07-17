@@ -330,6 +330,7 @@ def main():
     shuffled, shuffled_masks, shuffle_unavailable = [], [], set()
     counterfactual_errors = []
     action_sensitivity_parts = []
+    recursive_available = getattr(model, "attn_pred", None) is None
     with torch.no_grad():
         for batch in loader:
             batch = {
@@ -339,9 +340,10 @@ def main():
             out = model(batch)
             mask = out.step_mask
             direct_error = normalized_l1(out.preds, out.step_states_tgt)
-            recursive_error = normalized_l1(out.rollout, out.step_states_tgt)
             direct.append(direct_error.cpu())
-            recursive.append(recursive_error.cpu())
+            if recursive_available:
+                recursive_error = normalized_l1(out.rollout, out.step_states_tgt)
+                recursive.append(recursive_error.cpu())
             persistence.append(normalized_l1(out.prev_states, out.step_states_tgt).cpu())
             masks.append(mask.cpu())
             all_ops.append(batch["op"].cpu())
@@ -359,10 +361,11 @@ def main():
                 if sensitivity is not None:
                     action_sensitivity_parts.append(sensitivity)
 
-            for horizon, summary in recursive_horizon_errors(
-                model, out, horizons, args.max_horizon_origins
-            ).items():
-                horizon_totals.setdefault(horizon, []).append(summary)
+            if recursive_available:
+                for horizon, summary in recursive_horizon_errors(
+                    model, out, horizons, args.max_horizon_origins
+                ).items():
+                    horizon_totals.setdefault(horizon, []).append(summary)
 
             shuffled_prediction, reason, changed_mask = shuffled_action_prediction(
                 model, out, batch
@@ -389,7 +392,7 @@ def main():
                 ldad_total += int(valid.sum())
 
     direct_error = pad_concat_2d(direct)
-    recursive_error = pad_concat_2d(recursive)
+    recursive_error = pad_concat_2d(recursive) if recursive else None
     persistence_error = pad_concat_2d(persistence)
     step_mask = pad_concat_2d(masks, False)
     operation = pad_concat_2d(all_ops, -1)
@@ -442,7 +445,10 @@ def main():
     payload = {
         "examples": len(dataset),
         "one_step_ln_l1": matched_mean,
-        "recursive_ln_l1": _summary(recursive_error, step_mask)["ln_l1"],
+        "recursive_ln_l1": (
+            _summary(recursive_error, step_mask)["ln_l1"]
+            if recursive_error is not None else None
+        ),
         "counterfactual_one_step_ln_l1": (
             float(torch.cat(counterfactual_errors).mean())
             if counterfactual_errors else None
@@ -461,14 +467,26 @@ def main():
         "persistence_no_change_ln_l1": _summary(persistence_error, step_mask)["ln_l1"],
         "shuffled_action_causal_falsifier": shuffled_control,
         "recursive_ln_l1_by_horizon": horizon_payload,
-        "recursive_horizon_origin_sampling": {
-            "method": "evenly_spaced_observed_causal_prefixes",
-            "maximum_origins_per_horizon_per_batch": args.max_horizon_origins,
-            "zero_means_all": True,
-        },
-        "open_loop_ln_l1_by_trajectory_depth": depth_summary(recursive_error, step_mask),
-        "open_loop_ln_l1_by_operation": operation_summary(
-            recursive_error, step_mask, operation
+        "recursive_horizon_origin_sampling": (
+            {
+                "method": "evenly_spaced_observed_causal_prefixes",
+                "maximum_origins_per_horizon_per_batch": args.max_horizon_origins,
+                "zero_means_all": True,
+            }
+            if recursive_available else {
+                "unavailable_reason": (
+                    "attention-over-buffer predictor has no recursive rollout API; "
+                    "the dormant core predictor is not a valid substitute"
+                )
+            }
+        ),
+        "open_loop_ln_l1_by_trajectory_depth": (
+            depth_summary(recursive_error, step_mask)
+            if recursive_error is not None else {}
+        ),
+        "open_loop_ln_l1_by_operation": (
+            operation_summary(recursive_error, step_mask, operation)
+            if recursive_error is not None else {}
         ),
         "macro_ln_l1": float(torch.cat(high).mean()) if high else None,
         "state_std": float(feature_std(state)),

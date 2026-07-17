@@ -165,3 +165,18 @@ interface. Test the existing action-conditioned attention-over-buffer
 predictor in one K=4, 2k, weight-4 cell. This is observed-buffer information,
 not an oracle changed-step index. Retain the same four continuation gates; if
 it fails, retire this state family rather than tune it further.
+
+## Result: observed-step attention is insufficient
+
+The one-cell test completed from commit `398f4350b95f`. Direct step attention
+raises exact local assignment to 27.56% and predicted/target local separation
+to 15.9%, but it remains below the 35% gate. Shuffled/matched error is 0.99933,
+one-step error .123 loses to .090 persistence, and effective rank 80.95 is
+23.4% below the flat anchor. The original recursive audit value is excluded:
+this attention branch has no rollout API and the dormant core predictor is not
+a valid substitute.
+
+All four valid gates reject the cell. Retire the pooled/attention edit-state
+family. No confirmation, K/data, hierarchy, rollout, or LDAD job is justified.
+A future cycle may restart only with a token-aligned recursive formulation and
+a tiny causal fixture that passes before GPU training.

@@ -4,10 +4,10 @@
   "project": "sequence_edit",
   "title": "How much edit experience should the model receive?",
   "created_at": "2026-07-17T11:00:00+02:00",
-  "status": "local-repair-rejected-representation-test-ready",
+  "status": "cycle-complete-state-family-retired",
   "review_required": true,
-  "decision": "Reject data/K selection and local-loss reweighting because both remain action-blind; test direct observed-step attention once before retiring the state family.",
-  "plain_summary": "Ten jobs completed across two rounds. Exact local targets are well separated, but all four local-loss variants remain at chance action assignment, lose to persistence, and damage rank. The bottleneck is the pooled state interface, not too little local-loss weight.",
+  "decision": "Retire the pooled and observed-step-attention state family; neither uses literal edit actions causally, so no scale, data, or hierarchy continuation is justified.",
+  "plain_summary": "Eleven jobs completed across three rounds. Local losses remain at chance, and direct step attention improves assignment only to 27.56% while still ignoring shuffled actions, losing to persistence, and damaging rank. A future restart requires a new token-aligned recursive formulation.",
   "report": "REPORT.md",
   "artifacts": ["decision.svg", "result_validity.svg", "local_repair.svg", "SLIDES.tex", "SLIDES.pdf"],
   "tags": ["sequence-edit", "data-scale", "counterfactuals", "validity"]

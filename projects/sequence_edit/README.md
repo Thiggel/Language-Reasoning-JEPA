@@ -15,8 +15,9 @@ Primary implementation:
 The research index is
 [`research/sequence_edit/`](../../research/sequence_edit/README.md). Historical
 raw logs remain locally under `research/archive/edit_track/` until a new
-sequence-edit cycle is opened. The track is a current scientific subproject
-and now has an active faithful-iGSM data and counterfactual-coverage pilot.
+sequence-edit cycle is opened. The track remains a scientific subproject, but
+its pooled/step-attention faithful-iGSM state family is retired after failing
+causal action-use gates.
 
 The new interface uses official solution sentences as the mutable buffer and
 literal token insert/delete/replace operations as primitive actions. It does
@@ -25,6 +26,10 @@ menu. It is nevertheless candidate-privileged oracle denoising: the gold
 solution supplies corruption tokens and the exact inverse repair path.
 Counterfactual outcomes are mechanically executed from the current buffer and
 carry no target-relative quality label.
+
+No further K, data, hierarchy, rollout, or LDAD experiments are active. A
+future restart must first introduce a token-aligned recursive state and pass a
+CPU-scale causal fixture.
 
 Current entry points:
 

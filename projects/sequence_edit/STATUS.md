@@ -25,7 +25,10 @@ whether local mechanically exact outcome targets restore action sensitivity.
 Coefficients 0.25, 1, and 4 plus a high-weight learning-rate cross-check all
 completed, but assignment remains at chance, shuffled actions change error by
 at most 0.15%, every predictor loses to persistence, and rank drops 11.6--26.4%.
-The pooled state is therefore rejected under this recipe. The next and final
-bounded interface test exposes current official-step embeddings directly to
-the existing action-conditioned attention predictor. K=8, matched exposure,
-hierarchy, dense rollout, and LDAD removal remain gated.
+The pooled state is therefore rejected under this recipe. The final bounded
+interface test exposed current official-step embeddings directly to the
+action-conditioned attention predictor. Assignment improved only to 27.56%,
+shuffled actions slightly improved error, prediction still lost to persistence,
+and rank fell 23.4%. This state family is retired. K=8, matched exposure, more
+data, hierarchy, dense rollout, and LDAD removal will not run. Any future
+restart requires a new token-aligned recursive interface and CPU causal fixture.
