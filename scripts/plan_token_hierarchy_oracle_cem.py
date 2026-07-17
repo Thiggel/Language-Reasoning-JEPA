@@ -26,6 +26,7 @@ from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.render import step_sentence
 from textjepa.data.lm import LMDataset, collate_lm
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
+from textjepa.models.heads import MacroValueHead, SubgoalActionHead
 from textjepa.planning.token_cem import (
     CEMResult,
     batched_categorical_min_cost,
@@ -69,7 +70,7 @@ def build_banks(model, cfg, vocab, device, examples, max_codes):
     loader = DataLoader(
         ds, batch_size=16, collate_fn=partial(collate_lm, pad_id=vocab.pad_id)
     )
-    stores = [dict(states=[], actions=[], support=[]) for _ in model.levels]
+    stores = [dict(states=[], actions=[], support=[], raw_ids=[]) for _ in model.levels]
     for batch in loader:
         out = model(batch["tokens"].to(device), batch["prompt_len"].to(device))
         for index, level in enumerate(out["levels"]):
@@ -77,6 +78,7 @@ def build_banks(model, cfg, vocab, device, examples, max_codes):
             stores[index]["states"].append(level["prev"][valid].cpu())
             stores[index]["actions"].append(level["codes"][valid].cpu())
             stores[index]["support"].append(level["support_pos"][valid].cpu())
+            stores[index]["raw_ids"].append(level["raw_action_ids"][valid].cpu())
         if all(sum(len(x) for x in store["actions"]) >= max_codes for store in stores):
             break
     banks = []
@@ -97,6 +99,7 @@ def load_or_build_banks(model, cfg, vocab, device, examples, max_codes, cache_pa
         "examples": int(examples),
         "max_codes": int(max_codes),
         "train_seed": int(cfg.data.train_seed),
+        "bank_schema": 2,
     }
     if path is not None and path.exists():
         payload = torch.load(path, map_location="cpu", weights_only=False)
@@ -191,6 +194,33 @@ class OracleCEMPlanner:
         self.pending = []
         self.records = []
         self.oracle_goal = None
+        self.oracle_level_goals = None
+        self.advantage_head = None
+        self.advantage_scope = None
+        if args.advantage_head:
+            payload = torch.load(
+                args.advantage_head, map_location="cpu", weights_only=False
+            )
+            self.advantage_scope = payload["result"]["scope"]
+            if self.advantage_scope == "primitive":
+                head = SubgoalActionHead(model.d_model, model.d_action)
+            else:
+                head = MacroValueHead(model.d_model, model.level_dims[-1])
+            head.load_state_dict(payload["head"])
+            self.advantage_head = head.to(self.device).eval()
+
+    def lift_low_predictions(self, base_path, predictions, level_index):
+        """Map primitive rollout endpoints into a distinct higher state space.
+
+        The observed causal prefix is prepended before re-encoding.  This is
+        essential: a distinct level encoder is history-dependent, so encoding
+        a candidate endpoint in isolation is not the model used in training.
+        """
+        n = len(predictions)
+        prefix = base_path.expand(n, -1, -1)
+        path = torch.cat([prefix, predictions], 1)
+        lifted = self.model.lift_state_path(path, through_level=level_index)
+        return lifted[level_index][:, -1:]
 
     def low_rollout(self, start, tokens, state_history, action_history):
         actions = self.model.token_action(tokens)
@@ -200,7 +230,7 @@ class OracleCEMPlanner:
         )
 
     def token_plan(self, start, target, horizon, state_history, action_history,
-                   reduced=False):
+                   reduced=False, target_level=None, base_path=None):
         scale = self.args.reach_budget_scale if reduced else 1.0
         candidates = max(16, int(self.args.token_candidates * scale))
         iterations = max(1, int(self.args.token_iterations * scale))
@@ -217,9 +247,9 @@ class OracleCEMPlanner:
                 greedy=(mode == "prior_greedy"),
             )
 
-        extra_cost = None
+        cost_terms = []
         if mode == "prior_energy":
-            def extra_cost(tokens, states):
+            def prior_cost(tokens, states):
                 starts = torch.cat([
                     start.expand(len(tokens), -1)[:, None], states[:, :-1]
                 ], 1)
@@ -230,6 +260,34 @@ class OracleCEMPlanner:
                 return self.args.token_prior_weight * nll, {
                     "token_prior_nll": nll.detach(),
                 }
+            cost_terms.append(prior_cost)
+        if self.advantage_scope == "primitive":
+            def advantage_cost(tokens, states):
+                starts = torch.cat([
+                    start.expand(len(tokens), -1)[:, None], states[:, :-1]
+                ], 1)
+                embedded = self.model.token_action(tokens)
+                goals = target.expand(len(tokens), -1)[:, None].expand_as(starts)
+                advantage = self.advantage_head(starts, goals, embedded).mean(1)
+                return -self.args.advantage_weight * advantage, {
+                    "distilled_advantage": advantage.detach(),
+                }
+            cost_terms.append(advantage_cost)
+        def extra_cost(tokens, states):
+            addition = states.new_zeros(len(tokens))
+            diagnostics = {}
+            for term in cost_terms:
+                value, extra = term(tokens, states)
+                addition = addition + value
+                diagnostics.update(extra)
+            return addition, diagnostics
+        transform = None
+        if target_level is not None:
+            if base_path is None:
+                raise ValueError("distinct-level token planning requires base_path")
+            transform = lambda states: self.lift_low_predictions(
+                base_path, states, target_level
+            )
         result = categorical_cem(
             lambda ids: self.low_rollout(
                 start, ids, state_history, action_history
@@ -241,8 +299,15 @@ class OracleCEMPlanner:
                 self.vocab.pad_id,
                 self.vocab.token_to_id[self.vocab.UNK],
             ),
-            extra_cost=extra_cost,
+            extra_cost=(extra_cost if cost_terms else None),
+            goal_states=transform,
         )
+        if target_level is not None:
+            # Keep primitive predictions for execution-drift diagnostics.  The
+            # transformed states were used only for the goal cost.
+            result.states = self.low_rollout(
+                start, result.actions[None], state_history, action_history
+            )[0]
         return result
 
     def prior_token_plan(self, start, target, horizon, state_history,
@@ -288,7 +353,7 @@ class OracleCEMPlanner:
         )
 
     def macro_plan(self, level_index, start, target, horizon,
-                   state_history, action_history, low_history):
+                   state_history, action_history, low_history, base_path=None):
         level = self.model.levels[level_index]
         bank = self.banks[level_index]
         mode = self.args.support_mode
@@ -361,6 +426,14 @@ class OracleCEMPlanner:
                 "support_cost": support_cost.detach(),
                 "nearest_bank_distance": nearest.detach(),
             }
+            if (
+                self.advantage_scope == "macro"
+                and level_index == len(self.model.levels) - 1
+            ):
+                goals = target.expand(len(codes), -1)[:, None].expand_as(starts)
+                advantage = self.advantage_head(starts, goals, codes).mean(1)
+                addition = addition - self.args.advantage_weight * advantage
+                diagnostics["distilled_advantage"] = advantage.detach()
             if mode == "gmm":
                 mixture = gaussian_mixture_nll(codes, *self.gmms[level_index])
                 addition = addition + self.args.gmm_weight * mixture
@@ -392,7 +465,7 @@ class OracleCEMPlanner:
 
         reachability = None
         if self.args.reachability_refine:
-            low_states, low_actions = low_history
+            low_start, low_states, low_actions = low_history
 
             def reachability(subgoals):
                 scale = self.args.reach_budget_scale
@@ -400,7 +473,7 @@ class OracleCEMPlanner:
                 iterations = max(1, int(self.args.token_iterations * scale))
                 return batched_categorical_min_cost(
                     lambda ids: self.low_rollout(
-                        start, ids, low_states, low_actions
+                        low_start, ids, low_states, low_actions
                     ),
                     subgoals,
                     self.model.level_spans[level_index],
@@ -412,6 +485,11 @@ class OracleCEMPlanner:
                     forbidden=(
                         self.vocab.pad_id,
                         self.vocab.token_to_id[self.vocab.UNK],
+                    ),
+                    goal_states=(
+                        (lambda states: self.lift_low_predictions(
+                            base_path, states, level_index
+                        )) if self.model.distinct_level_states else None
                     ),
                 )
 
@@ -434,7 +512,7 @@ class OracleCEMPlanner:
         return result
 
     @torch.no_grad()
-    def plan_chunk(self, prompt, generated, oracle_goal):
+    def plan_chunk(self, prompt, generated, oracle_goal, oracle_level_goals=None):
         self.oracle_goal = oracle_goal
         prefix = torch.tensor([prompt + generated], device=self.device)
         prefix_states = self.model.encoder(prefix)
@@ -444,6 +522,66 @@ class OracleCEMPlanner:
             self.model, prefix_states, prompt_len, generated
         )
         position = len(generated)
+
+        if self.model.distinct_level_states and not self.args.flat:
+            if oracle_level_goals is None:
+                raise ValueError("distinct hierarchy requires level-specific goals")
+            self.oracle_level_goals = oracle_level_goals
+            level_index = len(self.model.levels) - 1
+            span = self.model.level_spans[level_index]
+            base_path = prefix_states[:, prompt_len - 1:]
+            lifted = self.model.lift_state_path(
+                base_path, through_level=level_index
+            )[level_index]
+            ratio = span // (self.model.level_spans[level_index - 1]
+                             if level_index else 1)
+            boundary_ids = list(range(0, lifted.shape[1], ratio))
+            if boundary_ids[-1] != lifted.shape[1] - 1:
+                boundary_ids.append(lifted.shape[1] - 1)
+            high_history = lifted[:, boundary_ids]
+            high_start = high_history[:, -1]
+            complete = len(generated) // span
+            if complete:
+                ids = torch.tensor(
+                    [generated[:complete * span]], device=self.device
+                )
+                high_actions = macro_codes(
+                    self.model, ids, through_level=level_index
+                )[level_index]
+            else:
+                high_actions = high_start.new_zeros(
+                    1, 0, self.model.level_dims[level_index]
+                )
+            # At off-boundary MPC updates there is no completed macro action
+            # joining the old history to the current state, so restart from
+            # the freshly lifted causal state.
+            if position % span:
+                high_history = high_start[:, None]
+                high_actions = high_start.new_zeros(
+                    1, 0, self.model.level_dims[level_index]
+                )
+            result = self.macro_plan(
+                level_index, high_start, oracle_level_goals[level_index],
+                self.args.high_horizon, high_history, high_actions,
+                (start, *low_history), base_path=base_path,
+            )
+            subgoal = result.states[0:1]
+            token_result = self.token_plan(
+                start, subgoal, remaining_to_boundary(position, span),
+                *low_history, target_level=level_index, base_path=base_path,
+            )
+            self.pending.append({
+                "end": position + len(token_result.actions),
+                "level": level_index + 1,
+                "predicted": subgoal[0].detach().cpu(),
+                **result.diagnostics,
+            })
+            execute = (
+                min(self.args.token_execution_chunk, len(token_result.actions))
+                if self.args.token_execution_chunk > 0
+                else len(token_result.actions)
+            )
+            return token_result.actions[:execute].tolist(), token_result, prefix_states
 
         if self.args.flat:
             result = self.token_plan(
@@ -486,7 +624,7 @@ class OracleCEMPlanner:
                     })
                 result = self.macro_plan(
                     level_index, start, parent_target, max(1, horizon),
-                    state_history, action_history, low_history,
+                    state_history, action_history, (start, *low_history),
                 )
                 self.cache[level_index] = result.states[0:1]
                 self.pending.append({
@@ -541,9 +679,15 @@ class OracleCEMPlanner:
             if pending["end"] <= position:
                 index = len(prompt) - 1 + pending["end"]
                 if index < target_states.shape[1]:
+                    actual_macro = target_states[:, index]
+                    if self.model.distinct_level_states:
+                        level_index = pending["level"] - 1
+                        reasoning = target_states[:, len(prompt) - 1:index + 1]
+                        actual_macro = self.model.lift_state_path(
+                            reasoning, through_level=level_index, teacher=True
+                        )[level_index][:, -1]
                     pending["macro_drift"] = float(latent_l1(
-                        pending["predicted"].to(self.device)[None],
-                        target_states[:, index],
+                        pending["predicted"].to(self.device)[None], actual_macro,
                     ))
                     if pending["level"] == 1:
                         lower_drift = pending["macro_drift"]
@@ -648,8 +792,11 @@ def main():
     parser.add_argument("--gmm-components", type=int, default=8)
     parser.add_argument("--ensemble-path", default=None)
     parser.add_argument("--epistemic-weight", type=float, default=0.0)
+    parser.add_argument("--advantage-head", default=None)
+    parser.add_argument("--advantage-weight", type=float, default=1.0)
     parser.add_argument("--bank-cache", default=None)
     parser.add_argument("--output-tag", default="")
+    parser.add_argument("--out", default=None)
     parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=73)
     args = parser.parse_args()
@@ -694,10 +841,19 @@ def main():
         generated = []
         full = torch.tensor([item["tokens"]], device=args.device)
         with torch.no_grad():
-            oracle_goal = model.teacher(full)[:, -1]
+            teacher_path = model.teacher(full)
+            oracle_goal = teacher_path[:, -1]
+            reasoning_path = teacher_path[:, item["prompt_len"] - 1:]
+            oracle_level_goals = (
+                tuple(path[:, -1] for path in model.lift_state_path(
+                    reasoning_path, teacher=True
+                )) if model.distinct_level_states else None
+            )
         planner = OracleCEMPlanner(model, vocab, banks, gmms, args, ensembles)
         while len(generated) < args.max_tokens:
-            chunk, result, _ = planner.plan_chunk(prompt, generated, oracle_goal)
+            chunk, result, _ = planner.plan_chunk(
+                prompt, generated, oracle_goal, oracle_level_goals
+            )
             before = list(generated)
             generated.extend(chunk)
             planner.observe_chunk(prompt, before, chunk, result)
@@ -732,10 +888,11 @@ def main():
         "args": vars(args),
     }
     tag = f"_{args.output_tag}" if args.output_tag else ""
-    dest = Path(args.ckpt).parent / (
+    dest = Path(args.out) if args.out else Path(args.ckpt).parent / (
         f"oracle_cem_{'flat' if args.flat else args.support_mode}"
         f"_reach{int(args.reachability_refine)}{tag}.json"
     )
+    dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))
 

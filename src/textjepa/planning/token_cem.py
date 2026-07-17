@@ -68,6 +68,7 @@ def categorical_cem(
     alpha: float = 0.1,
     forbidden: tuple[int, ...] = (),
     extra_cost: Callable[[Tensor, Tensor], tuple[Tensor, dict[str, Tensor]]] | None = None,
+    goal_states: Callable[[Tensor], Tensor] | None = None,
     generator: torch.Generator | None = None,
 ) -> CEMResult:
     """Categorical CEM over discrete token sequences, with no language model."""
@@ -93,7 +94,8 @@ def categorical_cem(
             for t in range(horizon)
         ], 1)
         states = rollout(tokens)
-        goal_cost = latent_l1(states[:, -1], goal.expand(candidates, -1))
+        scored = goal_states(states) if goal_states is not None else states
+        goal_cost = latent_l1(scored[:, -1], goal.expand(candidates, -1))
         cost = goal_cost
         diagnostics: dict[str, Tensor] = {"goal_cost": goal_cost.detach()}
         if extra_cost is not None:
@@ -140,6 +142,7 @@ def batched_categorical_min_cost(
     elites: int = 8,
     alpha: float = 0.1,
     forbidden: tuple[int, ...] = (),
+    goal_states: Callable[[Tensor], Tensor] | None = None,
     generator: torch.Generator | None = None,
 ) -> Tensor:
     """Minimum categorical-CEM residual for several subgoals in parallel."""
@@ -161,7 +164,8 @@ def batched_categorical_min_cost(
             for step in range(horizon)
         ], -1)
         states = rollout(tokens.reshape(groups * candidates, horizon))
-        final = states[:, -1].reshape(groups, candidates, -1)
+        scored = goal_states(states) if goal_states is not None else states
+        final = scored[:, -1].reshape(groups, candidates, -1)
         cost = latent_l1(final, goals[:, None].expand_as(final))
         best = torch.minimum(best, cost.amin(1))
         ids = cost.topk(elite_n, largest=False).indices

@@ -68,6 +68,26 @@ def test_categorical_cem_extra_cost_can_override_goal_only_choice():
     assert "support_penalty" in penalized.diagnostics
 
 
+def test_categorical_cem_scores_in_transformed_goal_coordinates():
+    goal = torch.tensor([1.0, -1.0])
+
+    def rollout(tokens):
+        state = torch.stack([tokens[:, 0].float(), -tokens[:, 0].float()], -1)
+        return state[:, None]
+
+    # Negating the rollout coordinates reverses which token is closest.
+    plain = categorical_cem(
+        rollout, goal, 1, 3, candidates=256, iterations=3, elites=16,
+        generator=torch.Generator().manual_seed(22),
+    )
+    transformed = categorical_cem(
+        rollout, goal, 1, 3, candidates=256, iterations=3, elites=16,
+        goal_states=lambda states: -states,
+        generator=torch.Generator().manual_seed(22),
+    )
+    assert plain.actions.item() != transformed.actions.item()
+
+
 def test_gmm_nll_prefers_component_centres():
     weights = torch.tensor([0.5, 0.5])
     means = torch.tensor([[0.0, 0.0], [5.0, 5.0]])
@@ -160,3 +180,18 @@ def test_batched_reachability_optimizes_distinct_subgoals_together():
         elites=16, generator=torch.Generator().manual_seed(19),
     )
     assert torch.equal(costs, torch.zeros_like(costs))
+
+
+def test_batched_reachability_can_lift_rollouts_before_scoring():
+    goals = torch.tensor([[-1.0, 1.0]])
+
+    def rollout(tokens):
+        state = torch.stack([tokens[:, 0].float(), -tokens[:, 0].float()], -1)
+        return state[:, None]
+
+    cost = batched_categorical_min_cost(
+        rollout, goals, 1, 3, candidates=256, iterations=3, elites=16,
+        goal_states=lambda states: -states,
+        generator=torch.Generator().manual_seed(7),
+    )
+    assert torch.allclose(cost, torch.zeros_like(cost))
