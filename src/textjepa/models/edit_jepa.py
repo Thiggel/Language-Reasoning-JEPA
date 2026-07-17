@@ -16,7 +16,7 @@ from textjepa.models.action import ActionEncoder
 from textjepa.models.core import LatentDynamicsCore
 from textjepa.models.ema import EMATeacher
 from textjepa.models.layers import TokenTransformer
-from textjepa.models.predictor import AttnEditPredictor
+from textjepa.models.predictor import AttnEditPredictor, TokenAlignedEditPredictor
 from textjepa.models.outputs import JEPAOutputs
 
 
@@ -103,11 +103,17 @@ class EditJEPA(nn.Module):
         dense_rollout_depth: int = 0,
         high_dense_rollout_depth: int = 0,
         observed_action_ldad: bool = False,
+        token_aligned: bool = False,
+        token_predictor_layers: int = 2,
+        token_relative_radius: int = 32,
+        gar_horizon: int = 1,
         ldad_decoder_layers: int = 2,
         ldad_max_len: int = 12,
     ):
         super().__init__()
         self.chunk_target = chunk_target
+        self.token_aligned = bool(token_aligned)
+        self.gar_horizon = max(1, int(gar_horizon))
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
             ff_mult, max_chunk_len, dropout,
@@ -144,6 +150,18 @@ class EditJEPA(nn.Module):
             self.observed_action_decoder = None
         self.attn_pred = (
             AttnEditPredictor(d_model, d_action) if attn_predictor else None
+        )
+        self.token_pred = (
+            TokenAlignedEditPredictor(
+                d_model, d_action, n_layers=token_predictor_layers,
+                n_heads=predictor_heads,
+                relative_radius=token_relative_radius,
+            ) if self.token_aligned else None
+        )
+        self.gar_head = nn.Sequential(
+            nn.LayerNorm(d_model + d_action),
+            nn.Linear(d_model + d_action, d_model * 2), nn.GELU(),
+            nn.Linear(d_model * 2, 1),
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.buffer_teacher = EMATeacher(self.buffer_encoder)
@@ -197,12 +215,77 @@ class EditJEPA(nn.Module):
     def encode_actions(self, action_tokens: torch.Tensor) -> torch.Tensor:
         return self.action_encoder(self.encode_chunks(action_tokens))
 
+    def encode_token_buffers(
+        self, buffer_tokens: torch.Tensor, mode: str = "online"
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pack sentence-contextualized tokens into one ordered token state."""
+        B, S, C, L = buffer_tokens.shape
+        encoder, _ = self._encoders(mode)
+        hidden, valid = encoder.module.forward_tokens(
+            buffer_tokens.reshape(B * S * C, L)
+        ) if isinstance(encoder, EMATeacher) else encoder.forward_tokens(
+            buffer_tokens.reshape(B * S * C, L)
+        )
+        hidden = hidden.reshape(B * S, C * L, -1)
+        valid = valid.reshape(B * S, C * L)
+        width = max(int(valid.sum(-1).max().item()), 1)
+        packed = hidden.new_zeros(B * S, width, hidden.shape[-1])
+        packed_mask = torch.zeros(
+            B * S, width, dtype=torch.bool, device=hidden.device
+        )
+        for row in range(B * S):
+            values = hidden[row, valid[row]]
+            packed[row, :values.shape[0]] = values
+            packed_mask[row, :values.shape[0]] = True
+        return packed.reshape(B, S, width, -1), packed_mask.reshape(B, S, width)
+
+    @staticmethod
+    def _pool_tokens(states: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        weight = mask.unsqueeze(-1).to(states.dtype)
+        return (states * weight).sum(-2) / weight.sum(-2).clamp_min(1.0)
+
+    def _structured_transitions(self, batch: dict, prompt_emb: torch.Tensor,
+                                token_states: torch.Tensor):
+        B, S, W, D = token_states.shape
+        token_mask = batch["structured_token_mask"]
+        T = S - 1
+        operations = batch["op"][:, :T]
+        positions = batch["edit_position"][:, :T]
+        content_ids = batch["edit_content_token"][:, :T]
+        content = self.chunk_encoder.tok(content_ids)
+        prompt = prompt_emb.unsqueeze(1).expand(B, T, D)
+        pred, pred_mask, actions = self.token_pred(
+            token_states[:, :-1].reshape(B * T, W, D),
+            token_mask[:, :-1].reshape(B * T, W),
+            operations.reshape(-1), positions.reshape(-1),
+            content.reshape(B * T, D), prompt.reshape(B * T, D),
+            return_action=True,
+        )
+        pred = pred.reshape(B, T, W, D)
+        pred_mask = pred_mask.reshape(B, T, W)
+        actions = actions.reshape(B, T, -1)
+        rollout, rollout_mask = [], []
+        current, current_mask = token_states[:, 0], token_mask[:, 0]
+        for step in range(T):
+            current, current_mask = self.token_pred(
+                current, current_mask, operations[:, step],
+                positions[:, step], content[:, step], prompt_emb,
+            )
+            rollout.append(current)
+            rollout_mask.append(current_mask)
+        return (
+            pred, pred_mask, torch.stack(rollout, 1),
+            torch.stack(rollout_mask, 1), actions,
+        )
+
     @torch.no_grad()
     def update_teachers(self, momentum: float) -> None:
         self.chunk_teacher.update(self.chunk_encoder, momentum)
         self.buffer_teacher.update(self.buffer_encoder, momentum)
 
     def forward(self, batch: dict) -> JEPAOutputs:
+        if self.token_aligned:
+            return self._forward_token_aligned(batch)
         states = self.encode_buffers(
             batch["prompt_tokens"], batch["prompt_mask"],
             batch["buffer_tokens"], batch["buffer_mask"],
@@ -300,4 +383,70 @@ class EditJEPA(nn.Module):
         if self._slot_tgt is not None:
             out.extras["slot_pred"] = self.core.chunk_head(out.preds)
             out.extras["slot_tgt"] = self._slot_tgt
+        return out
+
+    def _forward_token_aligned(self, batch: dict) -> JEPAOutputs:
+        prompt_chunks = self.encode_chunks(batch["prompt_tokens"])
+        prompt_weight = batch["prompt_mask"].unsqueeze(-1).to(prompt_chunks.dtype)
+        prompt_emb = (prompt_chunks * prompt_weight).sum(1) / prompt_weight.sum(1).clamp_min(1)
+        token_states, token_mask = self.encode_token_buffers(
+            batch["buffer_tokens"], mode="online"
+        )
+        with torch.no_grad():
+            token_targets, target_mask = self.encode_token_buffers(
+                batch["buffer_tokens"], mode="teacher"
+            )
+            action_emb_tgt = self.encode_chunks(
+                batch["action_tokens"], teacher=True
+            )
+        # Packing widths are determined by the same raw buffers and therefore
+        # must agree between online and EMA encoders.
+        batch["structured_token_mask"] = token_mask
+        pred, pred_mask, rollout, rollout_mask, actions = (
+            self._structured_transitions(batch, prompt_emb, token_states)
+        )
+        states = self._pool_tokens(token_states, token_mask)
+        targets = self._pool_tokens(token_targets, target_mask)
+        pooled_pred = self._pool_tokens(pred, pred_mask)
+        out = self.core(
+            states[:, 0], states[:, 1:], targets[:, 1:], actions,
+            action_emb_tgt, batch["step_mask"],
+            preds_override=pooled_pred,
+        )
+        out.rollout = self._pool_tokens(rollout, rollout_mask)
+        out.extras.update({
+            "token_predictions": pred,
+            "token_prediction_mask": pred_mask,
+            "token_rollout_predictions": rollout,
+            "token_rollout_mask": rollout_mask,
+            "token_targets": token_targets[:, 1:].detach(),
+            "token_target_mask": target_mask[:, 1:],
+        })
+        # The clean terminal embedding is a privileged training target only.
+        # The learned action-value head receives (state, action), not the goal.
+        goal_index = batch["step_mask"].sum(1).long().clamp(min=1)
+        row = torch.arange(states.shape[0], device=states.device)
+        goal = targets[row, goal_index]
+        target_prev = torch.cat([targets[:, :1], targets[:, 1:-1]], dim=1)
+        future = []
+        for step in range(out.step_mask.shape[1]):
+            index = torch.minimum(
+                torch.full_like(goal_index, step + self.gar_horizon), goal_index
+            )
+            future.append(targets[row, index])
+        target_future = torch.stack(future, dim=1)
+        ln = lambda value: torch.nn.functional.layer_norm(
+            value, value.shape[-1:]
+        )
+        before = (ln(target_prev) - ln(goal).unsqueeze(1)).abs().mean(-1)
+        after = (ln(target_future) - ln(goal).unsqueeze(1)).abs().mean(-1)
+        out.extras["gar_action_value"] = self.gar_head(torch.cat([
+            out.prev_states, out.actions
+        ], dim=-1)).squeeze(-1)
+        out.extras["gar_action_target"] = (before - after).detach()
+        out.extras["gar_horizon"] = self.gar_horizon
+        if self.observed_action_decoder is not None:
+            out.extras["observed_action_logits"] = self.observed_action_decoder(
+                out.step_states - out.prev_states
+            )
         return out

@@ -63,6 +63,9 @@ class Trainer:
 
     def _train_epoch(self, epoch: int) -> None:
         self.model.train()
+        dataset = self.train_loader.dataset
+        if hasattr(dataset, "set_epoch"):
+            dataset.set_epoch(epoch)
         if hasattr(self.train_loader.sampler, "set_epoch"):
             self.train_loader.sampler.set_epoch(epoch)
         t0 = time.time()

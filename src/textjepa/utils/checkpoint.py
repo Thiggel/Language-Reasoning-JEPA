@@ -100,6 +100,12 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             counterfactual_source=d.get(
                 "counterfactual_source", "uniform_local"
             ),
+            corruption_mode=(
+                "mixed" if split != "train" and
+                d.get("corruption_mode", "mixed") == "curriculum"
+                else d.get("corruption_mode", "mixed")
+            ),
+            curriculum_epochs=d.get("curriculum_epochs", 3),
         )
     if d.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import FaithfulDataset

@@ -27,12 +27,14 @@ solution supplies corruption tokens and the exact inverse repair path.
 Counterfactual outcomes are mechanically executed from the current buffer and
 carry no target-relative quality label.
 
-No further K, data, hierarchy, rollout, or LDAD experiments are active. A
-future restart must first introduce a token-aligned recursive state and pass a
-CPU-scale causal fixture.
+A token-aligned recursive restart is now implemented and has passed its
+CPU-scale process fixtures. The first GPU decision crosses corruption regime
+and stabilizer choice; hierarchy and planning remain gated on primitive causal
+action use.
 
 Current entry points:
 
 - [`STATUS.md`](STATUS.md)
+- [`structured-token restart`](../../research/cycles/sequence_edit/2026-07-17-structured-token-edit-restart.md)
 - [`faithful-token cycle`](../../research/cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md)
 - [`data and counterfactual pilot report`](../../research/reports/sequence_edit/2026-07-17-faithful-edit-data-counterfactual-pilot/REPORT.md)

@@ -1,0 +1,7 @@
+# @package _global_
+# H=4 uses the observed repair continuation after the first action. It is an
+# expert-continuation target, not a claim of globally optimal continuation.
+defaults: [edit_token_structured_gar_h1, _self_]
+run_name: edit_token_structured_gar_h4
+model:
+  gar_horizon: 4

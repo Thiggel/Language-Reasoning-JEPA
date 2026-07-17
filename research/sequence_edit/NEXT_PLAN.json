@@ -1,0 +1,314 @@
+{
+  "schema_version": 2,
+  "project": "sequence_edit",
+  "round_id": "2026-07-17-structured-token-edit-restart",
+  "decision": "Determine whether token-aligned pointer dynamics pass causal edit gates across four corruptions and which EMA/VICReg/LDAD recipe is healthy before hierarchy.",
+  "git_commit": "AUTO",
+  "jobs": [
+    {
+      "id": "edit-mask-ema-seed-0",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "0",
+        "data.corruption_mode=mask"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned mask corruption with ema under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-mask-ema-vicreg-seed-0",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg",
+        "0",
+        "data.corruption_mode=mask"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned mask corruption with ema-vicreg under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-mask-ema-vicreg-ldad-seed-0",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg_ldad",
+        "0",
+        "data.corruption_mode=mask"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned mask corruption with ema-vicreg-ldad under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-replace-ema-seed-0",
+      "cluster": "alex",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "0",
+        "data.corruption_mode=replace"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned replace corruption with ema under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k"
+    },
+    {
+      "id": "edit-replace-ema-vicreg-seed-0",
+      "cluster": "alex",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg",
+        "0",
+        "data.corruption_mode=replace"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned replace corruption with ema-vicreg under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k"
+    },
+    {
+      "id": "edit-replace-ema-vicreg-ldad-seed-0",
+      "cluster": "alex",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg_ldad",
+        "0",
+        "data.corruption_mode=replace"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned replace corruption with ema-vicreg-ldad under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k"
+    },
+    {
+      "id": "edit-remove-ema-seed-0",
+      "cluster": "Lise",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "0",
+        "data.corruption_mode=remove"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned remove corruption with ema under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-remove-ema-vicreg-seed-0",
+      "cluster": "Lise",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg",
+        "0",
+        "data.corruption_mode=remove"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned remove corruption with ema-vicreg under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-remove-ema-vicreg-ldad-seed-0",
+      "cluster": "Lise",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg_ldad",
+        "0",
+        "data.corruption_mode=remove"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned remove corruption with ema-vicreg-ldad under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-curriculum-ema-seed-0",
+      "cluster": "Grete",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "0",
+        "data.corruption_mode=curriculum"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned curriculum corruption with ema under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-curriculum-ema-vicreg-seed-0",
+      "cluster": "Grete",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg",
+        "0",
+        "data.corruption_mode=curriculum"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned curriculum corruption with ema-vicreg under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-curriculum-ema-vicreg-ldad-seed-0",
+      "cluster": "Grete",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema_vicreg_ldad",
+        "0",
+        "data.corruption_mode=curriculum"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "purpose": "Measure token-aligned curriculum corruption with ema-vicreg-ldad under matched primitive dynamics.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-curriculum-gar-h1-seed-0",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_gar_h1",
+        "0",
+        "data.corruption_mode=curriculum"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 40000,
+      "purpose": "Test goal-distance action-advantage distillation at horizon 1 after the same structured curriculum.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-curriculum-gar-h4-seed-0",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_gar_h4",
+        "0",
+        "data.corruption_mode=curriculum"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 40000,
+      "purpose": "Test goal-distance action-advantage distillation at horizon 4 after the same structured curriculum.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    }
+  ]
+}

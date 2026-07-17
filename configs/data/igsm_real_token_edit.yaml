@@ -16,6 +16,8 @@ max_edits: 16
 # They carry outcome buffers but no target-relative quality label.
 counterfactual_k: 0
 counterfactual_source: uniform_local
+corruption_mode: mixed  # mixed | mask | replace | remove | curriculum
+curriculum_epochs: 3
 # Compatibility fields unused by the text-only corruption process.
 n_vars_range: [6, 12]
 leaf_prob: 0.35

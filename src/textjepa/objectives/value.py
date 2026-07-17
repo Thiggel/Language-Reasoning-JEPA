@@ -43,6 +43,23 @@ class ValueDistill(Objective):
         return masked_mean(err, mask)
 
 
+class GoalAdvantageDistill(Objective):
+    """Distill privileged terminal-distance improvement into V(state, action).
+
+    A positive target means that executing the action and then following the
+    observed continuation for the configured horizon moved closer to the EMA
+    terminal representation.  The goal is never an input to the learned head.
+    """
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        prediction = out.extras.get("gar_action_value")
+        if prediction is None:
+            return out.preds.sum() * 0.0
+        target = out.extras["gar_action_target"]
+        error = F.smooth_l1_loss(prediction, target, reduction="none")
+        return masked_mean(error, out.step_mask.float())
+
+
 class ActionKL(Objective):
     """KL(q(a|s,s') || p(a|s)) for variational unobserved actions.
     ``free_nats``: KL below this threshold is not penalized (free bits) —

@@ -26,5 +26,9 @@ high_predictor_kind: causal
 dense_rollout_depth: 0
 high_dense_rollout_depth: 0
 observed_action_ldad: false
+token_aligned: false
+token_predictor_layers: 2
+token_relative_radius: 32
+gar_horizon: 1
 ldad_decoder_layers: 2
 ldad_max_len: 12

@@ -51,7 +51,8 @@ class TokenTransformer(nn.Module):
         self.encoder = encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
         self.norm = nn.LayerNorm(d_model)
 
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+    def forward_tokens(self, tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return contextual token latents and their validity mask."""
         pad = tokens.eq(self.pad_id)
         key_pad = pad.clone()
         key_pad[pad.all(dim=-1), 0] = False  # keep all-pad rows finite
@@ -59,9 +60,13 @@ class TokenTransformer(nn.Module):
             self.tok(tokens) + self.pos[:, : tokens.shape[1]],
             src_key_padding_mask=key_pad,
         )
-        keep = (~pad).unsqueeze(-1).float()
+        return self.norm(h), ~pad
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        h, valid = self.forward_tokens(tokens)
+        keep = valid.unsqueeze(-1).float()
         pooled = (h * keep).sum(1) / keep.sum(1).clamp(min=1.0)
-        return self.norm(pooled)
+        return pooled
 
 
 def build_causal_attention_mask(

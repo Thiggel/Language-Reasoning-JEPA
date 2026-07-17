@@ -1,0 +1,41 @@
+# @package _global_
+# Token-aligned recursive edit JEPA. Pointer actions address current tokens or
+# gaps directly; no textual absolute-position embedding enters the predictor.
+defaults: [edit_token_faithful_base, _self_]
+run_name: edit_token_structured_ema
+model:
+  token_aligned: true
+  token_predictor_layers: 2
+  token_relative_radius: 32
+  dropout: 0.0
+  macro_k: 0
+  observed_action_ldad: false
+  gar_horizon: 1
+data:
+  train_size: 2000
+  val_size: 512
+  counterfactual_k: 0
+  corruption_mode: mixed
+  curriculum_epochs: 3
+objective:
+  latent_pred: {weight: 0.25}
+  token_aligned_pred: {weight: 1.0}
+  rollout: {weight: 0.0}
+  token_aligned_rollout: {weight: 1.0, max_depth: 4}
+  dense_rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  observed_action_ldad: {weight: 0.0}
+  chunk_pred: {weight: 0.0}
+  value_distill: {weight: 0.0}
+  gar_action_value: {weight: 0.0}
+  counterfactual_outcome: {weight: 0.0}
+  counterfactual_slot: {weight: 0.0}
+train:
+  batch_size: 8
+  num_workers: 0
+  epochs: 3
+  warmup_steps: 100
+  eval_batches: 20
+

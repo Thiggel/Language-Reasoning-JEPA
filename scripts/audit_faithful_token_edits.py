@@ -220,6 +220,24 @@ def shuffled_action_prediction(model, out, batch):
     alternatives[valid] = best
     changed_mask = valid.clone()
     changed_mask[valid] = best_changed
+    if getattr(model, "token_pred", None) is not None:
+        # Structured actions are a coupled (operation, pointer, content) tuple.
+        # Derange the raw tuple while keeping each observed current token state
+        # fixed; rebuilding only an already-compressed action code would bypass
+        # the pointer-conditioned transition interface under test.
+        indices = torch.arange(count, device=valid.device).roll(1)
+        shuffled_batch = dict(batch)
+        for key in ("op", "edit_position", "edit_content_token"):
+            value = batch[key].clone()
+            value[valid] = batch[key][valid][indices]
+            shuffled_batch[key] = value
+        shuffled_out = model(shuffled_batch)
+        tuple_changed = (
+            shuffled_batch["op"].ne(batch["op"])
+            | shuffled_batch["edit_position"].ne(batch["edit_position"])
+            | shuffled_batch["edit_content_token"].ne(batch["edit_content_token"])
+        ) & valid
+        return shuffled_out.preds, None, tuple_changed
     if getattr(model, "attn_pred", None) is not None:
         batch_size, states, chunks, length = batch["buffer_tokens"].shape
         steps = states - 1
@@ -257,6 +275,16 @@ def recursive_horizon_errors(
     """
     result = {}
     batch, width = out.step_mask.shape
+    if getattr(model, "token_pred", None) is not None:
+        for horizon in sorted(set(horizons)):
+            if 1 <= horizon <= width:
+                mask = out.step_mask[:, :horizon].all(1)
+                error = normalized_l1(
+                    out.rollout[:, horizon - 1],
+                    out.step_states_tgt[:, horizon - 1],
+                )
+                result[str(horizon)] = _summary(error, mask)
+        return result
     for horizon in sorted(set(horizons)):
         if horizon < 1 or horizon > width:
             continue

@@ -17,6 +17,7 @@ from textjepa.data.vocab import Vocab
 
 
 TOKEN_EDIT_WORDS = ["token", "position", "with"]
+MASK_TOKEN = "<mask>"
 OPS = {"delete": 0, "insert": 1, "replace": 2}
 
 
@@ -26,7 +27,7 @@ def faithful_token_edit_vocab(max_position: int = 1024) -> Vocab:
         token for token in base.token_to_id
         if token not in {base.PAD, base.UNK}
     ]
-    words.extend(TOKEN_EDIT_WORDS)
+    words.extend(TOKEN_EDIT_WORDS + [MASK_TOKEN])
     words.extend(str(index) for index in range(max_position + 1))
     return Vocab(words)
 
@@ -136,13 +137,22 @@ class FaithfulTokenEditDataset(Dataset):
     def __init__(self, vocab: Vocab, size: int, seed: int, max_op: int = 21,
                  max_edge: int = 28, op_range=(8, 21), min_edits: int = 6,
                  max_edits: int = 16, counterfactual_k: int = 0,
-                 counterfactual_source: str = "uniform_local", **_):
+                 counterfactual_source: str = "uniform_local",
+                 corruption_mode: str = "mixed", curriculum_epochs: int = 3,
+                 **_):
         self.vocab = vocab
         self.seed = seed
         self.min_edits = int(min_edits)
         self.max_edits = int(max_edits)
         self.counterfactual_k = max(0, int(counterfactual_k))
         self.counterfactual_source = str(counterfactual_source)
+        self.corruption_mode = str(corruption_mode)
+        self.curriculum_epochs = max(1, int(curriculum_epochs))
+        self.epoch = 0
+        if self.corruption_mode not in {
+            "mixed", "mask", "replace", "remove", "curriculum"
+        }:
+            raise ValueError(f"unknown corruption_mode: {self.corruption_mode}")
         if self.counterfactual_source not in {"uniform_local", "mixed"}:
             raise ValueError(
                 f"unknown counterfactual_source: {self.counterfactual_source}"
@@ -152,6 +162,19 @@ class FaithfulTokenEditDataset(Dataset):
             op_range=tuple(op_range), distractor_prob=0.0,
             max_distractors=0,
         )
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = max(0, int(epoch))
+
+    def _active_corruption_mode(self) -> str:
+        if self.corruption_mode != "curriculum":
+            return self.corruption_mode
+        progress = self.epoch / max(self.curriculum_epochs - 1, 1)
+        if progress < 1 / 3:
+            return "mask"
+        if progress < 2 / 3:
+            return "replace"
+        return "mixed"
     def __len__(self):
         return len(self.source)
 
@@ -159,7 +182,10 @@ class FaithfulTokenEditDataset(Dataset):
         source = self.source[index]
         prompt = source["prompt"]
         target = [list(sentence) for sentence in source["steps"]]
-        rng = random.Random(f"faithful-token-edit:{self.seed}:{index}")
+        mode = self._active_corruption_mode()
+        rng = random.Random(
+            f"faithful-token-edit:{self.seed}:{index}:{mode}:{self.epoch if self.corruption_mode == 'curriculum' else 0}"
+        )
         current = [list(sentence) for sentence in target]
         undo: list[tuple[str, int, int | None]] = []
         n_tokens = _flat_length(target)
@@ -168,8 +194,14 @@ class FaithfulTokenEditDataset(Dataset):
         token_pool = list(dict.fromkeys(
             token for sentence in target for token in sentence
         ))
+        mask_id = self.vocab.token_to_id[MASK_TOKEN]
         for _ in range(count):
-            allowed = ["replace", "insert"]
+            allowed = {
+                "mixed": ["replace", "insert"],
+                "mask": ["mask"],
+                "replace": ["replace"],
+                "remove": [],
+            }[mode]
             # Deleting a step-final token would erase which side of the
             # structural boundary owns its inverse insertion.  Every other
             # token, including the first token after a boundary, is safe.
@@ -179,13 +211,30 @@ class FaithfulTokenEditDataset(Dataset):
                 deletable.extend(range(start, start + len(sentence) - 1))
                 start += len(sentence)
             if deletable:
-                allowed.append("delete")
+                if mode in {"mixed", "remove"}:
+                    allowed.append("delete")
+            if not allowed:
+                continue
             kind = rng.choice(allowed)
-            if kind == "replace":
-                position = rng.randrange(_flat_length(current))
+            if kind in {"replace", "mask"}:
+                if kind == "mask":
+                    candidates = [
+                        position for position in range(_flat_length(current))
+                        if current[_position(current, position)[0]][
+                            _position(current, position)[1]
+                        ] != mask_id
+                    ]
+                    if not candidates:
+                        continue
+                    position = rng.choice(candidates)
+                else:
+                    position = rng.randrange(_flat_length(current))
                 sentence, offset = _position(current, position)
                 old = current[sentence][offset]
-                alternatives = [token for token in token_pool if token != old]
+                alternatives = (
+                    [mask_id] if kind == "mask"
+                    else [token for token in token_pool if token != old]
+                )
                 if not alternatives:
                     continue
                 current[sentence][offset] = rng.choice(alternatives)
@@ -202,7 +251,7 @@ class FaithfulTokenEditDataset(Dataset):
 
         repairs = list(reversed(undo))
         buffers = [[list(sentence) for sentence in current]]
-        actions, op, remaining, changed = [], [], [], []
+        actions, op, positions, content_tokens, remaining, changed = [], [], [], [], [], []
         alt_actions: list[list[list[int]]] = []
         alt_buffers: list[list[list[list[int]]]] = []
         alt_changed: list[list[list[int]]] = []
@@ -247,6 +296,10 @@ class FaithfulTokenEditDataset(Dataset):
             kind, position, token = action
             actions.append(_render_action(self.vocab, action))
             op.append(OPS[kind])
+            positions.append(position)
+            content_tokens.append(
+                self.vocab.pad_id if token is None else int(token)
+            )
             _apply(current, action)
             buffers.append([list(sentence) for sentence in current])
             remaining.append(len(repairs) - step - 1)
@@ -262,6 +315,8 @@ class FaithfulTokenEditDataset(Dataset):
             "buffers": buffers,
             "actions": actions,
             "op": op,
+            "edit_position": positions,
+            "edit_content_token": content_tokens,
             "value": [0] * len(actions),
             "remaining": remaining,
             "resolved_n": [_flat_length(b) for b in buffers[1:]],

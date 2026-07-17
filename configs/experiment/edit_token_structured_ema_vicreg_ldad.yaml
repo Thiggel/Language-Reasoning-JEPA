@@ -1,0 +1,10 @@
+# @package _global_
+# Discrete raw-action analogue of Delta-JEPA: decode the complete externally
+# observed edit phrase from z_{t+1}-z_t alone.
+defaults: [edit_token_structured_ema_vicreg, _self_]
+run_name: edit_token_structured_ema_vicreg_ldad
+model:
+  observed_action_ldad: true
+objective:
+  observed_action_ldad: {weight: 0.2}
+

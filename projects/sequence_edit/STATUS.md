@@ -32,3 +32,13 @@ shuffled actions slightly improved error, prediction still lost to persistence,
 and rank fell 23.4%. This state family is retired. K=8, matched exposure, more
 data, hierarchy, dense rollout, and LDAD removal will not run. Any future
 restart requires a new token-aligned recursive interface and CPU causal fixture.
+
+That restart is now implemented. Primitive actions use an operation plus a
+pointer to a current token/gap and an optional content token; transitions
+retain token latents and recursively apply the same zero-dropout spatial
+predictor. Mask, random-replacement, removal, and temporal-curriculum data
+paths exactly recover the terminal buffer. EMA targets are forced to remain
+in evaluation mode. A CPU train/evaluate/audit fixture and 19 focused tests
+pass. The active GPU decision is the four-corruption by three-stabilizer pilot
+plus H=1/H=4 goal-advantage distillation; hierarchy remains gated on primitive
+action sensitivity.

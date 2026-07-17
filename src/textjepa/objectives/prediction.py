@@ -19,6 +19,57 @@ class LatentPrediction(Objective):
         return masked_mean(d, out.step_mask.float())
 
 
+class TokenAlignedPrediction(Objective):
+    """Next-token-latent JEPA loss on the structured edit state."""
+
+    def __init__(self, kind: str = "smooth_l1", norm_targets: bool = True):
+        super().__init__()
+        self.kind, self.norm_targets = kind, norm_targets
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("token_predictions")
+        if pred is None:
+            return out.preds.sum() * 0.0
+        target = out.extras["token_targets"]
+        mask = (
+            out.extras["token_prediction_mask"]
+            & out.extras["token_target_mask"]
+            & out.step_mask.unsqueeze(-1)
+        )
+        distance = latent_distance(
+            pred, target, self.kind, self.norm_targets
+        )
+        return masked_mean(distance, mask.float())
+
+
+class TokenAlignedRolloutPrediction(Objective):
+    """Deep supervision of recursive token-state rollouts from the first state."""
+
+    def __init__(self, kind: str = "smooth_l1", norm_targets: bool = True,
+                 max_depth: int = 0):
+        super().__init__()
+        self.kind, self.norm_targets = kind, norm_targets
+        self.max_depth = int(max_depth)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("token_rollout_predictions")
+        if pred is None:
+            return out.preds.sum() * 0.0
+        target = out.extras["token_targets"]
+        mask = (
+            out.extras["token_rollout_mask"]
+            & out.extras["token_target_mask"]
+            & out.step_mask.unsqueeze(-1)
+        )
+        if self.max_depth:
+            depth = torch.arange(mask.shape[1], device=mask.device)
+            mask = mask & (depth < self.max_depth).view(1, -1, 1)
+        distance = latent_distance(
+            pred, target, self.kind, self.norm_targets
+        )
+        return masked_mean(distance, mask.float())
+
+
 class RolloutPrediction(Objective):
     """Open-loop rollout from s0 through teacher actions vs EMA targets.
 

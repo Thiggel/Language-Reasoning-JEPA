@@ -3,6 +3,17 @@ latent_pred:
   weight: 1.0
   kind: smooth_l1
   norm_targets: true
+token_aligned_pred:
+  _target_: textjepa.objectives.TokenAlignedPrediction
+  weight: 0.0
+  kind: smooth_l1
+  norm_targets: true
+token_aligned_rollout:
+  _target_: textjepa.objectives.TokenAlignedRolloutPrediction
+  weight: 0.0
+  kind: smooth_l1
+  norm_targets: true
+  max_depth: 0
 rollout:
   _target_: textjepa.objectives.RolloutPrediction
   weight: 1.0
@@ -79,6 +90,9 @@ value_distill:
   _target_: textjepa.objectives.ValueDistill
   weight: 0.0  # enabled in experiment configs (see disc_distill_v)
   scale: 5.0
+gar_action_value:
+  _target_: textjepa.objectives.GoalAdvantageDistill
+  weight: 0.0
 ranking:
   _target_: textjepa.objectives.ActionRanking
   weight: 0.0  # enabled in experiment configs (see disc_rank_*, edit_rank)

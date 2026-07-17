@@ -182,6 +182,13 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
         "step_mask": step_mask,
         "action_tokens": action_tokens,
         "op": _pad_labels([b["op"] for b in batch]),
+        "edit_position": _pad_labels(
+            [b.get("edit_position", b["edit_pos"]) for b in batch], fill=-1
+        ),
+        "edit_content_token": _pad_labels(
+            [b.get("edit_content_token", [pad_id] * len(b["op"])) for b in batch],
+            fill=pad_id,
+        ),
         "value": _pad_labels([b["value"] for b in batch]),
         "remaining": _pad_labels([b["remaining"] for b in batch]),
         "resolved_n": _pad_labels([b["resolved_n"] for b in batch]),

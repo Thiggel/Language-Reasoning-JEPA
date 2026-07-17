@@ -8,6 +8,36 @@ Existing conceptual anchors are I-JEPA, HWM, Delta-JEPA, variational JEPA,
 VICReg, and SIGReg. Before using a method as a baseline or making a novelty
 claim, verify the primary source and current publication status.
 
+## 2026-07-17 — faithful LDAD for structured text edits
+
+- Query: which representation enters Delta-JEPA's action decoder, whether its
+  encoder is stopped/EMA, and how multi-step decoding is conditioned.
+- Primary source:
+  - Delta-JEPA v1: <https://arxiv.org/abs/2606.31232>
+- Applicable claims:
+  - LDAD receives only the online latent displacement `z(t+1)-z(t)` and
+    reconstructs the externally observed raw action. It does not receive
+    concatenated endpoints or a learned action embedding.
+  - The published base method jointly optimizes latent next-state prediction
+    and action reconstruction end to end. It does not use EMA, stop-gradient,
+    VICReg, or another distribution regularizer.
+  - Its multi-step decoder receives `z(t+H)-z(t)`, uses learned action queries,
+    and injects the displacement through adaptive normalization.
+- Limitations:
+  - The paper studies continuous robot controls and MSE action reconstruction.
+    Text edits have discrete operation, pointer, and token fields. Complete
+    observed-action token cross-entropy is an explicit modality adaptation,
+    not a literal reproduction of continuous-action MSE.
+  - The paper does not establish that LDAD combines beneficially with EMA or
+    VICReg; those combinations require a factorial here.
+- Design change:
+  - Keep the text LDAD input strictly to the online state displacement and
+    decode the complete observed edit action. Compare EMA, EMA+VICReg, and
+    EMA+VICReg+LDAD with identical zero-dropout dynamics.
+  - Force EMA modules to remain in evaluation mode even when the parent model
+    enters training mode. Treat LDAD accuracy as a health diagnostic; retain
+    it only if transition or recursive planning metrics improve.
+
 ## 2026-07-17 — counterfactual coverage for faithful token edits
 
 - Query: how much alternative-action data an offline action-conditioned world

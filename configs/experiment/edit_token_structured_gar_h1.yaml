@@ -1,0 +1,10 @@
+# @package _global_
+# Privileged target only: terminal EMA distance improvement after one action is
+# distilled into V(state, action); the goal is not an input to the value head.
+defaults: [edit_token_structured_ema_vicreg_ldad, _self_]
+run_name: edit_token_structured_gar_h1
+model:
+  gar_horizon: 1
+objective:
+  gar_action_value: {weight: 1.0}
+

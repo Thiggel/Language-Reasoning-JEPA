@@ -1,0 +1,6 @@
+# @package _global_
+defaults: [edit_token_structured_ema, _self_]
+run_name: edit_token_structured_ema_vicreg
+objective:
+  vicreg: {weight: 1.0, std_target: 1.0, cov_weight: 0.04, action_weight: 0.1}
+
