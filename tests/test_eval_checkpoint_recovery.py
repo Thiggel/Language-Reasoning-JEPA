@@ -28,10 +28,13 @@ def test_checkpoint_recovery_packages_evaluation_metrics(tmp_path: Path) -> None
     script = Path(__file__).parents[1] / "scripts" / (
         "eval_intent_checkpoint_recovery.sh"
     )
-    env = os.environ | {
-        "RUN_DIR": str(run_dir),
-        "TEXTJEPA_ROOT": str(root),
-    }
+    env = dict(os.environ)
+    env.update(
+        {
+            "RUN_DIR": str(run_dir),
+            "TEXTJEPA_ROOT": str(root),
+        }
+    )
 
     subprocess.run(
         ["bash", str(script), "python", str(source_model), "lr1e3-full10"],
