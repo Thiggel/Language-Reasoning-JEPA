@@ -57,7 +57,18 @@ class GoalAdvantageDistill(Objective):
             return out.preds.sum() * 0.0
         target = out.extras["gar_action_target"]
         error = F.smooth_l1_loss(prediction, target, reduction="none")
-        return masked_mean(error, out.step_mask.float())
+        expert = masked_mean(error, out.step_mask.float())
+        alt_prediction = out.extras.get("gar_alt_action_value")
+        if alt_prediction is None:
+            return expert
+        alt_error = F.smooth_l1_loss(
+            alt_prediction, out.extras["gar_alt_action_target"], reduction="none"
+        )
+        alternatives = masked_mean(
+            alt_error, out.extras["gar_alt_action_valid"].float()
+        )
+        # Candidate breadth must not silently increase GAR's total coefficient.
+        return 0.5 * (expert + alternatives)
 
 
 class ActionKL(Objective):

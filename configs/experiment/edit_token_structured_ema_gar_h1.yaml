@@ -1,0 +1,14 @@
+# @package _global_
+# Candidate-supervised one-step goal-advantage distillation on the selected
+# dropout-free fixed-mixed EMA primitive. The clean goal is a privileged target
+# only; V receives the current state and structured action.
+defaults: [edit_token_structured_ema, _self_]
+run_name: edit_token_structured_ema_gar_h1
+model:
+  gar_horizon: 1
+data:
+  counterfactual_k: 4
+  counterfactual_source: uniform_local
+objective:
+  gar_action_value: {weight: 1.0}
+  counterfactual_token: {weight: 0.0}

@@ -79,6 +79,70 @@ def safe_correlation(left: np.ndarray, right: np.ndarray) -> float | None:
     return value if np.isfinite(value) else None
 
 
+def gar_candidate_stats(out) -> dict | None:
+    """Held-out same-state ranking for expert plus mechanical alternatives."""
+    expert_prediction = out.extras.get("gar_action_value")
+    alt_prediction = out.extras.get("gar_alt_action_value")
+    if expert_prediction is None or alt_prediction is None:
+        return None
+    prediction = torch.cat([expert_prediction.unsqueeze(-1), alt_prediction], -1)
+    target = torch.cat([
+        out.extras["gar_action_target"].unsqueeze(-1),
+        out.extras["gar_alt_action_target"],
+    ], -1)
+    valid = torch.cat([
+        out.step_mask.unsqueeze(-1), out.extras["gar_alt_action_valid"]
+    ], -1)
+    pair_valid = valid.unsqueeze(-1) & valid.unsqueeze(-2)
+    target_difference = target.unsqueeze(-1) - target.unsqueeze(-2)
+    prediction_difference = prediction.unsqueeze(-1) - prediction.unsqueeze(-2)
+    pair_valid &= target_difference.abs().gt(1e-8)
+    pair_correct = (
+        target_difference.sign().eq(prediction_difference.sign()) & pair_valid
+    )
+    masked_target = target.masked_fill(~valid, -float("inf"))
+    masked_prediction = prediction.masked_fill(~valid, -float("inf"))
+    state_valid = valid.sum(-1).ge(2)
+    return {
+        "absolute_error_sum": float((prediction - target).abs()[valid].sum()),
+        "candidate_count": int(valid.sum()),
+        "pair_correct": int(pair_correct.sum()),
+        "pair_count": int(pair_valid.sum()),
+        "top1_correct": int((
+            masked_prediction.argmax(-1).eq(masked_target.argmax(-1)) & state_valid
+        ).sum()),
+        "state_count": int(state_valid.sum()),
+        "prediction": prediction[valid].detach().cpu(),
+        "target": target[valid].detach().cpu(),
+    }
+
+
+def combine_gar_candidate_stats(parts: list[dict]) -> dict | None:
+    if not parts:
+        return None
+    prediction = torch.cat([part["prediction"] for part in parts]).numpy()
+    target = torch.cat([part["target"] for part in parts]).numpy()
+    candidate_count = sum(part["candidate_count"] for part in parts)
+    pair_count = sum(part["pair_count"] for part in parts)
+    state_count = sum(part["state_count"] for part in parts)
+    return {
+        "candidate_privileged_training_diagnostic": True,
+        "goal_available_to_learned_head": False,
+        "mean_absolute_error": sum(
+            part["absolute_error_sum"] for part in parts
+        ) / max(candidate_count, 1),
+        "pairwise_ranking_accuracy": sum(
+            part["pair_correct"] for part in parts
+        ) / max(pair_count, 1),
+        "top1_action_accuracy": sum(
+            part["top1_correct"] for part in parts
+        ) / max(state_count, 1),
+        "prediction_target_correlation": safe_correlation(prediction, target),
+        "candidates": candidate_count,
+        "states": state_count,
+    }
+
+
 def _same_state_assignment_stats(pred, target, valid) -> dict | None:
     if pred is None or target is None or valid is None or pred.shape[2] < 2:
         return None
@@ -190,7 +254,7 @@ def probe(x, y, classification=False):
     )
 
 
-def shuffled_action_prediction(model, out, batch, return_output: bool = False):
+def shuffled_action_prediction(model, out, batch=None, return_output: bool = False):
     """Predict with a deranged current action and each sample's true prefix.
 
     ``LatentDynamicsCore._predict_counterfactuals`` constructs an independent
@@ -207,6 +271,12 @@ def shuffled_action_prediction(model, out, batch, return_output: bool = False):
     core = getattr(model, "core", None)
     if core is None:
         return None, "independent_causal_prefix_api_unavailable", None
+    if (
+        getattr(model, "token_pred", None) is None
+        and getattr(model, "attn_pred", None) is None
+        and not hasattr(core, "_predict_counterfactuals")
+    ):
+        return None, "independent_causal_prefix_api_unavailable", None
     alternatives = out.actions.detach().clone()
     observed = alternatives[valid]
     best, best_changed = None, None
@@ -221,6 +291,8 @@ def shuffled_action_prediction(model, out, batch, return_output: bool = False):
     changed_mask = valid.clone()
     changed_mask[valid] = best_changed
     if getattr(model, "token_pred", None) is not None:
+        if batch is None:
+            return None, "structured_action_batch_unavailable", None
         # Structured actions are a coupled (operation, pointer, content) tuple.
         # Derange the raw tuple while keeping each observed current token state
         # fixed; rebuilding only an already-compressed action code would bypass
@@ -408,6 +480,7 @@ def main():
     shuffled, shuffled_masks, shuffle_unavailable = [], [], set()
     counterfactual_errors = []
     action_sensitivity_parts = []
+    gar_candidate_parts = []
     recursive_available = getattr(model, "attn_pred", None) is None
     with torch.no_grad():
         for batch in loader:
@@ -416,6 +489,9 @@ def main():
                 for key, value in batch.items()
             }
             out = model(batch)
+            gar_stats = gar_candidate_stats(out)
+            if gar_stats is not None:
+                gar_candidate_parts.append(gar_stats)
             mask = out.step_mask
             direct_error = normalized_l1(out.preds, out.step_states_tgt)
             direct.append(direct_error.cpu())
@@ -705,6 +781,9 @@ def main():
         },
         "same_state_action_sensitivity": combine_action_sensitivity(
             action_sensitivity_parts
+        ),
+        "gar_candidate_ranking": combine_gar_candidate_stats(
+            gar_candidate_parts
         ),
         "persistence_no_change_ln_l1": _summary(persistence_error, step_mask)["ln_l1"],
         "shuffled_action_causal_falsifier": shuffled_control,

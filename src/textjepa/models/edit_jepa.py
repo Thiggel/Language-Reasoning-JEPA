@@ -428,13 +428,14 @@ class EditJEPA(nn.Module):
             current_mask = token_mask[:, :-1].unsqueeze(2).expand(-1, -1, K, -1)
             alt_content = self.chunk_encoder.tok(batch["alt_edit_content_token"])
             alt_prompt = prompt_emb[:, None, None].expand(-1, T, K, -1)
-            cf_pred, cf_pred_mask = self.token_pred(
+            cf_pred, cf_pred_mask, cf_actions = self.token_pred(
                 current.reshape(B * T * K, current.shape[-2], current.shape[-1]),
                 current_mask.reshape(B * T * K, current_mask.shape[-1]),
                 batch["alt_op"].reshape(-1),
                 batch["alt_edit_position"].reshape(-1),
                 alt_content.reshape(B * T * K, -1),
                 alt_prompt.reshape(B * T * K, -1),
+                return_action=True,
             )
             C, L = batch["alt_buffer_tokens"].shape[-2:]
             with torch.no_grad():
@@ -444,6 +445,7 @@ class EditJEPA(nn.Module):
                 )
             cf_pred = cf_pred.reshape(B, T, K, cf_pred.shape[-2], cf_pred.shape[-1])
             cf_pred_mask = cf_pred_mask.reshape(B, T, K, -1)
+            cf_actions = cf_actions.reshape(B, T, K, -1)
             cf_target = cf_target.reshape(B, T, K, cf_target.shape[-2], cf_target.shape[-1])
             cf_target_mask = cf_target_mask.reshape(B, T, K, -1)
             width = max(cf_pred.shape[-2], cf_target.shape[-2])
@@ -467,6 +469,7 @@ class EditJEPA(nn.Module):
                 "cf_token_tgt": cf_target.detach(),
                 "cf_token_tgt_mask": cf_target_mask,
                 "cf_token_valid": batch["alt_valid"] & out.step_mask.unsqueeze(-1),
+                "cf_structured_actions": cf_actions,
             })
         # The clean terminal embedding is a privileged training target only.
         # The learned action-value head receives (state, action), not the goal.
@@ -491,6 +494,29 @@ class EditJEPA(nn.Module):
         ], dim=-1)).squeeze(-1)
         out.extras["gar_action_target"] = (before - after).detach()
         out.extras["gar_horizon"] = self.gar_horizon
+        if "cf_structured_actions" in out.extras:
+            # Alternatives are mechanically executed from exactly the same
+            # current buffer.  The clean terminal EMA state is privileged
+            # training supervision only; neither it nor the target advantage
+            # enters the learned V(s,a) head.
+            cf_actions = out.extras["cf_structured_actions"]
+            current = states[:, :-1].unsqueeze(2).expand(
+                -1, -1, cf_actions.shape[2], -1
+            )
+            cf_target = self._pool_tokens(
+                out.extras["cf_token_tgt"], out.extras["cf_token_tgt_mask"]
+            )
+            cf_before = (ln(targets[:, :-1]) - ln(goal).unsqueeze(1)).abs().mean(-1)
+            cf_after = (
+                ln(cf_target) - ln(goal).unsqueeze(1).unsqueeze(2)
+            ).abs().mean(-1)
+            out.extras["gar_alt_action_value"] = self.gar_head(torch.cat([
+                current, cf_actions
+            ], dim=-1)).squeeze(-1)
+            out.extras["gar_alt_action_target"] = (
+                cf_before.unsqueeze(-1) - cf_after
+            ).detach()
+            out.extras["gar_alt_action_valid"] = out.extras["cf_token_valid"]
         if self.observed_action_decoder is not None:
             out.extras["observed_action_logits"] = self.observed_action_decoder(
                 out.step_states - out.prev_states

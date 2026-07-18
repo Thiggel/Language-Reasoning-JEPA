@@ -164,3 +164,12 @@ def test_structured_counterfactuals_supervise_exact_token_outcomes():
     loss.backward()
     assert torch.isfinite(loss)
     assert model.token_pred.out.weight.grad is not None
+    assert out.extras["gar_alt_action_value"].shape == batch["alt_valid"].shape
+    assert out.extras["gar_alt_action_target"].shape == batch["alt_valid"].shape
+    assert not out.extras["gar_alt_action_target"].requires_grad
+    model.zero_grad(set_to_none=True)
+    out = model(batch)
+    gar_loss = GoalAdvantageDistill()(out, batch)
+    gar_loss.backward()
+    assert torch.isfinite(gar_loss)
+    assert model.gar_head[-1].weight.grad is not None
