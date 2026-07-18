@@ -10,11 +10,14 @@ teacher ordering, and value calibration are validity diagnostics.
 
 ## Live evidence (2026-07-18 11:40 CEST)
 
-- The complete 5e-4 proxy reached `.565` strict and `.820` slack-2.  Four
-  higher-LR cells were healthy but hit a 90-minute cap at about 90--93% of
-  training.  At the last matched validation, 7e-4 had the best total/latent
-  loss; 2e-3 was worse and inflated action-code scale.  Their best-checkpoint
-  planning recovery is pending free Grünau capacity.
+- The complete 5e-4 proxy reached `.565` strict and `.820` slack-2.  Direct
+  checkpoint inspection showed that 1e-3, 1.4e-3, and 2e-3 completed all ten
+  training epochs before timing out in evaluation; only 7e-4 stopped after
+  epoch 8.  Recovered planning gives 1e-3 `.675/.905` and 1.4e-3
+  `.580/.815`, bracketing a clear seed-0 optimum near 1e-3.  The independent
+  current-code 1e-3 anchor completed at `.660/.885`.  The 2e-3 validation loss
+  is worse and its action-code scale is inflated, so additional local LR
+  refinement no longer changes the decision.
 - Width 384 and 512, dense depths 2/4/8, GAR K=8 rank-only, and two distinct
   hierarchy representation pilots are active.  Interpret only terminal
   planning artifacts; unequal throughput makes current step counts unmatched.
@@ -40,9 +43,10 @@ flat planning or collapsing either state space.
 
 ## Next gates
 
-1. Recover higher-LR planning as soon as Grünau has a genuinely free GPU.
-2. Promote only the best healthy LR and width; do not extend above 2e-3 unless
-   planning overturns the current health evidence.
+1. Confirm the bracketed 1e-3 anchor on seeds 1 and 2 (accepted on Lise and
+   Grete); use the three-seed distribution for all method promotion decisions.
+2. Promote only the best healthy width; do not extend the local LR sweep unless
+   seed confirmation contradicts the current 1e-3 bracket.
 3. Compare dense and GAR cells against the matched flat anchor, then refine
    depth/weight or K/regression weight only inside viable regions.
 4. Sweep macro bottleneck 4/8/16 only if the executable d8 pilot beats its own
