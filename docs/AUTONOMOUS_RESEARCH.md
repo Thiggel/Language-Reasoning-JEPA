@@ -76,6 +76,13 @@ to systemd. The controller therefore calls the real `codex` binary with
 the requested search-enabled GPT-5.6 Sol/medium behavior without inheriting the
 alias's full-access bypass.
 
+Dedicated project worktrees are clean by default. For unattended recovery from
+a failed verification gate, an operator may set
+`resume_dirty_project_worktrees = true` under `[codex]`. The next wake may then
+continue bounded changes owned by that project. Protected controller paths,
+sibling-project memory, and file/byte limits still block the wake; this option
+is therefore not a general bypass for arbitrary dirty worktrees.
+
 ## Watcher choices
 
 For a durable watcher, install the user timer:
