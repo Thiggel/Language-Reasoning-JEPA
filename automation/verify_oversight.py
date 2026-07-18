@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -13,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def run(argv: list[str]) -> int:
     print("+", " ".join(argv), flush=True)
-    return subprocess.run(argv, cwd=ROOT).returncode
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        part for part in (str(ROOT / "src"), env.get("PYTHONPATH", "")) if part
+    )
+    return subprocess.run(argv, cwd=ROOT, env=env).returncode
 
 
 def main() -> int:
