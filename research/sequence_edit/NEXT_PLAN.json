@@ -1,81 +1,31 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-19-structured-edit-safe-depth-wave40",
-  "decision": "Wave39 shows a deployment-feasible GAR policy that is useful on the first edit but becomes harmful under its own replay-state distribution: across three weight-0.3 checkpoints, first-step true advantage is 0.406, 0.469, and 0.000, while 32-step mean selected advantage is -0.463, -0.435, and -0.441 and normalized edit-distance improvement remains negative. Test the smallest fixed deployment horizons 2, 4, and 8 with matched candidate budget 256 across all three seeds. Adopt the shortest horizon whose normalized edit-distance improvement is positive in every seed and whose mean final distance beats its matched random policy; if no horizon qualifies, reject fixed-depth control as a repair and prioritize training GAR on frozen-policy replay states with an information-matched teacher-state control.",
+  "round_id": "2026-07-19-structured-edit-replay-adapt-wave41",
+  "decision": "Wave40 rejects fixed deployment depth as a repair: at horizon 2, current-buffer GAR normalized edit-distance improvement is 0.0276, 0.0320, and -0.0035 across seeds 0-2, while horizons 4 and 8 are negative in every seed. Test the predeclared distribution-shift hypothesis with a minimal paired seed-0 head-only adaptation. Both arms freeze the checkpoint policy and all representation/dynamics parameters, use 512 training examples, four states per example, 64 target-free current-buffer candidates, exact target-privileged edit-advantage labels, two epochs, and identical optimization. The treatment trains on states visited by the frozen GAR policy; the information-matched control trains on expert repair-trajectory states. Evaluate both target-free at candidate budget 256 for eight decisions. Replay adaptation qualifies for seed confirmation only if its current-buffer normalized edit-distance improvement is positive and exceeds the teacher-state control by at least 0.05, without higher invalid-action or loop rate. If both arms remain non-positive, reject head-only state-distribution adaptation and isolate representation aliasing versus candidate-support limits before further training. These are oracle-supervised training diagnostics, not action-free learning claims.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-plan-safe2-w03-seed0-k256-wave40",
+      "id": "edit-gar-replay-adapt-seed0-wave41",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt", "64", "256", "2"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-0 fixed two-decision deployment horizon after wave39 isolated replay-state drift.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
+      "command": ["bash", "scripts/run_faithful_token_edit_gar_adapt.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt", "replay", "0"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 120,
+      "purpose": "Target-privileged GAR-head adaptation on frozen-policy replay states; deployment evaluation remains target-free.",
+      "expected_artifacts": ["adapt_metrics.json", "planning_metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-plan-safe4-w03-seed0-k256-wave40",
+      "id": "edit-gar-teacher-adapt-seed0-wave41",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt", "64", "256", "4"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-0 fixed four-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-plan-safe8-w03-seed0-k256-wave40",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt", "64", "256", "8"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-0 fixed eight-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-plan-safe2-w03-seed1-k256-wave40",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed1-wave30/model/best.pt", "64", "256", "2"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-1 fixed two-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-plan-safe4-w03-seed1-k256-wave40",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed1-wave30/model/best.pt", "64", "256", "4"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-1 fixed four-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-plan-safe8-w03-seed1-k256-wave40",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed1-wave30/model/best.pt", "64", "256", "8"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-1 fixed eight-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-plan-safe2-w03-seed2-k256-wave40",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed2-wave30/model/best.pt", "64", "256", "2"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-2 fixed two-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-plan-safe4-w03-seed2-k256-wave40",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed2-wave30/model/best.pt", "64", "256", "4"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-2 fixed four-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-plan-safe8-w03-seed2-k256-wave40",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed2-wave30/model/best.pt", "64", "256", "8"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 60,
-      "purpose": "Seed-2 fixed eight-decision deployment horizon.",
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
+      "command": ["bash", "scripts/run_faithful_token_edit_gar_adapt.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt", "teacher", "0"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 120,
+      "purpose": "Information-matched teacher-trajectory state control for the replay-state adaptation.",
+      "expected_artifacts": ["adapt_metrics.json", "planning_metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
     }
   ]
 }
