@@ -102,6 +102,8 @@ def main(cfg: DictConfig) -> None:
         # head/dynamics controls can instead preserve the complete checkpoint
         # and explicitly reset only the component under study.
         high_prefixes = (
+            "high_state_encoder.",
+            "high_state_teacher.",
             "core.macro_encoder.",
             "core.hi_predictor.",
             "core.hi_value_head.",
@@ -142,6 +144,8 @@ def main(cfg: DictConfig) -> None:
     if cfg.train.get("freeze_low_level", False):
         model.requires_grad_(False)
         if cfg.train.get("train_high_level", True):
+            if model.high_state_encoder is not None:
+                model.high_state_encoder.requires_grad_(True)
             model.core.macro_encoder.requires_grad_(True)
             model.core.hi_predictor.requires_grad_(True)
             model.core.hi_value_head.requires_grad_(True)
