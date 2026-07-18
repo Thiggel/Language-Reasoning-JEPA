@@ -1,81 +1,19 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-18-structured-edit-lr-upper-gruenau-wave14e",
-  "decision": "Bracket the replicated 3e-4 recipe with matched seed-0 cells: retain 3e-4 if neither 2e-4 nor 5e-4 improves recursive error beyond the 0.139-0.149 anchor range; refine above 3e-4 only if 5e-4 wins while healthy; extend upward only if 1e-3 remains healthy and improves recursive error.",
-  "git_commit": "a05b9e6f63b26729b9e4310115d125e3185339cd",
+  "round_id": "2026-07-18-structured-edit-ema-high-lr-seed-confirm-wave26",
+  "decision": "Adopt a simple EMA recipe only if the seed-0 high-learning-rate gain replicates: prefer 1e-3 over 1.5e-3 if its mean recursive LN-L1 is no worse, otherwise prefer 1.5e-3; reject both as unstable if either seed has non-finite metrics, state_std below 0.05, effective rank below 64, token-aligned shuffled/matched error ratio below 2, or recursive LN-L1 at or above the prior matched seed-1/2 range (0.147-0.149).",
+  "git_commit": "b89537d286b1399ce9e7feef2b65d5612e011aaa",
   "jobs": [
     {
-      "id": "edit-ema-18k-lr2e4-seed-0-gruenau-v3",
+      "id": "edit-ema-lr1e3-seed1-confirm-wave26",
       "cluster": "gruenau",
       "command": [
         "bash",
         "scripts/run_faithful_token_edit_cell.sh",
         "{python}",
         "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=mixed",
-        "data.fresh_per_epoch=false",
-        "data.train_size=6000",
-        "train.epochs=3",
-        "train.batch_size=8",
-        "train.lr=0.0002"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Measure the approach to the replicated 3e-4 anchor from below and distinguish a narrow optimum from a broad healthy basin.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
-        "model/best.pt",
-        "stdout.log",
-        "stderr.log"
-      ],
-      "min_gpu_memory_mb": 40000
-    },
-    {
-      "id": "edit-ema-18k-lr5e4-seed-0-gruenau-v3",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=mixed",
-        "data.fresh_per_epoch=false",
-        "data.train_size=6000",
-        "train.epochs=3",
-        "train.batch_size=8",
-        "train.lr=0.0005"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Test the first upper neighbor of 3e-4; refine the upper interval only if this cell improves recursive error without collapse.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
-        "model/best.pt",
-        "stdout.log",
-        "stderr.log"
-      ],
-      "min_gpu_memory_mb": 40000
-    },
-    {
-      "id": "edit-ema-18k-lr1e3-seed-0-gruenau-v3",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
+        "1",
         "data.corruption_mode=mixed",
         "data.fresh_per_epoch=false",
         "data.train_size=6000",
@@ -85,17 +23,74 @@
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Serve as the upper stability control and determine whether the viable learning-rate interval remains unbracketed.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
-        "model/best.pt",
-        "stdout.log",
-        "stderr.log"
+      "purpose": "Replicate the seed-0 1e-3 EMA leader on seed 1 with the identical faithful mixed-edit protocol.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-ema-lr1p5e3-seed1-confirm-wave26",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "1",
+        "data.corruption_mode=mixed",
+        "data.fresh_per_epoch=false",
+        "data.train_size=6000",
+        "train.epochs=3",
+        "train.batch_size=8",
+        "train.lr=0.0015"
       ],
+      "gpus": 1,
+      "walltime_minutes": 180,
+      "purpose": "Replicate the seed-0 1.5e-3 EMA co-leader on seed 1 under the matched protocol.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-ema-lr1e3-seed2-confirm-wave26",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "2",
+        "data.corruption_mode=mixed",
+        "data.fresh_per_epoch=false",
+        "data.train_size=6000",
+        "train.epochs=3",
+        "train.batch_size=8",
+        "train.lr=0.001"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 180,
+      "purpose": "Replicate the seed-0 1e-3 EMA leader on seed 2 and complete a three-seed estimate.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-ema-lr1p5e3-seed2-confirm-wave26",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "2",
+        "data.corruption_mode=mixed",
+        "data.fresh_per_epoch=false",
+        "data.train_size=6000",
+        "train.epochs=3",
+        "train.batch_size=8",
+        "train.lr=0.0015"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 180,
+      "purpose": "Replicate the seed-0 1.5e-3 EMA co-leader on seed 2 and complete a matched three-seed comparison.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
       "min_gpu_memory_mb": 40000
     }
   ]
