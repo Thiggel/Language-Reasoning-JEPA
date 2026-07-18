@@ -8,7 +8,7 @@ advantage regression, then executable distinct-state hierarchy.  Flat strict
 planning success is primary; slack-2 success, collapse/rank, action scale,
 teacher ordering, and value calibration are validity diagnostics.
 
-## Live evidence (2026-07-18 11:40 CEST)
+## Live evidence (2026-07-18 12:29 CEST)
 
 - The complete 5e-4 proxy reached `.565` strict and `.820` slack-2.  Direct
   checkpoint inspection showed that 1e-3, 1.4e-3, and 2e-3 completed all ten
@@ -23,8 +23,14 @@ teacher ordering, and value calibration are validity diagnostics.
   planning artifacts; unequal throughput makes current step counts unmatched.
 - GAR regression failures were invalid: masking after arithmetic allowed
   `0 * inf` to create NaN gradients.  The fixed loss masks before subtraction;
-  full tests and a finite training smoke passed.  Fixed K=2/K=8 recoveries are
-  active or queued.
+  full tests and a finite training smoke passed.  A second scientific audit
+  found that the supposed advantage MSE regressed absolute candidate energy
+  against a relative target.  Commit `01c19a8` now regresses the identifiable
+  difference `V(candidate) - V(anchor)` and passes 103 tests, including exact
+  common-offset invariance.  The earlier finite K=2 result (`.415/.755`) is
+  therefore implementation-invalid for judging the requested advantage loss.
+  Corrected K=2 weights 0.1/0.25/1.0 and K=8 weight 0.25 are queued on
+  Lise/Grete.
 - Distinct hierarchy representations remain non-collapsed in interim audits,
   but prior planning mixed low and high coordinates and discarded causal
   histories.  Commit `459af8f` lifts complete candidate paths through the EMA
@@ -46,7 +52,9 @@ flat planning or collapsing either state space.
 1. Confirm the bracketed 1e-3 anchor on seeds 1 and 2 (accepted on Lise and
    Grete); use the three-seed distribution for all method promotion decisions.
 2. Promote only the best healthy width; do not extend the local LR sweep unless
-   seed confirmation contradicts the current 1e-3 bracket.
+   seed confirmation contradicts the current 1e-3 bracket.  Width 384/512
+   lower-LR fairness controls at 5e-4 are queued on Lise/Grete because their
+   1e-3 runs exhibit inflated action scale.
 3. Compare dense and GAR cells against the matched flat anchor, then refine
    depth/weight or K/regression weight only inside viable regions.
 4. Sweep macro bottleneck 4/8/16 only if the executable d8 pilot beats its own
