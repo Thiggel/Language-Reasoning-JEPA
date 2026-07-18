@@ -1,63 +1,111 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-18-j3-local-lr-proxy-screen",
-  "decision": "Determine whether the seed-0 J3 gain near 1e-3 is a broad, healthy learning-rate region or a narrow optimization accident before spending full-length confirmation seeds.",
-  "git_commit": "AUTO",
+  "round_id": "2026-07-18-j3-lr-screen-completion-v3",
+  "decision": "Complete the matched seed-0 ten-epoch J3 learning-rate screen without redundant training: recover closed-loop planning metrics from the fully trained 1e-3, 1.4e-3, and 2e-3 checkpoints, and rerun the genuinely incomplete 7e-4 cell. Advance the best healthy region to seed confirmation only if it improves strict success over 5e-4 and the upper/lower neighbors without collapsed state variance or effective rank; otherwise retain 1e-3 as the robust anchor and stop local LR refinement.",
+  "git_commit": "dd56c9e924462b614fc4e69cfb1f03e03a6c0185",
   "jobs": [
     {
-      "id": "j3-lr5e4-proxy-seed-0",
+      "id": "j3-lr1e3-full10-best-eval-recovery-v3",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr5e4_proxy", "0"],
+      "command": [
+        "bash",
+        "scripts/eval_intent_checkpoint_recovery.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-18-j3-local-lr-proxy-screen/j3-lr1e3-proxy-seed-0/model",
+        "lr1e3-full10"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Ten-epoch lower-edge proxy at 5e-4, matched to every other learning-rate cell.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
-      "env": {"TMPDIR": "/tmp"},
+      "walltime_minutes": 120,
+      "purpose": "Recover planning, GAR-teacher, probe, and geometry evidence from the fully completed ten-epoch 1e-3 checkpoint.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log",
+        "model/probe_results.csv",
+        "model/plan_slack0_look1.json",
+        "model/plan_slack2_look1.json",
+        "model/gar_teacher_audit.json"
+      ],
       "min_gpu_memory_mb": 30000
     },
     {
-      "id": "j3-lr7e4-proxy-seed-0",
+      "id": "j3-lr1p4e3-full10-best-eval-recovery-v3",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr7e4_proxy", "0"],
+      "command": [
+        "bash",
+        "scripts/eval_intent_checkpoint_recovery.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-18-j3-local-lr-proxy-screen/j3-lr1p4e3-proxy-seed-0/model",
+        "lr1p4e3-full10"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Ten-epoch lower-middle proxy at 7e-4, matched to every other learning-rate cell.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
-      "env": {"TMPDIR": "/tmp"},
+      "walltime_minutes": 120,
+      "purpose": "Recover matched closed-loop evidence from the fully completed ten-epoch 1.4e-3 checkpoint and test the upper-middle region.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log",
+        "model/probe_results.csv",
+        "model/plan_slack0_look1.json",
+        "model/plan_slack2_look1.json",
+        "model/gar_teacher_audit.json"
+      ],
       "min_gpu_memory_mb": 30000
     },
     {
-      "id": "j3-lr1e3-proxy-seed-0",
+      "id": "j3-lr2e3-full10-best-eval-recovery-v3",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr1e3_proxy", "0"],
+      "command": [
+        "bash",
+        "scripts/eval_intent_checkpoint_recovery.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-18-j3-local-lr-proxy-screen/j3-lr2e3-proxy-seed-0/model",
+        "lr2e3-full10"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Ten-epoch anchor proxy at the currently promising 1e-3 learning rate.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
-      "env": {"TMPDIR": "/tmp"},
+      "walltime_minutes": 120,
+      "purpose": "Recover matched closed-loop evidence from the fully completed ten-epoch 2e-3 checkpoint and test the upper stability edge.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log",
+        "model/probe_results.csv",
+        "model/plan_slack0_look1.json",
+        "model/plan_slack2_look1.json",
+        "model/gar_teacher_audit.json"
+      ],
       "min_gpu_memory_mb": 30000
     },
     {
-      "id": "j3-lr1p4e3-proxy-seed-0",
+      "id": "j3-lr7e4-proxy-seed-0-full-rerun-v3",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr1p4e3_proxy", "0"],
+      "command": [
+        "bash",
+        "scripts/run_paper_causal_short_tmp.sh",
+        "{python}",
+        "paper_causal_j3_lr7e4_proxy",
+        "0"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Ten-epoch upper-middle proxy at 1.4e-3, matched to every other learning-rate cell.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
-      "env": {"TMPDIR": "/tmp"},
-      "min_gpu_memory_mb": 30000
-    },
-    {
-      "id": "j3-lr2e3-proxy-seed-0",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr2e3_proxy", "0"],
-      "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Ten-epoch upper-edge proxy at 2e-3 to expose instability or degradation above the apparent optimum.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
-      "env": {"TMPDIR": "/tmp"},
+      "walltime_minutes": 150,
+      "purpose": "Rerun the 7e-4 cell through all ten epochs and evaluation because its original checkpoint stopped after epoch 8 and is not protocol-matched.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log",
+        "model/probe_results.csv",
+        "model/plan_slack0_look1.json",
+        "model/plan_slack2_look1.json",
+        "model/gar_teacher_audit.json"
+      ],
+      "env": {
+        "TMPDIR": "/tmp"
+      },
       "min_gpu_memory_mb": 30000
     }
   ]
