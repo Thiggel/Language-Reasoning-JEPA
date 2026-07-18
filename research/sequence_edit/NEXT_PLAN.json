@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-18-structured-edit-lr-mid-wave13b",
-  "decision": "Resolve where the learning-rate response improves between the completed 1e-5/1e-4 cells and the replicated 3e-4 anchor before attributing gains to a recipe component.",
+  "round_id": "2026-07-18-structured-edit-lr-upper-wave14",
+  "decision": "Bracket the upper learning-rate response around the healthy replicated 3e-4 recipe: retain 3e-4 if both higher cells worsen, refine the best interior cell if 5e-4 or 7e-4 wins, and extend upward only if 1e-3 remains healthy and improves closed-loop error.",
   "git_commit": "a05b9e6f63b26729b9e4310115d125e3185339cd",
   "jobs": [
     {
-      "id": "edit-ema-18k-lr3e5-seed-0",
+      "id": "edit-ema-18k-lr2e4-seed-0",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -19,11 +19,11 @@
         "data.train_size=6000",
         "train.epochs=3",
         "train.batch_size=8",
-        "train.lr=0.00003"
+        "train.lr=0.0002"
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Test the lower midpoint above the completed 1e-5 cell.",
+      "purpose": "Measure the approach to the replicated 3e-4 anchor from below and detect a narrow optimum.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -37,7 +37,7 @@
       "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-ema-18k-lr5e5-seed-0",
+      "id": "edit-ema-18k-lr5e4-seed-0",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -50,11 +50,11 @@
         "data.train_size=6000",
         "train.epochs=3",
         "train.batch_size=8",
-        "train.lr=0.00005"
+        "train.lr=0.0005"
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Measure the center of the unresolved 1e-5 to 1e-4 interval.",
+      "purpose": "Test the first upper neighbor of the replicated 3e-4 anchor.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -68,7 +68,7 @@
       "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-ema-18k-lr7e5-seed-0",
+      "id": "edit-ema-18k-lr7e4-seed-0",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -81,11 +81,42 @@
         "data.train_size=6000",
         "train.epochs=3",
         "train.batch_size=8",
-        "train.lr=0.00007"
+        "train.lr=0.0007"
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Test the upper midpoint below the completed 1e-4 cell.",
+      "purpose": "Resolve whether any improvement above 3e-4 persists toward the upper stability boundary.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "metrics_mask.json",
+        "metrics_replace.json",
+        "metrics_remove.json",
+        "model/best.pt",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-ema-18k-lr1e3-seed-0",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "0",
+        "data.corruption_mode=mixed",
+        "data.fresh_per_epoch=false",
+        "data.train_size=6000",
+        "train.epochs=3",
+        "train.batch_size=8",
+        "train.lr=0.001"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 180,
+      "purpose": "Provide an upper stability control and determine whether the optimum remains unbracketed.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
