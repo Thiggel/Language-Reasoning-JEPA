@@ -530,6 +530,7 @@ def test_multistep_geometric_rollout_ranking(setup):
     )
     out = model(batch)
     assert out.extras["ga_label"].shape == (4, 3)
+    assert out.extras["ga_baseline_energy"].shape == (4,)
     torch.testing.assert_close(
         out.extras["ga_advantage"],
         out.extras["ga_label"]
@@ -556,12 +557,42 @@ def test_geometric_advantage_regression_is_exact_at_target(setup):
     )
     out = model(batch)
     target = out.extras["ga_advantage"].detach()
-    energy = target.clone().requires_grad_(True)
+    baseline = torch.randn(target.shape[0], requires_grad=True)
+    energy = (target + baseline.detach().unsqueeze(1)).requires_grad_(True)
     out.extras["ga_energy"] = energy
+    out.extras["ga_baseline_energy"] = baseline
     loss = GeoAdvantageRegression()(out, batch)
     torch.testing.assert_close(loss, torch.zeros_like(loss))
     loss.backward()
     torch.testing.assert_close(energy.grad, torch.zeros_like(energy))
+    torch.testing.assert_close(baseline.grad, torch.zeros_like(baseline))
+
+
+def test_geometric_advantage_regression_is_common_offset_invariant():
+    from types import SimpleNamespace
+
+    from textjepa.objectives import GeoAdvantageRegression
+
+    baseline = torch.tensor([0.7, -0.2], requires_grad=True)
+    target = torch.tensor([[0.1, -0.3], [0.4, 0.2]])
+    offset = 11.0
+    energy = (target + baseline.detach().unsqueeze(1) + offset).requires_grad_(
+        True
+    )
+    out = SimpleNamespace(
+        step_states=energy,
+        extras={
+            "ga_energy": energy,
+            "ga_baseline_energy": baseline + offset,
+            "ga_advantage": target,
+            "ga_valid": torch.ones_like(target, dtype=torch.bool),
+        },
+    )
+    loss = GeoAdvantageRegression()(out, {})
+    torch.testing.assert_close(loss, torch.zeros_like(loss), atol=1e-12, rtol=0)
+    loss.backward()
+    assert torch.isfinite(energy.grad).all()
+    assert torch.isfinite(baseline.grad).all()
 
 
 def test_geometric_advantage_regression_masks_infinite_targets_before_math():
@@ -570,11 +601,13 @@ def test_geometric_advantage_regression_masks_infinite_targets_before_math():
     from textjepa.objectives import GeoAdvantageRegression
 
     energy = torch.tensor([[0.2, -0.1, 0.4]], requires_grad=True)
+    baseline = torch.tensor([0.0], requires_grad=True)
     target = torch.tensor([[0.0, float("inf"), -0.2]])
     out = SimpleNamespace(
         step_states=energy,
         extras={
             "ga_energy": energy,
+            "ga_baseline_energy": baseline,
             "ga_advantage": target,
             "ga_valid": torch.tensor([[True, False, True]]),
         },

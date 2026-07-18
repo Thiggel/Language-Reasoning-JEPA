@@ -108,13 +108,18 @@ class GeoAdvantageRegression(Objective):
     def forward(self, out, batch: dict) -> torch.Tensor:
         target = out.extras.get("ga_advantage")
         energy = out.extras.get("ga_energy")
+        baseline_energy = out.extras.get("ga_baseline_energy")
         valid = out.extras.get("ga_valid")
-        if target is None or energy is None or valid is None:
+        if (
+            target is None or energy is None or baseline_energy is None
+            or valid is None
+        ):
             return out.step_states.sum() * 0.0
+        predicted_advantage = energy - baseline_energy.unsqueeze(1)
         valid = (
             valid
             & torch.isfinite(target)
-            & torch.isfinite(energy.detach())
+            & torch.isfinite(predicted_advantage.detach())
         )
         # Invalid rollout candidates deliberately carry +inf target distance.
         # Masking only *after* subtraction leaves an infinite intermediate;
@@ -123,7 +128,7 @@ class GeoAdvantageRegression(Objective):
         # exactly zero loss and exactly zero gradient.
         residual = torch.where(
             valid,
-            energy - target.detach(),
-            torch.zeros_like(energy),
+            predicted_advantage - target.detach(),
+            torch.zeros_like(predicted_advantage),
         )
         return residual.square().sum() / valid.float().sum().clamp(min=1.0)

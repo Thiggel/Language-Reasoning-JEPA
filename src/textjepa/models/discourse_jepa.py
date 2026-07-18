@@ -591,7 +591,12 @@ class DiscourseJEPA(nn.Module):
         )
         pe = out.preds[bidx, t]
         if self.core.value_detach:
-            pe, preds_alt = pe.detach(), preds_alt.detach()
+            pe, preds_alt, value_anchor = (
+                pe.detach(), preds_alt.detach(), s_anchor.detach()
+            )
+        else:
+            value_anchor = s_anchor
+        e_anchor = self.core.value_head(value_anchor, out.s0)
         e_exec = self.core.value_head(pe, out.s0)
         e_alt = self.core.value_head(
             preds_alt, out.s0.repeat_interleave(K, 0)
@@ -680,6 +685,7 @@ class DiscourseJEPA(nn.Module):
                      batch["ga_valid"] & valid_b.unsqueeze(1)], 1
                 )
         out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
+        out.extras["ga_baseline_energy"] = e_anchor
         out.extras["ga_label"] = d
         out.extras["ga_valid"] = candidate_valid
         target_prev = torch.cat([
