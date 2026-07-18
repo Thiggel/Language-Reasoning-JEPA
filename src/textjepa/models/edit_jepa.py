@@ -106,6 +106,7 @@ class EditJEPA(nn.Module):
         token_aligned: bool = False,
         token_predictor_layers: int = 2,
         token_relative_radius: int = 32,
+        counterfactual_encode_chunk_states: int = 64,
         gar_horizon: int = 1,
         ldad_decoder_layers: int = 2,
         ldad_max_len: int = 12,
@@ -113,6 +114,9 @@ class EditJEPA(nn.Module):
         super().__init__()
         self.chunk_target = chunk_target
         self.token_aligned = bool(token_aligned)
+        self.counterfactual_encode_chunk_states = max(
+            1, int(counterfactual_encode_chunk_states)
+        )
         self.gar_horizon = max(1, int(gar_horizon))
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
@@ -238,6 +242,42 @@ class EditJEPA(nn.Module):
             packed[row, :values.shape[0]] = values
             packed_mask[row, :values.shape[0]] = True
         return packed.reshape(B, S, width, -1), packed_mask.reshape(B, S, width)
+
+    def encode_token_buffers_chunked(
+        self, buffer_tokens: torch.Tensor, mode: str = "online"
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Encode many state buffers with bounded peak activation memory.
+
+        Counterfactual breadth multiplies the number of mechanically executed
+        target states but must not change the scientific batch or optimizer
+        schedule.  Chunk only the deterministic encoder evaluation, then pad
+        each chunk to the common packed-token width before concatenation.
+        """
+        B, S = buffer_tokens.shape[:2]
+        states_per_slice = max(
+            1, self.counterfactual_encode_chunk_states // max(B, 1)
+        )
+        if S <= states_per_slice:
+            return self.encode_token_buffers(buffer_tokens, mode=mode)
+        chunks = [
+            self.encode_token_buffers(
+                buffer_tokens[:, start:start + states_per_slice], mode=mode
+            )
+            for start in range(0, S, states_per_slice)
+        ]
+        width = max(states.shape[-2] for states, _ in chunks)
+        states_out, masks_out = [], []
+        for states, mask in chunks:
+            if states.shape[-2] < width:
+                states = torch.nn.functional.pad(
+                    states, (0, 0, 0, width - states.shape[-2])
+                )
+                mask = torch.nn.functional.pad(
+                    mask, (0, width - mask.shape[-1])
+                )
+            states_out.append(states)
+            masks_out.append(mask)
+        return torch.cat(states_out, dim=1), torch.cat(masks_out, dim=1)
 
     @staticmethod
     def _pool_tokens(states: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
@@ -439,7 +479,7 @@ class EditJEPA(nn.Module):
             )
             C, L = batch["alt_buffer_tokens"].shape[-2:]
             with torch.no_grad():
-                cf_target, cf_target_mask = self.encode_token_buffers(
+                cf_target, cf_target_mask = self.encode_token_buffers_chunked(
                     batch["alt_buffer_tokens"].reshape(B, T * K, C, L),
                     mode="teacher",
                 )

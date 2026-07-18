@@ -157,6 +157,19 @@ def test_structured_counterfactuals_supervise_exact_token_outcomes():
         max_buffer_len=16, d_action=8, macro_k=0, token_aligned=True,
         token_predictor_layers=1, dropout=0.0,
     )
+    B, T, K = batch["alt_op"].shape
+    C, L = batch["alt_buffer_tokens"].shape[-2:]
+    alternative_buffers = batch["alt_buffer_tokens"].reshape(B, T * K, C, L)
+    with torch.no_grad():
+        full_states, full_mask = model.encode_token_buffers(
+            alternative_buffers, mode="teacher"
+        )
+        model.counterfactual_encode_chunk_states = 2
+        chunked_states, chunked_mask = model.encode_token_buffers_chunked(
+            alternative_buffers, mode="teacher"
+        )
+    assert torch.equal(full_mask, chunked_mask)
+    torch.testing.assert_close(full_states, chunked_states)
     out = model(batch)
     assert out.extras["cf_token_pred"].shape == out.extras["cf_token_tgt"].shape
     assert out.extras["cf_token_valid"].shape == batch["alt_valid"].shape
