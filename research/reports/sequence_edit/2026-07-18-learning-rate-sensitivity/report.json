@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-18-learning-rate-sensitivity",
+  "project": "sequence_edit",
+  "title": "Learning rate is a major systematic variable, not random noise",
+  "created_at": "2026-07-18T14:30:00+02:00",
+  "status": "complete",
+  "review_required": true,
+  "decision": "Bracket the primitive optimum above 3e-4, then give capacity and auxiliary-loss methods their own small learning-rate controls.",
+  "plain_summary": "The requested ten-rate sweep improves smoothly up to the 3e-4 boundary. Its tens-of-percent learning-rate effects greatly exceed the few-percent three-seed spread, so learning rate is a systematic confound rather than random fluctuation.",
+  "report": "REPORT.md",
+  "artifacts": ["lr_curve.svg", "lr_curve.pdf", "SLIDES.pdf"],
+  "tags": ["sequence-edit", "learning-rate", "optimization", "sensitivity", "fairness"]
+}

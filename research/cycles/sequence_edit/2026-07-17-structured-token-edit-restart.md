@@ -232,3 +232,21 @@ optimum, adjacent-rate changes above roughly 20%, collapse, or a boundary
 optimum means every competing method requires its own LR tuning before an
 effect is attributed to architecture. This is optimization sensitivity, not
 itself random fluctuation; repeated seeds at viable rates separate the two.
+
+## Learning-rate sensitivity result
+
+All nine new cells completed and the requested ten-rate curve is now available
+after reusing the three-seed `3e-4` anchor. Matched token error decreases
+smoothly from 0.916 at `1e-6` to 0.095 at `3e-4`; recursive token error falls
+from 0.941 to 0.182, and the token action-shuffle ratio rises from 1.04 to
+5.22. Peak gradient norms remain about 0.65--0.69, with healthy state variance
+and rank. The low-rate cells are undertrained, not unstable.
+
+The `3e-4` three-seed recursive range is 0.182--0.190 (about 4.3%), whereas
+moving from `1e-4` to `3e-4` improves recursive error by about 36%. Learning
+rate is therefore a large systematic optimization variable, not evidence of
+wild random fluctuation. Because `3e-4` is still the best and largest tested
+rate, the optimum is not bracketed. The next primitive decision is an upward
+boundary sweep, followed by method-specific cross-checks for d512 and K=1.
+The full interpretation is in the
+[`learning-rate report`](../../reports/sequence_edit/2026-07-18-learning-rate-sensitivity/REPORT.md).
