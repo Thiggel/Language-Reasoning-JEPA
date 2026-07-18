@@ -11,6 +11,9 @@ source_model=${2:?source model directory}
 label=${3:?checkpoint label}
 model_dir="$RUN_DIR/model"
 
+export TMPDIR="/tmp/tj-${SLURM_JOB_ID:-$$}"
+mkdir -p "$TMPDIR"
+
 if [[ ! -f "$source_model/best.pt" ]]; then
   echo "missing source checkpoint: $source_model/best.pt" >&2
   exit 3
