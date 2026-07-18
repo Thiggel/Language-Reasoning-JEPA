@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-18-j3-lr-screen-completion-v4",
-  "decision": "Complete the matched seed-0 ten-epoch J3 learning-rate screen with the committed short-TMPDIR checkpoint evaluator: recover closed-loop planning metrics from the fully trained 1e-3, 1.4e-3, and 2e-3 checkpoints, and rerun the genuinely incomplete 7e-4 cell. Advance the best healthy region to seed confirmation only if it improves strict success over 5e-4 and the upper/lower neighbors without collapsed state variance or effective rank; otherwise retain 1e-3 as the robust anchor and stop local LR refinement.",
+  "round_id": "2026-07-18-j3-lr-screen-completion-v5",
+  "decision": "Complete the matched seed-0 ten-epoch J3 learning-rate screen after v4 registered without placing a job: use the committed short-TMPDIR evaluator to recover closed-loop planning metrics from the fully trained 1e-3, 1.4e-3, and 2e-3 checkpoints, and rerun only the genuinely incomplete 7e-4 cell. Advance the best healthy region to seed confirmation only if it improves strict success over 5e-4 and the upper/lower neighbors without collapsed state variance or effective rank; otherwise retain 1e-3 as the robust anchor and stop local LR refinement.",
   "git_commit": "533793d72049b736efbdac2e86e5f7d4c7d4e1e1",
   "jobs": [
     {
-      "id": "j3-lr1e3-full10-best-eval-recovery-v4",
+      "id": "j3-lr1e3-full10-best-eval-recovery-v5",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -31,7 +31,7 @@
       "min_gpu_memory_mb": 30000
     },
     {
-      "id": "j3-lr1p4e3-full10-best-eval-recovery-v4",
+      "id": "j3-lr1p4e3-full10-best-eval-recovery-v5",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -56,7 +56,7 @@
       "min_gpu_memory_mb": 30000
     },
     {
-      "id": "j3-lr2e3-full10-best-eval-recovery-v4",
+      "id": "j3-lr2e3-full10-best-eval-recovery-v5",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -81,7 +81,7 @@
       "min_gpu_memory_mb": 30000
     },
     {
-      "id": "j3-lr7e4-proxy-seed-0-full-rerun-v4",
+      "id": "j3-lr7e4-proxy-seed-0-full-rerun-v5",
       "cluster": "gruenau",
       "command": [
         "bash",
