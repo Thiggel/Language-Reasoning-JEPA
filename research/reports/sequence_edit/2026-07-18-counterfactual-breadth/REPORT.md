@@ -42,6 +42,8 @@ The flat part is the decision: additional alternatives cost compute without chan
 
 The dataset samples distinct local operation, current-buffer pointer, and content tuples, mechanically executes each tuple, and stores the complete resulting buffer. The token-aligned predictor applies that same structured tuple to online current-token latents. A dropout-free bidirectional predictor produces contextual next-token latents, which are matched to independently encoded EMA alternative outcomes. The loss is mean smooth-L1 over valid predicted/target alternative tokens and candidates. It contains no value or goal term. Standard evaluation uses 256 held-out mixed-corruption trajectories. The full component-local frozen audit is pending. Raw artifacts are under `runs/autonomy/sequence_edit/2026-07-18-structured-edit-counterfactual-breadth-wave8/`.
 
+All alternatives at a state share the identical observed prompt and buffer; only the structured action changes. Candidate tuples are distinct within that state and deterministic under the dataset seed. Invalid padded candidates and tokens are masked from the loss. The EMA encoder remains in evaluation mode, neither encoder nor predictor uses dropout, and alternative targets are stop-gradient. Thus K changes observed transition coverage and compute, not privileged information or target dynamics.
+
 ## What we can conclude
 
 K=1 is sufficient to obtain the available teacher-forced and causal-ratio gain at this scale. K>1 is not justified by current evidence. The coefficient has a graded effect.
