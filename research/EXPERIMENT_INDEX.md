@@ -20,6 +20,7 @@
 | 2026-07-17-structured-edit-data-capacity-wave6 | Do unique problems, exposure, width, or LDAD drive primitive error? | 5 completed | total exposure drives error; unique count is neutral when matched; width and LDAD need step matching | [`2026-07-18 report`](reports/sequence_edit/2026-07-18-data-capacity-screen/REPORT.md) |
 | 2026-07-18-structured-edit-scale-component-audit-wave7 | Do scale improvements preserve each structured action component? | 5 completed | exposure-matched cells remain tied and causal; d512 is promising but step-confounded; LDAD under-optimized | [`2026-07-18 report`](reports/sequence_edit/2026-07-18-data-capacity-screen/REPORT.md) |
 | 2026-07-18-structured-edit-counterfactual-breadth-wave8 | How many exact structured alternatives are useful per state? | 5 completed | K=1 improves local matching and causal ratio; K=4/8 saturate; recursive error slightly worsens | [`2026-07-18 report`](reports/sequence_edit/2026-07-18-counterfactual-breadth/REPORT.md) |
+| 2026-07-18-structured-edit-counterfactual-component-wave9 | Does K=1 preserve every structured action component? | 5 completed | K=1 improves operation, pointer, and content matching; K=4/8 remain identical; recursive tradeoff remains | [`2026-07-18 report`](reports/sequence_edit/2026-07-18-counterfactual-breadth/REPORT.md) |
 
 Historical waves remain indexed by the subproject READMEs. Add one row per new
 controller round and keep invalid/failed rounds visible.

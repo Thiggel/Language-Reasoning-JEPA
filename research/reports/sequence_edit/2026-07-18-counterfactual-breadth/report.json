@@ -4,10 +4,10 @@
   "project": "sequence_edit",
   "title": "One alternative edit is enough in the first structured pilot",
   "created_at": "2026-07-18T04:40:00+02:00",
-  "status": "process-complete-component-audit-required",
+  "status": "complete",
   "review_required": true,
-  "decision": "Reject K greater than one at this scale; component-audit K=1 before a larger K=0 versus K=1 confirmation.",
-  "plain_summary": "One exact alternative improves matched token error and causal separation. Four and eight alternatives are identical to one but cost more. Recursive error slightly worsens, so local components and scale confirmation remain.",
+  "decision": "Select K=1 as the only justified breadth for a larger confirmation; reject K>1 and track the recursive-error tradeoff.",
+  "plain_summary": "One exact alternative improves one-step error, operation, pointer, and local content matching. Four and eight are identical to one. Recursive error worsens 2.6%, requiring scale confirmation.",
   "report": "REPORT.md",
   "artifacts": ["k_saturation.svg"],
   "tags": ["sequence-edit", "counterfactual", "data-ablation", "saturation"]

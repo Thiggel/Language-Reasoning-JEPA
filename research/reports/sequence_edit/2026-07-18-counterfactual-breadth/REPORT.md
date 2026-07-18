@@ -40,21 +40,21 @@ The flat part is the decision: additional alternatives cost compute without chan
 
 ## The technical details
 
-The dataset samples distinct local operation, current-buffer pointer, and content tuples, mechanically executes each tuple, and stores the complete resulting buffer. The token-aligned predictor applies that same structured tuple to online current-token latents. A dropout-free bidirectional predictor produces contextual next-token latents, which are matched to independently encoded EMA alternative outcomes. The loss is mean smooth-L1 over valid predicted/target alternative tokens and candidates. It contains no value or goal term. Standard evaluation uses 256 held-out mixed-corruption trajectories. The full component-local frozen audit is pending. Raw artifacts are under `runs/autonomy/sequence_edit/2026-07-18-structured-edit-counterfactual-breadth-wave8/`.
+The dataset samples distinct local operation, current-buffer pointer, and content tuples, mechanically executes each tuple, and stores the complete resulting buffer. The token-aligned predictor applies that same structured tuple to online current-token latents. A dropout-free bidirectional predictor produces contextual next-token latents, which are matched to independently encoded EMA alternative outcomes. The loss is mean smooth-L1 over valid predicted/target alternative tokens and candidates. It contains no value or goal term. Standard evaluation and the component-local frozen audit use 256 held-out mixed-corruption trajectories. Raw artifacts are under `runs/autonomy/sequence_edit/2026-07-18-structured-edit-counterfactual-breadth-wave8/` and `runs/autonomy/sequence_edit/2026-07-18-structured-edit-counterfactual-component-wave9/`.
 
 All alternatives at a state share the identical observed prompt and buffer; only the structured action changes. Candidate tuples are distinct within that state and deterministic under the dataset seed. Invalid padded candidates and tokens are masked from the loss. The EMA encoder remains in evaluation mode, neither encoder nor predictor uses dropout, and alternative targets are stop-gradient. Thus K changes observed transition coverage and compute, not privileged information or target dynamics.
 
 ## What we can conclude
 
-K=1 is sufficient to obtain the available teacher-forced and causal-ratio gain at this scale. K>1 is not justified by current evidence. The coefficient has a graded effect.
+K=1 is sufficient to obtain the available teacher-forced and causal-ratio gain at this scale. Component-local operation and pointer ratios improve from 2.61/2.53 to 2.68/2.65. Content matched error improves from 0.298 to 0.291, while its ratio changes from 1.364 to 1.350. K=4 and K=8 remain identical to K=1 component by component. K>1 is not justified; the coefficient has a graded effect.
 
 ## What we cannot conclude
 
-We cannot yet claim better long-horizon planning: recursive error worsens slightly. One seed and 2,000 states do not prove universal saturation. Component-local sensitivity and a larger-exposure confirmation remain necessary.
+We cannot yet claim better long-horizon planning: recursive error worsens 2.6%. One seed and 2,000 states do not prove universal saturation. A larger-exposure confirmation remains necessary.
 
 ## What happens next
 
-Audit operation, pointer, and content locally. If K=1 preserves them, confirm K=0 versus K=1 at the selected 18k-presentation anchor and use K=1 for later GAR and hierarchy work.
+Confirm K=0 versus K=1 at a larger exposure anchor. Use K=1, never K>1, for later GAR and hierarchy work only if the one-step gain remains and recursive degradation stays bounded.
 
 ## Words used in this report
 

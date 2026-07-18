@@ -196,3 +196,11 @@ global token causal ratio 3.108→3.365, but recursive token error worsens
 K=4 weight 0.25 is intermediate. Additional alternatives beyond one are not
 justified. Run frozen local-component audits before confirming K=1 at the
 18k-presentation anchor.
+
+## Counterfactual component result
+
+All five frozen audits completed. K=1 improves local operation/pointer ratios
+2.61/2.53→2.68/2.65 and content matched error 0.298→0.291; its content ratio is
+approximately flat at 1.35. K=4 and K=8 remain identical to K=1. Select K=1
+for a larger confirmation, reject K>1, and retain the 2.6% recursive-error
+degradation as an explicit failure mode.
