@@ -258,3 +258,117 @@ class AttnEditPredictor(nn.Module):
                          if q.shape[1] == 1 else q, sent_emb,
                          memory_key_padding_mask=key_pad)
         return s + self.out(h.flatten(1))
+
+
+class TokenAlignedEditPredictor(nn.Module):
+    """Spatial edit transition over token-aligned latents.
+
+    The location is a pointer into the *current* token sequence, not a textual
+    absolute-position embedding.  Delete/insert/replace first construct the
+    exact local latent scaffold; a bidirectional spatial Transformer then
+    predicts the contextual next-token representations.  Rollout time remains
+    causal because only the current predicted state and current action enter.
+    """
+
+    def __init__(self, d_state: int, d_action: int, n_layers: int = 2,
+                 n_heads: int = 8, ff_mult: int = 4,
+                 relative_radius: int = 32):
+        super().__init__()
+        self.d_action = d_action
+        self.relative_radius = int(relative_radius)
+        self.op = nn.Embedding(3, d_state)
+        self.relative = nn.Embedding(2 * self.relative_radius + 3, d_state)
+        self.action_code = nn.Sequential(
+            nn.LayerNorm(4 * d_state),
+            nn.Linear(4 * d_state, d_state), nn.GELU(),
+            nn.Linear(d_state, d_action),
+        )
+        self.action_condition = nn.Linear(d_action, d_state)
+        self.prompt_condition = nn.Linear(d_state, d_state)
+        layer = nn.TransformerEncoderLayer(
+            d_state, n_heads, d_state * ff_mult, dropout=0.0,
+            batch_first=True, norm_first=True, activation="gelu",
+        )
+        self.blocks = nn.TransformerEncoder(
+            layer, n_layers, norm=nn.LayerNorm(d_state),
+            enable_nested_tensor=False,
+        )
+        self.out = nn.Linear(d_state, d_state)
+
+    @staticmethod
+    def _gather_context(states: torch.Tensor, mask: torch.Tensor,
+                        positions: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        n, width, dim = states.shape
+        lengths = mask.sum(-1).long()
+        left_index = (positions - 1).clamp(min=0)
+        right_index = positions.clamp(min=0)
+        left_index = torch.minimum(left_index, (lengths - 1).clamp(min=0))
+        right_index = torch.minimum(right_index, (lengths - 1).clamp(min=0))
+        row = torch.arange(n, device=states.device)
+        left = states[row, left_index]
+        right = states[row, right_index]
+        left = left * (lengths > 0).unsqueeze(-1)
+        right = right * (lengths > 0).unsqueeze(-1)
+        return left, right
+
+    def encode_action(self, states: torch.Tensor, mask: torch.Tensor,
+                      operations: torch.Tensor, positions: torch.Tensor,
+                      content: torch.Tensor) -> torch.Tensor:
+        left, right = self._gather_context(states, mask, positions)
+        return self.action_code(torch.cat([
+            self.op(operations.clamp(0, 2)), left, right, content,
+        ], dim=-1))
+
+    def _scaffold(self, states: torch.Tensor, mask: torch.Tensor,
+                  operations: torch.Tensor, positions: torch.Tensor,
+                  content: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        scaffold = states.new_zeros(states.shape)
+        next_mask = torch.zeros_like(mask)
+        width = states.shape[1]
+        for row in range(states.shape[0]):
+            length = int(mask[row].sum().item())
+            op = int(operations[row].item())
+            pos = int(positions[row].item())
+            pos = max(0, min(pos, length if op == 1 else max(length - 1, 0)))
+            current = states[row, :length]
+            if op == 0:  # delete token at pointer
+                edited = torch.cat([current[:pos], current[pos + 1:]], dim=0)
+            elif op == 1:  # insert into the pointed gap
+                edited = torch.cat([
+                    current[:pos], content[row:row + 1], current[pos:]
+                ], dim=0)
+            else:  # replace pointed token
+                edited = current.clone()
+                if length:
+                    edited[pos] = content[row]
+            out_len = min(int(edited.shape[0]), width)
+            scaffold[row, :out_len] = edited[:out_len]
+            next_mask[row, :out_len] = True
+        return scaffold, next_mask
+
+    def forward(self, states: torch.Tensor, mask: torch.Tensor,
+                operations: torch.Tensor, positions: torch.Tensor,
+                content: torch.Tensor, prompt: torch.Tensor,
+                return_action: bool = False):
+        action = self.encode_action(
+            states, mask, operations, positions, content
+        )
+        scaffold, next_mask = self._scaffold(
+            states, mask, operations, positions, content
+        )
+        coordinate = torch.arange(states.shape[1], device=states.device)
+        relative = coordinate.unsqueeze(0) - positions.unsqueeze(1)
+        relative = relative.clamp(
+            -self.relative_radius - 1, self.relative_radius + 1
+        ) + self.relative_radius + 1
+        h = scaffold + self.relative(relative)
+        h = h + self.action_condition(action).unsqueeze(1)
+        h = h + self.prompt_condition(prompt).unsqueeze(1)
+        key_pad = ~next_mask
+        key_pad = key_pad.clone()
+        key_pad[key_pad.all(-1), 0] = False
+        prediction = self.out(self.blocks(h, src_key_padding_mask=key_pad))
+        prediction = prediction * next_mask.unsqueeze(-1)
+        if return_action:
+            return prediction, next_mask, action
+        return prediction, next_mask

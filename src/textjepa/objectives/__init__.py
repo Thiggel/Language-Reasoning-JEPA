@@ -9,14 +9,22 @@ from textjepa.objectives.prediction import (
     LatentPrediction,
     MacroPrior,
     RolloutPrediction,
+    TokenAlignedPrediction,
+    TokenAlignedCounterfactualPrediction,
+    TokenAlignedRolloutPrediction,
 )
 from textjepa.objectives.vicreg import SIGReg, VICReg
 from textjepa.objectives.delta_action import DeltaAction, ObservedActionLDAD
-from textjepa.objectives.value import ActionDecode, ActionKL, ValueDistill, ValueRegression
+from textjepa.objectives.value import (
+    ActionDecode, ActionKL, GoalAdvantageDistill, ValueDistill, ValueRegression,
+)
 from textjepa.objectives.chunk_pred import ChunkPrediction, SlotAnchor
 from textjepa.objectives.geometry import GoalMonotonicity, TemporalStraightening
 from textjepa.objectives.ranking import ActionRanking, CostRanking, GeoAdvantageRank
-from textjepa.objectives.counterfactual import CounterfactualOutcomePrediction
+from textjepa.objectives.counterfactual import (
+    CounterfactualOutcomePrediction,
+    CounterfactualSlotPrediction,
+)
 from textjepa.objectives.macro_hierarchy import (
     ActionFeasibility,
     HierarchyReachability,
@@ -49,6 +57,7 @@ __all__ = [
     "CostRanking",
     "GeoAdvantageRank",
     "CounterfactualOutcomePrediction",
+    "CounterfactualSlotPrediction",
     "MacroCounterfactualDynamics",
     "MacroStateValue",
     "MacroStateAdvantageRanking",
@@ -69,6 +78,7 @@ __all__ = [
     "ChunkPrediction",
     "SlotAnchor",
     "ValueDistill",
+    "GoalAdvantageDistill",
     "ActionKL",
     "ActionDecode",
     "GoalMonotonicity",
@@ -80,6 +90,9 @@ __all__ = [
     "DenseHierarchyRolloutPrediction",
     "DenseHierarchyValueRegression",
     "RolloutPrediction",
+    "TokenAlignedPrediction",
+    "TokenAlignedCounterfactualPrediction",
+    "TokenAlignedRolloutPrediction",
     "HierarchyPrediction",
     "HierarchyValueDistill",
     "HierarchyValueRegression",

@@ -25,8 +25,11 @@ def test_faithful_token_edits_are_text_only_and_recover_target():
         action_text = vocab.decode(item["actions"][0])
         assert "token position" in action_text
         assert not any(word in action_text for word in ("ancestor", "necessary"))
-        recovered = [token for sentence in item["buffers"][-1] for token in sentence]
-        assert recovered == item["target_tokens"]
+        # The deployable dataset must not expose the target as a privileged
+        # flattened field; final recovery is checked against the canonical
+        # official step segmentation retained by the dataset source.
+        assert "target_tokens" not in item
+        assert item["buffers"][-1] == dataset.source[index]["steps"]
 
 
 def test_faithful_token_edit_model_is_causal_hierarchical_and_ldad_trains():

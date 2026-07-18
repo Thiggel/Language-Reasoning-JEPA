@@ -16,7 +16,7 @@ from textjepa.models.action import ActionEncoder
 from textjepa.models.core import LatentDynamicsCore
 from textjepa.models.ema import EMATeacher
 from textjepa.models.layers import TokenTransformer
-from textjepa.models.predictor import AttnEditPredictor
+from textjepa.models.predictor import AttnEditPredictor, TokenAlignedEditPredictor
 from textjepa.models.outputs import JEPAOutputs
 
 
@@ -103,11 +103,21 @@ class EditJEPA(nn.Module):
         dense_rollout_depth: int = 0,
         high_dense_rollout_depth: int = 0,
         observed_action_ldad: bool = False,
+        token_aligned: bool = False,
+        token_predictor_layers: int = 2,
+        token_relative_radius: int = 32,
+        counterfactual_encode_chunk_states: int = 64,
+        gar_horizon: int = 1,
         ldad_decoder_layers: int = 2,
         ldad_max_len: int = 12,
     ):
         super().__init__()
         self.chunk_target = chunk_target
+        self.token_aligned = bool(token_aligned)
+        self.counterfactual_encode_chunk_states = max(
+            1, int(counterfactual_encode_chunk_states)
+        )
+        self.gar_horizon = max(1, int(gar_horizon))
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
             ff_mult, max_chunk_len, dropout,
@@ -144,6 +154,18 @@ class EditJEPA(nn.Module):
             self.observed_action_decoder = None
         self.attn_pred = (
             AttnEditPredictor(d_model, d_action) if attn_predictor else None
+        )
+        self.token_pred = (
+            TokenAlignedEditPredictor(
+                d_model, d_action, n_layers=token_predictor_layers,
+                n_heads=predictor_heads,
+                relative_radius=token_relative_radius,
+            ) if self.token_aligned else None
+        )
+        self.gar_head = nn.Sequential(
+            nn.LayerNorm(d_model + d_action),
+            nn.Linear(d_model + d_action, d_model * 2), nn.GELU(),
+            nn.Linear(d_model * 2, 1),
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.buffer_teacher = EMATeacher(self.buffer_encoder)
@@ -197,12 +219,113 @@ class EditJEPA(nn.Module):
     def encode_actions(self, action_tokens: torch.Tensor) -> torch.Tensor:
         return self.action_encoder(self.encode_chunks(action_tokens))
 
+    def encode_token_buffers(
+        self, buffer_tokens: torch.Tensor, mode: str = "online"
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Pack sentence-contextualized tokens into one ordered token state."""
+        B, S, C, L = buffer_tokens.shape
+        encoder, _ = self._encoders(mode)
+        hidden, valid = encoder.module.forward_tokens(
+            buffer_tokens.reshape(B * S * C, L)
+        ) if isinstance(encoder, EMATeacher) else encoder.forward_tokens(
+            buffer_tokens.reshape(B * S * C, L)
+        )
+        hidden = hidden.reshape(B * S, C * L, -1)
+        valid = valid.reshape(B * S, C * L)
+        width = max(int(valid.sum(-1).max().item()), 1)
+        packed = hidden.new_zeros(B * S, width, hidden.shape[-1])
+        packed_mask = torch.zeros(
+            B * S, width, dtype=torch.bool, device=hidden.device
+        )
+        for row in range(B * S):
+            values = hidden[row, valid[row]]
+            packed[row, :values.shape[0]] = values
+            packed_mask[row, :values.shape[0]] = True
+        return packed.reshape(B, S, width, -1), packed_mask.reshape(B, S, width)
+
+    def encode_token_buffers_chunked(
+        self, buffer_tokens: torch.Tensor, mode: str = "online"
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Encode many state buffers with bounded peak activation memory.
+
+        Counterfactual breadth multiplies the number of mechanically executed
+        target states but must not change the scientific batch or optimizer
+        schedule.  Chunk only the deterministic encoder evaluation, then pad
+        each chunk to the common packed-token width before concatenation.
+        """
+        B, S = buffer_tokens.shape[:2]
+        states_per_slice = max(
+            1, self.counterfactual_encode_chunk_states // max(B, 1)
+        )
+        if S <= states_per_slice:
+            return self.encode_token_buffers(buffer_tokens, mode=mode)
+        chunks = [
+            self.encode_token_buffers(
+                buffer_tokens[:, start:start + states_per_slice], mode=mode
+            )
+            for start in range(0, S, states_per_slice)
+        ]
+        width = max(states.shape[-2] for states, _ in chunks)
+        states_out, masks_out = [], []
+        for states, mask in chunks:
+            if states.shape[-2] < width:
+                states = torch.nn.functional.pad(
+                    states, (0, 0, 0, width - states.shape[-2])
+                )
+                mask = torch.nn.functional.pad(
+                    mask, (0, width - mask.shape[-1])
+                )
+            states_out.append(states)
+            masks_out.append(mask)
+        return torch.cat(states_out, dim=1), torch.cat(masks_out, dim=1)
+
+    @staticmethod
+    def _pool_tokens(states: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        weight = mask.unsqueeze(-1).to(states.dtype)
+        return (states * weight).sum(-2) / weight.sum(-2).clamp_min(1.0)
+
+    def _structured_transitions(self, batch: dict, prompt_emb: torch.Tensor,
+                                token_states: torch.Tensor):
+        B, S, W, D = token_states.shape
+        token_mask = batch["structured_token_mask"]
+        T = S - 1
+        operations = batch["op"][:, :T]
+        positions = batch["edit_position"][:, :T]
+        content_ids = batch["edit_content_token"][:, :T]
+        content = self.chunk_encoder.tok(content_ids)
+        prompt = prompt_emb.unsqueeze(1).expand(B, T, D)
+        pred, pred_mask, actions = self.token_pred(
+            token_states[:, :-1].reshape(B * T, W, D),
+            token_mask[:, :-1].reshape(B * T, W),
+            operations.reshape(-1), positions.reshape(-1),
+            content.reshape(B * T, D), prompt.reshape(B * T, D),
+            return_action=True,
+        )
+        pred = pred.reshape(B, T, W, D)
+        pred_mask = pred_mask.reshape(B, T, W)
+        actions = actions.reshape(B, T, -1)
+        rollout, rollout_mask = [], []
+        current, current_mask = token_states[:, 0], token_mask[:, 0]
+        for step in range(T):
+            current, current_mask = self.token_pred(
+                current, current_mask, operations[:, step],
+                positions[:, step], content[:, step], prompt_emb,
+            )
+            rollout.append(current)
+            rollout_mask.append(current_mask)
+        return (
+            pred, pred_mask, torch.stack(rollout, 1),
+            torch.stack(rollout_mask, 1), actions,
+        )
+
     @torch.no_grad()
     def update_teachers(self, momentum: float) -> None:
         self.chunk_teacher.update(self.chunk_encoder, momentum)
         self.buffer_teacher.update(self.buffer_encoder, momentum)
 
     def forward(self, batch: dict) -> JEPAOutputs:
+        if self.token_aligned:
+            return self._forward_token_aligned(batch)
         states = self.encode_buffers(
             batch["prompt_tokens"], batch["prompt_mask"],
             batch["buffer_tokens"], batch["buffer_mask"],
@@ -266,7 +389,176 @@ class EditJEPA(nn.Module):
             out.extras["observed_action_logits"] = self.observed_action_decoder(
                 out.step_states - out.prev_states
             )
+        if "alt_buffer_tokens" in batch and "alt_preds" in out.extras:
+            # Mechanical counterfactuals carry exact post-edit buffers but no
+            # target-relative quality label. Encode every alternative outcome
+            # independently with the EMA target and supervise dynamics only.
+            B, T, K, C, L = batch["alt_buffer_tokens"].shape
+            with torch.no_grad():
+                alt_targets = self.encode_buffers(
+                    batch["prompt_tokens"],
+                    batch["prompt_mask"],
+                    batch["alt_buffer_tokens"].reshape(B, T * K, C, L),
+                    batch["alt_buffer_mask"].reshape(B, T * K, C),
+                    teacher=True,
+                ).reshape(B, T, K, -1)
+            out.extras["cf_chunk_pred"] = out.extras["alt_preds"]
+            out.extras["cf_chunk_tgt"] = alt_targets
+            out.extras["cf_valid"] = (
+                batch["alt_valid"] & out.step_mask.unsqueeze(-1)
+            )
+            if "alt_changed_tokens" in batch:
+                with torch.no_grad():
+                    Bc, Tc, Kc, Lc = batch["alt_changed_tokens"].shape
+                    local_targets = self.chunk_anchor(
+                        batch["alt_changed_tokens"].reshape(Bc * Tc * Kc, Lc)
+                    ).reshape(Bc, Tc, Kc, -1)
+                out.extras["cf_slot_pred"] = self.core.chunk_head(
+                    out.extras["alt_preds"]
+                )
+                out.extras["cf_slot_tgt"] = local_targets
+                out.extras["cf_slot_valid"] = (
+                    batch["alt_changed_valid"] & out.step_mask.unsqueeze(-1)
+                )
         if self._slot_tgt is not None:
             out.extras["slot_pred"] = self.core.chunk_head(out.preds)
             out.extras["slot_tgt"] = self._slot_tgt
+        return out
+
+    def _forward_token_aligned(self, batch: dict) -> JEPAOutputs:
+        prompt_chunks = self.encode_chunks(batch["prompt_tokens"])
+        prompt_weight = batch["prompt_mask"].unsqueeze(-1).to(prompt_chunks.dtype)
+        prompt_emb = (prompt_chunks * prompt_weight).sum(1) / prompt_weight.sum(1).clamp_min(1)
+        token_states, token_mask = self.encode_token_buffers(
+            batch["buffer_tokens"], mode="online"
+        )
+        with torch.no_grad():
+            token_targets, target_mask = self.encode_token_buffers(
+                batch["buffer_tokens"], mode="teacher"
+            )
+            action_emb_tgt = self.encode_chunks(
+                batch["action_tokens"], teacher=True
+            )
+        # Packing widths are determined by the same raw buffers and therefore
+        # must agree between online and EMA encoders.
+        batch["structured_token_mask"] = token_mask
+        pred, pred_mask, rollout, rollout_mask, actions = (
+            self._structured_transitions(batch, prompt_emb, token_states)
+        )
+        states = self._pool_tokens(token_states, token_mask)
+        targets = self._pool_tokens(token_targets, target_mask)
+        pooled_pred = self._pool_tokens(pred, pred_mask)
+        out = self.core(
+            states[:, 0], states[:, 1:], targets[:, 1:], actions,
+            action_emb_tgt, batch["step_mask"],
+            preds_override=pooled_pred,
+        )
+        out.rollout = self._pool_tokens(rollout, rollout_mask)
+        out.extras.update({
+            "token_predictions": pred,
+            "token_prediction_mask": pred_mask,
+            "token_rollout_predictions": rollout,
+            "token_rollout_mask": rollout_mask,
+            "token_targets": token_targets[:, 1:].detach(),
+            "token_target_mask": target_mask[:, 1:],
+        })
+        if "alt_op" in batch:
+            B, T, K = batch["alt_op"].shape
+            current = token_states[:, :-1].unsqueeze(2).expand(-1, -1, K, -1, -1)
+            current_mask = token_mask[:, :-1].unsqueeze(2).expand(-1, -1, K, -1)
+            alt_content = self.chunk_encoder.tok(batch["alt_edit_content_token"])
+            alt_prompt = prompt_emb[:, None, None].expand(-1, T, K, -1)
+            cf_pred, cf_pred_mask, cf_actions = self.token_pred(
+                current.reshape(B * T * K, current.shape[-2], current.shape[-1]),
+                current_mask.reshape(B * T * K, current_mask.shape[-1]),
+                batch["alt_op"].reshape(-1),
+                batch["alt_edit_position"].reshape(-1),
+                alt_content.reshape(B * T * K, -1),
+                alt_prompt.reshape(B * T * K, -1),
+                return_action=True,
+            )
+            C, L = batch["alt_buffer_tokens"].shape[-2:]
+            with torch.no_grad():
+                cf_target, cf_target_mask = self.encode_token_buffers_chunked(
+                    batch["alt_buffer_tokens"].reshape(B, T * K, C, L),
+                    mode="teacher",
+                )
+            cf_pred = cf_pred.reshape(B, T, K, cf_pred.shape[-2], cf_pred.shape[-1])
+            cf_pred_mask = cf_pred_mask.reshape(B, T, K, -1)
+            cf_actions = cf_actions.reshape(B, T, K, -1)
+            cf_target = cf_target.reshape(B, T, K, cf_target.shape[-2], cf_target.shape[-1])
+            cf_target_mask = cf_target_mask.reshape(B, T, K, -1)
+            width = max(cf_pred.shape[-2], cf_target.shape[-2])
+            if cf_pred.shape[-2] < width:
+                cf_pred = torch.nn.functional.pad(
+                    cf_pred, (0, 0, 0, width - cf_pred.shape[-2])
+                )
+                cf_pred_mask = torch.nn.functional.pad(
+                    cf_pred_mask, (0, width - cf_pred_mask.shape[-1])
+                )
+            if cf_target.shape[-2] < width:
+                cf_target = torch.nn.functional.pad(
+                    cf_target, (0, 0, 0, width - cf_target.shape[-2])
+                )
+                cf_target_mask = torch.nn.functional.pad(
+                    cf_target_mask, (0, width - cf_target_mask.shape[-1])
+                )
+            out.extras.update({
+                "cf_token_pred": cf_pred,
+                "cf_token_pred_mask": cf_pred_mask,
+                "cf_token_tgt": cf_target.detach(),
+                "cf_token_tgt_mask": cf_target_mask,
+                "cf_token_valid": batch["alt_valid"] & out.step_mask.unsqueeze(-1),
+                "cf_structured_actions": cf_actions,
+            })
+        # The clean terminal embedding is a privileged training target only.
+        # The learned action-value head receives (state, action), not the goal.
+        goal_index = batch["step_mask"].sum(1).long().clamp(min=1)
+        row = torch.arange(states.shape[0], device=states.device)
+        goal = targets[row, goal_index]
+        target_prev = torch.cat([targets[:, :1], targets[:, 1:-1]], dim=1)
+        future = []
+        for step in range(out.step_mask.shape[1]):
+            index = torch.minimum(
+                torch.full_like(goal_index, step + self.gar_horizon), goal_index
+            )
+            future.append(targets[row, index])
+        target_future = torch.stack(future, dim=1)
+        ln = lambda value: torch.nn.functional.layer_norm(
+            value, value.shape[-1:]
+        )
+        before = (ln(target_prev) - ln(goal).unsqueeze(1)).abs().mean(-1)
+        after = (ln(target_future) - ln(goal).unsqueeze(1)).abs().mean(-1)
+        out.extras["gar_action_value"] = self.gar_head(torch.cat([
+            out.prev_states, out.actions
+        ], dim=-1)).squeeze(-1)
+        out.extras["gar_action_target"] = (before - after).detach()
+        out.extras["gar_horizon"] = self.gar_horizon
+        if "cf_structured_actions" in out.extras:
+            # Alternatives are mechanically executed from exactly the same
+            # current buffer.  The clean terminal EMA state is privileged
+            # training supervision only; neither it nor the target advantage
+            # enters the learned V(s,a) head.
+            cf_actions = out.extras["cf_structured_actions"]
+            current = states[:, :-1].unsqueeze(2).expand(
+                -1, -1, cf_actions.shape[2], -1
+            )
+            cf_target = self._pool_tokens(
+                out.extras["cf_token_tgt"], out.extras["cf_token_tgt_mask"]
+            )
+            cf_before = (ln(targets[:, :-1]) - ln(goal).unsqueeze(1)).abs().mean(-1)
+            cf_after = (
+                ln(cf_target) - ln(goal).unsqueeze(1).unsqueeze(2)
+            ).abs().mean(-1)
+            out.extras["gar_alt_action_value"] = self.gar_head(torch.cat([
+                current, cf_actions
+            ], dim=-1)).squeeze(-1)
+            out.extras["gar_alt_action_target"] = (
+                cf_before.unsqueeze(-1) - cf_after
+            ).detach()
+            out.extras["gar_alt_action_valid"] = out.extras["cf_token_valid"]
+        if self.observed_action_decoder is not None:
+            out.extras["observed_action_logits"] = self.observed_action_decoder(
+                out.step_states - out.prev_states
+            )
         return out

@@ -59,12 +59,15 @@ def gen_problem(key: str, max_op: int, max_edge: int, op_range=(None, None)):
 class FaithfulProblem:
     def __init__(self, gen):
         import networkx as nx
-        from tools.tools import tokenizer
 
         p = gen.problem
         self.p = p
-        self.text = tokenizer.decode(gen.prob_token).strip()
-        self.sol_text = tokenizer.decode(gen.sol_token).strip()
+        # IdGen constructs these canonical strings before optionally encoding
+        # them with its GPT-2 display tokenizer.  Consume the strings directly:
+        # token round-tripping is irrelevant to TextJEPA and can be unavailable
+        # (or backed by a fallback codec) on offline clusters.
+        self.text = gen.prob.strip()
+        self.sol_text = gen.sol.strip()
         self.answer = int(p.ans)
         # exclude the RNG pseudo-node (l = -1): it feeds random
         # constants into expressions and is never itself "defined"

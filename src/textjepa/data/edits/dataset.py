@@ -169,7 +169,10 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
     step_mask = snapshot_mask[:, 1:]
     from textjepa.data.igsm.dataset import _pad_alt
 
-    extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
+    if "alt_buffers" in batch[0]:
+        extra = _pad_alt_buffers(batch, pad_id)
+    else:
+        extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
     return {
         **extra,
         "prompt_tokens": prompt_tokens,
@@ -179,6 +182,13 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
         "step_mask": step_mask,
         "action_tokens": action_tokens,
         "op": _pad_labels([b["op"] for b in batch]),
+        "edit_position": _pad_labels(
+            [b.get("edit_position", b["edit_pos"]) for b in batch], fill=-1
+        ),
+        "edit_content_token": _pad_labels(
+            [b.get("edit_content_token", [pad_id] * len(b["op"])) for b in batch],
+            fill=pad_id,
+        ),
         "value": _pad_labels([b["value"] for b in batch]),
         "remaining": _pad_labels([b["remaining"] for b in batch]),
         "resolved_n": _pad_labels([b["resolved_n"] for b in batch]),
@@ -197,6 +207,89 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
              for b in batch]
         ),
         "defect_mask": _pad_defects([b["defect_masks"] for b in batch]),
+    }
+
+
+def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
+    """Pad unlabeled edit outcomes without manufacturing quality labels."""
+    B = len(batch)
+    T = max(len(item["alt_actions"]) for item in batch)
+    K = max(
+        (len(step) for item in batch for step in item["alt_actions"]),
+        default=1,
+    )
+    La = max(
+        (len(action) for item in batch for step in item["alt_actions"]
+         for action in step),
+        default=1,
+    )
+    C = max(
+        (len(outcome) for item in batch for step in item["alt_buffers"]
+         for outcome in step),
+        default=1,
+    )
+    L = max(
+        (len(sentence) for item in batch for step in item["alt_buffers"]
+         for outcome in step for sentence in outcome),
+        default=1,
+    )
+    Lc = max(
+        (len(sentence) for item in batch for step in item.get("alt_changed", [])
+         for sentence in step),
+        default=1,
+    )
+    tokens = torch.full((B, T, K, La), pad, dtype=torch.long)
+    outcomes = torch.full((B, T, K, C, L), pad, dtype=torch.long)
+    outcome_mask = torch.zeros((B, T, K, C), dtype=torch.bool)
+    valid = torch.zeros((B, T, K), dtype=torch.bool)
+    changed = torch.full((B, T, K, Lc), pad, dtype=torch.long)
+    changed_valid = torch.zeros((B, T, K), dtype=torch.bool)
+    alt_op = torch.full((B, T, K), -1, dtype=torch.long)
+    alt_position = torch.full((B, T, K), -1, dtype=torch.long)
+    alt_content = torch.full((B, T, K), pad, dtype=torch.long)
+    for batch_index, item in enumerate(batch):
+        for step_index, (actions, buffers) in enumerate(zip(
+            item["alt_actions"], item["alt_buffers"]
+        )):
+            for candidate, (action, buffer) in enumerate(zip(actions, buffers)):
+                valid[batch_index, step_index, candidate] = True
+                tokens[batch_index, step_index, candidate, :len(action)] = (
+                    torch.tensor(action)
+                )
+                for sentence_index, sentence in enumerate(buffer):
+                    outcomes[
+                        batch_index, step_index, candidate, sentence_index,
+                        :len(sentence)
+                    ] = torch.tensor(sentence)
+                    outcome_mask[
+                        batch_index, step_index, candidate, sentence_index
+                    ] = True
+                if "alt_changed" in item:
+                    sentence = item["alt_changed"][step_index][candidate]
+                    changed[batch_index, step_index, candidate, :len(sentence)] = (
+                        torch.tensor(sentence)
+                    )
+                    changed_valid[batch_index, step_index, candidate] = True
+                if "alt_op" in item:
+                    alt_op[batch_index, step_index, candidate] = item[
+                        "alt_op"
+                    ][step_index][candidate]
+                    alt_position[batch_index, step_index, candidate] = item[
+                        "alt_edit_position"
+                    ][step_index][candidate]
+                    alt_content[batch_index, step_index, candidate] = item[
+                        "alt_edit_content_token"
+                    ][step_index][candidate]
+    return {
+        "alt_tokens": tokens,
+        "alt_buffer_tokens": outcomes,
+        "alt_buffer_mask": outcome_mask,
+        "alt_valid": valid,
+        "alt_changed_tokens": changed,
+        "alt_changed_valid": changed_valid,
+        "alt_op": alt_op,
+        "alt_edit_position": alt_position,
+        "alt_edit_content_token": alt_content,
     }
 
 
