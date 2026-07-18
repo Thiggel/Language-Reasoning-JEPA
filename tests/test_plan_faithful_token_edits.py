@@ -37,6 +37,20 @@ def test_oracle_edit_is_shortest_boundary_preserving_and_exposes_source_ceiling(
     assert oracle[2] in proposal_tokens([[9]], current, "prompt_plus_current")
 
 
+def test_unrepresentable_nonfinal_step_append_is_reported_without_crashing():
+    current = [[1], [2]]
+    target = [[1, 9], [2]]
+    assert canonical_oracle_edit(current, target) is None
+
+    result = run_episode(
+        [[9]], current, target, "prompt_plus_current", "random", None,
+        random.Random(0), max_candidates=16, max_steps=2,
+    )
+    assert not result.recovered
+    assert result.oracle_unreachable
+    assert result.decisions == 0
+
+
 def test_oracle_injected_gar_receding_search_exactly_recovers():
     prompt = [[9]]
     initial = [[1, 2]]

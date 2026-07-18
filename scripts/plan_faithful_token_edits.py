@@ -107,7 +107,11 @@ def canonical_oracle_edit(current: Buffer, target: Buffer) -> Edit | None:
                 continue
             if buffer_distance(outcome, target) == before - 1:
                 return action
-        raise RuntimeError("no representable boundary-safe shortest-path edit")
+        # A flattened insertion pointer at an exact boundary belongs to the
+        # step on its right. Appending to a non-final step is therefore not
+        # representable by this action tuple; report the support gap rather
+        # than crashing the complete audit.
+        return None
     return None
 
 
@@ -222,6 +226,7 @@ class EpisodeMetrics:
     looped: bool = False
     recovered: bool = False
     oracle_injections: int = 0
+    oracle_unreachable: bool = False
 
 
 def run_episode(
@@ -239,7 +244,8 @@ def run_episode(
     for _ in range(max_steps):
         oracle = canonical_oracle_edit(current, target)
         if oracle is None:
-            metrics.recovered = True
+            metrics.recovered = current == target
+            metrics.oracle_unreachable = not metrics.recovered
             break
         tokens = proposal_tokens(prompt, current, pool)
         candidates = propose_edits(current, tokens, max_candidates, rng)
@@ -323,6 +329,10 @@ def aggregate(episodes: list[EpisodeMetrics]) -> dict:
             / max(sum(len(item.selected_advantages) + item.invalid_actions for item in episodes), 1)
         ),
         "oracle_injections": sum(item.oracle_injections for item in episodes),
+        "oracle_unreachable_rate": (
+            sum(item.oracle_unreachable for item in episodes)
+            / max(len(episodes), 1)
+        ),
         "mean_initial_edit_distance": initial / max(len(episodes), 1),
         "mean_final_edit_distance": final / max(len(episodes), 1),
     }
