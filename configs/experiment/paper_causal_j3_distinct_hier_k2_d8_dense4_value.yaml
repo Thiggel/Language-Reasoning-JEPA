@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - paper_causal_j3_distinct_hier_k2_d8_dense4
+  - _self_
+
+# First deployable distinct-state hierarchy recipe.  The high value is trained
+# on exact remaining steps at every recursively predicted macro waypoint.  The
+# labels are training-only symbolic supervision; planning receives no future
+# graph, oracle goal, or candidate-privileged outcome information.
+run_name: paper_causal_j3_distinct_hier_k2_d8_dense4_value
+objective:
+  hierarchy_value_steps: {weight: 0.25}
+  high_dense_value: {weight: 0.25, horizon_discount: 0.7}
+
