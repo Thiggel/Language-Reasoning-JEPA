@@ -70,6 +70,9 @@ def test_oracle_injected_gar_receding_search_exactly_recovers():
     assert result.selected_advantages == [1]
     assert result.source_ceiling_hits == 0
     assert result.oracle_injections == 1
+    assert result.oracle_available == 1
+    assert result.oracle_selected == 1
+    assert result.first_selected_advantage == 1
 
 
 def test_receding_search_detects_a_two_state_loop():

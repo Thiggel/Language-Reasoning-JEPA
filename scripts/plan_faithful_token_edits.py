@@ -227,6 +227,9 @@ class EpisodeMetrics:
     recovered: bool = False
     oracle_injections: int = 0
     oracle_unreachable: bool = False
+    oracle_available: int = 0
+    oracle_selected: int = 0
+    first_selected_advantage: int | None = None
 
 
 def run_episode(
@@ -256,6 +259,7 @@ def run_episode(
         if inject_oracle and oracle not in candidates:
             candidates.append(oracle)
             metrics.oracle_injections += 1
+        metrics.oracle_available += int(oracle in candidates)
         if not candidates:
             break
         if policy == "random":
@@ -276,7 +280,11 @@ def run_episode(
             metrics.invalid_actions += 1
             break
         after = buffer_distance(current, target)
-        metrics.selected_advantages.append(before - after)
+        advantage = before - after
+        metrics.selected_advantages.append(advantage)
+        metrics.oracle_selected += int(selected == oracle)
+        if metrics.first_selected_advantage is None:
+            metrics.first_selected_advantage = advantage
         key = buffer_key(current)
         if key in seen:
             metrics.looped = True
@@ -290,6 +298,10 @@ def run_episode(
 def aggregate(episodes: list[EpisodeMetrics]) -> dict:
     decisions = sum(item.decisions for item in episodes)
     selected = [value for item in episodes for value in item.selected_advantages]
+    first = [
+        item.first_selected_advantage for item in episodes
+        if item.first_selected_advantage is not None
+    ]
     initial = sum(item.initial_distance for item in episodes)
     final = sum(item.final_distance for item in episodes)
     source_ceiling = (
@@ -307,6 +319,16 @@ def aggregate(episodes: list[EpisodeMetrics]) -> dict:
         "bounded_canonical_oracle_edit_recall": bounded_recall,
         "selected_true_advantage_mean": (
             sum(selected) / len(selected) if selected else None
+        ),
+        "first_selected_true_advantage_mean": (
+            sum(first) / len(first) if first else None
+        ),
+        "first_selected_positive_advantage_rate": (
+            sum(value > 0 for value in first) / len(first) if first else None
+        ),
+        "available_canonical_oracle_selection_accuracy": (
+            sum(item.oracle_selected for item in episodes)
+            / max(sum(item.oracle_available for item in episodes), 1)
         ),
         "normalized_edit_distance_improvement": (
             sum(
