@@ -7,7 +7,9 @@ from scripts.audit_faithful_token_edits import shuffled_action_prediction
 from textjepa.data.edits.dataset import collate_edits
 from textjepa.data.faithful_token_edits import (
     FaithfulTokenEditDataset,
+    OPS,
     _apply,
+    _counterfactual_exclusions,
     faithful_token_edit_vocab,
 )
 from textjepa.models.edit_jepa import EditJEPA
@@ -156,6 +158,32 @@ def test_counterfactuals_are_deterministic_prefixes_and_do_not_change_expert():
     assert [step[:2] for step in five["alt_actions"]] == two["alt_actions"]
     assert [step[:2] for step in five["alt_buffers"]] == two["alt_buffers"]
     assert [step[:2] for step in five["alt_changed"]] == two["alt_changed"]
+
+
+def test_deployable_mixed_is_prefix_stable_and_balances_k2_operations():
+    vocab = faithful_token_edit_vocab()
+    common = dict(
+        vocab=vocab, size=4, seed=127, max_op=8, max_edge=14,
+        op_range=(5, 8), min_edits=6, max_edits=6,
+        counterfactual_source="deployable_mixed",
+    )
+    k2 = FaithfulTokenEditDataset(**common, counterfactual_k=2)
+    k4 = FaithfulTokenEditDataset(**common, counterfactual_k=4)
+    expert = ("replace", 3, 17)
+    assert _counterfactual_exclusions("deployable_mixed", expert) == set()
+    assert _counterfactual_exclusions("mixed", expert) == {expert}
+    counts = {op: 0 for op in OPS.values()}
+    for index in range(len(k2)):
+        two, four = k2[index], k4[index]
+        assert two["buffers"] == four["buffers"]
+        assert two["actions"] == four["actions"]
+        assert [step[:2] for step in four["alt_actions"]] == two["alt_actions"]
+        assert [step[:2] for step in four["alt_buffers"]] == two["alt_buffers"]
+        for step in two["alt_op"]:
+            for operation in step:
+                counts[operation] += 1
+    assert all(counts.values())
+    assert len(set(counts.values())) == 1
 
 
 def test_counterfactual_collate_pads_actions_and_nested_buffer_outcomes():

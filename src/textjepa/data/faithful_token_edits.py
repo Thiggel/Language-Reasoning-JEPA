@@ -92,7 +92,8 @@ def _render_action(
 
 
 def _counterfactual_action(
-    buffer: list[list[int]], rng: random.Random, source: str, candidate: int
+    buffer: list[list[int]], rng: random.Random, source: str, candidate: int,
+    operation_order: tuple[str, ...] | None = None,
 ) -> tuple[str, int, int | None]:
     """Sample an unlabeled, mechanically executable edit from observed text."""
     token_pool = list(dict.fromkeys(
@@ -118,6 +119,11 @@ def _counterfactual_action(
         # comparisons vary coverage rather than the expert trajectory.
         preferred = ("replace", "insert", "delete")[candidate % 3]
         kind = preferred if preferred in valid else rng.choice(valid)
+    elif source == "deployable_mixed":
+        if not operation_order:
+            raise ValueError("deployable_mixed requires an operation order")
+        preferred = operation_order[candidate % len(operation_order)]
+        kind = preferred if preferred in valid else rng.choice(valid)
     else:
         raise ValueError(f"unknown counterfactual_source: {source}")
 
@@ -129,6 +135,13 @@ def _counterfactual_action(
     sentence, offset = _position(buffer, position)
     old = buffer[sentence][offset]
     return kind, position, rng.choice([token for token in token_pool if token != old])
+
+
+def _counterfactual_exclusions(
+    source: str, expert: tuple[str, int, int | None]
+) -> set[tuple[str, int, int | None]]:
+    """Historical modes exclude the expert; deployable sampling cannot."""
+    return set() if source == "deployable_mixed" else {expert}
 
 
 class FaithfulTokenEditDataset(Dataset):
@@ -155,7 +168,9 @@ class FaithfulTokenEditDataset(Dataset):
             "mixed", "mask", "replace", "remove", "curriculum"
         }:
             raise ValueError(f"unknown corruption_mode: {self.corruption_mode}")
-        if self.counterfactual_source not in {"uniform_local", "mixed"}:
+        if self.counterfactual_source not in {
+            "uniform_local", "mixed", "deployable_mixed"
+        }:
             raise ValueError(
                 f"unknown counterfactual_source: {self.counterfactual_source}"
             )
@@ -275,12 +290,23 @@ class FaithfulTokenEditDataset(Dataset):
                 step_ops = []
                 step_positions = []
                 step_content_tokens = []
-                sampled = {action}
+                # Historical sources exclude the expert repair.  The
+                # deployment-feasible source must not consult that
+                # target-derived action when defining its candidate set.
+                sampled = _counterfactual_exclusions(
+                    self.counterfactual_source, action
+                )
+                operation_order = None
+                if self.counterfactual_source == "deployable_mixed":
+                    base = ("replace", "insert", "delete")
+                    offset = (index + step) % len(base)
+                    operation_order = base[offset:] + base[:offset]
                 attempts = 0
                 while len(step_actions) < self.counterfactual_k:
                     candidate = len(step_actions)
                     alternative = _counterfactual_action(
-                        current, alt_rng, self.counterfactual_source, candidate
+                        current, alt_rng, self.counterfactual_source, candidate,
+                        operation_order=operation_order,
                     )
                     attempts += 1
                     if alternative in sampled:

@@ -1,0 +1,8 @@
+# @package _global_
+# Target-independent mechanical candidates. The candidate pool uses only the
+# observed current buffer and does not exclude the target-derived expert edit.
+defaults: [edit_token_structured_cf, _self_]
+run_name: edit_token_structured_cf_deployable_mixed
+data:
+  counterfactual_k: 2
+  counterfactual_source: deployable_mixed
