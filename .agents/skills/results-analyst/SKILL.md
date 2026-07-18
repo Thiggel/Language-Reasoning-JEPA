@@ -20,8 +20,8 @@ means. Use intuitive labels. Compare only information- and protocol-matched
 systems; label oracle or privileged-candidate diagnostics explicitly.
 
 Write observations, inferences, speculation, limitations, and the predeclared
-decision outcome separately. Update the cycle, `EVIDENCE.md`,
-`EXPERIMENT_INDEX.md`, and `DECISIONS.md` as warranted. Do not propose another
-round until the current result's validity is settled. Invoke
-`$explain-research` to create the human-facing report; a terse cycle ledger is
-not a substitute for that report.
+decision outcome separately when communicating results. Cycle, evidence, and
+decision-ledger updates are optional. Settle validity enough to support the
+next decision, but do not require a human-facing report before proposing or
+submitting the next round. Invoke `$explain-research` only when the human asks
+for a report or a report materially helps the decision.
