@@ -14,7 +14,7 @@ Hierarchical planning, GAR value learning, MPC, beam search, and CEM all assume 
 
 ## What we tested
 
-Across seven new controller rounds, 35 jobs completed. We audited five stabilizer/corruption checkpoints, separated operation/pointer/content effects, compared 2k–18k unique clean iGSM problems and 6k–18k example presentations, tested d256 versus d512, implemented exact structured counterfactual outcomes, swept K={0,1,4,8}, added two confirmation seeds, and re-audited every selected checkpoint locally. All models use dropout zero and EMA teachers in evaluation mode.
+Across eight new controller rounds, 40 jobs completed. We audited five stabilizer/corruption checkpoints, separated operation/pointer/content effects, compared 2k–18k unique clean iGSM problems and 6k–18k example presentations, tested d256 versus d512, implemented exact structured counterfactual outcomes, swept K={0,1,4,8}, added two confirmation seeds, and re-audited every selected checkpoint locally. All models use dropout zero and EMA teachers in evaluation mode.
 
 ## What a fair comparison means here
 
