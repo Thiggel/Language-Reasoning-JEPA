@@ -1,33 +1,31 @@
 {
   "schema_version": 2,
   "project": "token_igsm",
-  "round_id": "2026-07-18-gar-token-search-interface",
-  "decision": "At fixed hierarchy, support, and oracle-goal diagnostic, is the detached prior already sufficient to produce valid token fragments when used greedily or by prior-preserving tree search, or does every consequence-guided primitive search mode destroy reference recall and execution? If greedy or a tree method produces valid fragments or materially improves reference recall over prior-top-k CEM, keep training fixed and refine that interface; if all modes remain invalid, move to a dense learning-rate and objective screen for the primitive goal-value learner.",
+  "round_id": "2026-07-18-gar-lr-objective-screen",
+  "decision": "At fixed deterministic hierarchy, prior-only K=32 counterfactuals, data, and seed, is the primitive GAR learner's failure caused by optimization sensitivity or objective shape? Compare MSE-only and pairwise-plus-0.25-MSE at learning rates 1e-4, 3e-4, and 1e-3. A recipe remains viable only if it is finite and non-collapsed, keeps held-out pair accuracy at or above 0.80, materially improves full-vocabulary reference top-5 or constrained-planning top-20 recall over the 3e-4 anchor, and yields at least one valid token fragment; otherwise stop tuning this end-to-end goal-value interface and redirect to a separately fitted primitive advantage head or a different action representation.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "gar-prior-search-interface-seed-73",
+      "id": "gar-lr-objective-screen-seed-0",
       "cluster": "gruenau",
       "command": [
         "bash",
-        "scripts/run_gar_token_search_interface_cell.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-17-gar-proposal-coverage/gar-k32-prior-proposals-seed-0/model/best.pt",
-        "2"
+        "scripts/run_gar_lr_objective_screen.sh",
+        "{python}"
       ],
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 150,
-      "purpose": "Matched evaluation-only comparison of prior greedy, shooting, top-k CEM, beam, A-star, and PUCT token selection using the validated prior-only GAR checkpoint. Primary gates are any valid sentence, solved trace, and planning reference recall; drift and invalid fragments are health diagnostics.",
+      "walltime_minutes": 900,
+      "purpose": "Single-seed matched optimization screen for the non-symbolic primitive GAR learner. Each of MSE-only and rank-plus-MSE receives the same three-point log learning-rate curve; executable validity and reference recall gate any continuation.",
       "expected_artifacts": [
         "metrics.json",
-        "prior_greedy.json",
-        "prior_shooting.json",
-        "prior_topk_cem.json",
-        "prior_beam.json",
-        "prior_astar.json",
-        "prior_puct.json"
+        "mse-only-lr1e-4/metrics.json",
+        "mse-only-lr3e-4/metrics.json",
+        "mse-only-lr1e-3/metrics.json",
+        "rank-mse025-lr1e-4/metrics.json",
+        "rank-mse025-lr3e-4/metrics.json",
+        "rank-mse025-lr1e-3/metrics.json"
       ]
     }
   ]

@@ -25,6 +25,7 @@ gar_low_k=${21:-$gar_k}
 gar_high_k=${22:-$gar_k}
 gar_objective=${23:-pairwise}
 gar_conditional_k=${24:-32}
+train_lr=${25:-3e-4}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
 model_dir="$run_dir/model"
 
@@ -33,7 +34,7 @@ model_dir="$run_dir/model"
   "data.train_size=$train_size" data.val_size=256 \
   "data.n_vars_range=[10,18]" "data.steps_range=[6,12]" \
   "train.epochs=$epochs" "train.batch_size=$batch_size" train.num_workers=0 \
-  train.eval_batches=8 train.warmup_steps=100 \
+  train.eval_batches=8 train.warmup_steps=100 "train.lr=$train_lr" \
   model.max_len=768 model.d_model=256 model.encoder_layers=4 \
   model.predictor_layers=2 model.n_heads=8 model.ff_mult=4 model.d_action=64 \
   "model.level_spans=[4,16,64]" "model.level_dims=[32,16,8]" \
