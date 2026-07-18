@@ -1,49 +1,49 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-18-structured-edit-ema-seed-confirm-recovery-wave28",
-  "decision": "Recover the process-invalid wave26 replication from the known-good canonical snapshot and adopt a simple EMA learning rate only if the seed-0 high-rate gain replicates. Prefer 1e-3 over 1.5e-3 if its seed-1/2 mean recursive LN-L1 is no worse; otherwise prefer 1.5e-3. Reject a setting as unstable if either seed has non-finite metrics, state_std below 0.05, state_effective_rank below 64, token-aligned shuffled/matched error ratio below 2, or recursive LN-L1 at or above 0.147.",
-  "git_commit": "e1d81ffd1d9458f77ebe99f26adf0a3bf03f7d59",
+  "round_id": "2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30",
+  "decision": "Test whether the seed-0 pairwise-plus-regression GAR improvement at LR 1e-2 is reproducible without representational collapse, and choose the simplest robust weight. Adopt weight 0.3 only if both new seeds are finite, have state_std at least 0.05, state_effective_rank at least 64, token-aligned shuffled/matched error ratio at least 2, and their mean recursive LN-L1 is lower than weight 0.1 by at least 0.005. Otherwise adopt weight 0.1 if both of its seeds pass the same validity gates and mean recursive LN-L1 is below 0.10; if neither condition holds, reject LR 1e-2 pairwise GAR as unstable and return to the replicated EMA 1e-3 recipe.",
+  "git_commit": "cbb5337cc66e5384d3100f0b643990ac10beab14",
   "jobs": [
     {
-      "id": "edit-ema-lr1e3-seed1-recovery-wave28",
+      "id": "edit-gar-pairmse-k4-w01-lr1e2-seed1-wave30",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema", "1", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "train.lr=0.001"],
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "1", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.1", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
       "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Process-valid seed-1 replication of the canonical seed-0 EMA 1e-3 leader from a snapshot containing the declared Hydra experiment.",
+      "walltime_minutes": 90,
+      "purpose": "Seed-1 confirmation of the healthier weight-0.1 pairwise-plus-regression GAR cell at LR 1e-2.",
       "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "min_gpu_memory_mb": 22000
     },
     {
-      "id": "edit-ema-lr1p5e3-seed1-recovery-wave28",
+      "id": "edit-gar-pairmse-k4-w01-lr1e2-seed2-wave30",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema", "1", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "train.lr=0.0015"],
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "2", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.1", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
       "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Process-valid seed-1 replication of the canonical seed-0 EMA 1.5e-3 co-leader from a snapshot containing the declared Hydra experiment.",
+      "walltime_minutes": 90,
+      "purpose": "Seed-2 confirmation and collapse-stress test of the weight-0.1 pairwise-plus-regression GAR cell at LR 1e-2.",
       "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "min_gpu_memory_mb": 22000
     },
     {
-      "id": "edit-ema-lr1e3-seed2-recovery-wave28",
+      "id": "edit-gar-pairmse-k4-w03-lr1e2-seed1-wave30",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema", "2", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "train.lr=0.001"],
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "1", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.3", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
       "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Process-valid seed-2 replication of the canonical seed-0 EMA 1e-3 leader and completion of its three-seed estimate.",
+      "walltime_minutes": 90,
+      "purpose": "Seed-1 replication of the seed-0 recursive-error leader while testing its near-threshold effective rank.",
       "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "min_gpu_memory_mb": 22000
     },
     {
-      "id": "edit-ema-lr1p5e3-seed2-recovery-wave28",
+      "id": "edit-gar-pairmse-k4-w03-lr1e2-seed2-wave30",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema", "2", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "train.lr=0.0015"],
+      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "2", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.3", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
       "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Process-valid seed-2 replication of the canonical seed-0 EMA 1.5e-3 co-leader and completion of its three-seed estimate.",
+      "walltime_minutes": 90,
+      "purpose": "Seed-2 replication and collapse-stress test of the seed-0 recursive-error leader.",
       "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "min_gpu_memory_mb": 22000
     }
   ]
 }
