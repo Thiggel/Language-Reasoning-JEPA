@@ -15,7 +15,55 @@ import numpy as np
 import networkx as nx
 from transformers import GPT2Tokenizer
 
-tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+_tokenizer = None
+
+
+class _ReversibleByteTokenizer:
+    """Offline fallback used only by TextJEPA's text round-trip adapter."""
+    _offset = 1000
+
+    def encode(self, text, return_tensors=None):
+        values = [self._offset + value for value in text.encode("utf-8")]
+        if return_tensors == "pt":
+            return torch.tensor([values], dtype=torch.long)
+        return values
+
+    def decode(self, values, skip_special_tokens=False):
+        raw = bytes(
+            int(value) - self._offset
+            for value in values
+            if self._offset <= int(value) < self._offset + 256
+        )
+        return raw.decode("utf-8")
+
+
+def _get_tokenizer():
+    """Load GPT-2 only for optional text-display helpers.
+
+    Core iGSM problem generation does not tokenize text.  Import-time loading
+    made offline Slurm jobs fail before the first training batch even though
+    they never call a display helper.
+    """
+    global _tokenizer
+    if _tokenizer is None:
+        try:
+            _tokenizer = GPT2Tokenizer.from_pretrained(
+                'gpt2', local_files_only=True
+            )
+        except Exception:
+            _tokenizer = _ReversibleByteTokenizer()
+    return _tokenizer
+
+
+class _LazyTokenizer:
+    def __getattr__(self, name):
+        return getattr(_get_tokenizer(), name)
+
+
+# Preserve the reference package's public import without network/cache work at
+# module import. Tokenization is activated only if an encoding/display method
+# is actually called.
+tokenizer = _LazyTokenizer()
 
 def fix_seed(seed: int):
     random.seed(seed)
@@ -109,7 +157,7 @@ def show_info(output: List[int], problem, req_return=False):
         print(f"223 ({223 in output}), 224 ({224 in output}).")
         prob_text = " " + ". ".join(problem.problem) + "." # f" Answer in detail level_{problem.detail_level_}."
         print(f"Problem: {dash*32}\n{prob_text}")
-        print(f"GPT Output:", tokenizer.decode(output[pre:], skip_special_tokens=True))
+        print(f"GPT Output:", _get_tokenizer().decode(output[pre:], skip_special_tokens=True))
         print(f"Correct Solution: {dash*32}\n{' ' + '. '.join(problem.solution) + '.'}")
         return
     index_223 = output.index(223)
@@ -119,6 +167,7 @@ def show_info(output: List[int], problem, req_return=False):
     sol_token = output[index_223+1:index_224]
     ans_token = output[index_224+1:]
 
+    tokenizer = _get_tokenizer()
     prob_text = tokenizer.decode(prob_token, skip_special_tokens=True)
     sol_text = tokenizer.decode(sol_token, skip_special_tokens=True)
     ans_text = tokenizer.decode(ans_token, skip_special_tokens=True)
@@ -393,7 +442,3 @@ class MyPrint(object):
 
     def save(self, path: str):
         pass
-
-
-
-
