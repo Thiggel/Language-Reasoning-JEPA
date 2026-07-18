@@ -204,3 +204,13 @@ All five frozen audits completed. K=1 improves local operation/pointer ratios
 approximately flat at 1.35. K=4 and K=8 remain identical to K=1. Select K=1
 for a larger confirmation, reject K>1, and retain the 2.6% recursive-error
 degradation as an explicit failure mode.
+
+## Final confirmation
+
+Wave 10 and its five frozen audits completed. The 18k-presentation primitive
+replicates across three seeds with recursive token errors 0.182/0.190/0.185.
+D512 beats d256 with batch four (0.202 vs 0.246) and batch eight (0.230 vs
+0.309), so width is a genuine lever. K=1 transfers its one-step and component
+gain to 6k presentations but again worsens recursive error. The selected
+default remains K=0 fixed-mixed EMA for rollout work; K=1 is a bounded branch
+to repair, and K>1 is rejected.

@@ -1,5 +1,13 @@
 # Evidence
 
+- Token-aligned operation, current-buffer pointer, and local content all pass
+  direct component-shuffle falsifiers.
+- Total exposure, rather than unique clean-problem count up to 18k, drives the
+  current data improvement; the 18k effect replicates over three seeds.
+- D512 improves d256 under matched batch and optimizer-step comparisons.
+- Exact counterfactual breadth saturates at K=1; K>1 is rejected, and K=1's
+  recursive-error cost remains unresolved.
+
 - The non-symbolic faithful token-edit data and model path passes local end-to-end smoke tests.
 - The first full-scale round is invalid because it failed before training.
 - The corrected configuration has not yet produced scientific evidence.

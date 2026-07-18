@@ -1,5 +1,11 @@
 # Sequence-edit status
 
+Current result (2026-07-18): the token-aligned structured primitive passes
+operation, current-pointer, and local-content causal gates. Fixed mixed EMA is
+the default; 18k presentations replicate across three seeds, d512 improves
+matched width controls, and exact counterfactual breadth saturates at K=1.
+K=1 slightly harms recursive rollout, so K=0 remains the rollout default.
+
 The original faithful hierarchy round is scientifically invalid: all five
 jobs failed before optimization, and the apparent 276-token "sentence" exposed
 a data-boundary bug. Official iGSM steps usually end in fused punctuation, so

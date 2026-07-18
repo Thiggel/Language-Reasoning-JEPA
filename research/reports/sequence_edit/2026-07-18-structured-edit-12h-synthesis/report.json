@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-18-structured-edit-12h-synthesis",
+  "project": "sequence_edit",
+  "title": "The structured token editor is now a valid primitive world model",
+  "created_at": "2026-07-18T08:00:00+02:00",
+  "status": "complete",
+  "review_required": true,
+  "decision": "Select fixed mixed token-aligned EMA as the primitive; scale exposure and width, reject K>1, and repair K=1 recursive tradeoff before GAR and hierarchy.",
+  "plain_summary": "Thirty-five jobs established causal operation, pointer, and content use. Exposure and width improve prediction; effects replicate across seeds. One counterfactual saturates but slightly harms recursive rollout.",
+  "report": "REPORT.md",
+  "artifacts": ["synthesis.svg"],
+  "tags": ["sequence-edit", "synthesis", "scale", "counterfactual", "causal-audit"]
+}
