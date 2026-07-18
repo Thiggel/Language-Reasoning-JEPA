@@ -1,48 +1,146 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30",
-  "decision": "Test whether the seed-0 pairwise-plus-regression GAR improvement at LR 1e-2 is reproducible without representational collapse, and choose the simplest robust weight. Adopt weight 0.3 only if both new seeds are finite, have state_std at least 0.05, state_effective_rank at least 64, token-aligned shuffled/matched error ratio at least 2, and their mean recursive LN-L1 is lower than weight 0.1 by at least 0.005. Otherwise adopt weight 0.1 if both of its seeds pass the same validity gates and mean recursive LN-L1 is below 0.10; if neither condition holds, reject LR 1e-2 pairwise GAR as unstable and return to the replicated EMA 1e-3 recipe.",
-  "git_commit": "cbb5337cc66e5384d3100f0b643990ac10beab14",
+  "round_id": "2026-07-18-structured-edit-planning-support-fix-wave34",
+  "decision": "Rerun the six matched pairwise-GAR checkpoints after making the planning audit process-valid. First quantify oracle_unreachable_rate as an action-space support diagnostic. If it is nonzero, treat exact recovery and oracle-injected performance as support-confounded and prioritize an unambiguous boundary-aware action representation; do not tune GAR. If it is zero, retain a GAR weight only if deployable GAR-greedy improves distance-weighted normalized edit-distance improvement over its matched random policy in at least two of three seeds and the pooled improvement is positive. Otherwise reject pairwise GAR as a deployable planner under this proposal mechanism.",
+  "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-gar-pairmse-k4-w01-lr1e2-seed1-wave30",
+      "id": "edit-plan-pair-w01-seed0-wave34",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "1", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.1", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_planning.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w01-lr1e2-seed0-wave29/model/best.pt",
+        "32",
+        "256",
+        "32"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Seed-1 confirmation of the healthier weight-0.1 pairwise-plus-regression GAR cell at LR 1e-2.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
+      "walltime_minutes": 120,
+      "purpose": "Fixed closed-loop deployable, random-control, oracle-injected, and action-support audit for pairwise GAR weight 0.1, seed 0.",
+      "expected_artifacts": [
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "cpus": 4,
       "min_gpu_memory_mb": 22000
     },
     {
-      "id": "edit-gar-pairmse-k4-w01-lr1e2-seed2-wave30",
+      "id": "edit-plan-pair-w01-seed1-wave34",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "2", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.1", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_planning.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w01-lr1e2-seed1-wave30/model/best.pt",
+        "32",
+        "256",
+        "32"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Seed-2 confirmation and collapse-stress test of the weight-0.1 pairwise-plus-regression GAR cell at LR 1e-2.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
+      "walltime_minutes": 120,
+      "purpose": "Fixed closed-loop deployable, random-control, oracle-injected, and action-support audit for pairwise GAR weight 0.1, seed 1.",
+      "expected_artifacts": [
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "cpus": 4,
       "min_gpu_memory_mb": 22000
     },
     {
-      "id": "edit-gar-pairmse-k4-w03-lr1e2-seed1-wave30",
+      "id": "edit-plan-pair-w01-seed2-wave34",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "1", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.3", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_planning.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w01-lr1e2-seed2-wave30/model/best.pt",
+        "32",
+        "256",
+        "32"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Seed-1 replication of the seed-0 recursive-error leader while testing its near-threshold effective rank.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
+      "walltime_minutes": 120,
+      "purpose": "Fixed closed-loop deployable, random-control, oracle-injected, and action-support audit for pairwise GAR weight 0.1, seed 2.",
+      "expected_artifacts": [
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "cpus": 4,
       "min_gpu_memory_mb": 22000
     },
     {
-      "id": "edit-gar-pairmse-k4-w03-lr1e2-seed2-wave30",
+      "id": "edit-plan-pair-w03-seed0-wave34",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_gar_h1", "2", "data.counterfactual_k=4", "data.corruption_mode=mixed", "data.fresh_per_epoch=false", "data.train_size=6000", "train.epochs=3", "train.batch_size=8", "objective.gar_action_value.weight=0.3", "objective.gar_action_value.regression_weight=0.25", "objective.gar_action_value.pairwise_weight=1", "objective.gar_action_value.margin=0.5", "objective.gar_action_value.label_gap=0.001", "train.lr=0.01"],
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_planning.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt",
+        "32",
+        "256",
+        "32"
+      ],
       "gpus": 1,
-      "walltime_minutes": 90,
-      "purpose": "Seed-2 replication and collapse-stress test of the seed-0 recursive-error leader.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "metrics_mask.json", "metrics_replace.json", "metrics_remove.json", "model/best.pt", "stdout.log", "stderr.log"],
+      "walltime_minutes": 120,
+      "purpose": "Fixed closed-loop deployable, random-control, oracle-injected, and action-support audit for pairwise GAR weight 0.3, seed 0.",
+      "expected_artifacts": [
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000
+    },
+    {
+      "id": "edit-plan-pair-w03-seed1-wave34",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_planning.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed1-wave30/model/best.pt",
+        "32",
+        "256",
+        "32"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 120,
+      "purpose": "Fixed closed-loop deployable, random-control, oracle-injected, and action-support audit for pairwise GAR weight 0.3, seed 1.",
+      "expected_artifacts": [
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000
+    },
+    {
+      "id": "edit-plan-pair-w03-seed2-wave34",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_planning.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-seed-confirm-wave30/edit-gar-pairmse-k4-w03-lr1e2-seed2-wave30/model/best.pt",
+        "32",
+        "256",
+        "32"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 120,
+      "purpose": "Fixed closed-loop deployable, random-control, oracle-injected, and action-support audit for pairwise GAR weight 0.3, seed 2.",
+      "expected_artifacts": [
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "cpus": 4,
       "min_gpu_memory_mb": 22000
     }
   ]
