@@ -1,4 +1,5 @@
 from functools import partial
+from types import SimpleNamespace
 
 import torch
 from torch.utils.data import DataLoader
@@ -16,6 +17,32 @@ from textjepa.objectives import (
     GoalAdvantageDistill, TokenAlignedCounterfactualPrediction,
 )
 from scripts.audit_faithful_token_edits import shuffled_action_prediction
+
+
+def test_gar_pairwise_loss_rewards_correct_same_state_ordering():
+    target = torch.tensor([[0.2]])
+    alt_target = torch.tensor([[[0.0, -0.1]]])
+    valid = torch.ones(1, 1, 2, dtype=torch.bool)
+    common = {
+        "gar_action_target": target,
+        "gar_alt_action_target": alt_target,
+        "gar_alt_action_valid": valid,
+    }
+    correct = SimpleNamespace(
+        preds=torch.zeros(1), step_mask=torch.ones(1, 1, dtype=torch.bool),
+        extras={**common, "gar_action_value": torch.tensor([[0.3]]),
+                "gar_alt_action_value": torch.tensor([[[0.0, -0.2]]])},
+    )
+    reversed_order = SimpleNamespace(
+        preds=torch.zeros(1), step_mask=correct.step_mask,
+        extras={**common, "gar_action_value": torch.tensor([[-0.3]]),
+                "gar_alt_action_value": torch.tensor([[[0.0, 0.2]]])},
+    )
+    objective = GoalAdvantageDistill(
+        regression_weight=0.0, pairwise_weight=1.0,
+        margin=0.1, label_gap=0.001,
+    )
+    assert objective(correct, {}) < objective(reversed_order, {})
 
 
 def _dataset(mode: str):

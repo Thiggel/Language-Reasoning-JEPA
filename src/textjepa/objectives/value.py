@@ -51,6 +51,19 @@ class GoalAdvantageDistill(Objective):
     terminal representation.  The goal is never an input to the learned head.
     """
 
+    def __init__(
+        self,
+        regression_weight: float = 1.0,
+        pairwise_weight: float = 0.0,
+        margin: float = 0.5,
+        label_gap: float = 0.001,
+    ):
+        super().__init__()
+        self.regression_weight = float(regression_weight)
+        self.pairwise_weight = float(pairwise_weight)
+        self.margin = float(margin)
+        self.label_gap = float(label_gap)
+
     def forward(self, out, batch: dict) -> torch.Tensor:
         prediction = out.extras.get("gar_action_value")
         if prediction is None:
@@ -60,15 +73,45 @@ class GoalAdvantageDistill(Objective):
         expert = masked_mean(error, out.step_mask.float())
         alt_prediction = out.extras.get("gar_alt_action_value")
         if alt_prediction is None:
-            return expert
+            return self.regression_weight * expert
         alt_error = F.smooth_l1_loss(
             alt_prediction, out.extras["gar_alt_action_target"], reduction="none"
         )
         alternatives = masked_mean(
             alt_error, out.extras["gar_alt_action_valid"].float()
         )
-        # Candidate breadth must not silently increase GAR's total coefficient.
-        return 0.5 * (expert + alternatives)
+        # Candidate breadth must not silently increase GAR's regression scale.
+        regression = 0.5 * (expert + alternatives)
+        if self.pairwise_weight == 0.0:
+            return self.regression_weight * regression
+
+        predictions = torch.cat(
+            [prediction.unsqueeze(-1), alt_prediction], dim=-1
+        )
+        targets = torch.cat([
+            target.unsqueeze(-1), out.extras["gar_alt_action_target"]
+        ], dim=-1)
+        valid = torch.cat([
+            out.step_mask.unsqueeze(-1),
+            out.extras["gar_alt_action_valid"],
+        ], dim=-1)
+        target_delta = targets.unsqueeze(-1) - targets.unsqueeze(-2)
+        prediction_delta = (
+            predictions.unsqueeze(-1) - predictions.unsqueeze(-2)
+        )
+        # Positive target_delta means the row action makes more progress than
+        # the column action, so its learned value must be larger by margin.
+        better = (
+            valid.unsqueeze(-1) & valid.unsqueeze(-2)
+            & target_delta.gt(self.label_gap)
+        )
+        pairwise = masked_mean(
+            F.relu(self.margin - prediction_delta), better.float()
+        )
+        return (
+            self.regression_weight * regression
+            + self.pairwise_weight * pairwise
+        )
 
 
 class ActionKL(Objective):

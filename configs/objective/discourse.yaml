@@ -93,6 +93,10 @@ value_distill:
 gar_action_value:
   _target_: textjepa.objectives.GoalAdvantageDistill
   weight: 0.0
+  regression_weight: 1.0
+  pairwise_weight: 0.0
+  margin: 0.5
+  label_gap: 0.001
 ranking:
   _target_: textjepa.objectives.ActionRanking
   weight: 0.0  # enabled in experiment configs (see disc_rank_*, edit_rank)
