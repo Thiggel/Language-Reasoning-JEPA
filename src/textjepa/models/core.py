@@ -449,6 +449,10 @@ class LatentDynamicsCore(nn.Module):
         if distinct_high:
             extras["distinct_high_state_space"] = True
             extras["high_initial_state"] = high_states[:, 0]
+            extras["high_states_online"] = high_states
+            extras["high_states_mask"] = torch.cat([
+                torch.ones_like(step_mask[:, :1]), step_mask
+            ], dim=1)
         else:
             flat_windows = windows.reshape(B * S, K, d_a)
             low_endpoint = self._rollout(

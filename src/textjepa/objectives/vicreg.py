@@ -27,11 +27,13 @@ class VICReg(Objective):
         std_target: float = 1.0,
         cov_weight: float = 0.04,
         action_weight: float = 0.1,
+        high_weight: float = 0.0,
     ):
         super().__init__()
         self.std_target = std_target
         self.cov_weight = cov_weight
         self.action_weight = action_weight
+        self.high_weight = high_weight
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         mask = out.step_mask.reshape(-1)
@@ -44,6 +46,20 @@ class VICReg(Objective):
             acts = out.actions.reshape(-1, out.actions.shape[-1])[mask]
             var_a, _ = variance_covariance(acts, self.std_target)
             loss = loss + self.action_weight * var_a
+        if self.high_weight > 0:
+            high_states = out.extras.get("high_states_online")
+            high_mask = out.extras.get("high_states_mask")
+            if high_states is None or high_mask is None:
+                raise RuntimeError(
+                    "VICReg high_weight requires distinct high-level states"
+                )
+            high = high_states.reshape(-1, high_states.shape[-1])[
+                high_mask.reshape(-1)
+            ]
+            var_h, cov_h = variance_covariance(high, self.std_target)
+            loss = loss + self.high_weight * (
+                var_h + self.cov_weight * cov_h
+            )
         return loss
 
 

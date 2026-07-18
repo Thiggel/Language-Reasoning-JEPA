@@ -224,7 +224,10 @@ def test_distinct_high_state_encoder_is_causal_and_ema_stable(setup):
     assert not torch.allclose(out.hi_targets, low_endpoints)
 
     model.zero_grad(set_to_none=True)
-    HierarchyPrediction()(out, batch).backward()
+    (
+        HierarchyPrediction()(out, batch)
+        + VICReg(high_weight=1.0)(out, batch)
+    ).backward()
     assert any(
         parameter.grad is not None
         for parameter in model.high_state_encoder.parameters()

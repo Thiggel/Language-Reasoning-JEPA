@@ -272,6 +272,14 @@ class Trainer:
                 cat["hi_target"], cat["hi_target"].shape[-1:]
             )
             metrics["hi_matched_l1"] = (hp - ht).abs().mean().item()
+            metrics["hi_pred_std"] = feature_std(cat["hi_pred"])
+            metrics["hi_pred_effrank"] = effective_rank(
+                cat["hi_pred"][:4096]
+            )
+            metrics["hi_target_std"] = feature_std(cat["hi_target"])
+            metrics["hi_target_effrank"] = effective_rank(
+                cat["hi_target"][:4096]
+            )
             if "hi_value" in cat:
                 metrics["hi_value_mae"] = (
                     cat["hi_value"] - 5.0 * cat["hi_value_target"]

@@ -46,6 +46,7 @@ vicreg:
   std_target: 1.0
   cov_weight: 0.04
   action_weight: 0.1
+  high_weight: 0.0
 sigreg:
   _target_: textjepa.objectives.SIGReg
   weight: 0.0
