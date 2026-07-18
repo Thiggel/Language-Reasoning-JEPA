@@ -310,6 +310,18 @@ def aggregate(episodes: list[EpisodeMetrics]) -> dict:
     bounded_recall = (
         sum(item.bounded_recall_hits for item in episodes) / max(decisions, 1)
     )
+    by_decision = {}
+    maximum_depth = max((len(item.selected_advantages) for item in episodes), default=0)
+    for depth in range(maximum_depth):
+        values = [
+            item.selected_advantages[depth] for item in episodes
+            if depth < len(item.selected_advantages)
+        ]
+        by_decision[str(depth + 1)] = {
+            "count": len(values),
+            "mean": sum(values) / len(values),
+            "positive_rate": sum(value > 0 for value in values) / len(values),
+        }
     return {
         "episodes": len(episodes),
         "decisions": decisions,
@@ -330,6 +342,7 @@ def aggregate(episodes: list[EpisodeMetrics]) -> dict:
             sum(item.oracle_selected for item in episodes)
             / max(sum(item.oracle_available for item in episodes), 1)
         ),
+        "selected_true_advantage_by_decision": by_decision,
         "normalized_edit_distance_improvement": (
             sum(
                 (item.initial_distance - item.final_distance)

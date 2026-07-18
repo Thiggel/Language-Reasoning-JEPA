@@ -3,6 +3,8 @@ import random
 import torch
 
 from scripts.plan_faithful_token_edits import (
+    EpisodeMetrics,
+    aggregate,
     buffer_distance,
     canonical_oracle_edit,
     pad_token_state_for_insertions,
@@ -10,6 +12,16 @@ from scripts.plan_faithful_token_edits import (
     propose_edits,
     run_episode,
 )
+
+
+def test_aggregation_reports_decision_depth_drift():
+    first = EpisodeMetrics(initial_distance=3, final_distance=2)
+    first.selected_advantages = [1, -1]
+    second = EpisodeMetrics(initial_distance=2, final_distance=1)
+    second.selected_advantages = [1]
+    by_depth = aggregate([first, second])["selected_true_advantage_by_decision"]
+    assert by_depth["1"] == {"count": 2, "mean": 1.0, "positive_rate": 1.0}
+    assert by_depth["2"] == {"count": 1, "mean": -1.0, "positive_rate": 0.0}
 
 
 def test_deployable_proposals_use_only_declared_observed_token_source():
