@@ -5,11 +5,9 @@ description: Reconstruct the compact TextJEPA evidence state and choose the next
 
 # Direct one TextJEPA research cycle
 
-Read `research/CHARTER.md`, `STATE.md`, `EVIDENCE.md`,
-`QUESTION_BACKLOG.md`, `EXPERIMENT_INDEX.md`, the current cycle linked from
-STATE, the latest cluster inventory, and newly completed run summaries. Do not
-recursively load historical waves or raw logs; follow a source link only when
-it bears on the current decision.
+Read only the compact project state and newly completed summaries needed for
+the current decision. Reports, historical cycles, global ledgers, and steering
+notes are optional context and must not block experiments.
 
 Audit scientific validity before interpreting metrics. Separate observation,
 inference, and speculation. Generate several concrete decision questions,
@@ -20,14 +18,14 @@ of loosely related experiments.
 Use `$literature-review` only for a narrow uncertainty that could change the
 design. Use `$experiment-designer` to turn the selected question into a
 falsifiable minimal experiment. Use `$results-analyst` when terminal results
-exist. Use `$explain-research` before considering the cycle complete or writing
-the next plan. Use `$beamer-synthesis` for a slide companion after the report
-passes validation.
+exist. Use `$explain-research` or `$beamer-synthesis` only when the human asks
+for explanatory artifacts or they materially help a decision; neither is a
+prerequisite for the next plan.
 
-Read unhandled notes under `.researchctl/steering/inbox/<project>/` before
-choosing the next decision and state explicitly how each note affected it.
-Update one cycle document and the compact ledgers. Implement only code needed
+Consider relevant notes under `.researchctl/steering/inbox/<project>/` when
+useful. Cycle and ledger updates are optional. Implement only code needed
 for the selected decision and test causality, targets, masks, losses, and
 metrics where applicable. Finish with `research/NEXT_PLAN.json` conforming to
 `automation/schema/run-plan.schema.json`, or record why no experiment is
-justified. Do not submit jobs directly.
+justified. Use the controller for cluster submission so round identity and job
+tracking remain coherent.
