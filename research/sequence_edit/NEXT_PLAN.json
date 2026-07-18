@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-18-structured-edit-lr-upper-alex-wave14d",
-  "decision": "On one matched Alex RTX Pro 6000 backend, bracket the healthy replicated 3e-4 recipe: retain 3e-4 if 2e-4 and 5e-4 worsen recursive error, refine above 3e-4 only if 5e-4 wins, and extend upward only if 1e-3 remains healthy and improves recursive error.",
+  "round_id": "2026-07-18-structured-edit-lr-upper-gruenau-wave14e",
+  "decision": "Bracket the replicated 3e-4 recipe with matched seed-0 cells: retain 3e-4 if neither 2e-4 nor 5e-4 improves recursive error beyond the 0.139-0.149 anchor range; refine above 3e-4 only if 5e-4 wins while healthy; extend upward only if 1e-3 remains healthy and improves recursive error.",
   "git_commit": "a05b9e6f63b26729b9e4310115d125e3185339cd",
   "jobs": [
     {
-      "id": "edit-ema-18k-lr2e4-seed-0-alex-retry",
-      "cluster": "alex",
+      "id": "edit-ema-18k-lr2e4-seed-0-gruenau-v3",
+      "cluster": "gruenau",
       "command": [
         "bash",
         "scripts/run_faithful_token_edit_cell.sh",
@@ -23,7 +23,7 @@
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Measure the approach to the replicated 3e-4 anchor from below and detect a narrow optimum.",
+      "purpose": "Measure the approach to the replicated 3e-4 anchor from below and distinguish a narrow optimum from a broad healthy basin.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -34,46 +34,11 @@
         "stdout.log",
         "stderr.log"
       ],
-      "partition": "rtxpro6k",
-      "gpu_type": "rtxpro6k",
       "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-ema-18k-lr3e4-seed-0-alex-retry",
-      "cluster": "alex",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=mixed",
-        "data.fresh_per_epoch=false",
-        "data.train_size=6000",
-        "train.epochs=3",
-        "train.batch_size=8",
-        "train.lr=0.0003"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Provide a hardware-matched 3e-4 anchor for the Alex upper-rate bracket.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
-        "model/best.pt",
-        "stdout.log",
-        "stderr.log"
-      ],
-      "partition": "rtxpro6k",
-      "gpu_type": "rtxpro6k",
-      "min_gpu_memory_mb": 40000
-    },
-    {
-      "id": "edit-ema-18k-lr5e4-seed-0-alex-retry",
-      "cluster": "alex",
+      "id": "edit-ema-18k-lr5e4-seed-0-gruenau-v3",
+      "cluster": "gruenau",
       "command": [
         "bash",
         "scripts/run_faithful_token_edit_cell.sh",
@@ -89,7 +54,7 @@
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Test the first upper neighbor of the hardware-matched 3e-4 anchor.",
+      "purpose": "Test the first upper neighbor of 3e-4; refine the upper interval only if this cell improves recursive error without collapse.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -100,13 +65,11 @@
         "stdout.log",
         "stderr.log"
       ],
-      "partition": "rtxpro6k",
-      "gpu_type": "rtxpro6k",
       "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-ema-18k-lr1e3-seed-0-alex-retry",
-      "cluster": "alex",
+      "id": "edit-ema-18k-lr1e3-seed-0-gruenau-v3",
+      "cluster": "gruenau",
       "command": [
         "bash",
         "scripts/run_faithful_token_edit_cell.sh",
@@ -122,7 +85,7 @@
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Provide an upper stability control and determine whether the optimum remains unbracketed.",
+      "purpose": "Serve as the upper stability control and determine whether the viable learning-rate interval remains unbracketed.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -133,8 +96,6 @@
         "stdout.log",
         "stderr.log"
       ],
-      "partition": "rtxpro6k",
-      "gpu_type": "rtxpro6k",
       "min_gpu_memory_mb": 40000
     }
   ]
