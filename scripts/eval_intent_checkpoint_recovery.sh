@@ -8,7 +8,7 @@ fi
 
 python_bin=${1:?python executable}
 source_model=${2:?source model directory}
-label=${3:?checkpoint label}
+checkpoint_label=${3:?checkpoint label}
 model_dir="$RUN_DIR/model"
 
 export TMPDIR="/tmp/tj-${SLURM_JOB_ID:-$$}"
@@ -25,11 +25,11 @@ PY="$python_bin" bash "${TEXTJEPA_ROOT}/scripts/eval_run.sh" \
   "$model_dir" "${DEVICE:-cuda:0}"
 
 jq -n \
-  --arg label "$label" \
+  --arg checkpoint_label "$checkpoint_label" \
   --arg source_model "$source_model" \
   --slurpfile strict "$model_dir/plan_slack0_look1.json" \
   --slurpfile slack "$model_dir/plan_slack2_look1.json" \
-  '{label: $label, source_model: $source_model,
+  '{label: $checkpoint_label, source_model: $source_model,
     checkpoint_status: "best checkpoint from walltime-truncated training",
     strict: $strict[0], slack2: $slack[0]}' \
   > "$RUN_DIR/metrics.json"

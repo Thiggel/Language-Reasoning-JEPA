@@ -1,112 +1,67 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-18-j3-lr-screen-completion-v5",
-  "decision": "Complete the matched seed-0 ten-epoch J3 learning-rate screen after v4 registered without placing a job: use the committed short-TMPDIR evaluator to recover closed-loop planning metrics from the fully trained 1e-3, 1.4e-3, and 2e-3 checkpoints, and rerun only the genuinely incomplete 7e-4 cell. Advance the best healthy region to seed confirmation only if it improves strict success over 5e-4 and the upper/lower neighbors without collapsed state variance or effective rank; otherwise retain 1e-3 as the robust anchor and stop local LR refinement.",
-  "git_commit": "533793d72049b736efbdac2e86e5f7d4c7d4e1e1",
+  "round_id": "2026-07-18-j3-lr1e3-anchor-seed-confirmation-v2",
+  "decision": "Determine whether the bracketed seed-0 J3 optimum at learning rate 1e-3 is seed-stable enough to become the matched baseline for later dense-recursion, GAR, scale, and hierarchy decisions. Confirm only seeds 1 and 2: promote 1e-3 if strict success remains clearly above the valid 5e-4 and 1.4e-3 seed-0 neighbors with healthy state variance and effective rank; otherwise stop recipe shearing and diagnose seed sensitivity.",
+  "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "j3-lr1e3-full10-best-eval-recovery-v5",
-      "cluster": "gruenau",
+      "id": "j3-anchor-lr1e3-seed1-confirm-v2",
+      "cluster": "Lise",
       "command": [
         "bash",
-        "scripts/eval_intent_checkpoint_recovery.sh",
+        "scripts/run_intent_j3_variant_cell.sh",
         "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-18-j3-local-lr-proxy-screen/j3-lr1e3-proxy-seed-0/model",
-        "lr1e3-full10"
+        "paper_causal_j3",
+        "1",
+        "0.001",
+        "10",
+        "1000"
       ],
       "gpus": 1,
-      "walltime_minutes": 120,
-      "purpose": "Recover planning, GAR-teacher, probe, and geometry evidence from the fully completed ten-epoch 1e-3 checkpoint.",
+      "walltime_minutes": 360,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Independent seed-1 confirmation of the bracketed full-history 1e-3 J3 anchor.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
         "stdout.log",
         "stderr.log",
+        "model/metrics.csv",
+        "model/gar_teacher_audit.json",
         "model/probe_results.csv",
         "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json",
-        "model/gar_teacher_audit.json"
-      ],
-      "min_gpu_memory_mb": 30000
+        "model/plan_slack2_look1.json"
+      ]
     },
     {
-      "id": "j3-lr1p4e3-full10-best-eval-recovery-v5",
-      "cluster": "gruenau",
+      "id": "j3-anchor-lr1e3-seed2-confirm-v2",
+      "cluster": "Grete",
       "command": [
         "bash",
-        "scripts/eval_intent_checkpoint_recovery.sh",
+        "scripts/run_intent_j3_variant_cell.sh",
         "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-18-j3-local-lr-proxy-screen/j3-lr1p4e3-proxy-seed-0/model",
-        "lr1p4e3-full10"
+        "paper_causal_j3",
+        "2",
+        "0.001",
+        "10",
+        "1000"
       ],
       "gpus": 1,
-      "walltime_minutes": 120,
-      "purpose": "Recover matched closed-loop evidence from the fully completed ten-epoch 1.4e-3 checkpoint and test the upper-middle region.",
+      "walltime_minutes": 360,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Independent seed-2 confirmation of the bracketed full-history 1e-3 J3 anchor.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
         "stdout.log",
         "stderr.log",
+        "model/metrics.csv",
+        "model/gar_teacher_audit.json",
         "model/probe_results.csv",
         "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json",
-        "model/gar_teacher_audit.json"
-      ],
-      "min_gpu_memory_mb": 30000
-    },
-    {
-      "id": "j3-lr2e3-full10-best-eval-recovery-v5",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/eval_intent_checkpoint_recovery.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-18-j3-local-lr-proxy-screen/j3-lr2e3-proxy-seed-0/model",
-        "lr2e3-full10"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 120,
-      "purpose": "Recover matched closed-loop evidence from the fully completed ten-epoch 2e-3 checkpoint and test the upper stability edge.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json",
-        "model/gar_teacher_audit.json"
-      ],
-      "min_gpu_memory_mb": 30000
-    },
-    {
-      "id": "j3-lr7e4-proxy-seed-0-full-rerun-v5",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_paper_causal_short_tmp.sh",
-        "{python}",
-        "paper_causal_j3_lr7e4_proxy",
-        "0"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 150,
-      "purpose": "Rerun the 7e-4 cell through all ten epochs and evaluation because its original checkpoint stopped after epoch 8 and is not protocol-matched.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json",
-        "model/gar_teacher_audit.json"
-      ],
-      "env": {
-        "TMPDIR": "/tmp"
-      },
-      "min_gpu_memory_mb": 30000
+        "model/plan_slack2_look1.json"
+      ]
     }
   ]
 }
