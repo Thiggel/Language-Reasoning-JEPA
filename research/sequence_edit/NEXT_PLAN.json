@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-18-structured-edit-gar-breadth-pilot-wave37",
-  "decision": "Test whether information-matched training breadth repairs the candidate-set distribution shift isolated by wave36. Train only the two surviving pairwise-plus-regression GAR weights at counterfactual_k=8, holding seed, data, epochs, batch size, learning rate, and all other objectives fixed against the completed counterfactual_k=4 seed-0 checkpoints. Advance a weight to matched closed-loop planning only if its token-edit audit remains valid and its GAR ranking or advantage diagnostics improve over the corresponding k=4 checkpoint without representation collapse; if neither k=8 cell improves, reject candidate breadth alone and replace the latent-distance value target before further GAR tuning.",
+  "round_id": "2026-07-18-structured-edit-gar-breadth-retry-wave38",
+  "decision": "Wave37 was process-invalid before optimization because the new token-aligned objective mappings lacked instantiation targets and the launcher dropped all overrides after the seed. Rerun the unchanged two-cell candidate-breadth decision after regression-tested plumbing fixes. Test whether information-matched training breadth repairs the candidate-set distribution shift isolated by wave36 by training the two surviving pairwise-plus-regression GAR weights at counterfactual_k=8, holding seed, data, epochs, batch size, learning rate, and all other objectives fixed against the completed counterfactual_k=4 seed-0 checkpoints. Advance a weight to matched closed-loop planning only if its token-edit audit remains valid and its GAR ranking or advantage diagnostics improve over the corresponding k=4 checkpoint without representation collapse; if neither k=8 cell improves, reject candidate breadth alone and replace the latent-distance value target before further GAR tuning.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-gar-pairmse-k8-w01-lr1e2-seed0-wave37",
+      "id": "edit-gar-pairmse-k8-w01-lr1e2-seed0-wave38",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -33,9 +33,6 @@
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
         "model/best.pt",
         "stdout.log",
         "stderr.log"
@@ -44,7 +41,7 @@
       "min_gpu_memory_mb": 80000
     },
     {
-      "id": "edit-gar-pairmse-k8-w03-lr1e2-seed0-wave37",
+      "id": "edit-gar-pairmse-k8-w03-lr1e2-seed0-wave38",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -71,9 +68,6 @@
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
         "model/best.pt",
         "stdout.log",
         "stderr.log"

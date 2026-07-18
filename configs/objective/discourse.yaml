@@ -111,6 +111,19 @@ geo_rank:
 counterfactual_outcome:
   _target_: textjepa.objectives.CounterfactualOutcomePrediction
   weight: 0.0  # data-only control: observed alternatives, no preference labels
+token_aligned_pred:
+  _target_: textjepa.objectives.TokenAlignedPrediction
+  weight: 0.0
+token_aligned_rollout:
+  _target_: textjepa.objectives.TokenAlignedRolloutPrediction
+  weight: 0.0
+  max_depth: 4
+counterfactual_token:
+  _target_: textjepa.objectives.TokenAlignedCounterfactualPrediction
+  weight: 0.0
+counterfactual_slot:
+  _target_: textjepa.objectives.CounterfactualSlotPrediction
+  weight: 0.0
 macro_cf_dynamics:
   _target_: textjepa.objectives.MacroCounterfactualDynamics
   weight: 0.0
