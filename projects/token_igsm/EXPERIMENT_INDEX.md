@@ -9,6 +9,11 @@ See `research/hard_text/README.md`, `research/hard_text/logs/`, and the controll
   in prior shooting.
 - `2026-07-17-deterministic-target-supported-search`: current corrected target,
   rollout, calibrated-GAR, hard-support, and planner comparison cycle.
+- `2026-07-17-gar-counterfactual-budget-limit`: six completed single-seed cells;
+  pair ordering improved with K, but selection did not and all planning traces
+  were invalid. Decision: stop the K sweep and test proposal coverage.
+- `2026-07-17-gar-proposal-coverage`: next fixed-K prior/mixed/random proposal
+  comparison; no symbolic candidate information.
 
 - `2026-07-16-hierarchy-gradient-abstraction`: 12/12 fixed-span processes
   completed; scientific interpretation remains the interim current-cycle audit.

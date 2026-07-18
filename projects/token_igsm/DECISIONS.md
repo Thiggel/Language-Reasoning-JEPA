@@ -17,3 +17,6 @@
 - Treat action-advantage targets as non-symbolic only when alternatives come
   from full-vocabulary token outcomes, observed chunks, or learned support—not
   symbolic feasibility filtering.
+- Stop increasing primitive GAR counterfactual count after K=94 improved pair
+  ordering without improving selection or execution; isolate prior-only versus
+  mixed versus random proposal coverage at fixed K=32 next.

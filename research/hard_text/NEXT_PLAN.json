@@ -1,58 +1,42 @@
 {
   "schema_version": 2,
-  "round_id": "2026-07-17-gar-counterfactual-budget-limit",
   "project": "token_igsm",
-  "decision": "Does increasing distinct prior-supported counterfactual actions improve GAR value ordering and constrained planning, and where does it saturate?",
-  "git_commit": "5eb06372f1633662ca7f23e456c85e4064c99c4a",
-  "projected_gpu_hours": 15,
+  "round_id": "2026-07-17-gar-proposal-coverage",
+  "decision": "At fixed primitive counterfactual K=32, does mixed or random full-vocabulary proposal coverage improve held-out reference selection and constrained planning over prior-only proposals without harming ranking or representation health?",
+  "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "gar-rank-mse-k4-seed-0",
-      "purpose": "Rank plus calibrated MSE with four primitive alternatives and sixteen macro alternatives.",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 40000, "walltime_minutes": 150,
-      "command": ["bash","scripts/run_corrected_gar_search_cell.sh","{python}","gar-rank-mse-k4-seed-0","0","0.25","false","1","0.3","1","combined","0.3","prior","sampled","4","16","1","4","4","2000","2","12","4","16","pairwise","32"],
-      "expected_artifacts": ["model/best.pt","model/token_selection_audit.json","model/planner_interface_audit.json","metrics.json"]
+      "id": "gar-k32-prior-proposals-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "gar-k32-prior-proposals-seed-0", "0", "0.25", "false", "1", "0.3", "1", "combined", "0.3", "prior", "sampled", "4", "16", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "Matched prior-only proposal baseline at fixed primitive K=32 and macro K=16.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
     },
     {
-      "id": "gar-rank-mse-k8-seed-0",
-      "purpose": "Rank plus calibrated MSE with eight primitive alternatives.",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 40000, "walltime_minutes": 150,
-      "command": ["bash","scripts/run_corrected_gar_search_cell.sh","{python}","gar-rank-mse-k8-seed-0","0","0.25","false","1","0.3","1","combined","0.3","prior","sampled","4","16","1","4","4","2000","2","12","8","16","pairwise","32"],
-      "expected_artifacts": ["model/best.pt","model/token_selection_audit.json","model/planner_interface_audit.json","metrics.json"]
+      "id": "gar-k32-mixed-proposals-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "gar-k32-mixed-proposals-seed-0", "0", "0.25", "false", "1", "0.3", "1", "combined", "0.3", "mixed", "sampled", "4", "16", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "Test half-prior and half-random nonsymbolic proposal coverage at fixed K=32.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
     },
     {
-      "id": "gar-rank-mse-k32-seed-0",
-      "purpose": "Rank plus calibrated MSE with thirty-two primitive alternatives.",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 40000, "walltime_minutes": 150,
-      "command": ["bash","scripts/run_corrected_gar_search_cell.sh","{python}","gar-rank-mse-k32-seed-0","0","0.25","false","1","0.3","1","combined","0.3","prior","sampled","4","16","1","4","4","2000","2","6","32","16","pairwise","32"],
-      "expected_artifacts": ["model/best.pt","model/token_selection_audit.json","model/planner_interface_audit.json","metrics.json"]
-    },
-    {
-      "id": "gar-rank-mse-k64-seed-0",
-      "purpose": "Rank plus calibrated MSE with sixty-four primitive alternatives.",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 40000, "walltime_minutes": 150,
-      "command": ["bash","scripts/run_corrected_gar_search_cell.sh","{python}","gar-rank-mse-k64-seed-0","0","0.25","false","1","0.3","1","combined","0.3","prior","sampled","4","16","1","4","4","2000","2","3","64","16","pairwise","32"],
-      "expected_artifacts": ["model/best.pt","model/token_selection_audit.json","model/planner_interface_audit.json","metrics.json"]
-    },
-    {
-      "id": "gar-rank-mse-k94-seed-0",
-      "purpose": "Rank plus calibrated MSE against the complete legal primitive vocabulary.",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 40000, "walltime_minutes": 150,
-      "command": ["bash","scripts/run_corrected_gar_search_cell.sh","{python}","gar-rank-mse-k94-seed-0","0","0.25","false","1","0.3","1","combined","0.3","prior","sampled","4","16","1","4","4","2000","2","2","94","16","pairwise","32"],
-      "expected_artifacts": ["model/best.pt","model/token_selection_audit.json","model/planner_interface_audit.json","metrics.json"]
-    },
-    {
-      "id": "gar-mse-only-k94-seed-0",
-      "purpose": "Exhaustive calibrated regression without pairwise ranking.",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 40000, "walltime_minutes": 150,
-      "command": ["bash","scripts/run_corrected_gar_search_cell.sh","{python}","gar-mse-only-k94-seed-0","0","1","false","0","0.3","1","combined","0.3","prior","sampled","4","16","1","4","4","2000","2","2","94","16","pairwise","32"],
-      "expected_artifacts": ["model/best.pt","model/token_selection_audit.json","model/planner_interface_audit.json","metrics.json"]
+      "id": "gar-k32-random-proposals-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "gar-k32-random-proposals-seed-0", "0", "0.25", "false", "1", "0.3", "1", "combined", "0.3", "random", "sampled", "4", "16", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "Negative coverage control using random full-vocabulary proposals at fixed K=32.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
     }
   ]
 }

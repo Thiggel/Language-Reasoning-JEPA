@@ -2,7 +2,9 @@
 
 The project is active. Fixed-span and semantic-boundary hierarchy experiments show that higher-level prediction changes representation diagnostics, but reliable executable hierarchical planning has not yet been demonstrated. Oracle-terminal and support-constrained planning results are diagnostics, not deployable claims. The next scientific cycle must isolate abstraction from off-support planner exploitation while keeping token-level and higher-level losses information-matched.
 
-Current cycle: `research/cycles/hard_text/2026-07-17-deterministic-target-supported-search.md`.
+Current decision cycle: `research/cycles/hard_text/2026-07-17-gar-proposal-coverage.md`.
+The counterfactual-count screen saturated ranking without executable benefit;
+the next bounded question isolates proposal coverage at fixed K=32.
 
 The first distinct-state wave was scientifically confounded: its reachability
 loss compared primitive and higher-level coordinates directly. The corrected

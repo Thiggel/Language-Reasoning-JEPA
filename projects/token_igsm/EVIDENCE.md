@@ -17,3 +17,8 @@
 - Historical token-hierarchy training used stochastic base EMA targets because
   the encoder inherited dropout 0.1 and the EMA copy entered train mode. Treat
   prior drift and GAR planning conclusions as diagnostic pending correction.
+- In the deterministic-target GAR saturation screen, increasing primitive
+  alternatives from K=4 to K=94 improved terminal held-out pair accuracy from
+  0.818 to 0.902 but left reference top-1 at 0.266--0.281; all cells produced
+  zero valid sentences and solved 0/2 episodes. Candidate count alone is not
+  the executable-planning bottleneck (single seed, oracle-goal diagnostic).

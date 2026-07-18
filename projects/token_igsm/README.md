@@ -17,3 +17,5 @@ be transferred to the observed intent-phrase project without an explicit
 experiment.
 
 Latest report: [`2026-07-16 semantic control gate`](../../research/reports/token_igsm/2026-07-16-semantic-control-gate/REPORT.md).
+
+Latest compact report: [`2026-07-17 counterfactual saturation`](../../research/reports/token_igsm/2026-07-17-counterfactual-saturation/REPORT.md).
