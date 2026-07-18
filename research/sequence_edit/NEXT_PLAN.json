@@ -1,13 +1,13 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-18-structured-edit-lr-upper-wave14b",
-  "decision": "Bracket the upper learning-rate response around the healthy replicated 3e-4 recipe: retain 3e-4 if both higher cells worsen, refine the best interior cell if 5e-4 or 7e-4 wins, and extend upward only if 1e-3 remains healthy and improves closed-loop error.",
+  "round_id": "2026-07-18-structured-edit-lr-upper-alex-wave14c",
+  "decision": "On one matched Alex RTX Pro 6000 backend, bracket the healthy replicated 3e-4 recipe: retain 3e-4 if 2e-4 and 5e-4 worsen recursive error, refine above 3e-4 only if 5e-4 wins, and extend upward only if 1e-3 remains healthy and improves recursive error.",
   "git_commit": "a05b9e6f63b26729b9e4310115d125e3185339cd",
   "jobs": [
     {
-      "id": "edit-ema-18k-lr2e4-seed-0-v2",
-      "cluster": "gruenau",
+      "id": "edit-ema-18k-lr2e4-seed-0-alex",
+      "cluster": "alex",
       "command": [
         "bash",
         "scripts/run_faithful_token_edit_cell.sh",
@@ -34,11 +34,46 @@
         "stdout.log",
         "stderr.log"
       ],
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
       "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-ema-18k-lr5e4-seed-0-v2",
-      "cluster": "gruenau",
+      "id": "edit-ema-18k-lr3e4-seed-0-alex",
+      "cluster": "alex",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_ema",
+        "0",
+        "data.corruption_mode=mixed",
+        "data.fresh_per_epoch=false",
+        "data.train_size=6000",
+        "train.epochs=3",
+        "train.batch_size=8",
+        "train.lr=0.0003"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 180,
+      "purpose": "Provide a hardware-matched 3e-4 anchor for the Alex upper-rate bracket.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "metrics_mask.json",
+        "metrics_replace.json",
+        "metrics_remove.json",
+        "model/best.pt",
+        "stdout.log",
+        "stderr.log"
+      ],
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "min_gpu_memory_mb": 40000
+    },
+    {
+      "id": "edit-ema-18k-lr5e4-seed-0-alex",
+      "cluster": "alex",
       "command": [
         "bash",
         "scripts/run_faithful_token_edit_cell.sh",
@@ -54,7 +89,7 @@
       ],
       "gpus": 1,
       "walltime_minutes": 180,
-      "purpose": "Test the first upper neighbor of the replicated 3e-4 anchor.",
+      "purpose": "Test the first upper neighbor of the hardware-matched 3e-4 anchor.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -65,42 +100,13 @@
         "stdout.log",
         "stderr.log"
       ],
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
       "min_gpu_memory_mb": 40000
     },
     {
-      "id": "edit-ema-18k-lr7e4-seed-0-v2",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_ema",
-        "0",
-        "data.corruption_mode=mixed",
-        "data.fresh_per_epoch=false",
-        "data.train_size=6000",
-        "train.epochs=3",
-        "train.batch_size=8",
-        "train.lr=0.0007"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 180,
-      "purpose": "Resolve whether any improvement above 3e-4 persists toward the upper stability boundary.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
-        "model/best.pt",
-        "stdout.log",
-        "stderr.log"
-      ],
-      "min_gpu_memory_mb": 40000
-    },
-    {
-      "id": "edit-ema-18k-lr1e3-seed-0-v2",
-      "cluster": "gruenau",
+      "id": "edit-ema-18k-lr1e3-seed-0-alex",
+      "cluster": "alex",
       "command": [
         "bash",
         "scripts/run_faithful_token_edit_cell.sh",
@@ -127,6 +133,8 @@
         "stdout.log",
         "stderr.log"
       ],
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
       "min_gpu_memory_mb": 40000
     }
   ]
