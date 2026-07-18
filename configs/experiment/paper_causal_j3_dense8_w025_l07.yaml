@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+
+run_name: paper_causal_j3_dense8_w025_l07
+model:
+  dense_rollout_depth: 8
+objective:
+  dense_rollout: {weight: 0.25, horizon_discount: 0.7}
