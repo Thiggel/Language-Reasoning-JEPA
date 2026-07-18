@@ -1,27 +1,91 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-18-j3-lr1e3-anchor-seed2-optional-plots-recovery-v3",
-  "decision": "Recover only the infrastructure-invalid seed-2 confirmation of the full-history J3 learning-rate 1e-3 anchor from a snapshot where optional geometry plotting is skipped when matplotlib is unavailable. Combine this result with the already pending seed-1 job and the valid seed-0 result: promote 1e-3 only if strict success is seed-stable with healthy state variance and effective rank; otherwise stop recipe shearing and diagnose seed sensitivity. Do not duplicate seed 1 and do not reopen the decision-negative executable hierarchy branch.",
+  "round_id": "2026-07-18-j3-width-scale-lr-crosscheck-v1",
+  "decision": "Test whether J3 capacity is now the limiting factor after the seed-stable 1e-3 optimization gain. Compare a fresh seed-0 256-width control with a 512-width model under the identical full-history J3 protocol, and cross-check the larger scale at 5e-4 versus 1e-3. Promote 512 only if its best rate improves strict success by at least 0.03 over the fresh 256 control while retaining finite losses, state_std >= 0.5, state effective rank >= 64, and non-regressed slack-two success; otherwise retain 256 and move to the supported grounded-objective combination screen. Treat a material reversal between the two 512 rates as scale-specific optimization sensitivity, not evidence against capacity.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "j3-anchor-lr1e3-seed2-optional-plots-recovery-v3",
+      "id": "j3-width256-lr1e3-seed0-control-v1",
       "cluster": "Grete",
       "command": [
         "bash",
-        "scripts/run_intent_j3_variant_cell.sh",
+        "scripts/run_intent_j3_scale_cell.sh",
         "{python}",
-        "paper_causal_j3",
+        "0",
+        "256",
         "2",
+        "4",
         "0.001",
         "10",
         "1000"
       ],
       "gpus": 1,
-      "walltime_minutes": 360,
+      "walltime_minutes": 300,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Recover the seed-2 anchor confirmation after training completed but the older snapshot failed during optional matplotlib-based plotting on Grete.",
+      "purpose": "Fresh matched 256-width control on the same snapshot and backend as the scale cells.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log",
+        "model/metrics.csv",
+        "model/gar_teacher_audit.json",
+        "model/probe_results.csv",
+        "model/plan_slack0_look1.json",
+        "model/plan_slack2_look1.json"
+      ]
+    },
+    {
+      "id": "j3-width512-lr1e3-seed0-v1",
+      "cluster": "Grete",
+      "command": [
+        "bash",
+        "scripts/run_intent_j3_scale_cell.sh",
+        "{python}",
+        "0",
+        "512",
+        "2",
+        "4",
+        "0.001",
+        "10",
+        "1000"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 300,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Test a width-scaled J3 model at the confirmed small-scale learning rate.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log",
+        "model/metrics.csv",
+        "model/gar_teacher_audit.json",
+        "model/probe_results.csv",
+        "model/plan_slack0_look1.json",
+        "model/plan_slack2_look1.json"
+      ]
+    },
+    {
+      "id": "j3-width512-lr5e4-seed0-v1",
+      "cluster": "Grete",
+      "command": [
+        "bash",
+        "scripts/run_intent_j3_scale_cell.sh",
+        "{python}",
+        "0",
+        "512",
+        "2",
+        "4",
+        "0.0005",
+        "10",
+        "1000"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 300,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Scale-specific lower-learning-rate cross-check for the 512-width J3 model.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
