@@ -15,9 +15,13 @@ The project asks whether reconstruction-free latent dynamics can:
 3. produce representations that retain the information needed for planning;
 4. transfer from the controlled stylized generator to faithful iGSM.
 
-Hierarchy is not part of the paper-facing claim. Corrected hierarchical
-planning was negative and is retained as a documented limitation, not mixed
-into the flat recipe.
+Earlier shared-state hierarchy is not a positive paper-facing claim: corrected
+planning was negative.  A new, explicitly exploratory distinct-state hierarchy
+is now being tested after token-level work exposed two necessary validity
+conditions: complete low paths must be lifted into separate high coordinates,
+and causal high planning must retain its K-stride history.  Its direct
+remaining-step value labels are symbolic training supervision and are reported
+separately from label-free results.
 
 ## Current state
 
@@ -30,18 +34,21 @@ into the flat recipe.
 - Faithful action-displacement decoding and terminal-distance monotonicity are
   promising individual add-backs (`.632` and `.637` strict respectively), but
   no combined recipe has been validated.
-- Dense four-step rollout and residual prediction are negative in the current
-  causal matrix.
+- Exact dense recursive rollout, deterministic EMA targets, parameter scale,
+  GAR breadth plus advantage regression, and distinct-state hierarchy are in
+  an active J3 recipe screen; none is yet an established improvement.
 - The causal counterfactual-outcome ablation is being rerun after correcting a
   batch/time indexing bug in independent alternative-action prefixes.
 
-The immediate scientific problem is therefore not “add hierarchy.” It is to
-explain and close the causal model's action-selection gap under a frozen,
-information-matched protocol.
+The immediate scientific problem is to identify a healthy J3 optimization and
+capacity regime, then test whether dense recursion, GAR calibration, or a
+coordinate-correct hierarchy closes the action-selection gap under frozen,
+information-matched planning protocols.
 
 ## Navigation
 
 - [Current status](STATUS.md)
+- [Active weekend recipe cycle](../../research/cycles/intent_phrase/2026-07-18-weekend-recipe-search.md)
 - [Code/config/run ownership](ARTIFACTS.md)
 - [ICLR paper roadmap](PAPER_ROADMAP.md)
 - [Latest terminal-run audit report](../../research/reports/intent_phrase/2026-07-16-terminal-run-validity-audit/REPORT.md)
