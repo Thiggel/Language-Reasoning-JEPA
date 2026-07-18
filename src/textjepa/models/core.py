@@ -177,6 +177,8 @@ class LatentDynamicsCore(nn.Module):
         alt_actions: torch.Tensor | None = None,  # [B, T, K, d_action]
         preds_override: torch.Tensor | None = None,
         alt_preds_override: torch.Tensor | None = None,
+        high_states: torch.Tensor | None = None,
+        high_states_tgt: torch.Tensor | None = None,
     ) -> JEPAOutputs:
         prev_states = torch.cat([s0.unsqueeze(1), step_states[:, :-1]], dim=1)
         preds = (
@@ -194,7 +196,9 @@ class LatentDynamicsCore(nn.Module):
         hierarchy_extras = {}
         if self.macro_k and step_states.shape[1] >= self.macro_k:
             hi_preds, hi_targets, hi_mask, hierarchy_extras = self._hierarchy(
-                prev_states, actions, step_states_tgt, step_mask
+                prev_states, actions, step_states_tgt, step_mask,
+                high_states=high_states,
+                high_states_tgt=high_states_tgt,
             )
 
         extras = dict(hierarchy_extras)
@@ -220,12 +224,20 @@ class LatentDynamicsCore(nn.Module):
             )
         if hi_preds is not None:
             hi_for_value = hi_preds.detach() if self.value_detach else hi_preds
-            extras["hi_value_pred"] = self.hi_value_head(hi_for_value, s0)
+            high_initial = extras.get("high_initial_state", s0)
+            extras["hi_value_pred"] = self.hi_value_head(
+                hi_for_value, high_initial
+            )
             B = step_mask.shape[0]
             last = step_mask.sum(1).clamp(min=1) - 1
-            goal = step_states_tgt[
-                torch.arange(B, device=step_mask.device), last
-            ]
+            if high_states_tgt is not None:
+                goal = high_states_tgt[
+                    torch.arange(B, device=step_mask.device), last + 1
+                ]
+            else:
+                goal = step_states_tgt[
+                    torch.arange(B, device=step_mask.device), last
+                ]
             ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
             extras["hi_value_target"] = (
                 ln(hi_targets) - ln(goal).unsqueeze(1)
@@ -386,7 +398,12 @@ class LatentDynamicsCore(nn.Module):
         actions: torch.Tensor,
         step_states_tgt: torch.Tensor,
         step_mask: torch.Tensor,
+        high_states: torch.Tensor | None = None,
+        high_states_tgt: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict]:
+        if (high_states is None) != (high_states_tgt is None):
+            raise ValueError("online and target high-state paths must be paired")
+        distinct_high = high_states is not None
         K = self.macro_k
         B, T, d_a = actions.shape
         if getattr(self.hi_predictor, "causal_sequence", False):
@@ -401,15 +418,23 @@ class LatentDynamicsCore(nn.Module):
             windows = torch.stack(
                 [actions[:, t:t + K] for t in start_list], dim=1
             )
-            macro_states = prev_states[:, starts]
-            hi_targets = step_states_tgt[:, starts + K - 1]
+            if distinct_high:
+                macro_states = high_states[:, starts]
+                hi_targets = high_states_tgt[:, starts + K]
+            else:
+                macro_states = prev_states[:, starts]
+                hi_targets = step_states_tgt[:, starts + K - 1]
             hi_mask = step_mask[:, starts + K - 1]
         else:
             windows = actions.unfold(1, K, 1).permute(
                 0, 1, 3, 2
             )  # [B, S, K, d_a]
-            macro_states = prev_states[:, :windows.shape[1]]
-            hi_targets = step_states_tgt[:, K - 1:]
+            if distinct_high:
+                macro_states = high_states[:, :windows.shape[1]]
+                hi_targets = high_states_tgt[:, K:]
+            else:
+                macro_states = prev_states[:, :windows.shape[1]]
+                hi_targets = step_states_tgt[:, K - 1:]
             hi_mask = step_mask[:, K - 1:]
         S = windows.shape[1]
         macro, extras = self.macro_encoder.training_code(
@@ -421,11 +446,15 @@ class LatentDynamicsCore(nn.Module):
             name: value.reshape(B, S, *value.shape[1:])
             for name, value in extras.items()
         }
-        flat_windows = windows.reshape(B * S, K, d_a)
-        low_endpoint = self._rollout(
-            macro_states.reshape(B * S, -1), flat_windows
-        )[:, -1]
-        extras["hi_low_rollout_target"] = low_endpoint.reshape(B, S, -1)
+        if distinct_high:
+            extras["distinct_high_state_space"] = True
+            extras["high_initial_state"] = high_states[:, 0]
+        else:
+            flat_windows = windows.reshape(B * S, K, d_a)
+            low_endpoint = self._rollout(
+                macro_states.reshape(B * S, -1), flat_windows
+            )[:, -1]
+            extras["hi_low_rollout_target"] = low_endpoint.reshape(B, S, -1)
         if getattr(self.hi_predictor, "causal_sequence", False):
             hi_preds = self.hi_predictor(
                 macro_states, macro, hi_mask

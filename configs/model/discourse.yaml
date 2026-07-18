@@ -27,6 +27,8 @@ action_support_states: "true"  # true | all (also one-step/open-loop states)
 macro_support_scales: [3.0]
 dense_rollout_depth: 0
 high_dense_rollout_depth: 0
+distinct_high_state_space: false
+high_state_encoder_layers: 2
 value_detach: true
 dropout: 0.0
 geo_proj: false

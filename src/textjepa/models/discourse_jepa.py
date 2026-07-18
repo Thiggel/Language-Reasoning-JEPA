@@ -21,7 +21,10 @@ from textjepa.models.core import LatentDynamicsCore
 from textjepa.models.ema import EMATeacher
 from textjepa.models.layers import TokenTransformer
 from textjepa.models.outputs import JEPAOutputs
-from textjepa.models.state_model import DiscourseStateModel
+from textjepa.models.state_model import (
+    CausalLatentStateEncoder,
+    DiscourseStateModel,
+)
 
 DiscourseOutputs = JEPAOutputs  # backwards-compatible alias
 
@@ -76,6 +79,8 @@ class DiscourseJEPA(nn.Module):
         macro_support_scales: list[float] | None = None,
         dense_rollout_depth: int = 0,
         high_dense_rollout_depth: int = 0,
+        distinct_high_state_space: bool = False,
+        high_state_encoder_layers: int = 2,
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -93,6 +98,19 @@ class DiscourseJEPA(nn.Module):
         )
         self.state_model = DiscourseStateModel(
             d_model, state_layers, state_heads, ff_mult, max_chunks, dropout
+        )
+        self.distinct_high_state_space = bool(distinct_high_state_space)
+        self.high_state_encoder = (
+            CausalLatentStateEncoder(
+                d_model=d_model,
+                n_layers=high_state_encoder_layers,
+                n_heads=state_heads,
+                ff_mult=ff_mult,
+                max_steps=max_chunks + 1,
+                dropout=dropout,
+            )
+            if self.distinct_high_state_space
+            else None
         )
         self.action_encoder_kind = action_encoder_kind
         if action_encoder_kind == "pooled":
@@ -165,12 +183,19 @@ class DiscourseJEPA(nn.Module):
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
+        self.high_state_teacher = (
+            EMATeacher(self.high_state_encoder)
+            if self.high_state_encoder is not None
+            else None
+        )
         # frozen random-init copy: fixed, informative chunk-embedding targets
         # (never updated; random features provably retain surface content)
         self.chunk_anchor = EMATeacher(self.chunk_encoder)
         if freeze_encoders:
             self.chunk_encoder.requires_grad_(False)
             self.state_model.requires_grad_(False)
+            if self.high_state_encoder is not None:
+                self.high_state_encoder.requires_grad_(False)
 
     # convenience handles used by planners
     @property
@@ -214,6 +239,18 @@ class DiscourseJEPA(nn.Module):
             token_emb, action_tokens.ne(self.chunk_encoder.pad_id)
         )
 
+    def encode_high_state_path(
+        self,
+        states: torch.Tensor,
+        valid: torch.Tensor,
+        teacher: bool = False,
+    ) -> torch.Tensor:
+        """Lift a low-level state path into the distinct macro state space."""
+        if self.high_state_encoder is None:
+            raise RuntimeError("distinct high-level state encoding is disabled")
+        encoder = self.high_state_teacher if teacher else self.high_state_encoder
+        return encoder(states, valid)
+
     def _encode_alt(self, batch: dict) -> torch.Tensor | None:
         """[B, T, K, L] alternative-action tokens -> [B, T, K, d_action]."""
         if "alt_tokens" not in batch:
@@ -227,6 +264,8 @@ class DiscourseJEPA(nn.Module):
     def update_teachers(self, momentum: float) -> None:
         self.chunk_teacher.update(self.chunk_encoder, momentum)
         self.state_teacher.update(self.state_model, momentum)
+        if self.high_state_teacher is not None:
+            self.high_state_teacher.update(self.high_state_encoder, momentum)
 
     # ------------------------------------------------------------------ #
     def forward(self, batch: dict) -> JEPAOutputs:
@@ -246,6 +285,29 @@ class DiscourseJEPA(nn.Module):
         else:  # online_nosg: gradients flow through the target side too
             s0_tgt = s0
             step_states_tgt = step_states
+        high_states = high_states_tgt = None
+        if self.distinct_high_state_space:
+            path_valid = torch.cat([
+                torch.ones(
+                    batch["step_mask"].shape[0], 1,
+                    dtype=torch.bool, device=batch["step_mask"].device,
+                ),
+                batch["step_mask"],
+            ], dim=1)
+            low_path = torch.cat([s0.unsqueeze(1), step_states], dim=1)
+            high_states = self.encode_high_state_path(low_path, path_valid)
+            if self.state_target == "ema":
+                with torch.no_grad():
+                    target_path = torch.cat([
+                        s0_tgt.unsqueeze(1), step_states_tgt
+                    ], dim=1)
+                    high_states_tgt = self.encode_high_state_path(
+                        target_path, path_valid, teacher=True
+                    )
+            elif self.state_target == "online":
+                high_states_tgt = high_states.detach()
+            else:
+                high_states_tgt = high_states
         with torch.no_grad():
             action_emb_tgt = self.encode_chunks(batch["action_tokens"], teacher=True)
             if self.chunk_target == "frozen":
@@ -279,6 +341,8 @@ class DiscourseJEPA(nn.Module):
             s0, step_states, step_states_tgt, actions, action_emb_tgt,
             batch["step_mask"], step_emb_tgt=step_emb_tgt,
             alt_actions=alt_actions,
+            high_states=high_states,
+            high_states_tgt=high_states_tgt,
         )
         out.extras["s0_tgt"] = s0_tgt
         if out.hi_preds is not None:
@@ -298,9 +362,10 @@ class DiscourseJEPA(nn.Module):
                 for horizon, prediction in enumerate(
                     dense_predictions, start=1
                 ):
+                    high_initial = out.extras.get("high_initial_state", s0)
                     dense_values.append(self.core.hi_value_head(
                         prediction,
-                        s0.unsqueeze(1).expand(
+                        high_initial.unsqueeze(1).expand(
                             -1, prediction.shape[1], -1
                         ),
                     ))
@@ -385,6 +450,11 @@ class DiscourseJEPA(nn.Module):
 
     def _macro_counterfactuals(self, batch: dict, out) -> None:
         """Encode valid alternative macro chunks and their true outcomes."""
+        if out.extras.get("distinct_high_state_space", False):
+            raise RuntimeError(
+                "macro counterfactuals require a learned low-to-high outcome "
+                "lift when distinct_high_state_space is enabled"
+            )
         tokens = batch["macro_alt_action_tokens"]
         B, A, K, L = tokens.shape
         low_actions = self.encode_actions(

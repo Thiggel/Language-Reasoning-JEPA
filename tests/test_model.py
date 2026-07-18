@@ -187,6 +187,53 @@ def test_model_train_never_reactivates_ema_target_dropout(setup):
     torch.testing.assert_close(first, second)
 
 
+def test_distinct_high_state_encoder_is_causal_and_ema_stable(setup):
+    vocab, batch, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        predictor_heads=2, high_predictor_heads=2, macro_k=2,
+        distinct_high_state_space=True, high_state_encoder_layers=1,
+        dropout=0.5,
+    )
+    model.train()
+    assert model.high_state_encoder.training
+    assert not model.high_state_teacher.training
+    assert all(
+        not module.training for module in model.high_state_teacher.modules()
+    )
+
+    model.eval()
+    states = torch.randn(2, 6, 64)
+    valid = torch.ones(2, 6, dtype=torch.bool)
+    reference = model.encode_high_state_path(states, valid)
+    changed_future = states.clone()
+    changed_future[:, -1] += 10.0
+    changed = model.encode_high_state_path(changed_future, valid)
+    torch.testing.assert_close(reference[:, :-1], changed[:, :-1])
+    assert not torch.allclose(reference[:, -1], changed[:, -1])
+
+    out = model(batch)
+    assert out.extras["distinct_high_state_space"] is True
+    assert "hi_low_rollout_target" not in out.extras
+    assert out.hi_preds.shape == out.hi_targets.shape
+    low_endpoints = out.step_states_tgt[:, 1::2][
+        :, :out.hi_targets.shape[1]
+    ]
+    assert not torch.allclose(out.hi_targets, low_endpoints)
+
+    model.zero_grad(set_to_none=True)
+    HierarchyPrediction()(out, batch).backward()
+    assert any(
+        parameter.grad is not None
+        for parameter in model.high_state_encoder.parameters()
+    )
+
+    with pytest.raises(RuntimeError, match="low-to-high outcome lift"):
+        model._macro_counterfactuals({}, out)
+
+
 def test_causal_counterfactuals_use_independent_true_prefixes(setup):
     _, _, model = setup
     core = model.core.eval()
