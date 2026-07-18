@@ -214,3 +214,21 @@ D512 beats d256 with batch four (0.202 vs 0.246) and batch eight (0.230 vs
 gain to 6k presentations but again worsens recursive error. The selected
 default remains K=0 fixed-mixed EMA for rollout work; K=1 is a bounded branch
 to repair, and K>1 is rejected.
+
+## Learning-rate sensitivity decision
+
+The selected rollout anchor currently uses learning rate `3e-4`, the upper
+edge of the requested range. Sweep `{1e-6, 3e-6, 5e-6, 7e-6, 1e-5, 3e-5,
+5e-5, 7e-5, 1e-4, 3e-4}` on the fixed-mixed K=0 d256 recipe with 6k unique
+problems, three epochs, batch eight, seed zero, and unchanged warmup/cosine
+schedule. Reuse the already-completed three-seed `3e-4` anchor and train the
+other nine cells.
+
+Primary outcomes are matched and recursive token error; causal shuffled-action
+ratio, state variance/effective rank, persistence, gradients, and finite
+completion are health gates. A broad plateau means future mechanism effects
+can be judged against the LR envelope and the existing seed spread. A narrow
+optimum, adjacent-rate changes above roughly 20%, collapse, or a boundary
+optimum means every competing method requires its own LR tuning before an
+effect is attributed to architecture. This is optimization sensitivity, not
+itself random fluctuation; repeated seeds at viable rates separate the two.
