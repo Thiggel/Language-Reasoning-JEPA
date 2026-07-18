@@ -96,3 +96,24 @@ class GeoAdvantageRank(Objective):
         loss = better.float() * F.relu(self.margin + ei)
         n = better.float().sum().clamp(min=1.0)
         return loss.sum() / n
+
+
+class GeoAdvantageRegression(Objective):
+    """Calibrate GAR energy to non-symbolic EMA geometric progress.
+
+    The target is the candidate outcome's goal distance minus the anchor
+    state's goal distance. It contains no remaining-step or relevance label.
+    """
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        target = out.extras.get("ga_advantage")
+        energy = out.extras.get("ga_energy")
+        valid = out.extras.get("ga_valid")
+        if target is None or energy is None or valid is None:
+            return out.step_states.sum() * 0.0
+        valid = valid & torch.isfinite(target)
+        squared_error = (energy - target.detach()).square()
+        return (
+            squared_error.masked_fill(~valid, 0.0).sum()
+            / valid.float().sum().clamp(min=1.0)
+        )

@@ -464,7 +464,7 @@ def test_action_feasibility_head_scores_all_problem_actions(setup):
 
 
 def test_multistep_geometric_rollout_ranking(setup):
-    from textjepa.objectives import GeoAdvantageRank
+    from textjepa.objectives import GeoAdvantageRank, GeoAdvantageRegression
 
     vocab, _, _ = setup
     ds = IGSMDataset(
@@ -480,11 +480,38 @@ def test_multistep_geometric_rollout_ranking(setup):
     )
     out = model(batch)
     assert out.extras["ga_label"].shape == (4, 3)
+    torch.testing.assert_close(
+        out.extras["ga_advantage"],
+        out.extras["ga_label"]
+        - out.extras["ga_baseline_label"].unsqueeze(1),
+    )
     assert out.extras["ga_rollout_distance"].shape == (4, 3, 2)
-    loss = GeoAdvantageRank()(out, batch)
+    loss = GeoAdvantageRank()(out, batch) + GeoAdvantageRegression()(out, batch)
     assert torch.isfinite(loss) and loss >= 0
     loss.backward()
     assert any(p.grad is not None for p in model.core.value_head.parameters())
+
+
+def test_geometric_advantage_regression_is_exact_at_target(setup):
+    from textjepa.objectives import GeoAdvantageRegression
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(vocab, size=4, seed=31, geo_rank_k=2)
+    batch = collate([ds[i] for i in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        value_detach=False,
+    )
+    out = model(batch)
+    target = out.extras["ga_advantage"].detach()
+    energy = target.clone().requires_grad_(True)
+    out.extras["ga_energy"] = energy
+    loss = GeoAdvantageRegression()(out, batch)
+    torch.testing.assert_close(loss, torch.zeros_like(loss))
+    loss.backward()
+    torch.testing.assert_close(energy.grad, torch.zeros_like(energy))
 
 
 def test_geometry_greedy_rollout_ranking(setup):

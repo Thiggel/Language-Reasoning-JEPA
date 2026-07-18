@@ -236,13 +236,15 @@ class DiscourseJEPA(nn.Module):
         )
         if self.state_target == "ema":
             with torch.no_grad():
-                _, step_states_tgt = self.encode_states(
+                s0_tgt, step_states_tgt = self.encode_states(
                     batch["prompt_tokens"], batch["prompt_mask"],
                     batch["step_tokens"], batch["step_mask"], teacher=True,
                 )
         elif self.state_target == "online":
+            s0_tgt = s0.detach()
             step_states_tgt = step_states.detach()
         else:  # online_nosg: gradients flow through the target side too
+            s0_tgt = s0
             step_states_tgt = step_states
         with torch.no_grad():
             action_emb_tgt = self.encode_chunks(batch["action_tokens"], teacher=True)
@@ -278,6 +280,7 @@ class DiscourseJEPA(nn.Module):
             batch["step_mask"], step_emb_tgt=step_emb_tgt,
             alt_actions=alt_actions,
         )
+        out.extras["s0_tgt"] = s0_tgt
         if out.hi_preds is not None:
             K = self.core.macro_k
             if getattr(self.core.hi_predictor, "causal_sequence", False):
@@ -609,6 +612,17 @@ class DiscourseJEPA(nn.Module):
         out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
         out.extras["ga_label"] = d
         out.extras["ga_valid"] = candidate_valid
+        target_prev = torch.cat([
+            out.extras["s0_tgt"].unsqueeze(1),
+            out.step_states_tgt[:, :-1],
+        ], dim=1)[bidx, t]
+        baseline_distance = (
+            ln(target_prev) - ln(goal)
+        ).abs().mean(-1)
+        out.extras["ga_baseline_label"] = baseline_distance
+        # Cost advantage relative to the same state's pre-action EMA geometry.
+        # Negative means that the candidate moves closer to the terminal goal.
+        out.extras["ga_advantage"] = d - baseline_distance.unsqueeze(1)
 
     @torch.no_grad()
     def _greedy_geo_labels(
