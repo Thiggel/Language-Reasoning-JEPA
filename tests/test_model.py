@@ -135,6 +135,58 @@ def test_causal_rollout_retains_observed_prefix(setup):
     assert not torch.allclose(rollout[:, 0], changed_rollout[:, 0])
 
 
+def test_dense_rollout_recursively_shifts_predicted_sequence(setup):
+    """Every dense horizon consumes the preceding predicted latent stream."""
+    vocab, batch, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        macro_k=0, dense_rollout_depth=3, dropout=0.0,
+    ).eval()
+    with torch.no_grad():
+        out = model(batch)
+    predictions = out.extras["dense_rollout_predictions"]
+    targets = out.extras["dense_rollout_targets"]
+    masks = out.extras["dense_rollout_masks"]
+
+    torch.testing.assert_close(predictions[0], out.preds)
+    for horizon in range(1, len(predictions)):
+        expected = model.core.predictor(
+            predictions[horizon - 1][:, :-1],
+            out.actions[:, horizon:],
+            out.step_mask[:, horizon:],
+        )
+        torch.testing.assert_close(predictions[horizon], expected)
+        torch.testing.assert_close(
+            targets[horizon], out.step_states_tgt[:, horizon:]
+        )
+        torch.testing.assert_close(masks[horizon], out.step_mask[:, horizon:])
+
+
+def test_model_train_never_reactivates_ema_target_dropout(setup):
+    vocab, batch, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        dropout=0.8,
+    )
+    model.train()
+
+    assert model.chunk_encoder.training
+    assert model.state_model.training
+    for teacher in (model.chunk_teacher, model.state_teacher):
+        assert not teacher.training
+        assert all(not module.training for module in teacher.modules())
+
+    tokens = batch["step_tokens"][:2]
+    with torch.no_grad():
+        first = model.encode_chunks(tokens, teacher=True)
+        second = model.encode_chunks(tokens, teacher=True)
+    torch.testing.assert_close(first, second)
+
+
 def test_causal_counterfactuals_use_independent_true_prefixes(setup):
     _, _, model = setup
     core = model.core.eval()

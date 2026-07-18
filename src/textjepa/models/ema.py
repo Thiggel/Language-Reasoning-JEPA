@@ -13,6 +13,13 @@ class EMATeacher(nn.Module):
         super().__init__()
         self.module = copy.deepcopy(online)
         self.module.requires_grad_(False)
+        self.module.eval()
+
+    def train(self, mode: bool = True):
+        """Keep EMA targets deterministic under recursive parent training."""
+        super().train(False)
+        self.module.eval()
+        return self
 
     @torch.no_grad()
     def update(self, online: nn.Module, momentum: float) -> None:
@@ -20,6 +27,7 @@ class EMATeacher(nn.Module):
             pt.lerp_(po, 1.0 - momentum)
         for bt, bo in zip(self.module.buffers(), online.buffers()):
             bt.copy_(bo)
+        self.module.eval()
 
     def forward(self, *args, **kwargs):
         return self.module(*args, **kwargs)
