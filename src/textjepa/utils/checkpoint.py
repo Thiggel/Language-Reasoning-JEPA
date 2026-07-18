@@ -97,6 +97,10 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             max_edge=d.max_edge, op_range=tuple(d.op_range),
             min_edits=d.min_edits, max_edits=d.max_edits,
             counterfactual_k=d.get("counterfactual_k", 0),
+            proposal_pool_k=d.get("proposal_pool_k", 0),
+            proposal_token_pool=d.get(
+                "proposal_token_pool", "current_buffer"
+            ),
             counterfactual_source=d.get(
                 "counterfactual_source", "uniform_local"
             ),
@@ -107,6 +111,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             ),
             curriculum_epochs=d.get("curriculum_epochs", 3),
             fresh_per_epoch=d.get("fresh_per_epoch", False),
+            gar_teacher=d.get("gar_teacher", "latent_distance"),
         )
     if d.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import FaithfulDataset

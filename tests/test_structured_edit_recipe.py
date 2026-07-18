@@ -10,6 +10,9 @@ from textjepa.data.faithful_token_edits import (
     MASK_TOKEN,
     faithful_token_edit_vocab,
 )
+from textjepa.data.token_edit_distance import (
+    boundary_token_edit_distance, exact_one_step_advantage,
+)
 from textjepa.models.edit_jepa import EditJEPA
 from textjepa.models.ema import EMATeacher
 from textjepa.models.predictor import TokenAlignedEditPredictor
@@ -43,6 +46,61 @@ def test_gar_pairwise_loss_rewards_correct_same_state_ordering():
         margin=0.1, label_gap=0.001,
     )
     assert objective(correct, {}) < objective(reversed_order, {})
+
+
+def test_exact_token_edit_teacher_preserves_boundaries():
+    assert boundary_token_edit_distance([[1], [2]], [[1, 2]]) == 1
+    assert exact_one_step_advantage(
+        [[1, 9], [2]], [[1], [2]], [[1], [2]]
+    ) == 1
+
+
+def test_exact_token_edit_gar_targets_expert_and_counterfactual_actions():
+    vocab = faithful_token_edit_vocab()
+    default_item = FaithfulTokenEditDataset(
+        vocab, size=1, seed=39, min_edits=4, max_edits=4,
+    )[0]
+    assert "gar_token_edit_target" not in default_item
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=2, seed=39, min_edits=4, max_edits=4,
+        corruption_mode="mixed", counterfactual_k=3,
+        counterfactual_source="deployable_mixed",
+        gar_teacher="token_edit_distance",
+    )
+    item = dataset[0]
+    target = item["buffers"][-1]
+    assert item["gar_token_edit_target"] == [
+        exact_one_step_advantage(before, after, target)
+        for before, after in zip(item["buffers"], item["buffers"][1:])
+    ]
+    assert item["gar_alt_token_edit_target"] == [
+        [exact_one_step_advantage(before, outcome, target) for outcome in outcomes]
+        for before, outcomes in zip(item["buffers"], item["alt_buffers"])
+    ]
+    batch = collate_edits([dataset[0], dataset[1]], vocab.pad_id)
+    assert batch["gar_token_edit_target"].shape == batch["step_mask"].shape
+    assert batch["gar_alt_token_edit_target"].shape == batch["alt_valid"].shape
+
+    out = SimpleNamespace(
+        preds=torch.zeros(1), step_mask=batch["step_mask"], extras={
+            "gar_action_value": torch.zeros_like(
+                batch["gar_token_edit_target"], dtype=torch.float
+            ),
+            "gar_action_target": torch.full_like(
+                batch["gar_token_edit_target"], 999, dtype=torch.float
+            ),
+            "gar_alt_action_value": torch.zeros_like(
+                batch["gar_alt_token_edit_target"], dtype=torch.float
+            ),
+            "gar_alt_action_target": torch.full_like(
+                batch["gar_alt_token_edit_target"], 999, dtype=torch.float
+            ),
+            "gar_alt_action_valid": batch["alt_valid"],
+        },
+    )
+    loss = GoalAdvantageDistill(teacher="token_edit_distance")(out, batch)
+    assert torch.isfinite(loss)
+    assert loss < 2.0  # synthetic batch target overrides latent target 999
 
 
 def _dataset(mode: str):

@@ -57,25 +57,54 @@ class GoalAdvantageDistill(Objective):
         pairwise_weight: float = 0.0,
         margin: float = 0.5,
         label_gap: float = 0.001,
+        teacher: str = "latent_distance",
     ):
         super().__init__()
         self.regression_weight = float(regression_weight)
         self.pairwise_weight = float(pairwise_weight)
         self.margin = float(margin)
         self.label_gap = float(label_gap)
+        self.teacher = str(teacher)
+        if self.teacher not in {"latent_distance", "token_edit_distance"}:
+            raise ValueError(f"unknown GAR teacher: {self.teacher}")
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         prediction = out.extras.get("gar_action_value")
         if prediction is None:
             return out.preds.sum() * 0.0
-        target = out.extras["gar_action_target"]
+        target = (
+            batch["gar_token_edit_target"].to(prediction.dtype)
+            if self.teacher == "token_edit_distance"
+            else out.extras["gar_action_target"]
+        )
+        if self.teacher == "token_edit_distance":
+            out.extras[
+                "gar_terminal_privileged_token_edit_target"
+            ] = target.detach()
         error = F.smooth_l1_loss(prediction, target, reduction="none")
         expert = masked_mean(error, out.step_mask.float())
         alt_prediction = out.extras.get("gar_alt_action_value")
         if alt_prediction is None:
             return self.regression_weight * expert
+        if self.teacher == "token_edit_distance":
+            if "adaptive_selected_indices" in out.extras:
+                # The broad pool is target-independent. Gather privileged
+                # exact labels only after learned top-K selection so neither
+                # selection nor model inputs can inspect terminal quality.
+                alt_target = batch["gar_proposal_token_edit_target"].gather(
+                    -1, out.extras["adaptive_selected_indices"]
+                ).to(alt_prediction.dtype)
+            else:
+                alt_target = batch["gar_alt_token_edit_target"].to(
+                    alt_prediction.dtype
+                )
+            out.extras[
+                "gar_alt_terminal_privileged_token_edit_target"
+            ] = alt_target.detach()
+        else:
+            alt_target = out.extras["gar_alt_action_target"]
         alt_error = F.smooth_l1_loss(
-            alt_prediction, out.extras["gar_alt_action_target"], reduction="none"
+            alt_prediction, alt_target, reduction="none"
         )
         alternatives = masked_mean(
             alt_error, out.extras["gar_alt_action_valid"].float()
@@ -89,7 +118,7 @@ class GoalAdvantageDistill(Objective):
             [prediction.unsqueeze(-1), alt_prediction], dim=-1
         )
         targets = torch.cat([
-            target.unsqueeze(-1), out.extras["gar_alt_action_target"]
+            target.unsqueeze(-1), alt_target
         ], dim=-1)
         valid = torch.cat([
             out.step_mask.unsqueeze(-1),

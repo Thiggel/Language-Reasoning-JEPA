@@ -11,6 +11,8 @@ model:
   macro_k: 0
   observed_action_ldad: false
   gar_horizon: 1
+  selected_k: 0
+  proposal_selection: hard
 data:
   train_size: 2000
   val_size: 512

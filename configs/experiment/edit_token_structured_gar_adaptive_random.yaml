@@ -1,0 +1,6 @@
+# @package _global_
+# Matched target-independent random-selection control for adaptive hard GAR.
+defaults: [edit_token_structured_gar_adaptive_hard, _self_]
+run_name: edit_token_structured_gar_adaptive_random
+model:
+  proposal_selection: random

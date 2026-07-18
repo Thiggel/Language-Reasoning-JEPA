@@ -15,7 +15,12 @@ max_edits: 16
 # Exact mechanically executed alternatives from the current buffer only.
 # They carry outcome buffers but no target-relative quality label.
 counterfactual_k: 0
+# Opt-in broad target-independent pool for adaptive GAR hard-negative mining.
+# The model scores all actions cheaply and executes/encodes only selected_k.
+proposal_pool_k: 0
+proposal_token_pool: current_buffer  # current_buffer | prompt_plus_current
 counterfactual_source: uniform_local
+gar_teacher: latent_distance
 corruption_mode: mixed  # mixed | mask | replace | remove | curriculum
 curriculum_epochs: 3
 # Compatibility fields unused by the text-only corruption process.

@@ -1,0 +1,13 @@
+# @package _global_
+# Target-independent broad current-buffer proposals are ranked by learned GAR.
+# Only the top predicted actions are mechanically predicted and EMA-encoded.
+defaults: [edit_token_structured_ema_gar_h1, _self_]
+run_name: edit_token_structured_gar_adaptive_hard
+data:
+  counterfactual_k: 0
+  proposal_pool_k: 64
+  proposal_token_pool: current_buffer
+  counterfactual_source: deployable_mixed
+model:
+  selected_k: 4
+  proposal_selection: hard

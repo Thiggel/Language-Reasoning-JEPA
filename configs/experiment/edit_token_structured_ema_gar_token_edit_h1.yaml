@@ -1,0 +1,12 @@
+# @package _global_
+# Explicit terminal-privileged synthetic control: exact one-step reduction in
+# boundary-preserving token Levenshtein distance. V still receives only (s,a).
+defaults: [edit_token_structured_ema_gar_h1, _self_]
+run_name: edit_token_structured_ema_gar_token_edit_h1
+data:
+  gar_teacher: token_edit_distance
+  counterfactual_source: deployable_mixed
+objective:
+  gar_action_value:
+    weight: 1.0
+    teacher: token_edit_distance

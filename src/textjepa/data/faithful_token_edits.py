@@ -13,6 +13,7 @@ from torch.utils.data import Dataset
 
 from textjepa.data.edits.dataset import collate_edits
 from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
+from textjepa.data.token_edit_distance import exact_one_step_advantages
 from textjepa.data.vocab import Vocab
 
 
@@ -94,10 +95,12 @@ def _render_action(
 def _counterfactual_action(
     buffer: list[list[int]], rng: random.Random, source: str, candidate: int,
     operation_order: tuple[str, ...] | None = None,
+    token_pool: list[int] | None = None,
 ) -> tuple[str, int, int | None]:
     """Sample an unlabeled, mechanically executable edit from observed text."""
     token_pool = list(dict.fromkeys(
-        token for sentence in buffer for token in sentence
+        token_pool if token_pool is not None
+        else (token for sentence in buffer for token in sentence)
     ))
     replaceable = []
     deletable = []
@@ -105,7 +108,12 @@ def _counterfactual_action(
     for sentence in buffer:
         replaceable.extend(range(start, start + len(sentence)))
         if len(sentence) > 1:
-            deletable.extend(range(start, start + len(sentence)))
+            stop = (
+                start + len(sentence) - 1
+                if source == "deployable_mixed"
+                else start + len(sentence)
+            )
+            deletable.extend(range(start, stop))
         start += len(sentence)
     valid = ["insert"]
     if len(token_pool) > 1 and replaceable:
@@ -144,25 +152,48 @@ def _counterfactual_exclusions(
     return set() if source == "deployable_mixed" else {expert}
 
 
+def _proposal_tokens(
+    prompt: list[list[int]], buffer: list[list[int]], source: str
+) -> list[int]:
+    """Observed token vocabulary matching deployment-time planner pools."""
+    tokens = []
+    if source == "prompt_plus_current":
+        tokens.extend(token for sentence in prompt for token in sentence)
+    elif source != "current_buffer":
+        raise ValueError(f"unknown proposal_token_pool: {source}")
+    tokens.extend(token for sentence in buffer for token in sentence)
+    return list(dict.fromkeys(tokens))
+
+
 class FaithfulTokenEditDataset(Dataset):
     """Official iGSM prompt plus a generically corrupted solution buffer."""
 
     def __init__(self, vocab: Vocab, size: int, seed: int, max_op: int = 21,
                  max_edge: int = 28, op_range=(8, 21), min_edits: int = 6,
                  max_edits: int = 16, counterfactual_k: int = 0,
+                 proposal_pool_k: int = 0,
+                 proposal_token_pool: str = "current_buffer",
                  counterfactual_source: str = "uniform_local",
                  corruption_mode: str = "mixed", curriculum_epochs: int = 3,
                  fresh_per_epoch: bool = False,
+                 gar_teacher: str = "latent_distance",
                  **_):
         self.vocab = vocab
         self.seed = seed
         self.min_edits = int(min_edits)
         self.max_edits = int(max_edits)
         self.counterfactual_k = max(0, int(counterfactual_k))
+        self.proposal_pool_k = max(0, int(proposal_pool_k))
+        self.proposal_token_pool = str(proposal_token_pool)
+        if self.counterfactual_k and self.proposal_pool_k:
+            raise ValueError(
+                "counterfactual_k and proposal_pool_k are mutually exclusive"
+            )
         self.counterfactual_source = str(counterfactual_source)
         self.corruption_mode = str(corruption_mode)
         self.curriculum_epochs = max(1, int(curriculum_epochs))
         self.fresh_per_epoch = bool(fresh_per_epoch)
+        self.gar_teacher = str(gar_teacher)
         self.epoch = 0
         if self.corruption_mode not in {
             "mixed", "mask", "replace", "remove", "curriculum"
@@ -174,6 +205,14 @@ class FaithfulTokenEditDataset(Dataset):
             raise ValueError(
                 f"unknown counterfactual_source: {self.counterfactual_source}"
             )
+        if self.proposal_token_pool not in {
+            "current_buffer", "prompt_plus_current"
+        }:
+            raise ValueError(
+                f"unknown proposal_token_pool: {self.proposal_token_pool}"
+            )
+        if self.gar_teacher not in {"latent_distance", "token_edit_distance"}:
+            raise ValueError(f"unknown gar_teacher: {self.gar_teacher}")
         self.source = FaithfulDataset(
             vocab, size=size, seed=seed, max_op=max_op, max_edge=max_edge,
             op_range=tuple(op_range), distractor_prob=0.0,
@@ -276,13 +315,25 @@ class FaithfulTokenEditDataset(Dataset):
         alt_ops: list[list[int]] = []
         alt_positions: list[list[int]] = []
         alt_content_tokens: list[list[int]] = []
+        gar_targets: list[int] = []
+        gar_alt_targets: list[list[int]] = []
+        gar_proposal_targets: list[list[int]] = []
+        sampled_k = self.proposal_pool_k or self.counterfactual_k
+        sampled_source = (
+            "deployable_mixed" if self.proposal_pool_k
+            else self.counterfactual_source
+        )
         for step, action in enumerate(repairs):
-            if self.counterfactual_k:
+            if sampled_k:
                 # Separate keyed streams make alternatives deterministic and
                 # prefix-stable without perturbing expert corruption/repair.
                 alt_rng = random.Random(
                     f"faithful-token-edit-cf:{self.seed}:{index}:{step}:"
-                    f"{self.counterfactual_source}"
+                    f"{sampled_source}"
+                    + (
+                        f":{self.proposal_token_pool}"
+                        if self.proposal_pool_k else ""
+                    )
                 )
                 step_actions = []
                 step_buffers = []
@@ -294,19 +345,25 @@ class FaithfulTokenEditDataset(Dataset):
                 # deployment-feasible source must not consult that
                 # target-derived action when defining its candidate set.
                 sampled = _counterfactual_exclusions(
-                    self.counterfactual_source, action
+                    sampled_source, action
                 )
                 operation_order = None
-                if self.counterfactual_source == "deployable_mixed":
+                if sampled_source == "deployable_mixed":
                     base = ("replace", "insert", "delete")
                     offset = (index + step) % len(base)
                     operation_order = base[offset:] + base[:offset]
                 attempts = 0
-                while len(step_actions) < self.counterfactual_k:
+                proposal_tokens = None
+                if self.proposal_pool_k:
+                    proposal_tokens = _proposal_tokens(
+                        prompt, current, self.proposal_token_pool
+                    )
+                while len(step_actions) < sampled_k:
                     candidate = len(step_actions)
                     alternative = _counterfactual_action(
-                        current, alt_rng, self.counterfactual_source, candidate,
+                        current, alt_rng, sampled_source, candidate,
                         operation_order=operation_order,
+                        token_pool=proposal_tokens,
                     )
                     attempts += 1
                     if alternative in sampled:
@@ -346,6 +403,19 @@ class FaithfulTokenEditDataset(Dataset):
             )
             _apply(current, action)
             buffers.append([list(sentence) for sentence in current])
+            if self.gar_teacher == "token_edit_distance":
+                outcomes = [buffers[-1]]
+                if sampled_k:
+                    outcomes.extend(step_buffers)
+                advantages = exact_one_step_advantages(
+                    buffers[-2], outcomes, target,
+                    max_distance=len(repairs) - step,
+                )
+                gar_targets.append(advantages[0])
+                if self.counterfactual_k:
+                    gar_alt_targets.append(advantages[1:])
+                elif self.proposal_pool_k:
+                    gar_proposal_targets.append(advantages[1:])
             remaining.append(len(repairs) - step - 1)
             before = buffers[-2]
             changed.append(next(
@@ -373,15 +443,22 @@ class FaithfulTokenEditDataset(Dataset):
             "changed": changed,
             "defect_masks": [[] for _ in repairs],
         }
-        if self.counterfactual_k:
+        if sampled_k:
             # Outcomes are deliberately unlabeled: no target-relative
             # remaining-edit, defect, preference, or quality fields.
-            out["alt_actions"] = alt_actions
-            out["alt_buffers"] = alt_buffers
-            out["alt_changed"] = alt_changed
-            out["alt_op"] = alt_ops
-            out["alt_edit_position"] = alt_positions
-            out["alt_edit_content_token"] = alt_content_tokens
+            prefix = "proposal" if self.proposal_pool_k else "alt"
+            out[f"{prefix}_actions"] = alt_actions
+            out[f"{prefix}_buffers"] = alt_buffers
+            out[f"{prefix}_changed"] = alt_changed
+            out[f"{prefix}_op"] = alt_ops
+            out[f"{prefix}_edit_position"] = alt_positions
+            out[f"{prefix}_edit_content_token"] = alt_content_tokens
+        if self.gar_teacher == "token_edit_distance":
+            out["gar_token_edit_target"] = gar_targets
+            if self.counterfactual_k:
+                out["gar_alt_token_edit_target"] = gar_alt_targets
+            elif self.proposal_pool_k:
+                out["gar_proposal_token_edit_target"] = gar_proposal_targets
         return out
 
 

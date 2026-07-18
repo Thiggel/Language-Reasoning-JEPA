@@ -108,6 +108,8 @@ class EditJEPA(nn.Module):
         token_relative_radius: int = 32,
         counterfactual_encode_chunk_states: int = 64,
         gar_horizon: int = 1,
+        selected_k: int = 0,
+        proposal_selection: str = "hard",
         ldad_decoder_layers: int = 2,
         ldad_max_len: int = 12,
     ):
@@ -118,6 +120,12 @@ class EditJEPA(nn.Module):
             1, int(counterfactual_encode_chunk_states)
         )
         self.gar_horizon = max(1, int(gar_horizon))
+        self.selected_k = max(0, int(selected_k))
+        self.proposal_selection = str(proposal_selection)
+        if self.proposal_selection not in {"hard", "random"}:
+            raise ValueError(
+                f"unknown proposal_selection: {self.proposal_selection}"
+            )
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
             ff_mult, max_chunk_len, dropout,
@@ -425,6 +433,158 @@ class EditJEPA(nn.Module):
             out.extras["slot_tgt"] = self._slot_tgt
         return out
 
+    @staticmethod
+    def select_adaptive_candidates(
+        scores: torch.Tensor, valid: torch.Tensor, selected_k: int
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Select predicted-high actions without consulting outcomes or goals."""
+        if selected_k < 1:
+            raise ValueError("selected_k must be positive for adaptive proposals")
+        count = min(int(selected_k), scores.shape[-1])
+        masked = scores.masked_fill(~valid, torch.finfo(scores.dtype).min)
+        indices = masked.topk(count, dim=-1).indices
+        return indices, valid.gather(-1, indices)
+
+    @staticmethod
+    def proposal_ranking_scores(
+        gar_scores: torch.Tensor, selection: str,
+        example_indices: torch.Tensor,
+    ) -> torch.Tensor:
+        """Hard GAR scores or deterministic target-independent random ranks."""
+        if selection == "hard":
+            return gar_scores
+        if selection != "random":
+            raise ValueError(f"unknown proposal_selection: {selection}")
+        B, T, P = gar_scores.shape
+        example = example_indices.to(
+            device=gar_scores.device, dtype=torch.int64
+        ).reshape(B, 1, 1)
+        step = torch.arange(T, device=gar_scores.device, dtype=torch.int64)[
+            None, :, None
+        ]
+        candidate = torch.arange(
+            P, device=gar_scores.device, dtype=torch.int64
+        )[None, None, :]
+        hashed = (
+            example * 73_856_093 + step * 19_349_663
+            + candidate * 83_492_791 + 12_345
+        ).remainder(2_147_483_647)
+        return hashed.to(gar_scores.dtype) / 2_147_483_647
+
+    def _adaptive_structured_candidates(
+        self, out, batch: dict, prompt_emb: torch.Tensor,
+        token_states: torch.Tensor, token_mask: torch.Tensor,
+        pooled_states: torch.Tensor,
+    ) -> None:
+        """Mine broad GAR proposals, then execute only predicted-hard top K."""
+        if self.selected_k < 1:
+            raise ValueError(
+                "proposal_pool_k data requires model.selected_k > 0"
+            )
+        B, T, P = batch["proposal_op"].shape
+        # An insertion needs N+1 capacity even when the current example is the
+        # longest sequence in its batch.  The extra masked slot does not alter
+        # the pooled state or action context for non-insert operations.
+        current = torch.nn.functional.pad(
+            token_states[:, :-1], (0, 0, 0, 1)
+        )
+        current_mask = torch.nn.functional.pad(
+            token_mask[:, :-1], (0, 1), value=False
+        )
+        broad_valid = batch["proposal_valid"] & out.step_mask.unsqueeze(-1)
+        with torch.no_grad():
+            broad_content = self.chunk_encoder.tok(
+                batch["proposal_edit_content_token"]
+            )
+            broad_action = self.token_pred.encode_action(
+                current.unsqueeze(2).expand(-1, -1, P, -1, -1).reshape(
+                    B * T * P, current.shape[-2], current.shape[-1]
+                ),
+                current_mask.unsqueeze(2).expand(-1, -1, P, -1).reshape(
+                    B * T * P, current_mask.shape[-1]
+                ),
+                batch["proposal_op"].reshape(-1),
+                batch["proposal_edit_position"].reshape(-1),
+                broad_content.reshape(B * T * P, -1),
+            ).reshape(B, T, P, -1)
+            broad_score = self.gar_head(torch.cat([
+                pooled_states[:, :-1].unsqueeze(2).expand(-1, -1, P, -1),
+                broad_action,
+            ], dim=-1)).squeeze(-1)
+            ranking_score = self.proposal_ranking_scores(
+                broad_score, self.proposal_selection, batch["index"]
+            )
+            selected, selected_valid = self.select_adaptive_candidates(
+                ranking_score, broad_valid, self.selected_k
+            )
+        K = selected.shape[-1]
+
+        def gather(values: torch.Tensor) -> torch.Tensor:
+            tail = values.shape[3:]
+            index = selected.reshape(B, T, K, *([1] * len(tail))).expand(
+                B, T, K, *tail
+            )
+            return values.gather(2, index)
+
+        operations = gather(batch["proposal_op"])
+        positions = gather(batch["proposal_edit_position"])
+        content_ids = gather(batch["proposal_edit_content_token"])
+        content = self.chunk_encoder.tok(content_ids)
+        selected_current = current.unsqueeze(2).expand(
+            -1, -1, K, -1, -1
+        )
+        selected_mask = current_mask.unsqueeze(2).expand(-1, -1, K, -1)
+        selected_prompt = prompt_emb[:, None, None].expand(-1, T, K, -1)
+        prediction, prediction_mask, actions = self.token_pred(
+            selected_current.reshape(B * T * K, current.shape[-2], current.shape[-1]),
+            selected_mask.reshape(B * T * K, current_mask.shape[-1]),
+            operations.reshape(-1), positions.reshape(-1),
+            content.reshape(B * T * K, -1),
+            selected_prompt.reshape(B * T * K, -1),
+            return_action=True,
+        )
+        prediction = prediction.reshape(B, T, K, prediction.shape[-2], -1)
+        prediction_mask = prediction_mask.reshape(B, T, K, -1)
+        actions = actions.reshape(B, T, K, -1)
+
+        outcome_tokens = gather(batch["proposal_buffer_tokens"])
+        outcome_mask = gather(batch["proposal_buffer_mask"])
+        C, L = outcome_tokens.shape[-2:]
+        with torch.no_grad():
+            target, target_mask = self.encode_token_buffers_chunked(
+                outcome_tokens.reshape(B, T * K, C, L), mode="teacher"
+            )
+        target = target.reshape(B, T, K, target.shape[-2], target.shape[-1])
+        target_mask = target_mask.reshape(B, T, K, -1)
+        width = max(prediction.shape[-2], target.shape[-2])
+        if prediction.shape[-2] < width:
+            prediction = torch.nn.functional.pad(
+                prediction, (0, 0, 0, width - prediction.shape[-2])
+            )
+            prediction_mask = torch.nn.functional.pad(
+                prediction_mask, (0, width - prediction_mask.shape[-1])
+            )
+        if target.shape[-2] < width:
+            target = torch.nn.functional.pad(
+                target, (0, 0, 0, width - target.shape[-2])
+            )
+            target_mask = torch.nn.functional.pad(
+                target_mask, (0, width - target_mask.shape[-1])
+            )
+        out.extras.update({
+            "adaptive_proposal_scores": broad_score,
+            "adaptive_proposal_ranking_scores": ranking_score,
+            "adaptive_proposal_selection": self.proposal_selection,
+            "adaptive_selected_indices": selected,
+            "adaptive_selected_valid": selected_valid,
+            "cf_token_pred": prediction,
+            "cf_token_pred_mask": prediction_mask,
+            "cf_token_tgt": target.detach(),
+            "cf_token_tgt_mask": target_mask,
+            "cf_token_valid": selected_valid,
+            "cf_structured_actions": actions,
+        })
+
     def _forward_token_aligned(self, batch: dict) -> JEPAOutputs:
         prompt_chunks = self.encode_chunks(batch["prompt_tokens"])
         prompt_weight = batch["prompt_mask"].unsqueeze(-1).to(prompt_chunks.dtype)
@@ -462,7 +622,11 @@ class EditJEPA(nn.Module):
             "token_targets": token_targets[:, 1:].detach(),
             "token_target_mask": target_mask[:, 1:],
         })
-        if "alt_op" in batch:
+        if "proposal_op" in batch:
+            self._adaptive_structured_candidates(
+                out, batch, prompt_emb, token_states, token_mask, states
+            )
+        elif "alt_op" in batch:
             B, T, K = batch["alt_op"].shape
             current = token_states[:, :-1].unsqueeze(2).expand(-1, -1, K, -1, -1)
             current_mask = token_mask[:, :-1].unsqueeze(2).expand(-1, -1, K, -1)
