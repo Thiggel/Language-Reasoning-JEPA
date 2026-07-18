@@ -1,6 +1,6 @@
 ---
 name: explain-research
-description: Create a self-contained, beginner-first TextJEPA research report with intuitive explanations, figures, tables, technical depth, limitations, glossary, and steering questions. Use after any experiment or decision cycle, when explaining implementation or results to the human, or before a cycle is considered complete.
+description: Create a self-contained, beginner-first TextJEPA research report when the human explicitly requests one or when a report is materially useful; reports are never prerequisites for experiments or plans.
 ---
 
 # Explain a research cycle from first principles
@@ -39,6 +39,6 @@ Run:
 .venv2/bin/python automation/validate_reports.py research/reports
 ```
 
-Do not finish the cycle or write the next experiment plan until validation
-passes. Use `$beamer-synthesis` afterward when a slide companion is useful.
-
+Validation applies only to a report that is intentionally produced. A missing
+or incomplete report must never block a cycle, experiment plan, or submission.
+Use `$beamer-synthesis` afterward when a slide companion is useful.
