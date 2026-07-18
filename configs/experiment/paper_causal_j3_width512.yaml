@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+
+# Width-only scale control: 29.32M active parameters versus 7.39M in J3.
+run_name: paper_causal_j3_width512
+model:
+  d_model: 512
+
