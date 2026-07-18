@@ -29,7 +29,7 @@ jq -n \
   --arg source_model "$source_model" \
   --slurpfile strict "$model_dir/plan_slack0_look1.json" \
   --slurpfile slack "$model_dir/plan_slack2_look1.json" \
-  '{label: $checkpoint_label, source_model: $source_model,
+  '{"label": $checkpoint_label, source_model: $source_model,
     checkpoint_status: "best checkpoint from walltime-truncated training",
     strict: $strict[0], slack2: $slack[0]}' \
   > "$RUN_DIR/metrics.json"
