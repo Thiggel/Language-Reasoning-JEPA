@@ -402,15 +402,30 @@ class HierarchicalLatentPlanner(LatentPlanner):
     def _predict_macro_states(
         self, start: torch.Tensor, codes: torch.Tensor
     ) -> torch.Tensor:
-        return self._predict_macro_states_with(self.model, start, codes)
+        return self._predict_macro_states_with(
+            self.model,
+            start,
+            codes,
+            state_history=getattr(self, "_high_state_history", None),
+            action_history=getattr(self, "_macro_action_history", None),
+        )
 
     @staticmethod
     def _predict_macro_states_with(
-        model, start: torch.Tensor, codes: torch.Tensor
+        model,
+        start: torch.Tensor,
+        codes: torch.Tensor,
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
     ) -> torch.Tensor:
         high = model.core.hi_predictor
         if hasattr(high, "rollout"):
-            return high.rollout(start, codes)
+            return high.rollout(
+                start,
+                codes,
+                state_history=state_history,
+                action_history=action_history,
+            )
         cur = start.expand(codes.shape[0], -1)
         result = []
         for h in range(codes.shape[1]):
@@ -1600,6 +1615,35 @@ class HierarchicalLatentPlanner(LatentPlanner):
             return initial.unsqueeze(1)
         return torch.cat([initial.unsqueeze(1), states], dim=1)
 
+    def _set_observed_macro_history(
+        self,
+        high_path: torch.Tensor,
+        observed_actions: torch.Tensor,
+    ) -> None:
+        """Set the K-stride causal prefix used by the high predictor."""
+        K = self.model.core.macro_k
+        n_actions = observed_actions.shape[1]
+        if n_actions % K:
+            raise ValueError("high-level replanning must occur on a K boundary")
+        boundary = torch.arange(
+            0, n_actions + 1, K, device=high_path.device
+        )
+        self._high_state_history = high_path[:, boundary]
+        n_macro = n_actions // K
+        if n_macro:
+            windows = observed_actions.reshape(
+                observed_actions.shape[0], n_macro, K, -1
+            )
+            flat = windows.reshape(-1, K, windows.shape[-1])
+            macro = self.model.core.macro_encoder(flat)
+            self._macro_action_history = macro.reshape(
+                observed_actions.shape[0], n_macro, -1
+            )
+        else:
+            self._macro_action_history = high_path.new_zeros(
+                high_path.shape[0], 0, self.model.core.macro_encoder.d_macro
+            )
+
     def _flat_value_action(
         self,
         problem: Problem,
@@ -1629,6 +1673,7 @@ class HierarchicalLatentPlanner(LatentPlanner):
         )
         step_texts: list[str] = []
         action_history: list[int] = []
+        active_subgoal: torch.Tensor | None = None
         necessary = self._necessary_actions(problem)
         n_necessary = len(necessary)
         budget = n_necessary + slack
@@ -1682,6 +1727,43 @@ class HierarchicalLatentPlanner(LatentPlanner):
                 step_texts.append(env.step(chosen))
                 action_history.append(chosen)
                 continue
+            distinct = getattr(self.model, "distinct_high_state_space", False)
+            macro_phase = len(action_history) % self.model.core.macro_k
+            if distinct and active_subgoal is not None and macro_phase:
+                # The high transformer is trained at non-overlapping K-step
+                # boundaries.  Between boundaries, keep its waypoint fixed and
+                # iteratively refine the primitive action after observing the
+                # latest real transition.
+                configured_low_horizon = self.low_horizon
+                self.low_horizon = min(
+                    configured_low_horizon,
+                    self.model.core.macro_k - macro_phase,
+                )
+                try:
+                    chosen = self._low_action(
+                        problem,
+                        env.feasible_actions(),
+                        state,
+                        s0,
+                        active_subgoal,
+                        frozenset(env.resolved_set),
+                        observed_low_path,
+                        observed_action_history,
+                        observed_low_target_path,
+                    )
+                finally:
+                    self.low_horizon = configured_low_horizon
+                n_distractor += int(chosen not in necessary)
+                step_texts.append(env.step(chosen))
+                action_history.append(chosen)
+                continue
+            if distinct:
+                self._set_observed_macro_history(
+                    high_path, observed_action_history
+                )
+            else:
+                self._high_state_history = None
+                self._macro_action_history = None
             self.n_macro_decisions += 1
             if (
                 self.macro_knn_weight
@@ -1761,6 +1843,8 @@ class HierarchicalLatentPlanner(LatentPlanner):
                     )
                 finally:
                     self.high_horizon = configured_horizon
+            if distinct:
+                active_subgoal = subgoal
             feasible = env.feasible_actions()
             if (
                 self.discrete_execute_macro

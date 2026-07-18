@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import torch
 
@@ -86,3 +88,9 @@ def test_distinct_hierarchical_planner_runs_coordinate_correct_path():
     problem, _ = dataset.problem(0)
     result = planner.plan_episode(problem, slack=0)
     assert result.steps <= result.n_necessary
+    assert planner.n_macro_decisions == math.ceil(
+        result.steps / planner.model.core.macro_k
+    )
+    assert planner._high_state_history.shape[1] == (
+        planner._macro_action_history.shape[1] + 1
+    )
