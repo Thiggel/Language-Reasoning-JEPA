@@ -1,91 +1,56 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-18-j3-width-scale-lr-crosscheck-v1",
-  "decision": "Test whether J3 capacity is now the limiting factor after the seed-stable 1e-3 optimization gain. Compare a fresh seed-0 256-width control with a 512-width model under the identical full-history J3 protocol, and cross-check the larger scale at 5e-4 versus 1e-3. Promote 512 only if its best rate improves strict success by at least 0.03 over the fresh 256 control while retaining finite losses, state_std >= 0.5, state effective rank >= 64, and non-regressed slack-two success; otherwise retain 256 and move to the supported grounded-objective combination screen. Treat a material reversal between the two 512 rates as scale-specific optimization sensitivity, not evidence against capacity.",
+  "round_id": "2026-07-18-j3-width512-lr5e4-seed-confirmation-v1",
+  "decision": "Determine whether the width-512 J3 model at its method-appropriate 5e-4 learning rate provides a seed-stable capacity gain over the existing matched width-256 1e-3 anchor. Run only seeds 1 and 2 because seed 0 is already valid at 0.685 strict and 0.930 slack-two, while the matched anchor is already available for seeds 0, 1, and 2 at 0.660, 0.670, and 0.685 strict. Promote width 512 only if the paired three-seed mean strict-success gain is at least 0.03, no seed loses slack-two success relative to its matched anchor, all losses are finite, state_std is at least 0.5, and state effective rank is at least 64. Otherwise retain width 256 and move to the supported grounded-objective combination screen. The seed-0 width-512 process failure is classified as post-evaluation infrastructure-only because probes and both primary planning artifacts completed before optional matplotlib import failed; the current snapshot skips that optional plot when matplotlib is unavailable.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "j3-width256-lr1e3-seed0-control-v1",
+      "id": "j3-width512-lr5e4-seed1-confirm-v1",
       "cluster": "Grete",
       "command": [
         "bash",
-        "scripts/run_intent_j3_scale_cell.sh",
+        "scripts/run_intent_j3_variant_cell.sh",
         "{python}",
-        "0",
-        "256",
-        "2",
-        "4",
-        "0.001",
-        "10",
-        "1000"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 300,
-      "min_gpu_memory_mb": 30000,
-      "purpose": "Fresh matched 256-width control on the same snapshot and backend as the scale cells.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/metrics.csv",
-        "model/gar_teacher_audit.json",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json"
-      ]
-    },
-    {
-      "id": "j3-width512-lr1e3-seed0-v1",
-      "cluster": "Grete",
-      "command": [
-        "bash",
-        "scripts/run_intent_j3_scale_cell.sh",
-        "{python}",
-        "0",
-        "512",
-        "2",
-        "4",
-        "0.001",
-        "10",
-        "1000"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 300,
-      "min_gpu_memory_mb": 30000,
-      "purpose": "Test a width-scaled J3 model at the confirmed small-scale learning rate.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/metrics.csv",
-        "model/gar_teacher_audit.json",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json"
-      ]
-    },
-    {
-      "id": "j3-width512-lr5e4-seed0-v1",
-      "cluster": "Grete",
-      "command": [
-        "bash",
-        "scripts/run_intent_j3_scale_cell.sh",
-        "{python}",
-        "0",
-        "512",
-        "2",
-        "4",
+        "paper_causal_j3_width512",
+        "1",
         "0.0005",
         "10",
         "1000"
       ],
       "gpus": 1,
-      "walltime_minutes": 300,
+      "walltime_minutes": 480,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Scale-specific lower-learning-rate cross-check for the 512-width J3 model.",
+      "purpose": "Paired seed-1 confirmation of the width-512 lower-learning-rate capacity result against the existing seed-1 width-256 anchor.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "stdout.log",
+        "stderr.log",
+        "model/metrics.csv",
+        "model/gar_teacher_audit.json",
+        "model/probe_results.csv",
+        "model/plan_slack0_look1.json",
+        "model/plan_slack2_look1.json"
+      ]
+    },
+    {
+      "id": "j3-width512-lr5e4-seed2-confirm-v1",
+      "cluster": "Grete",
+      "command": [
+        "bash",
+        "scripts/run_intent_j3_variant_cell.sh",
+        "{python}",
+        "paper_causal_j3_width512",
+        "2",
+        "0.0005",
+        "10",
+        "1000"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 480,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Paired seed-2 confirmation of the width-512 lower-learning-rate capacity result against the existing seed-2 width-256 anchor.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
