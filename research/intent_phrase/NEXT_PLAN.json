@@ -1,41 +1,12 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-18-j3-lr1e3-anchor-seed-confirmation-v2",
-  "decision": "Determine whether the bracketed seed-0 J3 optimum at learning rate 1e-3 is seed-stable enough to become the matched baseline for later dense-recursion, GAR, scale, and hierarchy decisions. Confirm only seeds 1 and 2: promote 1e-3 if strict success remains clearly above the valid 5e-4 and 1.4e-3 seed-0 neighbors with healthy state variance and effective rank; otherwise stop recipe shearing and diagnose seed sensitivity.",
+  "round_id": "2026-07-18-j3-lr1e3-anchor-seed2-optional-plots-recovery-v3",
+  "decision": "Recover only the infrastructure-invalid seed-2 confirmation of the full-history J3 learning-rate 1e-3 anchor from a snapshot where optional geometry plotting is skipped when matplotlib is unavailable. Combine this result with the already pending seed-1 job and the valid seed-0 result: promote 1e-3 only if strict success is seed-stable with healthy state variance and effective rank; otherwise stop recipe shearing and diagnose seed sensitivity. Do not duplicate seed 1 and do not reopen the decision-negative executable hierarchy branch.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "j3-anchor-lr1e3-seed1-confirm-v2",
-      "cluster": "Lise",
-      "command": [
-        "bash",
-        "scripts/run_intent_j3_variant_cell.sh",
-        "{python}",
-        "paper_causal_j3",
-        "1",
-        "0.001",
-        "10",
-        "1000"
-      ],
-      "gpus": 1,
-      "walltime_minutes": 360,
-      "min_gpu_memory_mb": 30000,
-      "purpose": "Independent seed-1 confirmation of the bracketed full-history 1e-3 J3 anchor.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/metrics.csv",
-        "model/gar_teacher_audit.json",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json"
-      ]
-    },
-    {
-      "id": "j3-anchor-lr1e3-seed2-confirm-v2",
+      "id": "j3-anchor-lr1e3-seed2-optional-plots-recovery-v3",
       "cluster": "Grete",
       "command": [
         "bash",
@@ -50,7 +21,7 @@
       "gpus": 1,
       "walltime_minutes": 360,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Independent seed-2 confirmation of the bracketed full-history 1e-3 J3 anchor.",
+      "purpose": "Recover the seed-2 anchor confirmation after training completed but the older snapshot failed during optional matplotlib-based plotting on Grete.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
