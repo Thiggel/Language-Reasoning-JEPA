@@ -32,6 +32,7 @@ retrieve_patterns = ["*/", "run_summary.json", "resolved_config.json", "environm
 [codex]
 enabled = true
 auto_submit_after_wake = false
+resume_dirty_project_worktrees = false
 max_changed_files = 100
 max_changed_bytes = 5000000
 verification_timeout_seconds = 600

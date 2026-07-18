@@ -157,6 +157,28 @@ class ResearchCtlTests(unittest.TestCase):
             paths[:3],
         )
 
+    def test_dirty_resume_allows_only_project_owned_unprotected_paths(self):
+        safe = [
+            "projects/token_igsm/STATUS.md",
+            "research/hard_text/NEXT_PLAN.json",
+            "research/reports/token_igsm/new/REPORT.md",
+            "src/textjepa/planning/tree_search.py",
+            "tests/test_tree_search.py",
+        ]
+        self.assertEqual(
+            researchctl.dirty_resume_violations(safe, "token_igsm", ["automation", "AGENTS.md"]),
+            [],
+        )
+        unsafe = safe + [
+            "projects/intent_phrase/STATUS.md",
+            "automation/researchctl.py",
+            "AGENTS.md",
+        ]
+        self.assertEqual(
+            researchctl.dirty_resume_violations(unsafe, "token_igsm", ["automation", "AGENTS.md"]),
+            ["AGENTS.md", "automation/researchctl.py", "projects/intent_phrase/STATUS.md"],
+        )
+
     def test_oversight_lock_is_nonblocking(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctl = researchctl.Controller(ROOT / "automation/config.toml")

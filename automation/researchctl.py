@@ -145,6 +145,17 @@ def sibling_memory_violations(paths: Iterable[str], project: str) -> list[str]:
     return protected_path_violations(paths, roots)
 
 
+def dirty_resume_violations(
+    paths: Iterable[str], project: str, protected: Iterable[str]
+) -> list[str]:
+    """Return dirty paths that make an autonomous project resume unsafe."""
+    path_list = list(paths)
+    return sorted(set(
+        protected_path_violations(path_list, protected)
+        + sibling_memory_violations(path_list, project)
+    ))
+
+
 class Controller:
     def __init__(self, config_path: Path | None = None) -> None:
         guessed_root = Path(__file__).resolve().parents[1]
@@ -256,8 +267,16 @@ class Controller:
         checks.append(("integration worktree", True, "dirty user changes preserved" if dirty else "clean"))
         for slug, manifest in self.projects.items():
             worktree = Path(manifest["project"]["worktree"])
-            project_dirty = run(["git", "status", "--porcelain"], cwd=worktree, check=False).stdout.strip() if worktree.exists() else "missing"
-            checks.append((f"clean project worktree {slug}", worktree.is_dir() and not project_dirty, str(worktree)))
+            project_dirty = self._dirty_paths(worktree) if worktree.is_dir() else ["missing"]
+            resumable = False
+            detail = str(worktree)
+            if project_dirty and worktree.is_dir() and self.cfg["codex"].get("resume_dirty_project_worktrees", False):
+                violations = dirty_resume_violations(
+                    project_dirty, slug, self.cfg["codex"].get("protected_paths", [])
+                )
+                resumable = not violations and self._dirty_change_size_error(worktree, project_dirty) is None
+                detail += f"; {len(project_dirty)} safe project-owned dirty path(s) are resumable" if resumable else "; unsafe dirty paths: " + ", ".join(violations)
+            checks.append((f"resumable project worktree {slug}", worktree.is_dir() and (not project_dirty or resumable), detail))
         for name, cluster in self.cfg.get("clusters", {}).items():
             if not cluster.get("enabled", False):
                 continue
@@ -1153,24 +1172,53 @@ class Controller:
             self.save_state(state)
         print("resumed")
 
-    def _assert_clean(self, root: Path | None = None) -> None:
+    def _dirty_paths(self, root: Path) -> list[str]:
+        tracked = run(["git", "diff", "--name-only", "HEAD"], cwd=root).stdout.splitlines()
+        untracked = run(
+            ["git", "ls-files", "--others", "--exclude-standard"], cwd=root
+        ).stdout.splitlines()
+        return sorted(set(tracked + untracked))
+
+    def _dirty_change_size_error(self, root: Path, paths: list[str]) -> str | None:
+        codex_cfg = self.cfg["codex"]
+        max_files = int(codex_cfg.get("max_changed_files", 100))
+        if len(paths) > max_files:
+            return f"worktree has {len(paths)} changed files; autonomous limit is {max_files}"
+        total_bytes = sum(
+            (root / path).stat().st_size for path in paths if (root / path).is_file()
+        )
+        max_bytes = int(codex_cfg.get("max_changed_bytes", 5_000_000))
+        if total_bytes > max_bytes:
+            return f"worktree has {total_bytes} changed bytes; autonomous limit is {max_bytes}"
+        return None
+
+    def _assert_clean(self, root: Path | None = None, project: str | None = None) -> None:
         root = root or self.root
-        dirty = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
-        if dirty:
+        paths = self._dirty_paths(root)
+        if not paths:
+            return
+        codex_cfg = self.cfg["codex"]
+        if not project or not codex_cfg.get("resume_dirty_project_worktrees", False):
             raise ResearchCtlError(
                 "autonomous Codex wake requires a clean dedicated checkout; current worktree is dirty"
             )
+        violations = dirty_resume_violations(
+            paths, project, codex_cfg.get("protected_paths", [])
+        )
+        if violations:
+            raise ResearchCtlError(
+                "autonomous Codex wake cannot resume unsafe dirty paths: "
+                + ", ".join(violations)
+            )
+        size_error = self._dirty_change_size_error(root, paths)
+        if size_error:
+            raise ResearchCtlError(size_error)
+        print(f"resuming {project} with {len(paths)} safe project-owned dirty path(s)")
 
     def _finalize_oversight_changes(self, root: Path | None = None, project: str | None = None) -> str:
         root = root or self.root
         codex_cfg = self.cfg["codex"]
-        tracked = run(
-            ["git", "diff", "--name-only", "HEAD"], cwd=root
-        ).stdout.splitlines()
-        untracked = run(
-            ["git", "ls-files", "--others", "--exclude-standard"], cwd=root
-        ).stdout.splitlines()
-        paths = sorted(set(tracked + untracked))
+        paths = self._dirty_paths(root)
         if not paths:
             return run(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
         if codex_cfg.get("require_explanatory_report", False) and not any(
@@ -1188,19 +1236,9 @@ class Controller:
                 "Codex changed protected paths; changes were left for human inspection: "
                 + ", ".join(violations)
             )
-        max_files = int(codex_cfg.get("max_changed_files", 100))
-        if len(paths) > max_files:
-            raise ResearchCtlError(f"Codex changed {len(paths)} files; limit is {max_files}")
-        total_bytes = sum(
-            (root / path).stat().st_size
-            for path in paths
-            if (root / path).is_file()
-        )
-        max_bytes = int(codex_cfg.get("max_changed_bytes", 5_000_000))
-        if total_bytes > max_bytes:
-            raise ResearchCtlError(
-                f"Codex changed {total_bytes} bytes; autonomous limit is {max_bytes}"
-            )
+        size_error = self._dirty_change_size_error(root, paths)
+        if size_error:
+            raise ResearchCtlError(size_error)
         verify = codex_cfg.get("verification_command", [])
         if verify:
             verify_argv = [str(x) for x in verify]
@@ -1238,7 +1276,7 @@ class Controller:
         worktree = Path(manifest["project"]["worktree"])
         if not worktree.is_dir():
             raise ResearchCtlError(f"project worktree does not exist: {worktree}")
-        self._assert_clean(worktree)
+        self._assert_clean(worktree, project)
         prompt_path = worktree / manifest["project"]["prompt"]
         state = self.load_state()
         context = [
