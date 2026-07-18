@@ -22,3 +22,8 @@ The easier stylized domain does not currently establish a JEPA-over-matched-LM
 result: compact evidence reports `.827 +/- .003` strict success for the matched
 token intent policy versus `.797 +/- .008` for the older reduced non-symbolic
 JEPA, with the current causal J3 reference at `.588 +/- .013`.
+
+The valid seed-0 J3 optimization screen favors full-history learning rate
+`1e-3`: `.705` strict and `.920` slack-two versus `.590`/`.890` for the matched
+`3e-4` seed. Context 1 (`.155`), context 4 (`.475`), and `1e-4` (`.295`) fail
+the behavioral gate. The winner remains provisional until seeds 1 and 2.

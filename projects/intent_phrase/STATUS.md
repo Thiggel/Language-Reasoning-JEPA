@@ -1,6 +1,6 @@
 # Intent-phrase project status
 
-_Updated 2026-07-16._
+_Updated 2026-07-17._
 
 The latest terminal audit produced no new scientific metrics. Seven GAR jobs
 timed out before optimization due to an overlong multiprocessing socket path;
@@ -27,6 +27,12 @@ temporary path, and all four jobs reproduced the Unix-socket path failure
 before optimization. A v2 plan uses the repository's post-controller short-
 path wrapper and waits for those invalid slots to terminate or be explicitly
 cancelled.
+
+Valid short-path runs now settle the seed-0 screen. Full-history `1e-3`
+reaches `.705` strict and `.920` slack-two versus `.590`/`.890` for the matched
+`3e-4` seed, with healthy state rank and variance. Context 1 (`.155`), context
+4 (`.475`), and full-history `1e-4` (`.295`) regress. The next decision is a
+two-seed confirmation of `1e-3`, not another context or rate sweep.
 
 ## Defensible observations
 

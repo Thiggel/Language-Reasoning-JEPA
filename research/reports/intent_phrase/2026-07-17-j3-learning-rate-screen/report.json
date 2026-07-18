@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-17-j3-learning-rate-screen",
+  "project": "intent_phrase",
+  "title": "A higher learning rate wins the first test and now needs replication",
+  "created_at": "2026-07-17T18:00:00+02:00",
+  "status": "decision_complete",
+  "decision": "Confirm only the full-history J3 learning rate 1e-3 with seeds 1 and 2.",
+  "plain_summary": "The seed-0 higher-learning-rate cell improved strict success by 11.5 points without collapse; two seeds now test whether that gain is stable.",
+  "report": "REPORT.md",
+  "review_required": true
+}

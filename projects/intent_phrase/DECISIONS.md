@@ -14,3 +14,6 @@
   resolved and budget is sufficient.
 - With the evening 16 GPU-hour allocation, admit only a three-GPU-hour
   four-step GAR recovery; do not duplicate the active Alex counterfactual seed.
+- The seed-0 causal-history/optimization screen selects full-history `1e-3`
+  for seeds 1 and 2 only: `.705` strict versus `.590` matched reference,
+  without collapse. Do not widen the screen before replication.

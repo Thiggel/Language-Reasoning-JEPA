@@ -1,38 +1,64 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-17-j3-context4-seven-hour-recovery",
-  "decision": "Complete the matched context-window-four seed-0 cell without throughput censoring so the causal-history decision can be settled before confirmation seeds are admitted.",
+  "round_id": "2026-07-18-j3-local-lr-proxy-screen",
+  "decision": "Determine whether the seed-0 J3 gain near 1e-3 is a broad, healthy learning-rate region or a narrow optimization accident before spending full-length confirmation seeds.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "j3-context-4-seed-0-seven-hour-recovery",
+      "id": "j3-lr5e4-proxy-seed-0",
       "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_paper_causal_short_tmp.sh",
-        "{python}",
-        "paper_causal_j3_context4",
-        "0"
-      ],
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr5e4_proxy", "0"],
       "gpus": 1,
-      "walltime_minutes": 420,
-      "purpose": "Full twenty-epoch replacement for the throughput-censored context-window-four cell, with enough wall time to complete all planning and representation diagnostics.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/gar_teacher_audit.json",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json"
-      ],
-      "env": {
-        "TMPDIR": "/tmp"
-      },
-      "min_gpu_memory_mb": 30000,
-      "node": 11
+      "walltime_minutes": 90,
+      "purpose": "Ten-epoch lower-edge proxy at 5e-4, matched to every other learning-rate cell.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
+      "env": {"TMPDIR": "/tmp"},
+      "min_gpu_memory_mb": 30000
+    },
+    {
+      "id": "j3-lr7e4-proxy-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr7e4_proxy", "0"],
+      "gpus": 1,
+      "walltime_minutes": 90,
+      "purpose": "Ten-epoch lower-middle proxy at 7e-4, matched to every other learning-rate cell.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
+      "env": {"TMPDIR": "/tmp"},
+      "min_gpu_memory_mb": 30000
+    },
+    {
+      "id": "j3-lr1e3-proxy-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr1e3_proxy", "0"],
+      "gpus": 1,
+      "walltime_minutes": 90,
+      "purpose": "Ten-epoch anchor proxy at the currently promising 1e-3 learning rate.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
+      "env": {"TMPDIR": "/tmp"},
+      "min_gpu_memory_mb": 30000
+    },
+    {
+      "id": "j3-lr1p4e3-proxy-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr1p4e3_proxy", "0"],
+      "gpus": 1,
+      "walltime_minutes": 90,
+      "purpose": "Ten-epoch upper-middle proxy at 1.4e-3, matched to every other learning-rate cell.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
+      "env": {"TMPDIR": "/tmp"},
+      "min_gpu_memory_mb": 30000
+    },
+    {
+      "id": "j3-lr2e3-proxy-seed-0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_paper_causal_short_tmp.sh", "{python}", "paper_causal_j3_lr2e3_proxy", "0"],
+      "gpus": 1,
+      "walltime_minutes": 90,
+      "purpose": "Ten-epoch upper-edge proxy at 2e-3 to expose instability or degradation above the apparent optimum.",
+      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log", "model/gar_teacher_audit.json", "model/probe_results.csv", "model/plan_slack0_look1.json", "model/plan_slack2_look1.json"],
+      "env": {"TMPDIR": "/tmp"},
+      "min_gpu_memory_mb": 30000
     }
   ]
 }
