@@ -186,3 +186,13 @@ twice the optimizer steps. Exact token-aligned mechanical alternative actions
 and EMA outcome targets are now implemented without goal, preference, or
 quality labels. An 18-test process suite and a CPU training smoke pass. Admit a
 common-batch K={0,1,4,8} pilot before any counterfactual scale claim.
+
+## Structured counterfactual breadth result
+
+All five wave-8 cells completed. At common 2k states, batch two, one epoch, and
+1,000 optimizer steps, K=1 improves matched token error 0.195→0.177 and the
+global token causal ratio 3.108→3.365, but recursive token error worsens
+0.322→0.330. K=4 and K=8 at weight one are numerically identical to K=1;
+K=4 weight 0.25 is intermediate. Additional alternatives beyond one are not
+justified. Run frozen local-component audits before confirming K=1 at the
+18k-presentation anchor.
