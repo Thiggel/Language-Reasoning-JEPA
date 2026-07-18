@@ -454,8 +454,6 @@ class Controller:
         return deadline
 
     def _autonomy_window_open(self, when: dt.datetime | None = None) -> bool:
-        if self._unrestricted():
-            return True
         deadline = self._autonomy_deadline()
         if deadline is None:
             return True

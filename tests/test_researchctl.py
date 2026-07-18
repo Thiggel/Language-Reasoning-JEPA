@@ -152,6 +152,14 @@ class ResearchCtlTests(unittest.TestCase):
         self.controller._fair_admission_guard(validated, {"rounds": {}})
         self.controller._global_gpu_hour_guard(validated, {"rounds": {}})
 
+    def test_unrestricted_mode_still_honors_explicit_autonomy_deadline(self):
+        self.controller.cfg["controller"]["unrestricted_research_mode"] = True
+        self.controller.cfg["codex"]["autonomy_until"] = "2026-07-20T08:00:00+02:00"
+        before = dt.datetime(2026, 7, 20, 5, 59, tzinfo=dt.timezone.utc)
+        at_deadline = dt.datetime(2026, 7, 20, 6, 0, tzinfo=dt.timezone.utc)
+        self.assertTrue(self.controller._autonomy_window_open(before))
+        self.assertFalse(self.controller._autonomy_window_open(at_deadline))
+
     def test_duplicate_registered_round_is_detectable_without_submission(self):
         plan = self.controller.validate_plan(copy.deepcopy(self.plan))
         state = {"rounds": {plan["round_id"]: {}}}

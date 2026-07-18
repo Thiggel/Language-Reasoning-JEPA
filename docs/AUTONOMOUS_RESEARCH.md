@@ -86,13 +86,14 @@ is therefore not a general bypass for arbitrary dirty worktrees.
 ## Unrestricted research mode
 
 Setting `unrestricted_research_mode = true` under `[controller]` disables the
-research scaffold's report/read-receipt gates, autonomy deadline, dirty and
-protected-path gates, verification command, storage thresholds, fair-share
+research scaffold's report/read-receipt gates, dirty and protected-path gates,
+verification command, storage thresholds, fair-share
 deferrals, GPU-hour budgets, and active/pending/job-count caps. Reports and
 cycle documents become optional. The controller still uses locks, unique round
 identifiers, valid argv plans, immutable Git snapshots, scheduler placement,
 and explicit `research/STOP`/pause controls so it cannot duplicate a round or
-corrupt accepted-job tracking. This mode is currently enabled in the external
+corrupt accepted-job tracking. A human-specified `codex.autonomy_until`
+deadline is still honored. This mode is currently enabled in the external
 operator configuration, not in the checked-in defaults.
 
 ## Watcher choices

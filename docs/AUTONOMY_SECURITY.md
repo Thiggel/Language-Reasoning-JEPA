@@ -5,8 +5,8 @@ The external operator configuration may explicitly enable
 review, change-scope, verification, resource-budget, storage-threshold, and
 fair-share policies described below are bypassed. Controller locks, unique
 round registration, immutable snapshots, plan syntax validation, scheduler
-placement, and explicit STOP/pause controls remain active for state integrity
-and operator control.
+placement, an explicitly configured autonomy deadline, and explicit STOP/pause
+controls remain active for state integrity and operator control.
 
 `automation/config.toml` is human policy. Autonomous Codex must not edit it,
 the controller, skills, AGENTS.md, the charter, Git configuration, credentials,
