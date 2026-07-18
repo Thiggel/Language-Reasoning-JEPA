@@ -564,6 +564,28 @@ def test_geometric_advantage_regression_is_exact_at_target(setup):
     torch.testing.assert_close(energy.grad, torch.zeros_like(energy))
 
 
+def test_geometric_advantage_regression_masks_infinite_targets_before_math():
+    from types import SimpleNamespace
+
+    from textjepa.objectives import GeoAdvantageRegression
+
+    energy = torch.tensor([[0.2, -0.1, 0.4]], requires_grad=True)
+    target = torch.tensor([[0.0, float("inf"), -0.2]])
+    out = SimpleNamespace(
+        step_states=energy,
+        extras={
+            "ga_energy": energy,
+            "ga_advantage": target,
+            "ga_valid": torch.tensor([[True, False, True]]),
+        },
+    )
+    loss = GeoAdvantageRegression()(out, {})
+    torch.testing.assert_close(loss, torch.tensor(0.2))
+    loss.backward()
+    assert torch.isfinite(energy.grad).all()
+    torch.testing.assert_close(energy.grad[:, 1], torch.zeros(1))
+
+
 def test_geometry_greedy_rollout_ranking(setup):
     from textjepa.objectives import GeoAdvantageRank
 

@@ -111,9 +111,19 @@ class GeoAdvantageRegression(Objective):
         valid = out.extras.get("ga_valid")
         if target is None or energy is None or valid is None:
             return out.step_states.sum() * 0.0
-        valid = valid & torch.isfinite(target)
-        squared_error = (energy - target.detach()).square()
-        return (
-            squared_error.masked_fill(~valid, 0.0).sum()
-            / valid.float().sum().clamp(min=1.0)
+        valid = (
+            valid
+            & torch.isfinite(target)
+            & torch.isfinite(energy.detach())
         )
+        # Invalid rollout candidates deliberately carry +inf target distance.
+        # Masking only *after* subtraction leaves an infinite intermediate;
+        # its square has an undefined 0*inf backward even when masked later.
+        # Select the finite residual first so invalid candidates contribute
+        # exactly zero loss and exactly zero gradient.
+        residual = torch.where(
+            valid,
+            energy - target.detach(),
+            torch.zeros_like(energy),
+        )
+        return residual.square().sum() / valid.float().sum().clamp(min=1.0)
