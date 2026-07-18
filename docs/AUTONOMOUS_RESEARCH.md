@@ -83,6 +83,18 @@ continue bounded changes owned by that project. Protected controller paths,
 sibling-project memory, and file/byte limits still block the wake; this option
 is therefore not a general bypass for arbitrary dirty worktrees.
 
+## Unrestricted research mode
+
+Setting `unrestricted_research_mode = true` under `[controller]` disables the
+research scaffold's report/read-receipt gates, autonomy deadline, dirty and
+protected-path gates, verification command, storage thresholds, fair-share
+deferrals, GPU-hour budgets, and active/pending/job-count caps. Reports and
+cycle documents become optional. The controller still uses locks, unique round
+identifiers, valid argv plans, immutable Git snapshots, scheduler placement,
+and explicit `research/STOP`/pause controls so it cannot duplicate a round or
+corrupt accepted-job tracking. This mode is currently enabled in the external
+operator configuration, not in the checked-in defaults.
+
 ## Watcher choices
 
 For a durable watcher, install the user timer:

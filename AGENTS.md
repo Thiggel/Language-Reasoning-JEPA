@@ -64,11 +64,9 @@
 
 ## Autonomous research contract
 
-- Read `research/CHARTER.md`, `research/STATE.md`, `research/EVIDENCE.md`,
-  `research/QUESTION_BACKLOG.md`, `research/EXPERIMENT_INDEX.md`, and the
-  current cycle linked from `STATE.md` before directing a new experiment.
-  Follow historical links only when relevant; do not ingest every raw log or
-  wave into one context.
+- Load only the project context and evidence needed for the current decision.
+  Reading reports, historical cycles, global ledgers, or every steering note is
+  optional and must never block implementation, evaluation, or submission.
 - Act as a skeptical research director. Choose one falsifiable decision at a
   time and optimize reliable information per elapsed hour. State in advance
   which outcomes change the direction, use the smallest faithful experiment,
@@ -83,22 +81,13 @@
 - Keep observed-intent, action-free, and hard-text claims separate. Label
   symbolic/oracle/candidate-privileged diagnostics. A successful process is
   not automatically a scientifically valid result.
-- Record each decision cycle in one file under `research/cycles/<subproject>/`.
-  Update the compact evidence, experiment, and decision ledgers; preserve
-  failed and invalid runs with explicit reasons. Use intuitive full names in
-  plans, tables, plots, and prose.
-- Complete every oversight or result-analysis cycle with a self-contained
-  bundle under `research/reports/<subproject>/<date>-<name>/`. Follow
-  `research/templates/REPORT.md` and use `$explain-research`. Begin as if the
-  reader barely knows what a neural network or language model is, then build
-  toward ICLR-level technical and evidential detail. Include an intuitive
-  figure, interpreted table, fairness discussion, limitations, glossary, and
-  concrete steering questions. A cycle log or terse final message is not a
-  substitute. `automation/validate_reports.py` must pass before the next plan.
-- Read applicable human notes from `.researchctl/steering/inbox/` before
-  selecting a decision. Explain how they affected the choice. Respect the
-  configured unread-report limit; autonomy must stop admitting new rounds when
-  it has advanced beyond the human's reviewed evidence.
+- Keep enough concise experiment metadata to recover what ran and interpret
+  its metrics. Cycle documents, ledgers, explanatory reports, plots, and UI
+  read receipts are optional communication aids, not admission prerequisites.
+  A valid next plan may be written and submitted without producing or reading
+  a report.
+- Human steering notes are useful priority signals but their handling does not
+  gate experiments. Never mark a report as read on the human's behalf.
 
 ## Controller boundary
 
@@ -116,11 +105,13 @@
 - Run experiments from exact Git snapshots. Keep caches, repositories, runs,
   and generated data on work/project storage and use job-specific temporary
   directories. Never put large artifacts in remote homes.
-- Do not bypass `research/STOP`, storage or GPU-hour limits, protected policy,
-  duplicate-round checks, or manual `--execute` submission. Humans approve
-  paper-scale or multi-node work, budget increases, new dataset transfers,
-  credentials, publication, destructive cleanup, and cancellation of jobs
-  outside the controller.
+- `research/STOP`, explicit controller pause, controller locks, unique round
+  identifiers, immutable snapshots, and scheduler validity remain operational
+  controls. In unrestricted research mode, report/review gates, dirty-worktree
+  gates, protected-path policy, verification gates, fair-share limits,
+  project/global GPU-hour limits, and active/pending-job caps are disabled.
+  Destructive cleanup, credential changes, publication, and cancellation of
+  unrelated jobs still require explicit human direction.
 - Fresh oversight processes use `gpt-5.6-sol` with medium reasoning. Keep the
   compact repository memory as continuity; do not depend on resuming an
   indefinitely growing conversation.

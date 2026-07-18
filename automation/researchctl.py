@@ -193,6 +193,10 @@ class Controller:
                     raise ResearchCtlError(f"project manifest slug mismatch: {manifest}")
                 self.projects[slug] = value
 
+    def _unrestricted(self) -> bool:
+        """Return whether optional research-scaffold policy gates are disabled."""
+        return bool(self.cfg.get("controller", {}).get("unrestricted_research_mode", False))
+
     @contextlib.contextmanager
     def lock(self) -> Iterable[None]:
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -270,7 +274,10 @@ class Controller:
             project_dirty = self._dirty_paths(worktree) if worktree.is_dir() else ["missing"]
             resumable = False
             detail = str(worktree)
-            if project_dirty and worktree.is_dir() and self.cfg["codex"].get("resume_dirty_project_worktrees", False):
+            if project_dirty and worktree.is_dir() and self._unrestricted():
+                resumable = True
+                detail += f"; {len(project_dirty)} dirty path(s) allowed by unrestricted mode"
+            elif project_dirty and worktree.is_dir() and self.cfg["codex"].get("resume_dirty_project_worktrees", False):
                 violations = dirty_resume_violations(
                     project_dirty, slug, self.cfg["codex"].get("protected_paths", [])
                 )
@@ -447,6 +454,8 @@ class Controller:
         return deadline
 
     def _autonomy_window_open(self, when: dt.datetime | None = None) -> bool:
+        if self._unrestricted():
+            return True
         deadline = self._autonomy_deadline()
         if deadline is None:
             return True
@@ -463,6 +472,8 @@ class Controller:
         return int(limits.get("max_unreviewed_reports", 1))
 
     def _human_review_guard(self) -> None:
+        if self._unrestricted():
+            return
         unreviewed = self._unreviewed_reports()
         limit = self._unreviewed_limit()
         if len(unreviewed) > limit:
@@ -518,7 +529,7 @@ class Controller:
             errors.append("jobs must be a non-empty list")
             jobs = []
         limits = self.cfg["limits"]
-        if len(jobs) > int(limits["max_jobs_per_round"]):
+        if not self._unrestricted() and len(jobs) > int(limits["max_jobs_per_round"]):
             errors.append("job count exceeds max_jobs_per_round")
         seen: set[str] = set()
         gpu_hours = 0.0
@@ -564,9 +575,11 @@ class Controller:
             else:
                 errors.append(f"{prefix}.command launcher must be {{python}} or bash")
             gpus = job.get("gpus")
-            if not isinstance(gpus, int) or gpus < 1 or gpus > int(limits["max_gpus_per_job"]):
+            if not isinstance(gpus, int) or gpus < 1:
                 errors.append(f"{prefix}.gpus is outside policy")
                 gpus = 0
+            elif not self._unrestricted() and gpus > int(limits["max_gpus_per_job"]):
+                errors.append(f"{prefix}.gpus is outside policy")
             try:
                 minutes = parse_walltime_minutes(job.get("walltime_minutes"))
                 if minutes < 1 or minutes > int(cluster["max_walltime_minutes"]):
@@ -590,7 +603,7 @@ class Controller:
             "maximum_gpu_hours_per_round", limits["max_gpu_hours_per_round"]
         ))
         round_limit = min(float(limits["max_gpu_hours_per_round"]), project_round_limit)
-        if gpu_hours > round_limit:
+        if not self._unrestricted() and gpu_hours > round_limit:
             errors.append(
                 f"projected {gpu_hours:.2f} GPU-hours exceeds round limit {round_limit}"
             )
@@ -853,6 +866,8 @@ class Controller:
         return waiting
 
     def _fair_admission_guard(self, plan: dict[str, Any], state: dict[str, Any]) -> None:
+        if self._unrestricted():
+            return
         project = plan["project"]
         manifest = self.project_manifest(project)
         budget = manifest["budget"]
@@ -895,6 +910,8 @@ class Controller:
             )
 
     def _global_gpu_hour_guard(self, plan: dict[str, Any], state: dict[str, Any]) -> None:
+        if self._unrestricted():
+            return
         if "max_gpu_hours_7d" not in self.cfg["limits"]:
             return
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
@@ -1036,8 +1053,9 @@ class Controller:
         with self.lock():
             if self.stop_path.exists():
                 raise ResearchCtlError(f"STOP file present: {self.stop_path}")
-            self._local_storage_guard()
-            self._human_review_guard()
+            if not self._unrestricted():
+                self._local_storage_guard()
+                self._human_review_guard()
             state = self.load_state()
             if state.get("paused"):
                 raise ResearchCtlError(f"controller is paused: {state.get('pause_reason', '')}")
@@ -1046,7 +1064,7 @@ class Controller:
                 for rnd in state.get("rounds", {}).values()
                 for job in rnd.get("jobs", {}).values()
             )
-            if active + len(plan["jobs"]) > int(self.cfg["limits"]["max_active_jobs"]):
+            if not self._unrestricted() and active + len(plan["jobs"]) > int(self.cfg["limits"]["max_active_jobs"]):
                 raise ResearchCtlError(
                     f"active-job limit would be exceeded: {active} active + {len(plan['jobs'])} planned"
                 )
@@ -1065,7 +1083,8 @@ class Controller:
             try:
                 for job in plan["jobs"]:
                     cluster = self.cfg["clusters"][job["cluster"]]
-                    self._remote_storage_guard(job["cluster"], cluster)
+                    if not self._unrestricted():
+                        self._remote_storage_guard(job["cluster"], cluster)
                     if cluster["kind"] == "gruenau":
                         job_state = self._submit_gruenau(plan, job, cluster, state)
                     else:
@@ -1197,6 +1216,9 @@ class Controller:
         paths = self._dirty_paths(root)
         if not paths:
             return
+        if self._unrestricted():
+            print(f"unrestricted mode: continuing with {len(paths)} dirty path(s)")
+            return
         codex_cfg = self.cfg["codex"]
         if not project or not codex_cfg.get("resume_dirty_project_worktrees", False):
             raise ResearchCtlError(
@@ -1221,14 +1243,15 @@ class Controller:
         paths = self._dirty_paths(root)
         if not paths:
             return run(["git", "rev-parse", "HEAD"], cwd=root).stdout.strip()
-        if codex_cfg.get("require_explanatory_report", False) and not any(
+        unrestricted = self._unrestricted()
+        if not unrestricted and codex_cfg.get("require_explanatory_report", False) and not any(
             path.startswith("research/reports/") and path.endswith("/REPORT.md") for path in paths
         ):
             raise ResearchCtlError(
                 "Codex oversight did not create or update a validated explanatory REPORT.md"
             )
-        violations = protected_path_violations(paths, codex_cfg.get("protected_paths", []))
-        if project:
+        violations = [] if unrestricted else protected_path_violations(paths, codex_cfg.get("protected_paths", []))
+        if project and not unrestricted:
             violations.extend(sibling_memory_violations(paths, project))
             violations = sorted(set(violations))
         if violations:
@@ -1236,10 +1259,10 @@ class Controller:
                 "Codex changed protected paths; changes were left for human inspection: "
                 + ", ".join(violations)
             )
-        size_error = self._dirty_change_size_error(root, paths)
+        size_error = None if unrestricted else self._dirty_change_size_error(root, paths)
         if size_error:
             raise ResearchCtlError(size_error)
-        verify = codex_cfg.get("verification_command", [])
+        verify = [] if unrestricted else codex_cfg.get("verification_command", [])
         if verify:
             verify_argv = [str(x) for x in verify]
             if not Path(verify_argv[0]).is_absolute() and not (root / verify_argv[0]).exists() and (self.root / verify_argv[0]).exists():
@@ -1267,7 +1290,7 @@ class Controller:
         codex_cfg = self.cfg["codex"]
         if not codex_cfg.get("enabled", False):
             raise ResearchCtlError("Codex wake is disabled in configuration")
-        if not self._autonomy_window_open():
+        if not self._unrestricted() and not self._autonomy_window_open():
             raise ResearchCtlError(
                 f"autonomy window ended at {self._autonomy_deadline().isoformat()}"
             )
@@ -1325,7 +1348,7 @@ class Controller:
             json_dump(resolved, self.validate_plan(plan))
             print(f"resolved plan: {resolved}")
             if codex_cfg.get("auto_submit_after_wake", False) and manifest["project"].get("autonomous_submission", False):
-                if not self._autonomy_window_open():
+                if not self._unrestricted() and not self._autonomy_window_open():
                     raise ResearchCtlError(
                         "autonomy window ended during oversight; plan was preserved without submission"
                     )
@@ -1343,13 +1366,14 @@ class Controller:
         self, project_filter: str | None = None,
         after: dt.datetime | None = None,
     ) -> None:
-        self._local_storage_guard()
+        if not self._unrestricted():
+            self._local_storage_guard()
         self.refresh()
         state = self.load_state()
         if self.stop_path.exists() or state.get("paused"):
             print(f"observation only; paused={state.get('paused', False)} STOP={self.stop_path.exists()}")
             return
-        if not self._autonomy_window_open():
+        if not self._unrestricted() and not self._autonomy_window_open():
             print(
                 "observation only; autonomy window ended at "
                 f"{self._autonomy_deadline().isoformat()}"
@@ -1377,7 +1401,7 @@ class Controller:
         if not self.cfg["codex"].get("enabled", False):
             print("completed round awaits oversight; Codex wake is disabled")
             return
-        if len(self._unreviewed_reports()) >= self._unreviewed_limit():
+        if not self._unrestricted() and len(self._unreviewed_reports()) >= self._unreviewed_limit():
             print("completed rounds await oversight; unread-report limit reached")
             return
         by_project: dict[str, list[str]] = {}

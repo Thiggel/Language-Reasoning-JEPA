@@ -7,6 +7,7 @@ remote_url = "git@github.com:Thiggel/Language-Reasoning-JEPA.git"
 
 [controller]
 state_dir = ".researchctl"
+unrestricted_research_mode = false
 run_root = "runs/autonomy"
 plan_path = "research/NEXT_PLAN.json"
 stop_file = "research/STOP"

@@ -132,6 +132,26 @@ class ResearchCtlTests(unittest.TestCase):
         with self.assertRaisesRegex(researchctl.ResearchCtlError, "project GPU cap"):
             self.controller._fair_admission_guard(plan, state)
 
+    def test_unrestricted_mode_disables_scaffold_admission_caps(self):
+        self.controller.cfg["controller"]["unrestricted_research_mode"] = True
+        plan = copy.deepcopy(self.plan)
+        count = int(self.controller.cfg["limits"]["max_jobs_per_round"]) + 1
+        jobs = []
+        for i in range(count):
+            job = copy.deepcopy(plan["jobs"][0])
+            job["id"] = f"unrestricted-{i}"
+            job["gpus"] = int(self.controller.cfg["limits"]["max_gpus_per_job"]) + 1
+            job["walltime_minutes"] = 60
+            jobs.append(job)
+        plan["jobs"] = jobs
+        validated = self.controller.validate_plan(plan)
+        self.assertGreater(
+            validated["projected_gpu_hours"],
+            float(self.controller.cfg["limits"]["max_gpu_hours_per_round"]),
+        )
+        self.controller._fair_admission_guard(validated, {"rounds": {}})
+        self.controller._global_gpu_hour_guard(validated, {"rounds": {}})
+
     def test_duplicate_registered_round_is_detectable_without_submission(self):
         plan = self.controller.validate_plan(copy.deepcopy(self.plan))
         state = {"rounds": {plan["round_id"]: {}}}
