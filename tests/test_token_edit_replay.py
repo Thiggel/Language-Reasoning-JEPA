@@ -99,6 +99,24 @@ def test_mixed_replay_replaces_half_without_changing_dataset_length(tmp_path):
     assert all("goal_buffer" in mixed[index] for index in range(4))
 
 
+def test_replay_max_depth_truncates_actions_and_states(tmp_path):
+    vocab, path, record, _ = replay_file(tmp_path)
+    second_action = ("delete", 1, None)
+    second_outcome = [list(sentence) for sentence in record["buffer_snapshots"][-1]]
+    _apply(second_outcome, second_action)
+    payload = torch.load(path, weights_only=False)
+    payload["records"][0]["behavior_actions"].append(list(second_action))
+    payload["records"][0]["buffer_snapshots"].append(second_outcome)
+    torch.save(payload, path)
+    dataset = FrozenPolicyReplayDataset(
+        path, vocab, proposal_pool_k=4,
+        proposal_token_pool="prompt_plus_current", max_depth=1,
+    )
+    item = dataset[0]
+    assert len(item["actions"]) == 1
+    assert len(item["buffers"]) == 2
+
+
 def test_separate_privileged_goal_collates_and_drives_finite_gar_targets(tmp_path):
     vocab, path, _, _ = replay_file(tmp_path)
     dataset = FrozenPolicyReplayDataset(

@@ -6,4 +6,5 @@ run_name: edit_token_structured_gar_replay_positive_anchor_exact
 data:
   replay_path: ???
   replay_fraction: 0.5
+  replay_max_depth: null
   replay_proposal_seed: 3700

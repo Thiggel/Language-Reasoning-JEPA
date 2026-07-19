@@ -50,6 +50,7 @@ class FrozenPolicyReplayDataset(Dataset):
         proposal_pool_k: int,
         proposal_token_pool: str = "prompt_plus_current",
         gar_teacher: str = "latent_distance",
+        max_depth: int | None = None,
         seed: int = 0,
     ):
         payload = torch.load(Path(path), map_location="cpu", weights_only=False)
@@ -62,6 +63,7 @@ class FrozenPolicyReplayDataset(Dataset):
         self.proposal_pool_k = int(proposal_pool_k)
         self.proposal_token_pool = str(proposal_token_pool)
         self.gar_teacher = str(gar_teacher)
+        self.max_depth = None if max_depth is None else int(max_depth)
         self.seed = int(seed)
         if not self.records:
             raise ValueError("replay contains no valid trajectories")
@@ -73,6 +75,8 @@ class FrozenPolicyReplayDataset(Dataset):
             )
         if self.gar_teacher not in {"latent_distance", "token_edit_distance"}:
             raise ValueError(f"unknown gar_teacher: {self.gar_teacher}")
+        if self.max_depth is not None and self.max_depth < 1:
+            raise ValueError("replay max_depth must be positive")
 
     def __len__(self) -> int:
         return len(self.records)
@@ -83,6 +87,9 @@ class FrozenPolicyReplayDataset(Dataset):
         buffers = [_copy_buffer(item) for item in record["buffer_snapshots"]]
         goal = _copy_buffer(record["terminal_privileged_goal_buffer"])
         raw_actions = [tuple(item) for item in record["behavior_actions"]]
+        if self.max_depth is not None:
+            raw_actions = raw_actions[:self.max_depth]
+            buffers = buffers[:len(raw_actions) + 1]
         if len(buffers) != len(raw_actions) + 1 or not raw_actions:
             raise ValueError("replay trajectory must contain T actions and T+1 states")
 

@@ -128,6 +128,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
                     "proposal_token_pool", "prompt_plus_current"
                 ),
                 gar_teacher=d.get("gar_teacher", "latent_distance"),
+                max_depth=d.get("replay_max_depth"),
                 seed=d.get("replay_proposal_seed", seed),
             )
             dataset = MixedReplayTokenEditDataset(

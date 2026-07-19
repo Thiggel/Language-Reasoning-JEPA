@@ -11,6 +11,7 @@ data:
   proposal_token_pool: prompt_plus_current
   replay_path: ???
   replay_fraction: 0.5
+  replay_max_depth: null
   replay_proposal_seed: 3700
 model:
   selected_k: 4
