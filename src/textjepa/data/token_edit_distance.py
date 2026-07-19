@@ -87,13 +87,14 @@ def exact_one_step_advantage(
 
 def exact_one_step_advantages(
     before: list[list[int]], outcomes: list[list[list[int]]],
-    target: list[list[int]], max_distance: int,
+    target: list[list[int]], max_distance: int | None,
 ) -> list[int]:
     """Share the exact pre-edit distance across same-state candidates."""
     distance = boundary_token_edit_distance(before, target, max_distance)
     return [
         distance - boundary_token_edit_distance(
-            outcome, target, max_distance + 1
+            outcome, target,
+            None if max_distance is None else max_distance + 1,
         )
         for outcome in outcomes
     ]

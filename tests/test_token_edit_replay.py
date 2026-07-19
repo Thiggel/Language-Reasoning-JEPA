@@ -117,6 +117,17 @@ def test_replay_max_depth_truncates_actions_and_states(tmp_path):
     assert len(item["buffers"]) == 2
 
 
+def test_exact_replay_teacher_accepts_unbounded_distance(tmp_path):
+    vocab, path, _, _ = replay_file(tmp_path, exact=True)
+    dataset = FrozenPolicyReplayDataset(
+        path, vocab, proposal_pool_k=4,
+        proposal_token_pool="prompt_plus_current",
+        gar_teacher="token_edit_distance",
+    )
+    item = dataset[0]
+    assert len(item["gar_proposal_token_edit_target"][0]) == 4
+
+
 def test_separate_privileged_goal_collates_and_drives_finite_gar_targets(tmp_path):
     vocab, path, _, _ = replay_file(tmp_path)
     dataset = FrozenPolicyReplayDataset(
