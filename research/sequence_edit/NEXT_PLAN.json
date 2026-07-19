@@ -1,23 +1,23 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-19-structured-edit-replay-evaluation-recovery-wave47",
-  "decision": "Wave46 successfully collected 3000 target-free frozen-GAR trajectories and completed the matched 50/50 expert/replay hard-latent EMA training, with finite losses and healthy state effective rank, but its obsolete audit CLI flag caused a post-training process failure before representation and closed-loop metrics were written. Reuse that exact completed checkpoint and run evaluation only. Promote replay beyond seed 0 only if first-step true advantage remains positive, mean selected true advantage over decisions 2-4 and full normalized edit-distance improvement both exceed the information-matched expert-only hard-latent parent, and representation health does not collapse. Otherwise reject expert-state coverage as the primary explanation and stop scaling the present GAR planner. All deployable proposal generation and GAR selection remain target-free; target access is restricted to separately labelled evaluation metrics and any explicitly candidate-privileged diagnostic.",
+  "round_id": "2026-07-19-structured-edit-replay-evaluation-path-recovery-wave48",
+  "decision": "Wave47 produced no scientific evidence because its evaluation-only command referenced the nonexistent wave46 run-root best.pt; the completed replay-trained checkpoint is actually model/best.pt. Re-run only the unchanged representation audit and target-free closed-loop evaluation against that exact checkpoint. Promote replay beyond seed 0 only if first-step true advantage remains positive, mean selected true advantage over decisions 2-4 and full normalized edit-distance improvement both exceed the information-matched expert-only hard-latent parent, and representation health does not collapse. Otherwise reject expert-state coverage as the primary explanation and stop scaling the present GAR planner. All deployable proposal generation and GAR selection remain target-free; target access is restricted to separately labelled evaluation metrics and any explicitly candidate-privileged diagnostic.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-replay-hard-latent-seed0-eval-recovery-wave47",
+      "id": "edit-replay-hard-latent-seed0-eval-path-recovery-wave48",
       "cluster": "gruenau",
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 40000,
       "walltime_minutes": 60,
-      "purpose": "Recover only the missing representation audit and target-free closed-loop evaluation from the completed wave46 replay-trained checkpoint.",
+      "purpose": "Recover the missing representation audit and target-free closed-loop evaluation using the actual completed wave46 checkpoint path.",
       "command": [
         "bash",
         "scripts/evaluate_sequence_edit_checkpoint.sh",
         "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/best.pt"
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt"
       ],
       "expected_artifacts": [
         "metrics.json",
