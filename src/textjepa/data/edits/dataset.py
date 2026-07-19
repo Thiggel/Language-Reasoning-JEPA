@@ -210,6 +210,23 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
         ),
         "defect_mask": _pad_defects([b["defect_masks"] for b in batch]),
     }
+    if "goal_buffer" in batch[0]:
+        if not all("goal_buffer" in item for item in batch):
+            raise ValueError("goal_buffer must be present on every mixed batch item")
+        Cg = max(len(item["goal_buffer"]) for item in batch)
+        Lg = max(
+            len(sentence) for item in batch for sentence in item["goal_buffer"]
+        )
+        goal_tokens = torch.full((B, 1, Cg, Lg), pad_id, dtype=torch.long)
+        goal_mask = torch.zeros((B, 1, Cg), dtype=torch.bool)
+        for batch_index, item in enumerate(batch):
+            for sentence_index, sentence in enumerate(item["goal_buffer"]):
+                goal_tokens[
+                    batch_index, 0, sentence_index, :len(sentence)
+                ] = torch.tensor(sentence)
+                goal_mask[batch_index, 0, sentence_index] = True
+        out["goal_buffer_tokens"] = goal_tokens
+        out["goal_buffer_mask"] = goal_mask
     if "gar_token_edit_target" in batch[0]:
         out["gar_token_edit_target"] = _pad_labels([
             item["gar_token_edit_target"] for item in batch

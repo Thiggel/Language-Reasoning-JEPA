@@ -165,6 +165,42 @@ def _proposal_tokens(
     return list(dict.fromkeys(tokens))
 
 
+def propose_deployable_edits(
+    buffer: list[list[int]], tokens: list[int], max_candidates: int,
+    rng: random.Random,
+) -> list[tuple[str, int, int | None]]:
+    """Build the planner's operation-balanced, target-free candidate set."""
+    if max_candidates < 1:
+        raise ValueError("max_candidates must be positive")
+    current = [token for sentence in buffer for token in sentence]
+    deletes, inserts, replaces = [], [], []
+    offset = 0
+    for sentence in buffer:
+        if len(sentence) > 1:
+            deletes.extend(
+                ("delete", position, None)
+                for position in range(offset, offset + len(sentence) - 1)
+            )
+        offset += len(sentence)
+    for position in range(len(current) + 1):
+        inserts.extend(
+            ("insert", position, token) for token in tokens
+        )
+    for position, old in enumerate(current):
+        replaces.extend(
+            ("replace", position, token) for token in tokens if token != old
+        )
+    groups = [deletes, inserts, replaces]
+    for group in groups:
+        rng.shuffle(group)
+    selected = []
+    while len(selected) < max_candidates and any(groups):
+        for group in groups:
+            if group and len(selected) < max_candidates:
+                selected.append(group.pop())
+    return list(dict.fromkeys(selected))
+
+
 class FaithfulTokenEditDataset(Dataset):
     """Official iGSM prompt plus a generically corrupted solution buffer."""
 
@@ -464,4 +500,5 @@ class FaithfulTokenEditDataset(Dataset):
 
 __all__ = [
     "FaithfulTokenEditDataset", "collate_edits", "faithful_token_edit_vocab",
+    "propose_deployable_edits",
 ]
