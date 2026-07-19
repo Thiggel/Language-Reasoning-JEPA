@@ -1,74 +1,30 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-19-structured-edit-horizon-scale-gate-wave52",
-  "decision": "Wave51 is process-valid and establishes a replicated horizon boundary on 32 test episodes: for both replay-trained checkpoints, deployment-feasible current-buffer GAR is positive at horizon 2 (normalized edit-distance improvement 0.0824 and 0.0762), remains far above its matched target-free random control at horizon 5 (0.0271 and 0.0270 versus -0.4559), and selects a harmful fifth edit on average (-0.3125 and -0.28125 true advantage). Scale the paired horizon 2, 4, and 5 evaluations to 128 test episodes without training or checkpoint selection. Adopt horizon 4 as the fixed deployment-feasible operating point only if both checkpoints have positive normalized improvement at horizon 4, beat their matched random controls, and horizon 5 is worse than horizon 4; prefer horizon 2 if horizon 4 fails either checkpoint or does not improve on horizon 2. If the fifth-step decrement does not reproduce, do not claim a stable boundary and inspect episode-level uncertainty before further model changes. Candidate generation and GAR selection remain target-free; terminal targets are used only for separately labelled test metrics, and oracle-injected conditions remain candidate-privileged diagnostics.",
+  "round_id": "2026-07-19-structured-edit-horizon3-boundary-wave54",
+  "decision": "Wave52 is process-valid and rejects horizon 4 as the fixed deployment-feasible operating point: on 128 test episodes, current-buffer GAR normalized edit-distance improvement falls from 0.05048 to 0.00611 for checkpoint seed 0 and from 0.04876 to 0.01782 for seed 1 between horizons 2 and 4, while horizon 5 is negative for both (-0.03369 and -0.01492). The fourth and fifth selected edits have negative mean true advantage on both checkpoints, and GAR remains far above the matched target-free random control. Evaluate the missing horizon 3 at the identical 128-episode, 256-candidate protocol. Adopt horizon 2 as the fixed operating point if horizon 3 fails to improve on horizon 2 for both checkpoints or is non-positive for either; adopt horizon 3 only if it is positive and exceeds horizon 2 on both checkpoints. Otherwise retain horizon 2 conservatively and treat the boundary as checkpoint-dependent. Candidate generation and GAR selection remain deployment-feasible and target-free; terminal targets are used only for test metrics.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-replay-horizon2-seed0-scale-wave52",
+      "id": "edit-replay-horizon3-seed0-boundary-wave54",
       "cluster": "gruenau",
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 22000,
       "walltime_minutes": 30,
-      "purpose": "Scale the two-edit control for replay checkpoint seed 0 to 128 episodes.",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt", "128", "256", "2"],
+      "purpose": "Resolve whether a third edit improves over the two-edit operating point for replay checkpoint seed 0.",
+      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt", "128", "256", "3"],
       "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-replay-horizon4-seed0-scale-wave52",
+      "id": "edit-replay-horizon3-seed1-boundary-wave54",
       "cluster": "gruenau",
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 22000,
       "walltime_minutes": 30,
-      "purpose": "Scale the proposed four-edit operating point for replay checkpoint seed 0.",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt", "128", "256", "4"],
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-replay-horizon5-seed0-scale-wave52",
-      "cluster": "gruenau",
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 22000,
-      "walltime_minutes": 30,
-      "purpose": "Scale the first post-boundary edit for replay checkpoint seed 0.",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt", "128", "256", "5"],
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-replay-horizon2-seed1-scale-wave52",
-      "cluster": "gruenau",
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 22000,
-      "walltime_minutes": 30,
-      "purpose": "Scale the two-edit control for replay checkpoint seed 1 to 128 episodes.",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-replay-replication-wave49/edit-full-replay-hard-latent-seed1-wave49/model/best.pt", "128", "256", "2"],
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-replay-horizon4-seed1-scale-wave52",
-      "cluster": "gruenau",
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 22000,
-      "walltime_minutes": 30,
-      "purpose": "Scale the proposed four-edit operating point for replay checkpoint seed 1.",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-replay-replication-wave49/edit-full-replay-hard-latent-seed1-wave49/model/best.pt", "128", "256", "4"],
-      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-replay-horizon5-seed1-scale-wave52",
-      "cluster": "gruenau",
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 22000,
-      "walltime_minutes": 30,
-      "purpose": "Scale the first post-boundary edit for replay checkpoint seed 1.",
-      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-replay-replication-wave49/edit-full-replay-hard-latent-seed1-wave49/model/best.pt", "128", "256", "5"],
+      "purpose": "Resolve whether a third edit improves over the two-edit operating point for replay checkpoint seed 1.",
+      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-replay-replication-wave49/edit-full-replay-hard-latent-seed1-wave49/model/best.pt", "128", "256", "3"],
       "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
     }
   ]
