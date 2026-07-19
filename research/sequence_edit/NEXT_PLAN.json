@@ -1,0 +1,79 @@
+{
+  "schema_version": 2,
+  "project": "sequence_edit",
+  "round_id": "2026-07-20-structured-edit-positive-anchor-replication-wave56",
+  "decision": "Test whether exact positive-anchor GAR is the simplest stable recipe. The seed-0 expert checkpoint is healthy and improves deployment-feasible current-buffer horizon-2 normalized edit distance by 0.0656, while depth-2 replay fraction 0.25 collapses on seed 2 (effective rank 7.16). First evaluate the already-terminal replay-plus-positive-anchor checkpoint at the fixed horizon-2 protocol. Independently train expert positive-anchor seeds 1 and 2 at lr 0.004. Continue only if both replications remain healthy (effective rank at least 50, finite losses, token-aligned shuffled-action error ratio above 1) and a subsequent fixed-protocol planning audit confirms positive improvement on both; otherwise reject the recipe as seed-unstable. Treat all positive-anchor training selection and oracle-injected planning conditions as candidate-privileged diagnostics, not deployment evidence.",
+  "git_commit": "AUTO",
+  "jobs": [
+    {
+      "id": "edit-positive-anchor-replay-depth2-plan-h2-seed0-wave56",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_planning.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-depth2-anchor-recovery-wave55/edit-positive-anchor-replay-depth2-seed0-wave55/model/best.pt",
+        "128",
+        "256",
+        "2"
+      ],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 30,
+      "purpose": "Measure the repaired replay-plus-positive-anchor checkpoint at the fixed deployment-feasible horizon-2 protocol.",
+      "expected_artifacts": [
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-positive-anchor-expert-lr4e3-seed1-wave56",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_gar_positive_anchor_exact",
+        "1",
+        "train.lr=0.004"
+      ],
+      "gpus": 1,
+      "min_gpu_memory_mb": 45000,
+      "walltime_minutes": 300,
+      "purpose": "Replicate the healthy expert positive-anchor representation and GAR ranking result on seed 1.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "metrics_mask.json",
+        "metrics_replace.json",
+        "metrics_remove.json",
+        "model/best.pt"
+      ]
+    },
+    {
+      "id": "edit-positive-anchor-expert-lr4e3-seed2-wave56",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_faithful_token_edit_cell.sh",
+        "{python}",
+        "edit_token_structured_gar_positive_anchor_exact",
+        "2",
+        "train.lr=0.004"
+      ],
+      "gpus": 1,
+      "min_gpu_memory_mb": 45000,
+      "walltime_minutes": 300,
+      "purpose": "Replicate the healthy expert positive-anchor representation and GAR ranking result on seed 2.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "metrics.json",
+        "metrics_mask.json",
+        "metrics_replace.json",
+        "model/best.pt"
+      ]
+    }
+  ]
+}
