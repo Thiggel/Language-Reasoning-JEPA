@@ -27,7 +27,7 @@ model_dir="$RUN_DIR/model"
 
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/audit_faithful_token_edits.py" \
   --ckpt "$model_dir/best.pt" --device "${DEVICE:-cuda:0}" \
-  --examples 256 --corruption-mode mixed --out "$RUN_DIR/metrics.json"
+  --examples 256 --out "$RUN_DIR/metrics.json"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/plan_faithful_token_edits.py" \
   --ckpt "$model_dir/best.pt" --device "${DEVICE:-cuda:0}" \
   --examples 32 --max-candidates 256 --max-steps 32 \
