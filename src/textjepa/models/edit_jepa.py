@@ -677,9 +677,20 @@ class EditJEPA(nn.Module):
             })
         # The clean terminal embedding is a privileged training target only.
         # The learned action-value head receives (state, action), not the goal.
-        goal_index = batch["step_mask"].sum(1).long().clamp(min=1)
         row = torch.arange(states.shape[0], device=states.device)
-        goal = targets[row, goal_index]
+        goal_index = batch["step_mask"].sum(1).long().clamp(min=1)
+        if "goal_buffer_tokens" in batch:
+            # Replay traces end in a behavior-policy state, not necessarily the
+            # clean solution.  Encode the separately labelled privileged goal
+            # only for GAR targets; it is never an input to V(state, action).
+            with torch.no_grad():
+                goal_tokens, goal_mask = self.encode_token_buffers(
+                    batch["goal_buffer_tokens"], mode="teacher"
+                )
+            goal = self._pool_tokens(goal_tokens, goal_mask)[:, 0]
+            out.extras["gar_uses_separate_terminal_privileged_goal"] = True
+        else:
+            goal = targets[row, goal_index]
         target_prev = torch.cat([targets[:, :1], targets[:, 1:-1]], dim=1)
         future = []
         for step in range(out.step_mask.shape[1]):

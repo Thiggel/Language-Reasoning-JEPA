@@ -1,0 +1,28 @@
+# @package _global_
+# Frozen-policy state-coverage pilot. Exactly half of the fixed 6k
+# presentations are replaced by target-free GAR-greedy rollout traces; the
+# clean goal remains a separately labelled terminal-privileged GAR teacher.
+defaults: [edit_token_structured_gar_adaptive_hard_prompt, _self_]
+run_name: edit_token_structured_gar_replay_pilot
+data:
+  train_size: 6000
+  fresh_per_epoch: false
+  proposal_pool_k: 64
+  proposal_token_pool: prompt_plus_current
+  replay_path: ???
+  replay_fraction: 0.5
+  replay_proposal_seed: 3700
+model:
+  selected_k: 4
+  proposal_selection: hard
+objective:
+  gar_action_value:
+    weight: 0.3
+    regression_weight: 0.25
+    pairwise_weight: 1.0
+    margin: 0.5
+    label_gap: 0.001
+train:
+  batch_size: 8
+  epochs: 3
+  lr: 0.01
