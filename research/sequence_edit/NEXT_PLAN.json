@@ -1,12 +1,12 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-20-structured-edit-positive-anchor-replication-wave56",
-  "decision": "Test whether exact positive-anchor GAR is the simplest stable recipe. The seed-0 expert checkpoint is healthy and improves deployment-feasible current-buffer horizon-2 normalized edit distance by 0.0656, while depth-2 replay fraction 0.25 collapses on seed 2 (effective rank 7.16). First evaluate the already-terminal replay-plus-positive-anchor checkpoint at the fixed horizon-2 protocol. Independently train expert positive-anchor seeds 1 and 2 at lr 0.004. Continue only if both replications remain healthy (effective rank at least 50, finite losses, token-aligned shuffled-action error ratio above 1) and a subsequent fixed-protocol planning audit confirms positive improvement on both; otherwise reject the recipe as seed-unstable. Treat all positive-anchor training selection and oracle-injected planning conditions as candidate-privileged diagnostics, not deployment evidence.",
+  "round_id": "2026-07-20-structured-edit-positive-anchor-replication-retry-wave57",
+  "decision": "Recover the process-invalid wave-56 decision after repairing its snapshot mismatch. The prior three jobs produced no scientific evidence: both expert replications referenced a recipe absent from their exact snapshot, and the planning audit could not instantiate the wave-55 positive-anchor checkpoint. Retry the same bounded comparison from one compatible snapshot. Accept expert positive-anchor as a stable candidate-privileged training recipe only if seeds 1 and 2 both finish with finite losses, effective rank at least 50, token-aligned shuffled-action error ratio above 1, and later show positive deployment-feasible current-buffer horizon-2 planning improvement. The replay checkpoint audit is independently informative at the already-fixed horizon-2 protocol. Oracle-selected training anchors remain candidate/terminal-privileged and are not deployment evidence.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-positive-anchor-replay-depth2-plan-h2-seed0-wave56",
+      "id": "edit-positive-anchor-replay-depth2-plan-h2-seed0-wave57",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -21,7 +21,7 @@
       "cpus": 4,
       "min_gpu_memory_mb": 22000,
       "walltime_minutes": 30,
-      "purpose": "Measure the repaired replay-plus-positive-anchor checkpoint at the fixed deployment-feasible horizon-2 protocol.",
+      "purpose": "Retry the fixed deployment-feasible horizon-2 audit after restoring checkpoint compatibility.",
       "expected_artifacts": [
         "planning_metrics.json",
         "stdout.log",
@@ -29,7 +29,7 @@
       ]
     },
     {
-      "id": "edit-positive-anchor-expert-lr4e3-seed1-wave56",
+      "id": "edit-positive-anchor-expert-lr4e3-seed1-wave57",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -42,7 +42,7 @@
       "gpus": 1,
       "min_gpu_memory_mb": 45000,
       "walltime_minutes": 300,
-      "purpose": "Replicate the healthy expert positive-anchor representation and GAR ranking result on seed 1.",
+      "purpose": "Run the first valid expert positive-anchor replication at the selected learning rate.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
@@ -53,7 +53,7 @@
       ]
     },
     {
-      "id": "edit-positive-anchor-expert-lr4e3-seed2-wave56",
+      "id": "edit-positive-anchor-expert-lr4e3-seed2-wave57",
       "cluster": "gruenau",
       "command": [
         "bash",
@@ -66,12 +66,13 @@
       "gpus": 1,
       "min_gpu_memory_mb": 45000,
       "walltime_minutes": 300,
-      "purpose": "Replicate the healthy expert positive-anchor representation and GAR ranking result on seed 2.",
+      "purpose": "Run the second valid expert positive-anchor replication at the selected learning rate.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
         "metrics_mask.json",
         "metrics_replace.json",
+        "metrics_remove.json",
         "model/best.pt"
       ]
     }
