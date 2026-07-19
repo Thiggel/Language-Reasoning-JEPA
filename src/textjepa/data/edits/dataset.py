@@ -169,11 +169,13 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
     step_mask = snapshot_mask[:, 1:]
     from textjepa.data.igsm.dataset import _pad_alt
 
-    if "alt_buffers" in batch[0]:
+    if "proposal_buffers" in batch[0]:
+        extra = _pad_proposal_buffers(batch, pad_id)
+    elif "alt_buffers" in batch[0]:
         extra = _pad_alt_buffers(batch, pad_id)
     else:
         extra = _pad_alt(batch, pad_id) if "alt_actions" in batch[0] else {}
-    return {
+    out = {
         **extra,
         "prompt_tokens": prompt_tokens,
         "prompt_mask": prompt_mask,
@@ -208,6 +210,28 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
         ),
         "defect_mask": _pad_defects([b["defect_masks"] for b in batch]),
     }
+    if "goal_buffer" in batch[0]:
+        if not all("goal_buffer" in item for item in batch):
+            raise ValueError("goal_buffer must be present on every mixed batch item")
+        Cg = max(len(item["goal_buffer"]) for item in batch)
+        Lg = max(
+            len(sentence) for item in batch for sentence in item["goal_buffer"]
+        )
+        goal_tokens = torch.full((B, 1, Cg, Lg), pad_id, dtype=torch.long)
+        goal_mask = torch.zeros((B, 1, Cg), dtype=torch.bool)
+        for batch_index, item in enumerate(batch):
+            for sentence_index, sentence in enumerate(item["goal_buffer"]):
+                goal_tokens[
+                    batch_index, 0, sentence_index, :len(sentence)
+                ] = torch.tensor(sentence)
+                goal_mask[batch_index, 0, sentence_index] = True
+        out["goal_buffer_tokens"] = goal_tokens
+        out["goal_buffer_mask"] = goal_mask
+    if "gar_token_edit_target" in batch[0]:
+        out["gar_token_edit_target"] = _pad_labels([
+            item["gar_token_edit_target"] for item in batch
+        ])
+    return out
 
 
 def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
@@ -247,6 +271,7 @@ def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
     alt_op = torch.full((B, T, K), -1, dtype=torch.long)
     alt_position = torch.full((B, T, K), -1, dtype=torch.long)
     alt_content = torch.full((B, T, K), pad, dtype=torch.long)
+    gar_target = torch.zeros((B, T, K), dtype=torch.long)
     for batch_index, item in enumerate(batch):
         for step_index, (actions, buffers) in enumerate(zip(
             item["alt_actions"], item["alt_buffers"]
@@ -280,7 +305,11 @@ def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
                     alt_content[batch_index, step_index, candidate] = item[
                         "alt_edit_content_token"
                     ][step_index][candidate]
-    return {
+                if "gar_alt_token_edit_target" in item:
+                    gar_target[batch_index, step_index, candidate] = item[
+                        "gar_alt_token_edit_target"
+                    ][step_index][candidate]
+    out = {
         "alt_tokens": tokens,
         "alt_buffer_tokens": outcomes,
         "alt_buffer_mask": outcome_mask,
@@ -291,6 +320,38 @@ def _pad_alt_buffers(batch: list[dict], pad: int) -> dict:
         "alt_edit_position": alt_position,
         "alt_edit_content_token": alt_content,
     }
+    if "gar_alt_token_edit_target" in batch[0]:
+        out["gar_alt_token_edit_target"] = gar_target
+    return out
+
+
+def _pad_proposal_buffers(batch: list[dict], pad: int) -> dict:
+    """Pad a broad adaptive pool under fields distinct from legacy alts."""
+    remapped = []
+    names = (
+        "actions", "buffers", "changed", "op", "edit_position",
+        "edit_content_token",
+    )
+    for item in batch:
+        copy = dict(item)
+        for name in names:
+            copy[f"alt_{name}"] = item[f"proposal_{name}"]
+        if "gar_proposal_token_edit_target" in item:
+            copy["gar_alt_token_edit_target"] = item[
+                "gar_proposal_token_edit_target"
+            ]
+        remapped.append(copy)
+    padded = _pad_alt_buffers(remapped, pad)
+    out = {
+        f"proposal_{name[4:] if name.startswith('alt_') else name}": value
+        for name, value in padded.items()
+        if name != "gar_alt_token_edit_target"
+    }
+    if "gar_alt_token_edit_target" in padded:
+        out["gar_proposal_token_edit_target"] = padded[
+            "gar_alt_token_edit_target"
+        ]
+    return out
 
 
 def _pad_defects(masks: list[list[list[int]]], width: int = 16) -> torch.Tensor:

@@ -92,11 +92,15 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
     if d.get("name", "igsm") == "igsm_real_token_edit":
         from textjepa.data.faithful_token_edits import FaithfulTokenEditDataset
 
-        return FaithfulTokenEditDataset(
+        dataset = FaithfulTokenEditDataset(
             vocab, size=size, seed=seed, max_op=d.max_op,
             max_edge=d.max_edge, op_range=tuple(d.op_range),
             min_edits=d.min_edits, max_edits=d.max_edits,
             counterfactual_k=d.get("counterfactual_k", 0),
+            proposal_pool_k=d.get("proposal_pool_k", 0),
+            proposal_token_pool=d.get(
+                "proposal_token_pool", "current_buffer"
+            ),
             counterfactual_source=d.get(
                 "counterfactual_source", "uniform_local"
             ),
@@ -107,7 +111,29 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             ),
             curriculum_epochs=d.get("curriculum_epochs", 3),
             fresh_per_epoch=d.get("fresh_per_epoch", False),
+            gar_teacher=d.get("gar_teacher", "latent_distance"),
         )
+        replay_path = d.get("replay_path")
+        replay_fraction = float(d.get("replay_fraction", 0.0))
+        if split == "train" and replay_path and replay_fraction > 0:
+            from textjepa.data.token_edit_replay import (
+                FrozenPolicyReplayDataset,
+                MixedReplayTokenEditDataset,
+            )
+
+            replay = FrozenPolicyReplayDataset(
+                replay_path, vocab,
+                proposal_pool_k=d.get("proposal_pool_k", 0),
+                proposal_token_pool=d.get(
+                    "proposal_token_pool", "prompt_plus_current"
+                ),
+                gar_teacher=d.get("gar_teacher", "latent_distance"),
+                seed=d.get("replay_proposal_seed", seed),
+            )
+            dataset = MixedReplayTokenEditDataset(
+                dataset, replay, replay_fraction
+            )
+        return dataset
     if d.get("name", "igsm") == "igsm_real":
         from textjepa.data.faithful import FaithfulDataset
 

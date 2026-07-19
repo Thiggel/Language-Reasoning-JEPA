@@ -21,7 +21,9 @@ from typing import Callable
 import torch
 import torch.nn.functional as F
 
-from textjepa.data.faithful_token_edits import OPS
+from textjepa.data.faithful_token_edits import (
+    OPS, _apply, propose_deployable_edits,
+)
 from textjepa.utils.checkpoint import build_dataset, load_run
 
 
@@ -40,35 +42,6 @@ def buffer_key(buffer: Buffer) -> tuple[tuple[int, ...], ...]:
 
 def flatten(buffer: Buffer) -> list[int]:
     return [token for sentence in buffer for token in sentence]
-
-
-def apply_edit(buffer: Buffer, action: Edit) -> None:
-    """Apply the structured flattened-pointer action contract locally."""
-    kind, position, token = action
-    total = sum(map(len, buffer))
-    if kind == "insert" and position == total:
-        sentence_index, offset = len(buffer) - 1, len(buffer[-1])
-    else:
-        if position < 0 or position >= total:
-            raise IndexError(position)
-        start = 0
-        for sentence_index, sentence in enumerate(buffer):
-            if position < start + len(sentence):
-                offset = position - start
-                break
-            start += len(sentence)
-        else:
-            raise AssertionError("unreachable flattened token position")
-    if kind == "delete":
-        if len(buffer[sentence_index]) <= 1:
-            raise AssertionError("token edit unexpectedly emptied a step")
-        buffer[sentence_index].pop(offset)
-    elif kind == "insert":
-        buffer[sentence_index].insert(offset, int(token))
-    elif kind == "replace":
-        buffer[sentence_index][offset] = int(token)
-    else:
-        raise ValueError(kind)
 
 
 def token_edit_distance(left: list[int], right: list[int]) -> int:
@@ -131,15 +104,15 @@ def canonical_oracle_edit(current: Buffer, target: Buffer) -> Edit | None:
         for action in choices:
             outcome = copy_buffer(current)
             try:
-                apply_edit(outcome, action)
+                _apply(outcome, action)
             except (AssertionError, IndexError, ValueError):
                 continue
             if buffer_distance(outcome, target) == before - 1:
                 return action
-        # Flattened insertion positions assign an exact step boundary to the
-        # step on its right. Consequently, appending to a non-final step is
-        # not representable by the current action tuple. Surface that support
-        # gap to the audit instead of crashing the whole evaluation.
+        # A flattened insertion pointer at an exact boundary belongs to the
+        # step on its right. Appending to a non-final step is therefore not
+        # representable by this action tuple; report the support gap rather
+        # than crashing the complete audit.
         return None
     return None
 
@@ -158,35 +131,7 @@ def propose_edits(
     buffer: Buffer, tokens: list[int], max_candidates: int, rng: random.Random
 ) -> list[Edit]:
     """Build an operation-balanced, target-free bounded candidate set."""
-    if max_candidates < 1:
-        raise ValueError("max_candidates must be positive")
-    current = flatten(buffer)
-    deletes, inserts, replaces = [], [], []
-    offset = 0
-    for sentence in buffer:
-        # Match the data contract: never delete a step-final token, so its
-        # inverse insertion remains unambiguous under flattened pointers.
-        if len(sentence) > 1:
-            deletes.extend(("delete", position, None) for position in range(
-                offset, offset + len(sentence) - 1
-            ))
-        offset += len(sentence)
-    for position in range(len(current) + 1):
-        inserts.extend(("insert", position, token) for token in tokens)
-    for position, old in enumerate(current):
-        replaces.extend(
-            ("replace", position, token) for token in tokens if token != old
-        )
-    groups = [deletes, inserts, replaces]
-    for group in groups:
-        rng.shuffle(group)
-    selected = []
-    while len(selected) < max_candidates and any(groups):
-        for group in groups:
-            if group and len(selected) < max_candidates:
-                selected.append(group.pop())
-    # Different operation paths can only duplicate if the token source did.
-    return list(dict.fromkeys(selected))
+    return propose_deployable_edits(buffer, tokens, max_candidates, rng)
 
 
 def pad_token_state_for_insertions(
@@ -256,6 +201,9 @@ class EpisodeMetrics:
     recovered: bool = False
     oracle_injections: int = 0
     oracle_unreachable: bool = False
+    oracle_available: int = 0
+    oracle_selected: int = 0
+    first_selected_advantage: int | None = None
 
 
 def run_episode(
@@ -285,6 +233,7 @@ def run_episode(
         if inject_oracle and oracle not in candidates:
             candidates.append(oracle)
             metrics.oracle_injections += 1
+        metrics.oracle_available += int(oracle in candidates)
         if not candidates:
             break
         if policy == "random":
@@ -300,12 +249,16 @@ def run_episode(
             raise ValueError(f"unknown policy: {policy}")
         before = buffer_distance(current, target)
         try:
-            apply_edit(current, selected)
+            _apply(current, selected)
         except (AssertionError, IndexError, ValueError):
             metrics.invalid_actions += 1
             break
         after = buffer_distance(current, target)
-        metrics.selected_advantages.append(before - after)
+        advantage = before - after
+        metrics.selected_advantages.append(advantage)
+        metrics.oracle_selected += int(selected == oracle)
+        if metrics.first_selected_advantage is None:
+            metrics.first_selected_advantage = advantage
         key = buffer_key(current)
         if key in seen:
             metrics.looped = True
@@ -319,6 +272,10 @@ def run_episode(
 def aggregate(episodes: list[EpisodeMetrics]) -> dict:
     decisions = sum(item.decisions for item in episodes)
     selected = [value for item in episodes for value in item.selected_advantages]
+    first = [
+        item.first_selected_advantage for item in episodes
+        if item.first_selected_advantage is not None
+    ]
     initial = sum(item.initial_distance for item in episodes)
     final = sum(item.final_distance for item in episodes)
     source_ceiling = (
@@ -327,6 +284,18 @@ def aggregate(episodes: list[EpisodeMetrics]) -> dict:
     bounded_recall = (
         sum(item.bounded_recall_hits for item in episodes) / max(decisions, 1)
     )
+    by_decision = {}
+    maximum_depth = max((len(item.selected_advantages) for item in episodes), default=0)
+    for depth in range(maximum_depth):
+        values = [
+            item.selected_advantages[depth] for item in episodes
+            if depth < len(item.selected_advantages)
+        ]
+        by_decision[str(depth + 1)] = {
+            "count": len(values),
+            "mean": sum(values) / len(values),
+            "positive_rate": sum(value > 0 for value in values) / len(values),
+        }
     return {
         "episodes": len(episodes),
         "decisions": decisions,
@@ -337,6 +306,17 @@ def aggregate(episodes: list[EpisodeMetrics]) -> dict:
         "selected_true_advantage_mean": (
             sum(selected) / len(selected) if selected else None
         ),
+        "first_selected_true_advantage_mean": (
+            sum(first) / len(first) if first else None
+        ),
+        "first_selected_positive_advantage_rate": (
+            sum(value > 0 for value in first) / len(first) if first else None
+        ),
+        "available_canonical_oracle_selection_accuracy": (
+            sum(item.oracle_selected for item in episodes)
+            / max(sum(item.oracle_available for item in episodes), 1)
+        ),
+        "selected_true_advantage_by_decision": by_decision,
         "normalized_edit_distance_improvement": (
             sum(
                 (item.initial_distance - item.final_distance)

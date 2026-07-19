@@ -1,0 +1,6 @@
+# @package _global_
+# Deployment-feasible prompt-plus-current token vocabulary for hard GAR mining.
+defaults: [edit_token_structured_gar_adaptive_hard, _self_]
+run_name: edit_token_structured_gar_adaptive_hard_prompt
+data:
+  proposal_token_pool: prompt_plus_current

@@ -1,101 +1,32 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-19-structured-edit-factorial-planning-eval-wave43",
-  "decision": "Wave40 plus the wave42 recovery complete the valid seed-0 2x2 adaptive-GAR factorial. On 2,873 held-out states and 14,365 broad candidates per cell, predicted-hard selection is worse than random under both teachers: pairwise ranking accuracy is 0.6217 versus 0.7141 with terminal-privileged exact-distance targets and 0.6853 versus 0.7708 with latent-distance targets. Exact-distance supervision is also worse than latent supervision in each matched selection arm, while hard plus exact nearly collapses (state effective rank 6.57 versus 103.56 for hard plus latent). Therefore do not retrain or seed-scale either factor. The predeclared closed-loop gate is absent from the completed artifacts, so run only the same checkpoint-only evaluator on all four cells with identical test seed, 64 examples, 256 candidates, and 8 receding steps. Reject hard selection and exact supervision unless the closed-loop results reverse their matched ranking losses without worse invalid-action or loop rates; otherwise retain random selection with latent-distance supervision as the diagnostic baseline and redirect the next training decision away from candidate mining and privileged teachers. Exact-distance cells remain explicitly terminal-privileged training diagnostics; oracle-injected evaluator conditions remain candidate-privileged diagnostics and cannot support a deployment-feasible claim.",
+  "round_id": "2026-07-19-structured-edit-full-replay-state-recovery-wave46",
+  "decision": "Wave44 establishes that all three valid deployment-feasible depth-32 planners are destructive: each has 0/32 exact recoveries and negative normalized edit-distance improvement, although GAR is less destructive than random. Do not seed-scale or interpret this as successful planning. Recover only the failed wave45 validity experiment: collect depth-1-to-4 target-free frozen-GAR states with the now-shared, tested deployable proposal generator, then train the matched 50/50 expert/replay hard-latent EMA pilot. Promote replay only if first-step true advantage remains positive, decisions 2-4 and full normalized edit-distance improve over the expert-only parent, and representation health does not collapse. Otherwise reject expert-state coverage as the primary explanation and stop scaling the present GAR planner. Replay goal buffers are terminal-privileged training labels only; proposal generation, behavior actions, GAR scoring, and selection remain target-free.",
   "git_commit": "AUTO",
+  "projected_gpu_hours": 5,
   "jobs": [
     {
-      "id": "edit-plan-random-latent-seed0-wave43",
+      "id": "edit-full-replay-hard-latent-seed0-recovery-wave46",
       "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_planning.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-adaptive-gar-latent-recovery-wave42/edit-adaptive-random-latent-seed0-recovery-wave42/model/best.pt",
-        "64",
-        "256",
-        "8"
-      ],
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 90,
-      "purpose": "Closed-loop evaluation of the random-selection latent-teacher baseline.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "planning_metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
-    },
-    {
-      "id": "edit-plan-hard-latent-seed0-wave43",
-      "cluster": "gruenau",
+      "walltime_minutes": 300,
+      "purpose": "Recover the single matched full-model 50/50 expert and frozen-policy replay state-coverage pilot after fixing the pre-collection import boundary.",
       "command": [
         "bash",
-        "scripts/run_faithful_token_edit_planning.sh",
+        "scripts/run_sequence_edit_replay_pilot.sh",
         "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-adaptive-gar-latent-recovery-wave42/edit-adaptive-hard-latent-seed0-recovery-wave42/model/best.pt",
-        "64",
-        "256",
-        "8"
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt",
+        "0",
+        "3000"
       ],
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 90,
-      "purpose": "Matched closed-loop test of predicted-hard selection under the latent teacher.",
       "expected_artifacts": [
-        "run_summary.json",
-        "planning_metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
-    },
-    {
-      "id": "edit-plan-random-exact-seed0-wave43",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_planning.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-adaptive-gar-factorial-wave40/edit-adaptive-random-exact-seed0-wave40/model/best.pt",
-        "64",
-        "256",
-        "8"
-      ],
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 90,
-      "purpose": "Matched closed-loop test of terminal-privileged exact supervision under random selection.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "planning_metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
-    },
-    {
-      "id": "edit-plan-hard-exact-seed0-wave43",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_planning.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-adaptive-gar-factorial-wave40/edit-adaptive-hard-exact-seed0-wave40/model/best.pt",
-        "64",
-        "256",
-        "8"
-      ],
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 90,
-      "purpose": "Closed-loop validity check for the near-collapsed hard-selection exact-teacher cell.",
-      "expected_artifacts": [
-        "run_summary.json",
+        "replay.pt",
+        "replay.pt.manifest.json",
+        "model/best.pt",
+        "metrics.json",
         "planning_metrics.json",
         "stdout.log",
         "stderr.log"

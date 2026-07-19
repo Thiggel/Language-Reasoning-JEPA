@@ -14,8 +14,14 @@ mkdir -p "$TMPDIR"
 model_dir="$RUN_DIR/model"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/train.py" \
   "+experiment=$condition" "hydra.run.dir=$model_dir" \
-  "run_name=${condition}_s${seed}" "seed=$seed" "device=${DEVICE:-cuda:0}" \
+  "run_name=${RUN_ID:-${condition}_s${seed}}" "seed=$seed" "device=${DEVICE:-cuda:0}" \
   "$@"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/audit_faithful_token_edits.py" \
   --ckpt "$model_dir/best.pt" --device "${DEVICE:-cuda:0}" \
-  --examples 256 --out "$RUN_DIR/metrics.json"
+  --examples 256 --corruption-mode mixed --out "$RUN_DIR/metrics.json"
+for corruption_mode in mask replace remove; do
+  "$python_bin" "${TEXTJEPA_ROOT}/scripts/audit_faithful_token_edits.py" \
+    --ckpt "$model_dir/best.pt" --device "${DEVICE:-cuda:0}" \
+    --examples 256 --corruption-mode "$corruption_mode" \
+    --out "$RUN_DIR/metrics_${corruption_mode}.json"
+done
