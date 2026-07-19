@@ -1,55 +1,53 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-19-structured-edit-short-horizon-control-wave50",
-  "decision": "The unchanged 50/50 expert/replay intervention passes its predeclared replication gate on the two completed valid seeds: seed 0 and seed 1 both have positive target-free current-buffer GAR first-step true advantage (0.500 and 0.406), exceed the fixed expert-only seed-0 parent on decisions-2-to-4 mean advantage (0.094 and 0.115 versus 0.021) and full normalized edit-distance improvement (-1.237 and -1.341 versus -1.745), and retain healthy state effective rank (100.0 and 94.2) and state standard deviation (0.257 and 0.316). Seed 2 is excluded as a process timeout during training, not interpreted scientifically; the gate required at least two seeds including seed 0, so do not finish or seed-scale it. Evaluate the two valid replay checkpoints with an otherwise unchanged four-decision horizon. Conclude that degradation after decision 4 is the immediate bottleneck only if both seeds achieve positive four-step normalized edit-distance improvement under deployment-feasible current-buffer GAR, retain positive mean selected true advantage across decisions 1-4, and beat their matched current-buffer random controls, with all declared artifacts present and no NaNs. If either seed fails, reject simple horizon truncation and next inspect episode-level failure strata before changing training. Proposal generation and GAR selection remain target-free; terminal targets are used only for separately labelled evaluation metrics, and oracle-injected conditions remain privileged diagnostics.",
+  "round_id": "2026-07-19-structured-edit-horizon-boundary-wave51",
+  "decision": "The predeclared short-horizon gate passes on both valid 50/50 expert/replay seeds. Under deployment-feasible current-buffer GAR, seed 0 and seed 1 respectively achieve positive four-step normalized edit-distance improvement (0.0630 and 0.0633), positive mean selected true advantage (0.195 and 0.188), and beat the matched target-free random control (-0.364 on both); all expected artifacts are present, there are no NaNs or invalid actions, and neither trajectory loops. Full-horizon diagnostics independently show a reproducible boundary: decisions 1-2 are positive, decisions 3-4 are near neutral, and decision 5 is negative on both seeds (-0.313 and -0.281). Evaluate the two fixed checkpoints at horizons 2 and 5 to determine whether four decisions are a stable useful operating point or a cutoff-sensitive result. Treat the boundary as established only if both seeds improve over their matched random controls at both horizons, horizon 2 is positive, and horizon 5 is worse than horizon 4; otherwise inspect episode-level paired failure strata before changing training. No checkpoint is trained or selected in this round. Proposal generation and GAR selection remain target-free; terminal targets are used only for separately labelled test metrics, and oracle-injected conditions remain candidate-privileged diagnostics.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-replay-short-horizon-seed0-wave50",
+      "id": "edit-replay-horizon2-seed0-wave51",
       "cluster": "gruenau",
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 22000,
       "walltime_minutes": 30,
-      "purpose": "Measure the matched four-decision target-free planning outcome for the valid seed-0 replay checkpoint.",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_planning.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt",
-        "32",
-        "256",
-        "4"
-      ],
-      "expected_artifacts": [
-        "planning_metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
+      "purpose": "Measure the two-decision boundary control for replay seed 0.",
+      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt", "32", "256", "2"],
+      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-replay-short-horizon-seed1-wave50",
+      "id": "edit-replay-horizon2-seed1-wave51",
       "cluster": "gruenau",
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 22000,
       "walltime_minutes": 30,
-      "purpose": "Measure the matched four-decision target-free planning outcome for the valid seed-1 replay checkpoint.",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_planning.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-replay-replication-wave49/edit-full-replay-hard-latent-seed1-wave49/model/best.pt",
-        "32",
-        "256",
-        "4"
-      ],
-      "expected_artifacts": [
-        "planning_metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
+      "purpose": "Measure the two-decision boundary control for replay seed 1.",
+      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-replay-replication-wave49/edit-full-replay-hard-latent-seed1-wave49/model/best.pt", "32", "256", "2"],
+      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "edit-replay-horizon5-seed0-wave51",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 30,
+      "purpose": "Measure the first post-boundary decision for replay seed 0.",
+      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt", "32", "256", "5"],
+      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "edit-replay-horizon5-seed1-wave51",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 30,
+      "purpose": "Measure the first post-boundary decision for replay seed 1.",
+      "command": ["bash", "scripts/run_faithful_token_edit_planning.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-replay-replication-wave49/edit-full-replay-hard-latent-seed1-wave49/model/best.pt", "32", "256", "5"],
+      "expected_artifacts": ["planning_metrics.json", "stdout.log", "stderr.log"]
     }
   ]
 }
