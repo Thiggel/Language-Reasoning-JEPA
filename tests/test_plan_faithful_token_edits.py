@@ -106,6 +106,17 @@ def test_receding_search_detects_a_two_state_loop():
     assert result.invalid_actions == 0
 
 
+def test_nonpositive_value_policy_stops_without_damaging_state():
+    result = run_episode(
+        [[9]], [[1, 2]], [[1, 9, 2]], "prompt_plus_current",
+        "gar_greedy_stop_nonpositive", lambda current, actions: [-0.1] * len(actions),
+        random.Random(4), max_candidates=16, max_steps=4,
+    )
+    assert result.stopped_nonpositive
+    assert result.selected_advantages == []
+    assert result.final_distance == result.initial_distance == 1
+
+
 def test_insert_scoring_reserves_one_more_token_state():
     states = torch.randn(2, 5, 7)
     mask = torch.tensor([

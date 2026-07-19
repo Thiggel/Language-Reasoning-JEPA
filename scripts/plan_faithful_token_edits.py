@@ -21,7 +21,9 @@ from typing import Callable
 import torch
 import torch.nn.functional as F
 
-from textjepa.data.faithful_token_edits import OPS, _apply
+from textjepa.data.faithful_token_edits import (
+    OPS, _apply, propose_deployable_edits,
+)
 from textjepa.utils.checkpoint import build_dataset, load_run
 
 
@@ -129,35 +131,7 @@ def propose_edits(
     buffer: Buffer, tokens: list[int], max_candidates: int, rng: random.Random
 ) -> list[Edit]:
     """Build an operation-balanced, target-free bounded candidate set."""
-    if max_candidates < 1:
-        raise ValueError("max_candidates must be positive")
-    current = flatten(buffer)
-    deletes, inserts, replaces = [], [], []
-    offset = 0
-    for sentence in buffer:
-        # Match the data contract: never delete a step-final token, so its
-        # inverse insertion remains unambiguous under flattened pointers.
-        if len(sentence) > 1:
-            deletes.extend(("delete", position, None) for position in range(
-                offset, offset + len(sentence) - 1
-            ))
-        offset += len(sentence)
-    for position in range(len(current) + 1):
-        inserts.extend(("insert", position, token) for token in tokens)
-    for position, old in enumerate(current):
-        replaces.extend(
-            ("replace", position, token) for token in tokens if token != old
-        )
-    groups = [deletes, inserts, replaces]
-    for group in groups:
-        rng.shuffle(group)
-    selected = []
-    while len(selected) < max_candidates and any(groups):
-        for group in groups:
-            if group and len(selected) < max_candidates:
-                selected.append(group.pop())
-    # Different operation paths can only duplicate if the token source did.
-    return list(dict.fromkeys(selected))
+    return propose_deployable_edits(buffer, tokens, max_candidates, rng)
 
 
 def pad_token_state_for_insertions(
@@ -230,6 +204,7 @@ class EpisodeMetrics:
     oracle_available: int = 0
     oracle_selected: int = 0
     first_selected_advantage: int | None = None
+    stopped_nonpositive: bool = False
 
 
 def run_episode(
@@ -264,13 +239,17 @@ def run_episode(
             break
         if policy == "random":
             selected = selection_rng.choice(candidates)
-        elif policy == "gar_greedy":
+        elif policy in {"gar_greedy", "gar_greedy_stop_nonpositive"}:
             if score is None:
-                raise ValueError("gar_greedy requires a score function")
+                raise ValueError(f"{policy} requires a score function")
             values = score(current, candidates)
             if len(values) != len(candidates):
                 raise ValueError("score function returned the wrong number of values")
-            selected = candidates[max(range(len(values)), key=values.__getitem__)]
+            selected_index = max(range(len(values)), key=values.__getitem__)
+            if policy == "gar_greedy_stop_nonpositive" and values[selected_index] <= 0:
+                metrics.stopped_nonpositive = True
+                break
+            selected = candidates[selected_index]
         else:
             raise ValueError(f"unknown policy: {policy}")
         before = buffer_distance(current, target)
@@ -368,6 +347,10 @@ def aggregate(episodes: list[EpisodeMetrics]) -> dict:
             sum(item.oracle_unreachable for item in episodes)
             / max(len(episodes), 1)
         ),
+        "nonpositive_value_stop_rate": (
+            sum(item.stopped_nonpositive for item in episodes)
+            / max(len(episodes), 1)
+        ),
         "mean_initial_edit_distance": initial / max(len(episodes), 1),
         "mean_final_edit_distance": final / max(len(episodes), 1),
     }
@@ -402,6 +385,10 @@ def main() -> None:
         ("prompt_plus_current_random", "prompt_plus_current", "random", False),
         ("prompt_plus_current_gar_greedy", "prompt_plus_current", "gar_greedy", False),
         (
+            "prompt_plus_current_gar_greedy_stop_nonpositive",
+            "prompt_plus_current", "gar_greedy_stop_nonpositive", False,
+        ),
+        (
             "candidate_privileged_oracle_injected_gar_greedy",
             "prompt_plus_current", "gar_greedy", True,
         ),
@@ -411,7 +398,7 @@ def main() -> None:
         episodes = []
         for index, item in enumerate(raw_items):
             scorer = None
-            if policy == "gar_greedy":
+            if policy.startswith("gar_greedy"):
                 scorer = lambda current, candidates: gar_scores(
                     model, current, candidates, vocab.pad_id, args.device,
                     args.score_batch_size,
