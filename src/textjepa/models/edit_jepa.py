@@ -110,6 +110,7 @@ class EditJEPA(nn.Module):
         gar_horizon: int = 1,
         selected_k: int = 0,
         proposal_selection: str = "hard",
+        gar_teacher: str = "latent_distance",
         ldad_decoder_layers: int = 2,
         ldad_max_len: int = 12,
     ):
@@ -122,9 +123,20 @@ class EditJEPA(nn.Module):
         self.gar_horizon = max(1, int(gar_horizon))
         self.selected_k = max(0, int(selected_k))
         self.proposal_selection = str(proposal_selection)
-        if self.proposal_selection not in {"hard", "random"}:
+        self.gar_teacher = str(gar_teacher)
+        if self.proposal_selection not in {
+            "hard", "random", "positive_anchor"
+        }:
             raise ValueError(
                 f"unknown proposal_selection: {self.proposal_selection}"
+            )
+        if (
+            self.proposal_selection == "positive_anchor"
+            and self.gar_teacher != "token_edit_distance"
+        ):
+            raise ValueError(
+                "proposal_selection=positive_anchor requires "
+                "gar_teacher=token_edit_distance"
             )
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
@@ -446,6 +458,37 @@ class EditJEPA(nn.Module):
         return indices, valid.gather(-1, indices)
 
     @staticmethod
+    def select_positive_anchor_candidates(
+        scores: torch.Tensor, exact_advantage: torch.Tensor,
+        valid: torch.Tensor, selected_k: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Privileged positive anchor followed by predicted-hard negatives.
+
+        This is a synthetic training control: exact terminal advantages choose
+        only slot zero. Remaining candidates are the highest predicted GAR
+        scores excluding that anchor. No deployment planner calls this path.
+        """
+        if selected_k < 1:
+            raise ValueError("selected_k must be positive for adaptive proposals")
+        count = min(int(selected_k), scores.shape[-1])
+        minimum = torch.finfo(scores.dtype).min
+        anchor = exact_advantage.to(scores.dtype).masked_fill(
+            ~valid, minimum
+        ).argmax(-1, keepdim=True)
+        anchor_valid = valid.gather(-1, anchor)
+        if count == 1:
+            return anchor, anchor_valid
+        hard_valid = valid.clone()
+        hard_valid.scatter_(-1, anchor, False)
+        hard = scores.masked_fill(~hard_valid, minimum).topk(
+            count - 1, dim=-1
+        ).indices
+        return (
+            torch.cat([anchor, hard], dim=-1),
+            torch.cat([anchor_valid, hard_valid.gather(-1, hard)], dim=-1),
+        )
+
+    @staticmethod
     def proposal_ranking_scores(
         gar_scores: torch.Tensor, selection: str,
         example_indices: torch.Tensor,
@@ -511,12 +554,26 @@ class EditJEPA(nn.Module):
                 pooled_states[:, :-1].unsqueeze(2).expand(-1, -1, P, -1),
                 broad_action,
             ], dim=-1)).squeeze(-1)
-            ranking_score = self.proposal_ranking_scores(
-                broad_score, self.proposal_selection, batch["index"]
-            )
-            selected, selected_valid = self.select_adaptive_candidates(
-                ranking_score, broad_valid, self.selected_k
-            )
+            if self.proposal_selection == "positive_anchor":
+                # Learned scores remain the auditable hard-negative ranking;
+                # only selected slot zero receives privileged selection.
+                ranking_score = broad_score
+                if "gar_proposal_token_edit_target" not in batch:
+                    raise ValueError(
+                        "proposal_selection=positive_anchor requires "
+                        "gar_teacher=token_edit_distance and exact proposal labels"
+                    )
+                exact_advantage = batch["gar_proposal_token_edit_target"]
+                selected, selected_valid = self.select_positive_anchor_candidates(
+                    broad_score, exact_advantage, broad_valid, self.selected_k
+                )
+            else:
+                ranking_score = self.proposal_ranking_scores(
+                    broad_score, self.proposal_selection, batch["index"]
+                )
+                selected, selected_valid = self.select_adaptive_candidates(
+                    ranking_score, broad_valid, self.selected_k
+                )
         K = selected.shape[-1]
 
         def gather(values: torch.Tensor) -> torch.Tensor:
@@ -584,6 +641,36 @@ class EditJEPA(nn.Module):
             "cf_token_valid": selected_valid,
             "cf_structured_actions": actions,
         })
+        if self.proposal_selection == "positive_anchor":
+            anchor_advantage = batch["gar_proposal_token_edit_target"].gather(
+                -1, selected[..., :1]
+            ).squeeze(-1)
+            valid_state = broad_valid.any(-1)
+            positive_available = (
+                (batch["gar_proposal_token_edit_target"] > 0) & broad_valid
+            ).any(-1)
+            anchor_positive = (
+                anchor_advantage > 0
+            ) & selected_valid[..., 0]
+            denominator = valid_state.sum().clamp_min(1)
+            out.extras.update({
+                "adaptive_positive_anchor_candidate_terminal_privileged": True,
+                "adaptive_positive_anchor_advantage": anchor_advantage.detach(),
+                "adaptive_positive_anchor_available": positive_available,
+                "adaptive_positive_anchor_is_positive": anchor_positive,
+                "adaptive_positive_anchor_valid_state_count": valid_state.sum(),
+                "adaptive_positive_anchor_available_count": (
+                    positive_available & valid_state
+                ).sum(),
+                "adaptive_positive_anchor_coverage": (
+                    (positive_available & valid_state).sum().float()
+                    / denominator
+                ),
+                "adaptive_positive_anchor_least_bad_rate": (
+                    ((~positive_available) & valid_state).sum().float()
+                    / denominator
+                ),
+            })
 
     def _forward_token_aligned(self, batch: dict) -> JEPAOutputs:
         prompt_chunks = self.encode_chunks(batch["prompt_tokens"])

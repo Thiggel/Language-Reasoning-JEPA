@@ -143,6 +143,45 @@ def combine_gar_candidate_stats(parts: list[dict]) -> dict | None:
     }
 
 
+def positive_anchor_stats(out) -> dict | None:
+    """Candidate/terminal-privileged pool coverage for the anchor control."""
+    advantage = out.extras.get("adaptive_positive_anchor_advantage")
+    available = out.extras.get("adaptive_positive_anchor_available")
+    positive = out.extras.get("adaptive_positive_anchor_is_positive")
+    if advantage is None or available is None or positive is None:
+        return None
+    valid = out.step_mask
+    return {
+        "valid_states": int(valid.sum()),
+        "positive_available": int((available & valid).sum()),
+        "positive_selected": int((positive & valid).sum()),
+        "advantage_sum": float(advantage[valid].sum()),
+        "least_bad_selected": int(((~positive) & valid).sum()),
+    }
+
+
+def combine_positive_anchor_stats(parts: list[dict]) -> dict | None:
+    if not parts:
+        return None
+    states = sum(part["valid_states"] for part in parts)
+    available = sum(part["positive_available"] for part in parts)
+    selected = sum(part["positive_selected"] for part in parts)
+    return {
+        "candidate_terminal_privileged_selection": True,
+        "available_at_deployment": False,
+        "valid_states": states,
+        "pool_positive_coverage": available / max(states, 1),
+        "selected_positive_rate": selected / max(states, 1),
+        "positive_anchor_recall_when_available": selected / max(available, 1),
+        "least_bad_rate": sum(
+            part["least_bad_selected"] for part in parts
+        ) / max(states, 1),
+        "mean_selected_exact_advantage": sum(
+            part["advantage_sum"] for part in parts
+        ) / max(states, 1),
+    }
+
+
 def _same_state_assignment_stats(pred, target, valid) -> dict | None:
     if pred is None or target is None or valid is None or pred.shape[2] < 2:
         return None
@@ -481,6 +520,7 @@ def main():
     counterfactual_errors = []
     action_sensitivity_parts = []
     gar_candidate_parts = []
+    positive_anchor_parts = []
     recursive_available = getattr(model, "attn_pred", None) is None
     with torch.no_grad():
         for batch in loader:
@@ -492,6 +532,9 @@ def main():
             gar_stats = gar_candidate_stats(out)
             if gar_stats is not None:
                 gar_candidate_parts.append(gar_stats)
+            anchor_stats = positive_anchor_stats(out)
+            if anchor_stats is not None:
+                positive_anchor_parts.append(anchor_stats)
             mask = out.step_mask
             direct_error = normalized_l1(out.preds, out.step_states_tgt)
             direct.append(direct_error.cpu())
@@ -784,6 +827,9 @@ def main():
         ),
         "gar_candidate_ranking": combine_gar_candidate_stats(
             gar_candidate_parts
+        ),
+        "positive_anchor_coverage": combine_positive_anchor_stats(
+            positive_anchor_parts
         ),
         "persistence_no_change_ln_l1": _summary(persistence_error, step_mask)["ln_l1"],
         "shuffled_action_causal_falsifier": shuffled_control,

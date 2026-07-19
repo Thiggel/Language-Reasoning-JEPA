@@ -1,0 +1,27 @@
+# @package _global_
+# Expert-state synthetic control. Slot zero is selected by a
+# candidate/terminal-privileged exact token-edit advantage; the remaining
+# slots are learned hard negatives. Deployment selection remains unchanged.
+defaults: [edit_token_structured_gar_adaptive_hard_prompt, _self_]
+run_name: edit_token_structured_gar_positive_anchor_exact
+data:
+  train_size: 6000
+  fresh_per_epoch: false
+  gar_teacher: token_edit_distance
+  replay_path: null
+  replay_fraction: 0.0
+model:
+  proposal_selection: positive_anchor
+  gar_teacher: token_edit_distance
+objective:
+  gar_action_value:
+    weight: 0.3
+    regression_weight: 0.25
+    pairwise_weight: 1.0
+    margin: 0.5
+    label_gap: 0.001
+    teacher: token_edit_distance
+train:
+  batch_size: 8
+  epochs: 3
+  lr: 0.01

@@ -1,0 +1,9 @@
+# @package _global_
+# Matched 50/50 frozen-replay condition with the same explicitly
+# candidate/terminal-privileged positive anchor as the expert-only control.
+defaults: [edit_token_structured_gar_positive_anchor_exact, _self_]
+run_name: edit_token_structured_gar_replay_positive_anchor_exact
+data:
+  replay_path: ???
+  replay_fraction: 0.5
+  replay_proposal_seed: 3700
