@@ -1,25 +1,54 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-19-structured-edit-replay-evaluation-path-recovery-wave48",
-  "decision": "Wave47 produced no scientific evidence because its evaluation-only command referenced the nonexistent wave46 run-root best.pt; the completed replay-trained checkpoint is actually model/best.pt. Re-run only the unchanged representation audit and target-free closed-loop evaluation against that exact checkpoint. Promote replay beyond seed 0 only if first-step true advantage remains positive, mean selected true advantage over decisions 2-4 and full normalized edit-distance improvement both exceed the information-matched expert-only hard-latent parent, and representation health does not collapse. Otherwise reject expert-state coverage as the primary explanation and stop scaling the present GAR planner. All deployable proposal generation and GAR selection remain target-free; target access is restricted to separately labelled evaluation metrics and any explicitly candidate-privileged diagnostic.",
+  "round_id": "2026-07-19-structured-edit-replay-replication-wave49",
+  "decision": "Wave48 validly evaluates the seed-0 50/50 expert/replay hard-latent pilot and passes its promotion gate without establishing successful planning: target-free current-buffer GAR has positive first-step true advantage (0.50), improves mean selected true advantage over decisions 2-4 (0.09375 versus 0.02083) and full normalized edit-distance improvement (-1.237 versus -1.745) relative to the information-matched expert-only parent, while effective rank remains healthy (100.0 versus 103.6), but full trajectories remain destructive with 0/32 exact recoveries. Replicate the unchanged replay intervention at seeds 1 and 2. Treat expert-state coverage as a reproducible contributor only if at least two of the three seeds, including seed 0, have positive first-step true advantage, exceed the fixed seed-0 expert-only parent on both decisions-2-to-4 mean advantage and full normalized edit-distance improvement, retain state effective rank above 50 and state standard deviation above 0.1, and produce all declared artifacts without NaNs. If this gate fails, stop scaling the present replay/GAR recipe. If it passes, do not claim planning success or seed-scale further; isolate the post-decision-4 degradation with a matched short-horizon control. Proposal generation, behavior actions, GAR scores, and selection are target-free; terminal targets are used only for training labels and separately labelled evaluation metrics.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-replay-hard-latent-seed0-eval-path-recovery-wave48",
+      "id": "edit-full-replay-hard-latent-seed1-wave49",
       "cluster": "gruenau",
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 60,
-      "purpose": "Recover the missing representation audit and target-free closed-loop evaluation using the actual completed wave46 checkpoint path.",
+      "walltime_minutes": 120,
+      "purpose": "Replicate the complete expert/replay hard-latent pilot and target-free planning evaluation at seed 1.",
       "command": [
         "bash",
-        "scripts/evaluate_sequence_edit_checkpoint.sh",
+        "scripts/run_sequence_edit_replay_pilot.sh",
         "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-full-replay-state-recovery-wave46/edit-full-replay-hard-latent-seed0-recovery-wave46/model/best.pt"
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt",
+        "1",
+        "3000"
       ],
       "expected_artifacts": [
+        "model/best.pt",
+        "replay.pt",
+        "metrics.json",
+        "planning_metrics.json",
+        "stdout.log",
+        "stderr.log"
+      ]
+    },
+    {
+      "id": "edit-full-replay-hard-latent-seed2-wave49",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 120,
+      "purpose": "Replicate the complete expert/replay hard-latent pilot and target-free planning evaluation at seed 2.",
+      "command": [
+        "bash",
+        "scripts/run_sequence_edit_replay_pilot.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-18-structured-edit-gar-pairwise-transfer-wave29/edit-gar-pairmse-k4-w03-lr1e2-seed0-wave29/model/best.pt",
+        "2",
+        "3000"
+      ],
+      "expected_artifacts": [
+        "model/best.pt",
+        "replay.pt",
         "metrics.json",
         "planning_metrics.json",
         "stdout.log",
