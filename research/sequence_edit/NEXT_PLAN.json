@@ -1,79 +1,70 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-20-structured-edit-positive-anchor-replication-retry-wave57",
-  "decision": "Recover the process-invalid wave-56 decision after repairing its snapshot mismatch. The prior three jobs produced no scientific evidence: both expert replications referenced a recipe absent from their exact snapshot, and the planning audit could not instantiate the wave-55 positive-anchor checkpoint. Retry the same bounded comparison from one compatible snapshot. Accept expert positive-anchor as a stable candidate-privileged training recipe only if seeds 1 and 2 both finish with finite losses, effective rank at least 50, token-aligned shuffled-action error ratio above 1, and later show positive deployment-feasible current-buffer horizon-2 planning improvement. The replay checkpoint audit is independently informative at the already-fixed horizon-2 protocol. Oracle-selected training anchors remain candidate/terminal-privileged and are not deployment evidence.",
+  "round_id": "2026-07-20-structured-edit-anchor-privilege-ablation-wave58",
+  "decision": "Test whether the replicated horizon-4 planning gain requires candidate/terminal-privileged positive-anchor selection during training. Run seed-0 information- and optimization-matched hard-selection and random-selection controls by overriding only proposal selection on the established no-replay recipe, then evaluate the fixed deployment-feasible current-buffer GAR policy at 128 episodes, 256 candidates, and horizon 4. The positive-anchor seed-0 reference is 0.09139 normalized edit-distance improvement. If either target-free control is healthy (finite losses, state effective rank at least 50, token-aligned shuffled-action error ratio above 1) and reaches at least 0.08 improvement, advance the better target-free recipe to seeds 1 and 2. If both are healthy but below 0.05, conclude that the current planning result depends materially on privileged training-anchor selection and prioritize a deployable proposal-learning mechanism rather than more horizon or replay tuning. Intermediate outcomes require one targeted replication of the better control. Random selection is the negative control; all planning candidates and scores remain target-free.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-positive-anchor-replay-depth2-plan-h2-seed0-wave57",
+      "id": "edit-anchor-ablation-hard-seed0-plan-h4-wave58",
       "cluster": "gruenau",
       "command": [
         "bash",
-        "scripts/run_faithful_token_edit_planning.sh",
+        "scripts/run_faithful_token_edit_cell_and_planning.sh",
         "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-19-structured-edit-depth2-anchor-recovery-wave55/edit-positive-anchor-replay-depth2-seed0-wave55/model/best.pt",
+        "edit_token_structured_gar_positive_anchor_exact",
+        "0",
         "128",
         "256",
-        "2"
+        "4",
+        "model.proposal_selection=hard",
+        "train.lr=0.004",
+        "train.epochs=2"
       ],
       "gpus": 1,
       "cpus": 4,
-      "min_gpu_memory_mb": 22000,
-      "walltime_minutes": 30,
-      "purpose": "Retry the fixed deployment-feasible horizon-2 audit after restoring checkpoint compatibility.",
-      "expected_artifacts": [
-        "planning_metrics.json",
-        "stdout.log",
-        "stderr.log"
-      ]
-    },
-    {
-      "id": "edit-positive-anchor-expert-lr4e3-seed1-wave57",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
-        "{python}",
-        "edit_token_structured_gar_positive_anchor_exact",
-        "1",
-        "train.lr=0.004"
-      ],
-      "gpus": 1,
       "min_gpu_memory_mb": 45000,
-      "walltime_minutes": 300,
-      "purpose": "Run the first valid expert positive-anchor replication at the selected learning rate.",
+      "walltime_minutes": 360,
+      "purpose": "Information-matched target-free hard-selection ablation with fixed horizon-4 planning evaluation.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
         "metrics_mask.json",
         "metrics_replace.json",
         "metrics_remove.json",
-        "model/best.pt"
+        "model/best.pt",
+        "planning_metrics.json"
       ]
     },
     {
-      "id": "edit-positive-anchor-expert-lr4e3-seed2-wave57",
+      "id": "edit-anchor-ablation-random-seed0-plan-h4-wave58",
       "cluster": "gruenau",
       "command": [
         "bash",
-        "scripts/run_faithful_token_edit_cell.sh",
+        "scripts/run_faithful_token_edit_cell_and_planning.sh",
         "{python}",
         "edit_token_structured_gar_positive_anchor_exact",
-        "2",
-        "train.lr=0.004"
+        "0",
+        "128",
+        "256",
+        "4",
+        "model.proposal_selection=random",
+        "train.lr=0.004",
+        "train.epochs=2"
       ],
       "gpus": 1,
+      "cpus": 4,
       "min_gpu_memory_mb": 45000,
-      "walltime_minutes": 300,
-      "purpose": "Run the second valid expert positive-anchor replication at the selected learning rate.",
+      "walltime_minutes": 360,
+      "purpose": "Matched random-selection negative control with fixed horizon-4 planning evaluation.",
       "expected_artifacts": [
         "run_summary.json",
         "metrics.json",
         "metrics_mask.json",
         "metrics_replace.json",
         "metrics_remove.json",
-        "model/best.pt"
+        "model/best.pt",
+        "planning_metrics.json"
       ]
     }
   ]
