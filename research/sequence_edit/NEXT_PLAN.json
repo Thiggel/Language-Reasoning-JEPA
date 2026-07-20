@@ -1,69 +1,32 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-20-structured-edit-anchor-privilege-ablation-wave58",
-  "decision": "Test whether the replicated horizon-4 planning gain requires candidate/terminal-privileged positive-anchor selection during training. Run seed-0 information- and optimization-matched hard-selection and random-selection controls by overriding only proposal selection on the established no-replay recipe, then evaluate the fixed deployment-feasible current-buffer GAR policy at 128 episodes, 256 candidates, and horizon 4. The positive-anchor seed-0 reference is 0.09139 normalized edit-distance improvement. If either target-free control is healthy (finite losses, state effective rank at least 50, token-aligned shuffled-action error ratio above 1) and reaches at least 0.08 improvement, advance the better target-free recipe to seeds 1 and 2. If both are healthy but below 0.05, conclude that the current planning result depends materially on privileged training-anchor selection and prioritize a deployable proposal-learning mechanism rather than more horizon or replay tuning. Intermediate outcomes require one targeted replication of the better control. Random selection is the negative control; all planning candidates and scores remain target-free.",
+  "round_id": "2026-07-20-structured-edit-anchor-ablation-eval-recovery-wave61",
+  "decision": "Recover the hard-selection half of the predeclared hard-versus-random anchor-selection decision from its wave58 checkpoint without retraining. The hard cell completed two healthy epochs (state effective rank 84.82), then failed only because the shared wrapper passed an unsupported --corruption-mode argument during post-training audit. Re-run its four frozen representation audits and fixed deployment-feasible current-buffer GAR evaluation at 128 episodes, 256 candidates, and horizon 4. Do not duplicate or preempt the matched random-selection negative control, which remains active; recover it only after it becomes terminal if its checkpoint is intact. Once both controls are available, compare them against the positive-anchor seed-0 reference of 0.09139 normalized edit-distance improvement. A healthy target-free control requires finite losses, state effective rank at least 50, and token-aligned shuffled-action error ratio above 1. At least 0.08 improvement advances the better target-free recipe to seeds 1 and 2; both controls below 0.05 imply material dependence on candidate/terminal-privileged training-anchor selection; intermediate outcomes require one targeted replication. Planning candidates and scores remain target-free.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "edit-anchor-ablation-hard-seed0-plan-h4-wave58",
+      "id": "edit-anchor-hard-seed0-eval-recovery-wave61",
       "cluster": "gruenau",
       "command": [
         "bash",
-        "scripts/run_faithful_token_edit_cell_and_planning.sh",
+        "scripts/recover_faithful_token_edit_checkpoint.sh",
         "{python}",
-        "edit_token_structured_gar_positive_anchor_exact",
-        "0",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-20-structured-edit-anchor-privilege-ablation-wave58/edit-anchor-ablation-hard-seed0-plan-h4-wave58/model/best.pt",
         "128",
         "256",
-        "4",
-        "model.proposal_selection=hard",
-        "train.lr=0.004",
-        "train.epochs=2"
+        "4"
       ],
       "gpus": 1,
       "cpus": 4,
-      "min_gpu_memory_mb": 45000,
-      "walltime_minutes": 360,
-      "purpose": "Information-matched target-free hard-selection ablation with fixed horizon-4 planning evaluation.",
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 60,
+      "purpose": "Recover frozen hard-selection representation and horizon-4 planning evidence from the completed checkpoint.",
       "expected_artifacts": [
-        "run_summary.json",
         "metrics.json",
         "metrics_mask.json",
         "metrics_replace.json",
         "metrics_remove.json",
-        "model/best.pt",
-        "planning_metrics.json"
-      ]
-    },
-    {
-      "id": "edit-anchor-ablation-random-seed0-plan-h4-wave58",
-      "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_faithful_token_edit_cell_and_planning.sh",
-        "{python}",
-        "edit_token_structured_gar_positive_anchor_exact",
-        "0",
-        "128",
-        "256",
-        "4",
-        "model.proposal_selection=random",
-        "train.lr=0.004",
-        "train.epochs=2"
-      ],
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 45000,
-      "walltime_minutes": 360,
-      "purpose": "Matched random-selection negative control with fixed horizon-4 planning evaluation.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "metrics_mask.json",
-        "metrics_replace.json",
-        "metrics_remove.json",
-        "model/best.pt",
         "planning_metrics.json"
       ]
     }
