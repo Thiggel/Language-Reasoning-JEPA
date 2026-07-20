@@ -36,6 +36,7 @@ def main():
     args = parser.parse_args()
     payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(payload["cfg"])
+    torch.manual_seed(int(cfg.seed) + 9187)
     vocab = build_vocab(cfg.data.modulus)
     model = SentenceHierarchyJEPA(len(vocab), vocab.pad_id, **cfg.model).to(args.device)
     model.load_state_dict(payload["model"])
@@ -60,7 +61,12 @@ def main():
         "learned_goal_macro_token_accuracy", "oracle_goal_macro_token_accuracy",
         "learned_goal_subgoal_mse", "oracle_goal_subgoal_mse",
         "h1_h2_same_code", "h2_h4_same_code", "horizon_first_token_agreement",
-        "macro_outcome_variance",
+        "horizon_first_token_agreement_no_prior", "macro_outcome_variance",
+        "reference_sentence_in_codebook", "predicted_subgoal_retrieval_exact",
+        "predicted_subgoal_retrieval_token_accuracy",
+        "oracle_subgoal_low_exact_prior0", "oracle_subgoal_low_accuracy_prior0",
+        "oracle_subgoal_low_exact_prior01", "oracle_subgoal_low_accuracy_prior01",
+        "oracle_subgoal_low_exact_full_vocab", "oracle_subgoal_low_accuracy_full_vocab",
     )}
     rows = []
     for index in range(args.examples):
@@ -128,14 +134,29 @@ def main():
         values["h1_h2_same_code"].append(chosen[1] == chosen[2])
         values["h2_h4_same_code"].append(chosen[2] == chosen[4])
         generated_by_horizon = {}
+        generated_by_horizon_no_prior = {}
         for horizon, proposal in proposals.items():
             generated_by_horizon[horizon], _, _ = execute_low_level(
                 model, prompt, prompt_len, period, proposal["subgoal"],
                 token_topk=20, max_sentence_tokens=32, low_prior_weight=1.0,
             )
             generated_by_horizon[horizon] = generated_by_horizon[horizon][prompt_len:]
+            generated_by_horizon_no_prior[horizon], _, _ = execute_low_level(
+                model, prompt, prompt_len, period, proposal["subgoal"],
+                token_topk=20, max_sentence_tokens=32, low_prior_weight=0.0,
+            )
+            generated_by_horizon_no_prior[horizon] = (
+                generated_by_horizon_no_prior[horizon][prompt_len:]
+            )
         firsts = [tokens[0] if tokens else -1 for tokens in generated_by_horizon.values()]
         values["horizon_first_token_agreement"].append(len(set(firsts)) == 1)
+        firsts_no_prior = [
+            tokens[0] if tokens else -1
+            for tokens in generated_by_horizon_no_prior.values()
+        ]
+        values["horizon_first_token_agreement_no_prior"].append(
+            len(set(firsts_no_prior)) == 1
+        )
         oracle_generated, _, _ = execute_low_level(
             model, prompt, prompt_len, period, oracle_subgoal,
             token_topk=20, max_sentence_tokens=32, low_prior_weight=1.0,
@@ -150,6 +171,22 @@ def main():
         values["oracle_subgoal_low_token_accuracy"].append(token_accuracy(
             oracle_generated, reference
         ))
+        for suffix, prior_weight, topk in (
+            ("prior0", 0.0, 20), ("prior01", 0.1, 20),
+            ("full_vocab", 0.0, len(vocab) - 1),
+        ):
+            alternative, _, _ = execute_low_level(
+                model, prompt, prompt_len, period, oracle_subgoal,
+                token_topk=topk, max_sentence_tokens=32,
+                low_prior_weight=prior_weight,
+            )
+            alternative = alternative[prompt_len:]
+            values[f"oracle_subgoal_low_exact_{suffix}"].append(
+                alternative == reference
+            )
+            values[f"oracle_subgoal_low_accuracy_{suffix}"].append(
+                token_accuracy(alternative, reference)
+            )
         values["predicted_oracle_macro_low_exact"].append(
             predicted_generated == reference
         )
@@ -164,11 +201,38 @@ def main():
             action_history=context["high_action_history"].expand(len(sample_codes), -1, -1),
         )[:, 0]
         values["macro_outcome_variance"].append(float(predicted.var(0).mean()))
+        try:
+            reference_index = sentences.index(reference)
+        except ValueError:
+            reference_index = -1
+        values["reference_sentence_in_codebook"].append(reference_index >= 0)
+        # This is the clean high-dynamics retrieval test: every observed
+        # sentence code is available and candidates are ranked only by the
+        # predicted distance to the exact reachable next-sentence target.
+        predicted_chunks = []
+        for start in range(0, len(codebook), 256):
+            codes = codebook[start:start + 256]
+            predicted_chunks.append(model.high_predictor.rollout(
+                context["high_state"].expand(len(codes), -1), codes[:, None],
+                state_history=context["high_history"].expand(len(codes), -1, -1),
+                action_history=context["high_action_history"].expand(len(codes), -1, -1),
+            )[:, 0])
+        all_predicted = torch.cat(predicted_chunks)
+        retrieved_index = int(normalized_distance(
+            all_predicted, oracle_subgoal.expand(len(all_predicted), -1)
+        ).argmin())
+        retrieved = sentences[retrieved_index]
+        values["predicted_subgoal_retrieval_exact"].append(retrieved == reference)
+        values["predicted_subgoal_retrieval_token_accuracy"].append(
+            token_accuracy(retrieved, reference)
+        )
         rows.append({
             "episode": index, "reference_tokens": len(reference),
             "selected_code_h1": chosen[1], "selected_code_h2": chosen[2],
             "selected_code_h4": chosen[4],
             "learned_goal_code": learned_index, "oracle_goal_code": oracle_index,
+            "reference_code": reference_index,
+            "predicted_subgoal_retrieval_code": retrieved_index,
         })
     result = {
         key: float(np.mean(samples)) for key, samples in values.items()
