@@ -1,0 +1,166 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-pooled-sentence-prefix-factorial-gruenau-relocation",
+  "decision": "Recover the six global-pooling, no-prior, prefix-decoder learning-rate cells that never started on Grete because of AccountOutOfCoreH, without changing their scientific configuration.",
+  "git_commit": "7faea386e6b1367e2a4c7647620a1d4557382970",
+  "jobs": [
+    {
+      "id": "pooled-global-noprior-decoder-lr1e-5-s0-gruenau",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.00001. Relocated from a never-started Grete job blocked by AccountOutOfCoreH.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr1e-5-s0-gruenau",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr3e-5-s0-gruenau",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.00003. Relocated from a never-started Grete job blocked by AccountOutOfCoreH.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr3e-5-s0-gruenau",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr1e-4-s0-gruenau",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.0001. Relocated from a never-started Grete job blocked by AccountOutOfCoreH.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr1e-4-s0-gruenau",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr3e-4-s0-gruenau",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.0003. Relocated from a never-started Grete job blocked by AccountOutOfCoreH.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr3e-4-s0-gruenau",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr1e-3-s0-gruenau",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.001. Relocated from a never-started Grete job blocked by AccountOutOfCoreH.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr1e-3-s0-gruenau",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr3e-3-s0-gruenau",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.003. Relocated from a never-started Grete job blocked by AccountOutOfCoreH.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr3e-3-s0-gruenau",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    }
+  ]
+}
+
