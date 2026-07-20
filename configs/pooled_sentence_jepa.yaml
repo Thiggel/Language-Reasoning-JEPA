@@ -1,0 +1,68 @@
+defaults:
+  - data: igsm
+  - _self_
+
+run_name: pooled_sentence_jepa
+seed: 0
+device: cuda:0
+boundary_mode: semantic
+
+model:
+  d_state: 512
+  encoder_layers: 8
+  pool_heads: 8
+  predictor_layers: 4
+  n_heads: 8
+  ff_mult: 4
+  max_len: 768
+  d_action: 128
+  dense_depth: 4
+  pooling_scope: sentence
+  use_token_prior: true
+  token_prior_hidden: 0
+  token_prior_detach_state: false
+  use_prefix_decoder: false
+  decoder_dim: 256
+  decoder_layers: 2
+  decoder_heads: 8
+  decoder_max_len: 96
+  decoder_prefixes_per_sequence: 8
+
+objective:
+  prediction: 1.0
+  dense: 1.0
+  dense_discount: 0.7
+  token_prior: 1.0
+  goal: 1.0
+  vicreg: 1.0
+  covariance: 0.04
+  gar: 1.0
+  gar_k: 8
+  gar_max_anchors: 8
+  gar_regression: 1.0
+  gar_ranking: 1.0
+  gar_margin: 0.1
+  gar_counterfactual_mse: 0.25
+  prefix_decoder: 1.0
+  decoder_state_use: 1.0
+  decoder_state_margin: 0.1
+
+train:
+  batch_size: 8
+  num_workers: 0
+  epochs: 6
+  lr: 3.0e-4
+  weight_decay: 0.05
+  warmup_steps: 200
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 50
+  eval_batches: 12
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  output_subdir: null
+  job:
+    chdir: false
