@@ -213,6 +213,8 @@ class FaithfulTokenEditDataset(Dataset):
                  corruption_mode: str = "mixed", curriculum_epochs: int = 3,
                  fresh_per_epoch: bool = False,
                  gar_teacher: str = "latent_distance",
+                 trajectory_variants: int = 1,
+                 refinement_probability: float = 0.25,
                  **_):
         self.vocab = vocab
         self.seed = seed
@@ -230,9 +232,12 @@ class FaithfulTokenEditDataset(Dataset):
         self.curriculum_epochs = max(1, int(curriculum_epochs))
         self.fresh_per_epoch = bool(fresh_per_epoch)
         self.gar_teacher = str(gar_teacher)
+        self.trajectory_variants = max(1, int(trajectory_variants))
+        self.refinement_probability = float(refinement_probability)
         self.epoch = 0
         if self.corruption_mode not in {
-            "mixed", "mask", "replace", "remove", "curriculum"
+            "mixed", "mask", "replace", "remove", "curriculum",
+            "iterative_refinement",
         }:
             raise ValueError(f"unknown corruption_mode: {self.corruption_mode}")
         if self.counterfactual_source not in {
@@ -249,6 +254,8 @@ class FaithfulTokenEditDataset(Dataset):
             )
         if self.gar_teacher not in {"latent_distance", "token_edit_distance"}:
             raise ValueError(f"unknown gar_teacher: {self.gar_teacher}")
+        if not 0.0 <= self.refinement_probability <= 1.0:
+            raise ValueError("refinement_probability must lie in [0, 1]")
         self.source = FaithfulDataset(
             vocab, size=size, seed=seed, max_op=max_op, max_edge=max_edge,
             op_range=tuple(op_range), distractor_prob=0.0,
@@ -268,17 +275,21 @@ class FaithfulTokenEditDataset(Dataset):
             return "replace"
         return "mixed"
     def __len__(self):
-        return len(self.source)
+        return len(self.source) * self.trajectory_variants
 
     def __getitem__(self, index: int) -> dict:
-        source = self.source[index]
+        source_index, trajectory_variant = divmod(
+            index, self.trajectory_variants
+        )
+        source = self.source[source_index]
         prompt = source["prompt"]
         target = [list(sentence) for sentence in source["steps"]]
         mode = self._active_corruption_mode()
         epoch_key = self.epoch if self.fresh_per_epoch else 0
-        rng = random.Random(
-            f"faithful-token-edit:{self.seed}:{index}:{mode}:{epoch_key}"
-        )
+        rng_key = f"faithful-token-edit:{self.seed}:{source_index}:{mode}"
+        if self.trajectory_variants > 1 or mode == "iterative_refinement":
+            rng_key += f":variant-{trajectory_variant}"
+        rng = random.Random(f"{rng_key}:{epoch_key}")
         current = [list(sentence) for sentence in target]
         undo: list[tuple[str, int, int | None]] = []
         n_tokens = _flat_length(target)
@@ -288,61 +299,94 @@ class FaithfulTokenEditDataset(Dataset):
             token for sentence in target for token in sentence
         ))
         mask_id = self.vocab.token_to_id[MASK_TOKEN]
-        for _ in range(count):
-            allowed = {
+        if mode == "iterative_refinement":
+            current = [[mask_id] * len(sentence) for sentence in target]
+            unresolved = list(range(n_tokens))
+            rng.shuffle(unresolved)
+            wrong: list[int] = []
+            repairs = []
+            noise_pool = [
+                token for token in range(len(self.vocab.id_to_token))
+                if token not in {
+                    self.vocab.pad_id,
+                    self.vocab.token_to_id[self.vocab.UNK],
+                    mask_id,
+                }
+            ]
+            while unresolved or wrong:
+                correct_wrong = bool(wrong) and (
+                    not unresolved or rng.random() < 0.35
+                )
+                if correct_wrong:
+                    position = wrong.pop(rng.randrange(len(wrong)))
+                    sentence, offset = _position(target, position)
+                    repairs.append(("replace", position, target[sentence][offset]))
+                    continue
+                position = unresolved.pop()
+                sentence, offset = _position(target, position)
+                clean = target[sentence][offset]
+                if rng.random() < self.refinement_probability:
+                    alternatives = [token for token in noise_pool if token != clean]
+                    repairs.append(("replace", position, rng.choice(alternatives)))
+                    wrong.append(position)
+                else:
+                    repairs.append(("replace", position, clean))
+        else:
+            for _ in range(count):
+                allowed = {
                 "mixed": ["replace", "insert"],
                 "mask": ["mask"],
                 "replace": ["replace"],
                 "remove": [],
-            }[mode]
+                }[mode]
             # Deleting a step-final token would erase which side of the
             # structural boundary owns its inverse insertion.  Every other
             # token, including the first token after a boundary, is safe.
-            deletable = []
-            start = 0
-            for sentence in current:
-                deletable.extend(range(start, start + len(sentence) - 1))
-                start += len(sentence)
-            if deletable:
-                if mode in {"mixed", "remove"}:
-                    allowed.append("delete")
-            if not allowed:
-                continue
-            kind = rng.choice(allowed)
-            if kind in {"replace", "mask"}:
-                if kind == "mask":
-                    candidates = [
-                        position for position in range(_flat_length(current))
-                        if current[_position(current, position)[0]][
-                            _position(current, position)[1]
-                        ] != mask_id
-                    ]
-                    if not candidates:
-                        continue
-                    position = rng.choice(candidates)
-                else:
-                    position = rng.randrange(_flat_length(current))
-                sentence, offset = _position(current, position)
-                old = current[sentence][offset]
-                alternatives = (
-                    [mask_id] if kind == "mask"
-                    else [token for token in token_pool if token != old]
-                )
-                if not alternatives:
+                deletable = []
+                start = 0
+                for sentence in current:
+                    deletable.extend(range(start, start + len(sentence) - 1))
+                    start += len(sentence)
+                if deletable:
+                    if mode in {"mixed", "remove"}:
+                        allowed.append("delete")
+                if not allowed:
                     continue
-                current[sentence][offset] = rng.choice(alternatives)
-                undo.append(("replace", position, old))
-            elif kind == "delete":
-                position = rng.choice(deletable)
-                sentence, offset = _position(current, position)
-                old = current[sentence].pop(offset)
-                undo.append(("insert", position, old))
-            else:
-                position = rng.randrange(_flat_length(current) + 1)
-                _apply(current, ("insert", position, rng.choice(token_pool)))
-                undo.append(("delete", position, None))
+                kind = rng.choice(allowed)
+                if kind in {"replace", "mask"}:
+                    if kind == "mask":
+                        candidates = [
+                            position for position in range(_flat_length(current))
+                            if current[_position(current, position)[0]][
+                                _position(current, position)[1]
+                            ] != mask_id
+                        ]
+                        if not candidates:
+                            continue
+                        position = rng.choice(candidates)
+                    else:
+                        position = rng.randrange(_flat_length(current))
+                    sentence, offset = _position(current, position)
+                    old = current[sentence][offset]
+                    alternatives = (
+                        [mask_id] if kind == "mask"
+                        else [token for token in token_pool if token != old]
+                    )
+                    if not alternatives:
+                        continue
+                    current[sentence][offset] = rng.choice(alternatives)
+                    undo.append(("replace", position, old))
+                elif kind == "delete":
+                    position = rng.choice(deletable)
+                    sentence, offset = _position(current, position)
+                    old = current[sentence].pop(offset)
+                    undo.append(("insert", position, old))
+                else:
+                    position = rng.randrange(_flat_length(current) + 1)
+                    _apply(current, ("insert", position, rng.choice(token_pool)))
+                    undo.append(("delete", position, None))
 
-        repairs = list(reversed(undo))
+            repairs = list(reversed(undo))
         buffers = [[list(sentence) for sentence in current]]
         actions, op, positions, content_tokens, remaining, changed = [], [], [], [], [], []
         alt_actions: list[list[list[int]]] = []
@@ -385,7 +429,10 @@ class FaithfulTokenEditDataset(Dataset):
                 )
                 operation_order = None
                 if sampled_source == "deployable_mixed":
-                    base = ("replace", "insert", "delete")
+                    base = (
+                        ("replace",) if mode == "iterative_refinement"
+                        else ("replace", "insert", "delete")
+                    )
                     offset = (index + step) % len(base)
                     operation_order = base[offset:] + base[:offset]
                 attempts = 0
@@ -474,7 +521,8 @@ class FaithfulTokenEditDataset(Dataset):
             "answer": int(source["answer"]),
             "n_necessary": len(actions),
             "n_vars": 0,
-            "index": index,
+            "index": source_index,
+            "trajectory_variant": trajectory_variant,
             "edit_pos": [min(action[1], 15) for action in repairs],
             "changed": changed,
             "defect_masks": [[] for _ in repairs],

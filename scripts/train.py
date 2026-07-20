@@ -14,7 +14,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
 from textjepa.data.igsm.dataset import build_vocab
-from textjepa.data.sampling import FreshEpochSampler
+from textjepa.data.sampling import FreshEpochSampler, GroupedTrajectoryBatchSampler
 from textjepa.objectives import CompositeObjective
 from textjepa.training import Trainer
 from textjepa.utils import seed_everything
@@ -71,16 +71,33 @@ def main(cfg: DictConfig) -> None:
         FreshEpochSampler(train_ds, seed=cfg.seed)
         if cfg.data.get("fresh_per_epoch", True) else None
     )
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=cfg.train.batch_size,
-        shuffle=fresh_sampler is None,
-        sampler=fresh_sampler,
-        num_workers=cfg.train.num_workers,
-        collate_fn=coll,
-        drop_last=True,
-        persistent_workers=cfg.train.num_workers > 0,
-    )
+    trajectory_variants = int(cfg.data.get("trajectory_variants", 1))
+    if trajectory_variants > 1:
+        if cfg.train.batch_size % trajectory_variants:
+            raise ValueError("batch_size must be divisible by trajectory_variants")
+        grouped = GroupedTrajectoryBatchSampler(
+            base_size=int(cfg.data.train_size),
+            variants=trajectory_variants,
+            bases_per_batch=cfg.train.batch_size // trajectory_variants,
+            seed=cfg.seed,
+            fresh_per_epoch=cfg.data.get("fresh_per_epoch", True),
+        )
+        train_loader = DataLoader(
+            train_ds, batch_sampler=grouped,
+            num_workers=cfg.train.num_workers, collate_fn=coll,
+            persistent_workers=cfg.train.num_workers > 0,
+        )
+    else:
+        train_loader = DataLoader(
+            train_ds,
+            batch_size=cfg.train.batch_size,
+            shuffle=fresh_sampler is None,
+            sampler=fresh_sampler,
+            num_workers=cfg.train.num_workers,
+            collate_fn=coll,
+            drop_last=True,
+            persistent_workers=cfg.train.num_workers > 0,
+        )
     val_loader = DataLoader(
         val_ds,
         batch_size=cfg.train.batch_size,

@@ -112,6 +112,11 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             curriculum_epochs=d.get("curriculum_epochs", 3),
             fresh_per_epoch=d.get("fresh_per_epoch", False),
             gar_teacher=d.get("gar_teacher", "latent_distance"),
+            trajectory_variants=(
+                d.get("trajectory_variants", 1) if split == "train"
+                else d.get("eval_trajectory_variants", 1)
+            ),
+            refinement_probability=d.get("refinement_probability", 0.25),
         )
         replay_path = d.get("replay_path")
         replay_fraction = float(d.get("replay_fraction", 0.0))

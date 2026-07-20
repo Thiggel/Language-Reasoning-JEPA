@@ -68,6 +68,8 @@ class Trainer:
             dataset.set_epoch(epoch)
         if hasattr(self.train_loader.sampler, "set_epoch"):
             self.train_loader.sampler.set_epoch(epoch)
+        if hasattr(self.train_loader.batch_sampler, "set_epoch"):
+            self.train_loader.batch_sampler.set_epoch(epoch)
         t0 = time.time()
         for batch in self.train_loader:
             batch = to_device(batch, self.device)

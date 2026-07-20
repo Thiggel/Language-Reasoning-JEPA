@@ -1,0 +1,18 @@
+# @package _global_
+# Fully masked replacement-only denoising. Multiple independently ordered
+# trajectories for each base problem are grouped in the same training batch.
+defaults: [edit_token_structured_gar_positive_anchor_exact, _self_]
+run_name: edit_token_refinement_gar_positive_anchor
+data:
+  corruption_mode: iterative_refinement
+  trajectory_variants: 4
+  eval_trajectory_variants: 1
+  refinement_probability: 0.25
+  train_size: 1000
+  fresh_per_epoch: true
+  proposal_pool_k: 64
+  proposal_token_pool: prompt_plus_current
+train:
+  batch_size: 8
+  epochs: 2
+  lr: 0.004

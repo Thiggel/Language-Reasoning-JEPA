@@ -10,6 +10,7 @@ from textjepa.data.faithful_token_edits import (
     MASK_TOKEN,
     faithful_token_edit_vocab,
 )
+from textjepa.data.sampling import GroupedTrajectoryBatchSampler
 from textjepa.data.token_edit_distance import (
     boundary_token_edit_distance, exact_one_step_advantage,
 )
@@ -138,6 +139,49 @@ def test_corruption_modes_are_distinct_and_exact():
     assert set(item["op"]) == {1}
     assert item["resolved_n"][0] < item["resolved_n"][-1]
     assert item["buffers"][-1] == removed.source[0]["steps"]
+
+
+def test_iterative_refinement_is_fully_masked_replace_only_and_diverse():
+    vocab = faithful_token_edit_vocab()
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=2, seed=47, max_op=6, max_edge=12,
+        op_range=(3, 6), corruption_mode="iterative_refinement",
+        trajectory_variants=4, refinement_probability=1.0,
+        gar_teacher="token_edit_distance", proposal_pool_k=4,
+        proposal_token_pool="prompt_plus_current",
+    )
+    mask = vocab.token_to_id[MASK_TOKEN]
+    variants = [dataset[index] for index in range(4)]
+    assert len(dataset) == 8
+    assert all(
+        all(token == mask for sentence in item["buffers"][0] for token in sentence)
+        for item in variants
+    )
+    assert all(set(item["op"]) == {2} for item in variants)
+    assert all(
+        all(set(step) == {2} for step in item["proposal_op"])
+        for item in variants
+    )
+    assert all(item["buffers"][-1] == dataset.source[0]["steps"] for item in variants)
+    assert len({tuple(map(tuple, item["buffers"][1])) for item in variants}) > 1
+    assert any(advantage == 0 for advantage in variants[0]["gar_token_edit_target"])
+    assert variants[0]["trajectory_variant"] == 0
+    assert variants[3]["trajectory_variant"] == 3
+
+
+def test_grouped_trajectory_sampler_emits_n_by_m_batches():
+    sampler = GroupedTrajectoryBatchSampler(
+        base_size=6, variants=4, bases_per_batch=2, seed=3,
+        fresh_per_epoch=True,
+    )
+    batches = list(sampler)
+    assert len(batches) == 3
+    assert all(len(batch) == 8 for batch in batches)
+    for batch in batches:
+        groups = [batch[offset:offset + 4] for offset in range(0, 8, 4)]
+        assert all(group == list(range(group[0], group[0] + 4)) for group in groups)
+    sampler.set_epoch(1)
+    assert min(index // 4 for batch in sampler for index in batch) >= 6
 
 
 def test_curriculum_changes_corruption_family_by_epoch():
