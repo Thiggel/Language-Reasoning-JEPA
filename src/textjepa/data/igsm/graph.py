@@ -92,13 +92,19 @@ def sample_problem(
     leaf_prob: float = 0.35,
     steps_range: tuple[int, int] = (3, 9),
     max_tries: int = 50,
+    strict_steps_range: bool = False,
 ) -> Problem:
     """Rejection-sample a problem whose necessary trace length is in range."""
     for _ in range(max_tries):
         p = _sample_once(rng, adjectives, nouns, modulus, n_vars_range, leaf_prob)
         if steps_range[0] <= p.n_necessary_steps <= steps_range[1]:
             return p
-    return p  # rare fallback: last sample regardless of length
+    if strict_steps_range:
+        raise RuntimeError(
+            f"failed to sample necessary-step range {steps_range} after "
+            f"{max_tries} attempts; increase n_vars_range or max_tries"
+        )
+    return p  # historical fallback retained for training compatibility
 
 
 def _sample_once(

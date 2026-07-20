@@ -23,6 +23,7 @@ from textjepa.objectives.ranking import (
 )
 from textjepa.objectives.counterfactual import CounterfactualOutcomePrediction
 from textjepa.objectives.macro_hierarchy import (
+    ActionPrior,
     ActionFeasibility,
     HierarchyReachability,
     LowerHierarchyRollout,
@@ -47,6 +48,7 @@ from textjepa.objectives.variational import (
 )
 
 __all__ = [
+    "ActionPrior",
     "ActionFeasibility",
     "HierarchyReachability",
     "LowerHierarchyRollout",

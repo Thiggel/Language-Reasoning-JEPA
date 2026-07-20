@@ -110,6 +110,8 @@ class IGSMDataset(Dataset):
         all_action_supervision: bool = False,
         adjectives: list[str] | None = None,
         nouns: list[str] | None = None,
+        problem_max_tries: int = 50,
+        strict_steps_range: bool = False,
     ):
         self.vocab = vocab
         self.size = size
@@ -134,6 +136,8 @@ class IGSMDataset(Dataset):
             raise ValueError(f"unknown geo_rank_policy: {self.geo_rank_policy}")
         self.adjectives = adjectives or DEFAULT_ADJECTIVES
         self.nouns = nouns or DEFAULT_NOUNS
+        self.problem_max_tries = int(problem_max_tries)
+        self.strict_steps_range = bool(strict_steps_range)
 
     def __len__(self) -> int:
         return self.size
@@ -148,6 +152,8 @@ class IGSMDataset(Dataset):
             self.n_vars_range,
             self.leaf_prob,
             self.steps_range,
+            max_tries=self.problem_max_tries,
+            strict_steps_range=self.strict_steps_range,
         )
         return p, rng
 
@@ -600,14 +606,17 @@ def collate(batch: list[dict], pad_id: int) -> dict:
         "index": torch.tensor([b["index"] for b in batch]),
         "var_idx": _pad_labels([b["var_idx"] for b in batch], fill=-1),
         "query_idx": torch.tensor([b["query_idx"] for b in batch]),
-        "ancestor_mask": _member_mask([b["ancestors"] for b in batch]),
+        "ancestor_mask": _member_mask(
+            [b["ancestors"] for b in batch],
+            width=max(b["n_vars"] for b in batch),
+        ),
     }
 
 
-MAX_VARS = 12
-
-
-def _member_mask(sets: list[list[int]], width: int = MAX_VARS) -> torch.Tensor:
+def _member_mask(sets: list[list[int]], width: int | None = None) -> torch.Tensor:
+    if width is None:
+        width = max((max(s, default=-1) for s in sets), default=-1) + 1
+        width = max(width, 1)
     out = torch.zeros(len(sets), width, dtype=torch.long)
     for b, s in enumerate(sets):
         for j in s:

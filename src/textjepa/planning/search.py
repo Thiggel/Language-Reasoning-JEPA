@@ -74,6 +74,8 @@ class LatentPlanner:
         hierarchy: bool = False,  # score K-step sequences with F_hi jumps
         simulator: str = "latent",  # "latent" (F rollouts) | "symbolic"
         allow_oracle_future_actions: bool = False,
+        prior_top_m: int = 0,
+        prior_only: bool = False,
     ):
         if lookahead > 1 and not allow_oracle_future_actions:
             raise ValueError(
@@ -90,6 +92,14 @@ class LatentPlanner:
         self.hierarchy = hierarchy
         self.simulator = simulator
         self.allow_oracle_future_actions = allow_oracle_future_actions
+        self.prior_top_m = max(0, int(prior_top_m))
+        self.prior_only = bool(prior_only)
+        if (self.prior_top_m or self.prior_only) and getattr(
+            model, "action_prior_head", None
+        ) is None:
+            raise ValueError("prior planning requires an action-prior checkpoint")
+        self.prior_decisions = 0
+        self.prior_necessary_recall_sum = 0.0
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -129,6 +139,7 @@ class LatentPlanner:
             seqs = _sequences(
                 problem, frozenset(env.resolved_set), self.lookahead, self.max_expand
             )
+            seqs = self._apply_action_prior(s, problem, seqs)
             best = self._best_sequence(
                 s, s0, problem, seqs, goal_state,
                 state_history=state_history,
@@ -143,6 +154,31 @@ class LatentPlanner:
         return EpisodeResult(
             env.solved, len(step_texts), problem.n_necessary_steps, n_distractor
         )
+
+    def _apply_action_prior(
+        self, state: torch.Tensor, problem: Problem, seqs: list[list[int]]
+    ) -> list[list[int]]:
+        """Filter root proposals with a normalized candidate-scoring prior."""
+        if not (self.prior_top_m or self.prior_only):
+            return seqs
+        roots = sorted({sequence[0] for sequence in seqs if sequence})
+        if not roots:
+            return seqs
+        from textjepa.data.igsm.render import action_phrase
+
+        tokens = self._tokens([action_phrase(problem, idx) for idx in roots])
+        logits = self.model.score_action_prior(
+            state, tokens.squeeze(0).unsqueeze(0)
+        ).squeeze(0)
+        keep_n = 1 if self.prior_only else min(self.prior_top_m, len(roots))
+        selected = logits.topk(keep_n).indices.tolist()
+        keep = {roots[i] for i in selected}
+        necessary = set(problem.query_ancestors) & set(roots)
+        self.prior_decisions += 1
+        self.prior_necessary_recall_sum += (
+            len(necessary & keep) / max(len(necessary), 1)
+        )
+        return [sequence for sequence in seqs if sequence and sequence[0] in keep]
 
     def _s0(self, prompt_tokens, prompt_mask) -> torch.Tensor:
         if not hasattr(self, "_s0_cache") or self._s0_cache[0] is not prompt_tokens:

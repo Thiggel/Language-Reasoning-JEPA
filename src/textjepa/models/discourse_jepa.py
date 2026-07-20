@@ -19,6 +19,7 @@ from textjepa.models.action import (
 )
 from textjepa.models.core import LatentDynamicsCore
 from textjepa.models.ema import EMATeacher
+from textjepa.models.heads import ActionSupportHead
 from textjepa.models.layers import TokenTransformer
 from textjepa.models.outputs import JEPAOutputs
 from textjepa.models.state_model import (
@@ -81,6 +82,8 @@ class DiscourseJEPA(nn.Module):
         high_dense_rollout_depth: int = 0,
         distinct_high_state_space: bool = False,
         high_state_encoder_layers: int = 2,
+        action_prior: bool = False,
+        action_prior_detach_inputs: bool = True,
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -91,6 +94,7 @@ class DiscourseJEPA(nn.Module):
                 f"unknown action-support state mode: {action_support_states}"
             )
         self.action_support_states = action_support_states
+        self.action_prior_detach_inputs = bool(action_prior_detach_inputs)
         self.macro_support_scales = tuple(macro_support_scales or [3.0])
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
@@ -181,6 +185,13 @@ class DiscourseJEPA(nn.Module):
             dense_rollout_depth=dense_rollout_depth,
             high_dense_rollout_depth=high_dense_rollout_depth,
         )
+        # Construct this after the complete JEPA core so enabling a detached
+        # prior does not perturb the seeded initialization of any base-model
+        # parameter.  Same-seed prior and no-prior cells are then genuinely
+        # paired apart from this head and its isolated loss.
+        self.action_prior_head = (
+            ActionSupportHead(d_model, d_action) if action_prior else None
+        )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
         self.high_state_teacher = (
@@ -237,6 +248,19 @@ class DiscourseJEPA(nn.Module):
         token_emb = self.chunk_encoder.tok(action_tokens)
         return self.action_encoder(
             token_emb, action_tokens.ne(self.chunk_encoder.pad_id)
+        )
+
+    def score_action_prior(
+        self, states: torch.Tensor, action_tokens: torch.Tensor
+    ) -> torch.Tensor:
+        """Return logits for candidate phrases, shaped ``[B, V]``."""
+        if self.action_prior_head is None:
+            raise RuntimeError("this checkpoint has no action prior")
+        actions = self.encode_actions(action_tokens)
+        if self.action_prior_detach_inputs:
+            states, actions = states.detach(), actions.detach()
+        return self.action_prior_head(
+            states.unsqueeze(1).expand(-1, actions.shape[1], -1), actions
         )
 
     def encode_high_state_path(
@@ -447,6 +471,26 @@ class DiscourseJEPA(nn.Module):
             action_support_valid=valid,
             action_support_target=target,
         )
+        if self.action_prior_head is not None:
+            prior_states, prior_actions = out.prev_states, actions
+            if self.action_prior_detach_inputs:
+                prior_states, prior_actions = (
+                    prior_states.detach(), prior_actions.detach()
+                )
+            prior_logits = self.action_prior_head(
+                prior_states.unsqueeze(2).expand(B, T, V, d_state),
+                prior_actions.unsqueeze(1).expand(B, T, V, -1),
+            )
+            prior_valid = (
+                out.step_mask.unsqueeze(-1)
+                & batch["action_candidate_mask"].unsqueeze(1)
+                & batch["action_feasible"]
+            )
+            out.extras.update(
+                action_prior_logits=prior_logits,
+                action_prior_valid=prior_valid,
+                action_prior_target=batch["var_idx"],
+            )
 
     def _macro_counterfactuals(self, batch: dict, out) -> None:
         """Encode valid alternative macro chunks and their true outcomes."""

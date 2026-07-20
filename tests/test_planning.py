@@ -30,6 +30,34 @@ def test_planner_runs_end_to_end():
         assert 0.0 <= m["success"] <= 1.0
 
 
+def test_action_prior_top_m_planning_and_missing_head_guard():
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=2, seed=10)
+    plain = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+    ).eval()
+    with pytest.raises(ValueError, match="action-prior checkpoint"):
+        LatentPlanner(
+            plain, vocab, torch.device("cpu"), prior_top_m=2
+        )
+
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    planner = LatentPlanner(
+        model, vocab, torch.device("cpu"), prior_top_m=2
+    )
+    results = evaluate_planning(planner, ds, n_episodes=2, slack=1)
+    metrics = results["latent_planner"]
+    assert metrics["prior_decisions"] >= 2
+    assert 0.0 <= metrics["prior_root_necessary_recall"] <= 1.0
+
+
 def _distinct_model(vocab):
     return DiscourseJEPA(
         vocab_size=len(vocab), pad_id=vocab.pad_id,

@@ -78,6 +78,8 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         macro_alt_k=d.get("macro_alt_k", 0),
         macro_alt_horizon=d.get("macro_alt_horizon", 3),
         all_action_supervision=d.get("all_action_supervision", False),
+        problem_max_tries=d.get("problem_max_tries", 50),
+        strict_steps_range=d.get("strict_steps_range", False),
     )
     if split == "train":
         default_size, seed = d.train_size, d.train_seed

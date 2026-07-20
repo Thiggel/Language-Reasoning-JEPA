@@ -513,6 +513,60 @@ def test_action_feasibility_head_scores_all_problem_actions(setup):
     )
 
 
+def test_action_prior_is_masked_to_feasible_menu_and_detached(setup):
+    from textjepa.objectives import ActionPrior
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=8, seed=143, all_action_supervision=True
+    )
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        macro_k=0, action_prior=True, action_prior_detach_inputs=True,
+    )
+    out = model(batch)
+    logits = out.extras["action_prior_logits"]
+    assert logits.shape == batch["action_feasible"].shape
+    loss = ActionPrior()(out, batch)
+    assert torch.isfinite(loss) and loss > 0
+    loss.backward()
+    assert any(p.grad is not None for p in model.action_prior_head.parameters())
+    assert all(p.grad is None for p in model.action_encoder.parameters())
+
+
+def test_enabling_detached_action_prior_preserves_seeded_base_initialization(setup):
+    vocab, _, _ = setup
+    kwargs = dict(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        macro_k=0,
+    )
+    torch.manual_seed(99)
+    base = DiscourseJEPA(**kwargs)
+    torch.manual_seed(99)
+    with_prior = DiscourseJEPA(
+        **kwargs, action_prior=True, action_prior_detach_inputs=True
+    )
+    prior_state = with_prior.state_dict()
+    for name, value in base.state_dict().items():
+        torch.testing.assert_close(value, prior_state[name])
+
+
+def test_long_problem_ancestor_mask_is_not_truncated(setup):
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=4, seed=19, n_vars_range=(18, 22), steps_range=(15, 15)
+    )
+    batch = collate([ds[i] for i in range(4)], vocab.pad_id)
+    assert batch["ancestor_mask"].shape[1] == int(batch["n_vars"].max())
+    for row, item in zip(batch["ancestor_mask"], [ds[i] for i in range(4)]):
+        assert int(row.sum()) == len(item["ancestors"])
+
+
 def test_multistep_geometric_rollout_ranking(setup):
     from textjepa.objectives import GeoAdvantageRank, GeoAdvantageRegression
 

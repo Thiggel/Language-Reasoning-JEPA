@@ -23,6 +23,13 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
     split = cfg.get("split", "val")
+    if cfg.eval_steps_range is not None:
+        run_cfg.data.steps_range = list(cfg.eval_steps_range)
+    if cfg.eval_n_vars_range is not None:
+        run_cfg.data.n_vars_range = list(cfg.eval_n_vars_range)
+    if cfg.eval_dataset_seed is not None:
+        key = {"train": "train_seed", "val": "val_seed", "test": "test_seed"}[split]
+        run_cfg.data[key] = int(cfg.eval_dataset_seed)
     dataset = build_dataset(run_cfg, vocab, split=split)
     device = torch.device(cfg.device)
     if run_cfg.data.get("name", "igsm") == "igsm_real":
@@ -50,6 +57,8 @@ def main(cfg: DictConfig) -> None:
             hierarchy=cfg.get("hierarchy", False),
             simulator=cfg.get("simulator", "latent"),
             allow_oracle_future_actions=cfg.allow_oracle_future_actions,
+            prior_top_m=cfg.prior_top_m,
+            prior_only=cfg.prior_only,
         )
         results = evaluate_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -64,6 +73,14 @@ def main(cfg: DictConfig) -> None:
         suffix += "_sym"
     if cfg.lookahead > 1:
         suffix += "_oracle_actions"
+    if cfg.prior_only:
+        suffix += "_prior_only"
+    elif cfg.prior_top_m:
+        suffix += f"_prior_top{cfg.prior_top_m}"
+    if cfg.eval_steps_range is not None:
+        suffix += "_len" + "-".join(str(x) for x in cfg.eval_steps_range)
+    if cfg.eval_n_vars_range is not None:
+        suffix += "_vars" + "-".join(str(x) for x in cfg.eval_n_vars_range)
     split_suffix = "" if split == "val" else f"_{split}"
     out = Path(
         cfg.out or Path(cfg.ckpt).parent

@@ -63,10 +63,19 @@ def oracle_episode(problem: Problem, rng: random.Random) -> EpisodeResult:
 
 def _aggregate(results: list[EpisodeResult]) -> dict[str, float]:
     n = len(results)
+    solved = [r for r in results if r.solved]
     return {
         "success": sum(r.solved for r in results) / n,
         "mean_steps": sum(r.steps for r in results) / n,
         "mean_necessary": sum(r.n_necessary for r in results) / n,
+        # Failures retain their exhausted budget, making this a restricted
+        # excess-action cost rather than a success-conditioned statistic.
+        "mean_excess_actions": sum(
+            max(r.steps - r.n_necessary, 0) for r in results
+        ) / n,
+        "mean_steps_solved": (
+            sum(r.steps for r in solved) / len(solved) if solved else -1.0
+        ),
         "distractor_rate": sum(r.n_distractor for r in results)
         / max(sum(r.steps for r in results), 1),
     }
@@ -97,6 +106,13 @@ def evaluate_planning(
             "macro_decision_rate": planner.n_macro_decisions / max(total, 1),
             "macro_decisions": float(planner.n_macro_decisions),
             "flat_decisions": float(planner.n_flat_decisions),
+        })
+    if getattr(planner, "prior_decisions", 0):
+        planned_metrics.update({
+            "prior_root_necessary_recall": (
+                planner.prior_necessary_recall_sum / planner.prior_decisions
+            ),
+            "prior_decisions": float(planner.prior_decisions),
         })
     return {
         planner_name: planned_metrics,

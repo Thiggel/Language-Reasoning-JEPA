@@ -8,6 +8,8 @@ lookahead: 1
 # actions. Keep false for the information-matched evaluation; enable only for
 # an explicitly labeled oracle-action diagnostic.
 allow_oracle_future_actions: false
+prior_top_m: 0  # 0 = no prior filtering; otherwise keep top-M current actions
+prior_only: false
 max_expand: 64
 energy: value  # value | oracle_goal (oracle diagnostic, uses the solution)
 seed: 321
@@ -15,6 +17,9 @@ out: null
 # null infers outcome/intent from the training checkpoint. Override only for
 # diagnostics; the paper evaluates each LM using its matched training target.
 score_kind: null
+eval_steps_range: null
+eval_n_vars_range: null
+eval_dataset_seed: null
 # Compare candidate strings by mean token likelihood.  Summed likelihood has
 # an avoidable preference for shorter intent wording.
 length_normalize: true

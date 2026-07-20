@@ -23,6 +23,27 @@ def to_device(batch: dict, device: torch.device) -> dict:
     }
 
 
+def action_prior_metrics(out) -> dict[str, float]:
+    logits = out.extras.get("action_prior_logits")
+    if logits is None:
+        return {}
+    feasible = out.extras["action_prior_valid"]
+    target = out.extras["action_prior_target"]
+    rows = out.step_mask & target.ge(0)
+    logits = logits[rows]
+    feasible = feasible[rows]
+    target = target[rows]
+    logits = logits.masked_fill(~feasible, torch.finfo(logits.dtype).min)
+    order = logits.argsort(dim=1, descending=True)
+    ranks = order.eq(target[:, None]).float().argmax(dim=1) + 1
+    return {
+        "action_prior_top1": ranks.le(1).float().mean().item(),
+        "action_prior_top2": ranks.le(2).float().mean().item(),
+        "action_prior_top4": ranks.le(4).float().mean().item(),
+        "action_prior_mean_rank": ranks.float().mean().item(),
+    }
+
+
 class Trainer:
     def __init__(self, cfg, model, objective, train_loader, val_loader, out_dir):
         self.cfg = cfg
@@ -73,6 +94,7 @@ class Trainer:
                 g["lr"] = self.cfg.train.lr * lr_scale
             out = self.model(batch)
             loss, items = self.objective(out, batch)
+            items.update(action_prior_metrics(out))
             support_logits = out.extras.get("action_support_logits")
             if support_logits is not None:
                 support_valid = out.extras["action_support_valid"]
@@ -125,6 +147,7 @@ class Trainer:
             batch = to_device(batch, self.device)
             out = self.model(batch)
             loss, items = self.objective(out, batch)
+            items.update(action_prior_metrics(out))
             support_logits = out.extras.get("action_support_logits")
             if support_logits is not None:
                 support_valid = out.extras["action_support_valid"]
