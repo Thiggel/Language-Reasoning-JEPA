@@ -1100,6 +1100,10 @@ def main():
     ], default="boundary")
     parser.add_argument("--feedback-threshold", type=float, default=0.5)
     parser.add_argument("--episodes", type=int, default=3)
+    parser.add_argument(
+        "--episode-offset", type=int, default=0,
+        help="start at this held-out episode (supports exact parallel evaluation shards)",
+    )
     parser.add_argument("--max-tokens", type=int, default=256)
     parser.add_argument("--high-horizon", type=int, default=2)
     parser.add_argument("--flat-horizon", type=int, default=32)
@@ -1195,7 +1199,11 @@ def main():
                 member.to(args.device).eval()
                 members.append(member)
             ensembles.append(members)
-    dataset = make_dataset(cfg, vocab, args.episodes, cfg.data.val_seed)
+    if args.episode_offset < 0:
+        parser.error("--episode-offset must be non-negative")
+    dataset = make_dataset(
+        cfg, vocab, args.episode_offset + args.episodes, cfg.data.val_seed
+    )
     totals = {
         "success": 0, "valid": 0, "invalid": 0, "tokens": 0,
         "reference_correct": 0, "reference_count": 0,
@@ -1203,7 +1211,7 @@ def main():
         "distribution_top5": 0, "distribution_top20": 0,
     }
     all_records = []
-    for episode in range(args.episodes):
+    for episode in range(args.episode_offset, args.episode_offset + args.episodes):
         item = dataset[episode]
         problem, _ = dataset.igsm.problem(episode)
         prompt = item["tokens"][:item["prompt_len"]]
@@ -1260,6 +1268,9 @@ def main():
         "value_weight": args.value_weight,
         "uses_auxiliary_lm": False,
         "token_proposal": args.token_proposal,
+        "episode_indices": list(range(
+            args.episode_offset, args.episode_offset + args.episodes
+        )),
         "success": totals["success"] / args.episodes,
         "valid_sentences_per_episode": totals["valid"] / args.episodes,
         "invalid_sentences_per_episode": totals["invalid"] / args.episodes,
