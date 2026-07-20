@@ -13,6 +13,7 @@ if [[ -z "${RUN_DIR:-}" ]]; then
   echo "RUN_DIR must be supplied by researchctl" >&2
   exit 2
 fi
+export PYTHONPATH="${TEXTJEPA_ROOT}:${TEXTJEPA_ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/plan_token_refinement_mpc.py" \
   --ckpt "$checkpoint" --device "${DEVICE:-cuda:0}" --examples "$examples" \
   --horizon "$horizon" --beam-width "$beam_width" \
