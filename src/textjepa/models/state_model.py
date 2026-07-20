@@ -33,6 +33,16 @@ class DiscourseStateModel(nn.Module):
         self.encoder = encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
         self.norm = nn.LayerNorm(d_model)
 
+    def _positions(self, length: int) -> torch.Tensor:
+        if length <= self.pos.shape[1]:
+            return self.pos[:, :length]
+        return torch.nn.functional.interpolate(
+            self.pos.transpose(1, 2),
+            size=length,
+            mode="linear",
+            align_corners=False,
+        ).transpose(1, 2)
+
     def forward(
         self,
         prompt_emb: torch.Tensor,  # [B, P, D]
@@ -44,7 +54,7 @@ class DiscourseStateModel(nn.Module):
         x = torch.cat(
             [prompt_emb + self.segment[0], step_emb + self.segment[1]], dim=1
         )
-        x = x + self.pos[:, : x.shape[1]]
+        x = x + self._positions(x.shape[1])
         valid = torch.cat([prompt_mask, step_mask], dim=1)
         attn_mask = build_causal_attention_mask(valid, self.n_heads)
         h = self.norm(self.encoder(x, mask=attn_mask))
@@ -72,8 +82,18 @@ class CausalSentenceStateModel(nn.Module):
         self.encoder = encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
         self.norm = nn.LayerNorm(d_model)
 
+    def _positions(self, length: int) -> torch.Tensor:
+        if length <= self.pos.shape[1]:
+            return self.pos[:, :length]
+        return torch.nn.functional.interpolate(
+            self.pos.transpose(1, 2),
+            size=length,
+            mode="linear",
+            align_corners=False,
+        ).transpose(1, 2)
+
     def forward(self, sentence_emb: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        x = sentence_emb + self.pos[:, : sentence_emb.shape[1]]
+        x = sentence_emb + self._positions(sentence_emb.shape[1])
         attn_mask = build_causal_attention_mask(mask, self.n_heads)
         return self.norm(self.encoder(x, mask=attn_mask))
 

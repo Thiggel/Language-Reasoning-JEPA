@@ -1,40 +1,90 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-20-intent-distinct-hierarchy-wide-cem-v1",
-  "decision": "Determine whether the corrected distinct-state hierarchy becomes useful when its learned macro prior is used for on-manifold 1200-candidate, 20-update CEM, and select the macro-action bottleneck among 4, 8, and 16. Promote only if prior-noise CEM beats both direct-code CEM and the same checkpoint's flat planner with healthy high-state and macro-code diagnostics, including a consistent exact-length extrapolation signal.",
-  "git_commit": "17fd288d77ef53b16aa1c27fae9d99a97255124f",
+  "round_id": "2026-07-20-intent-action-prior-eval-recovery-v1",
+  "decision": "Recover the already-trained three-seed action-prior evaluation after fixing positional extrapolation, and determine whether top-2 or top-4 prior proposals reranked by the JEPA improve exact-length budgeted success over both the information-matched JEPA-only and prior-only controls. Promote only for a consistent non-oracle gain without an in-distribution strict-success regression; depth-2 and depth-4 future-menu results remain candidate-privileged diagnostics.",
+  "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "intent-hier-d4-wide-cem-seed0-v1",
+      "id": "intent-action-prior-eval-recovery-seed0-v1",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_intent_hierarchy_cem_pilot.sh", "{python}", "paper_causal_j3_distinct_hier_k2_d4_dense4_value", "0", "0.001", "5", "300", "30000", "20"],
+      "command": [
+        "bash",
+        "scripts/eval_intent_action_prior_checkpoint.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-prior-length-pilot-v1/intent-action-prior-len-pilot-seed0-v1/model/best.pt",
+        "60"
+      ],
       "gpus": 1,
-      "walltime_minutes": 300,
+      "walltime_minutes": 120,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Narrow four-dimensional macro-action bottleneck with direct and prior-noise wide CEM.",
-      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/metrics.csv", "model/length_curve_flat.json", "model/plan_hier_code_slack0.json", "model/plan_hier_code_slack2.json", "model/plan_hier_prior_noise_slack0.json", "model/plan_hier_prior_noise_slack2.json", "model/plan_hier_prior_noise_len9_slack0.json", "model/plan_hier_prior_noise_len12_slack0.json", "model/plan_hier_prior_noise_len15_slack0.json"]
+      "purpose": "Evaluate the completed seed-0 checkpoint without retraining after the positional-capacity repair.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "stdout.log",
+        "stderr.log",
+        "model/source_checkpoint.sha256",
+        "model/length_curve_jepa.json",
+        "model/length_curve_prior.json",
+        "model/length_curve_top2.json",
+        "model/length_curve_top4.json",
+        "model/length_curve_top4_oracle_depth2.json",
+        "model/length_curve_top4_oracle_depth4.json"
+      ]
     },
     {
-      "id": "intent-hier-d8-wide-cem-seed0-v1",
+      "id": "intent-action-prior-eval-recovery-seed1-v1",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_intent_hierarchy_cem_pilot.sh", "{python}", "paper_causal_j3_distinct_hier_k2_d8_dense4_value", "0", "0.001", "5", "300", "30000", "20"],
+      "command": [
+        "bash",
+        "scripts/eval_intent_action_prior_checkpoint.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-prior-length-pilot-v1/intent-action-prior-len-pilot-seed1-v1/model/best.pt",
+        "60"
+      ],
       "gpus": 1,
-      "walltime_minutes": 300,
+      "walltime_minutes": 120,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Eight-dimensional macro-action bottleneck with direct and prior-noise wide CEM.",
-      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/metrics.csv", "model/length_curve_flat.json", "model/plan_hier_code_slack0.json", "model/plan_hier_code_slack2.json", "model/plan_hier_prior_noise_slack0.json", "model/plan_hier_prior_noise_slack2.json", "model/plan_hier_prior_noise_len9_slack0.json", "model/plan_hier_prior_noise_len12_slack0.json", "model/plan_hier_prior_noise_len15_slack0.json"]
+      "purpose": "Evaluate the completed seed-1 checkpoint without retraining after the positional-capacity repair.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "stdout.log",
+        "stderr.log",
+        "model/source_checkpoint.sha256",
+        "model/length_curve_jepa.json",
+        "model/length_curve_prior.json",
+        "model/length_curve_top2.json",
+        "model/length_curve_top4.json",
+        "model/length_curve_top4_oracle_depth2.json",
+        "model/length_curve_top4_oracle_depth4.json"
+      ]
     },
     {
-      "id": "intent-hier-d16-wide-cem-seed0-v1",
+      "id": "intent-action-prior-eval-recovery-seed2-v1",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_intent_hierarchy_cem_pilot.sh", "{python}", "paper_causal_j3_distinct_hier_k2_d16_dense4_value", "0", "0.001", "5", "300", "30000", "20"],
+      "command": [
+        "bash",
+        "scripts/eval_intent_action_prior_checkpoint.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-prior-length-pilot-v1/intent-action-prior-len-pilot-seed2-v1/model/best.pt",
+        "60"
+      ],
       "gpus": 1,
-      "walltime_minutes": 300,
+      "walltime_minutes": 120,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Wider sixteen-dimensional macro-action bottleneck with direct and prior-noise wide CEM.",
-      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/metrics.csv", "model/length_curve_flat.json", "model/plan_hier_code_slack0.json", "model/plan_hier_code_slack2.json", "model/plan_hier_prior_noise_slack0.json", "model/plan_hier_prior_noise_slack2.json", "model/plan_hier_prior_noise_len9_slack0.json", "model/plan_hier_prior_noise_len12_slack0.json", "model/plan_hier_prior_noise_len15_slack0.json"]
+      "purpose": "Evaluate the completed seed-2 checkpoint without retraining after the positional-capacity repair.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "stdout.log",
+        "stderr.log",
+        "model/source_checkpoint.sha256",
+        "model/length_curve_jepa.json",
+        "model/length_curve_prior.json",
+        "model/length_curve_top2.json",
+        "model/length_curve_top4.json",
+        "model/length_curve_top4_oracle_depth2.json",
+        "model/length_curve_top4_oracle_depth4.json"
+      ]
     }
   ]
 }
-
