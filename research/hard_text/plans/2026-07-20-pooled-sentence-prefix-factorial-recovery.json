@@ -1,0 +1,818 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-pooled-sentence-prefix-factorial-recovery",
+  "decision": "Can an evolving attention-pooled sentence-prefix state avoid the trivial next-token-state shortcut, and how do pooling scope, a token prior, autoregressive prefix reconstruction, and learning rate affect representation quality and depth-1/2/4/8/16 planning?",
+  "git_commit": "7faea386e6b1367e2a4c7647620a1d4557382970",
+  "jobs": [
+    {
+      "id": "pooled-sentence-noprior-nodecoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, nodecoder, learning rate 0.001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-nodecoder-lr1e-3-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-sentence-noprior-nodecoder-lr3e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, nodecoder, learning rate 0.003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-nodecoder-lr3e-3-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-sentence-noprior-decoder-lr1e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, decoder, learning rate 0.00001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-decoder-lr1e-5-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-sentence-noprior-decoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, decoder, learning rate 0.00003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-decoder-lr3e-5-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-sentence-noprior-decoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, decoder, learning rate 0.0001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-decoder-lr1e-4-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-sentence-noprior-decoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, decoder, learning rate 0.0003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-decoder-lr3e-4-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-sentence-noprior-decoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, decoder, learning rate 0.001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-decoder-lr1e-3-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-sentence-noprior-decoder-lr3e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: sentence pooling, noprior, decoder, learning rate 0.003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-sentence-noprior-decoder-lr3e-3-s0",
+        "all",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-nodecoder-lr1e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, nodecoder, learning rate 0.00001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-nodecoder-lr1e-5-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.00001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-nodecoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, nodecoder, learning rate 0.00003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-nodecoder-lr3e-5-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.00003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-nodecoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, nodecoder, learning rate 0.0001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-nodecoder-lr1e-4-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-nodecoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, nodecoder, learning rate 0.0003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-nodecoder-lr3e-4-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-nodecoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, nodecoder, learning rate 0.001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-nodecoder-lr1e-3-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-nodecoder-lr3e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, nodecoder, learning rate 0.003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-nodecoder-lr3e-3-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-decoder-lr1e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, decoder, learning rate 0.00001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-decoder-lr1e-5-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-decoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, decoder, learning rate 0.00003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-decoder-lr3e-5-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-decoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, decoder, learning rate 0.0001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-decoder-lr1e-4-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-decoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, decoder, learning rate 0.0003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-decoder-lr3e-4-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-decoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, decoder, learning rate 0.001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-decoder-lr1e-3-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-prior-decoder-lr3e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, prior, decoder, learning rate 0.003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-prior-decoder-lr3e-3-s0",
+        "prior",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-nodecoder-lr1e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, nodecoder, learning rate 0.00001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-nodecoder-lr1e-5-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.00001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-nodecoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, nodecoder, learning rate 0.00003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-nodecoder-lr3e-5-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.00003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-nodecoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, nodecoder, learning rate 0.0001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-nodecoder-lr1e-4-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-nodecoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, nodecoder, learning rate 0.0003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-nodecoder-lr3e-4-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-nodecoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, nodecoder, learning rate 0.001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-nodecoder-lr1e-3-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-nodecoder-lr3e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, nodecoder, learning rate 0.003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-nodecoder-lr3e-3-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr1e-5-s0",
+      "cluster": "Grete",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.00001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr1e-5-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr3e-5-s0",
+      "cluster": "Grete",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.00003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr3e-5-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr1e-4-s0",
+      "cluster": "Grete",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.0001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr1e-4-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr3e-4-s0",
+      "cluster": "Grete",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.0003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr3e-4-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr1e-3-s0",
+      "cluster": "Grete",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.001.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr1e-3-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.001",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    },
+    {
+      "id": "pooled-global-noprior-decoder-lr3e-3-s0",
+      "cluster": "Grete",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 30000,
+      "walltime_minutes": 720,
+      "purpose": "~50M pooled-prefix JEPA: global pooling, noprior, decoder, learning rate 0.003.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_cell.sh",
+        "{python}",
+        "pooled-global-noprior-decoder-lr3e-3-s0",
+        "all",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.003",
+        "model.use_token_prior=false",
+        "objective.token_prior=0"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt"
+      ]
+    }
+  ]
+}
+
