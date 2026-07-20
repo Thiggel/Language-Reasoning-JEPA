@@ -72,15 +72,20 @@ def main(cfg: DictConfig) -> None:
         if cfg.data.get("fresh_per_epoch", True) else None
     )
     trajectory_variants = int(cfg.data.get("trajectory_variants", 1))
+    effective_batch_size = int(cfg.train.batch_size)
+    microbatch_size = int(cfg.train.get("microbatch_size", effective_batch_size))
+    if effective_batch_size % microbatch_size:
+        raise ValueError("microbatch_size must divide train.batch_size")
     if trajectory_variants > 1:
-        if cfg.train.batch_size % trajectory_variants:
+        if effective_batch_size % trajectory_variants:
             raise ValueError("batch_size must be divisible by trajectory_variants")
         grouped = GroupedTrajectoryBatchSampler(
             base_size=int(cfg.data.train_size),
             variants=trajectory_variants,
-            bases_per_batch=cfg.train.batch_size // trajectory_variants,
+            bases_per_batch=effective_batch_size // trajectory_variants,
             seed=cfg.seed,
             fresh_per_epoch=cfg.data.get("fresh_per_epoch", True),
+            microbatch_size=microbatch_size,
         )
         train_loader = DataLoader(
             train_ds, batch_sampler=grouped,
@@ -90,7 +95,7 @@ def main(cfg: DictConfig) -> None:
     else:
         train_loader = DataLoader(
             train_ds,
-            batch_size=cfg.train.batch_size,
+            batch_size=microbatch_size,
             shuffle=fresh_sampler is None,
             sampler=fresh_sampler,
             num_workers=cfg.train.num_workers,

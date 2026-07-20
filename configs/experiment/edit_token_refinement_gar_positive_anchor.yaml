@@ -26,5 +26,6 @@ objective:
     content_weight: 1.0
 train:
   batch_size: 8
+  microbatch_size: 2
   epochs: 2
   lr: 0.004

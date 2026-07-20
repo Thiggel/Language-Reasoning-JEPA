@@ -10,18 +10,28 @@ class GroupedTrajectoryBatchSampler(Sampler[list[int]]):
     """Put every trajectory variant of each sampled problem in one batch."""
 
     def __init__(self, base_size: int, variants: int, bases_per_batch: int,
-                 seed: int = 0, fresh_per_epoch: bool = True):
+                 seed: int = 0, fresh_per_epoch: bool = True,
+                 microbatch_size: int | None = None):
         self.base_size = int(base_size)
         self.variants = int(variants)
         self.bases_per_batch = int(bases_per_batch)
         self.seed = int(seed)
         self.fresh_per_epoch = bool(fresh_per_epoch)
+        self.effective_batch_size = self.variants * self.bases_per_batch
+        self.microbatch_size = int(
+            microbatch_size or self.effective_batch_size
+        )
         self.epoch = 0
         if min(self.base_size, self.variants, self.bases_per_batch) < 1:
             raise ValueError("grouped trajectory sampler sizes must be positive")
+        if self.effective_batch_size % self.microbatch_size:
+            raise ValueError("microbatch_size must divide the effective batch")
 
     def __len__(self) -> int:
-        return self.base_size // self.bases_per_batch
+        return (
+            self.base_size // self.bases_per_batch
+            * self.effective_batch_size // self.microbatch_size
+        )
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = int(epoch)
@@ -36,7 +46,8 @@ class GroupedTrajectoryBatchSampler(Sampler[list[int]]):
             for base in order[start:start + self.bases_per_batch]:
                 first = (offset + base) * self.variants
                 batch.extend(first + variant for variant in range(self.variants))
-            yield batch
+            for micro_start in range(0, len(batch), self.microbatch_size):
+                yield batch[micro_start:micro_start + self.microbatch_size]
 
 
 class FreshEpochSampler(Sampler[int]):

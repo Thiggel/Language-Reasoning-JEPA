@@ -184,6 +184,16 @@ def test_grouped_trajectory_sampler_emits_n_by_m_batches():
     sampler.set_epoch(1)
     assert min(index // 4 for batch in sampler for index in batch) >= 6
 
+    micro = GroupedTrajectoryBatchSampler(
+        base_size=4, variants=4, bases_per_batch=2, seed=3,
+        fresh_per_epoch=False, microbatch_size=2,
+    )
+    chunks = list(micro)
+    assert len(chunks) == 8
+    assert all(len(chunk) == 2 for chunk in chunks)
+    assert chunks[0] + chunks[1] == list(range(chunks[0][0], chunks[0][0] + 4))
+    assert chunks[2] + chunks[3] == list(range(chunks[2][0], chunks[2][0] + 4))
+
 
 def test_refinement_prior_supervises_pointer_and_full_vocab_content():
     vocab = faithful_token_edit_vocab()

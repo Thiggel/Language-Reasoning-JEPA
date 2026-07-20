@@ -36,7 +36,14 @@ class Trainer:
 
         tc = cfg.train
         self.epochs = tc.epochs
-        self.total_steps = tc.epochs * len(train_loader)
+        effective_batch = int(tc.batch_size)
+        microbatch = int(tc.get("microbatch_size", effective_batch))
+        if effective_batch % microbatch:
+            raise ValueError("microbatch_size must divide batch_size")
+        self.grad_accum_steps = effective_batch // microbatch
+        if len(train_loader) % self.grad_accum_steps:
+            raise ValueError("loader microbatches must form complete effective batches")
+        self.total_steps = tc.epochs * len(train_loader) // self.grad_accum_steps
         self.opt = build_optimizer(model, tc.lr, tc.weight_decay)
         self.clip = tc.grad_clip
         self.warmup = tc.warmup_steps
@@ -71,7 +78,8 @@ class Trainer:
         if hasattr(self.train_loader.batch_sampler, "set_epoch"):
             self.train_loader.batch_sampler.set_epoch(epoch)
         t0 = time.time()
-        for batch in self.train_loader:
+        self.opt.zero_grad(set_to_none=True)
+        for micro_step, batch in enumerate(self.train_loader):
             batch = to_device(batch, self.device)
             lr_scale = cosine_warmup(self.step, self.total_steps, self.warmup)
             for g in self.opt.param_groups:
@@ -96,10 +104,12 @@ class Trainer:
                 items["action_feasibility_negative_logit"] = (
                     support_logits[negative].mean().item()
                 )
-            self.opt.zero_grad(set_to_none=True)
-            loss.backward()
+            (loss / self.grad_accum_steps).backward()
+            if (micro_step + 1) % self.grad_accum_steps:
+                continue
             gnorm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.clip)
             self.opt.step()
+            self.opt.zero_grad(set_to_none=True)
             self.model.update_teachers(
                 ema_momentum(self.step, self.total_steps, *self.ema_range)
             )
