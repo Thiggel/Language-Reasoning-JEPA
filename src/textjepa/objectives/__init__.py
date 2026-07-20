@@ -16,7 +16,7 @@ from textjepa.objectives.prediction import (
     TokenAlignedRolloutPrediction,
     SentenceLevelPrediction,
 )
-from textjepa.objectives.vicreg import SIGReg, VICReg
+from textjepa.objectives.vicreg import MultiscaleVICReg, SIGReg, VICReg
 from textjepa.objectives.delta_action import DeltaAction, ObservedActionLDAD
 from textjepa.objectives.value import (
     ActionDecode, ActionKL, GoalAdvantageDistill, ValueDistill, ValueRegression,
@@ -105,6 +105,7 @@ __all__ = [
     "MacroSentencePrediction",
     "SentenceLevelPrediction",
     "VICReg",
+    "MultiscaleVICReg",
     "DeltaAction",
     "ObservedActionLDAD",
     "ValueRegression",

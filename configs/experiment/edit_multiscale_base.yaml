@@ -35,6 +35,12 @@ objective:
   macro_prior_distill:
     _target_: textjepa.objectives.MacroPriorDistillation
     weight: 0.0
+  multiscale_vicreg:
+    _target_: textjepa.objectives.MultiscaleVICReg
+    weight: 0.0
+    std_target: 1.0
+    cov_weight: 0.04
+    action_weight: 0.1
 train:
   batch_size: 8
   microbatch_size: 8

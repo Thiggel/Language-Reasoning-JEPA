@@ -47,6 +47,44 @@ class VICReg(Objective):
         return loss
 
 
+class MultiscaleVICReg(Objective):
+    """Separate variance/covariance gates for active token and sentence spaces."""
+
+    def __init__(self, std_target: float = 1.0, cov_weight: float = 0.04,
+                 action_weight: float = 0.1):
+        super().__init__()
+        self.std_target = float(std_target)
+        self.cov_weight = float(cov_weight)
+        self.action_weight = float(action_weight)
+
+    def _space_loss(self, value, mask):
+        flat = value.reshape(-1, value.shape[-1])[mask.reshape(-1)]
+        var, cov = variance_covariance(flat, self.std_target)
+        return var + self.cov_weight * cov
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        losses = []
+        if out.extras.get("token_predictions") is not None:
+            losses.append(self._space_loss(
+                out.extras["token_states"], out.extras["token_state_mask"]
+            ))
+        if out.extras.get("sentence_predictions") is not None:
+            sentence_mask = out.extras["sentence_states"].abs().sum(-1).gt(0)
+            losses.append(self._space_loss(
+                out.extras["sentence_states"], sentence_mask
+            ))
+        if not losses:
+            return out.preds.sum() * 0.0
+        loss = torch.stack(losses).mean()
+        if self.action_weight:
+            actions = out.actions.reshape(-1, out.actions.shape[-1])[
+                out.step_mask.reshape(-1)
+            ]
+            var, _ = variance_covariance(actions, self.std_target)
+            loss = loss + self.action_weight * var
+        return loss
+
+
 class SIGReg(Objective):
     """Sketched Epps--Pulley test against an isotropic Gaussian.
 

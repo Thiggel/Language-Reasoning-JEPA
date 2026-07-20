@@ -7,6 +7,12 @@ from textjepa.models.multiscale_edit_jepa import (
     HierarchicalBufferEncoder,
     MultiscaleEditJEPA,
 )
+from textjepa.objectives.prediction import (
+    MacroPriorDistillation,
+    MacroSentencePrediction,
+    SentenceLevelPrediction,
+)
+from textjepa.objectives.vicreg import MultiscaleVICReg
 
 
 def _batch():
@@ -137,6 +143,24 @@ def test_sentence_ldad_uses_changed_sentence_delta_and_reaches_encoder():
     assert out.extras["ldad_uses_changed_sentence_delta"] is True
     out.extras["observed_action_logits"].sum().backward()
     assert model.encoder.pool_score[1].weight.grad is not None
+
+
+def test_multiscale_objectives_are_finite_and_train_both_levels():
+    torch.manual_seed(17)
+    model = _model("token_sentence_macro")
+    batch = _batch()
+    out = model(batch)
+    loss = (
+        SentenceLevelPrediction()(out, batch)
+        + MacroSentencePrediction()(out, batch)
+        + 0.1 * MacroPriorDistillation()(out, batch)
+        + 0.02 * MultiscaleVICReg()(out, batch)
+    )
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.encoder.pool_score[1].weight.grad is not None
+    assert model.token_pred.out.weight.grad is not None
+    assert model.macro_model.prior[0].weight.grad is not None
 
 
 def test_dropout_and_degenerate_macro_are_rejected():
