@@ -28,6 +28,7 @@
 | 2026-07-18-structured-edit-lr-mid-wave13b | Is the mid-range response noisy or monotonic? | 3 completed | errors improve monotonically across `3e-5`, `5e-5`, and `7e-5` | [`learning-rate report`](reports/sequence_edit/2026-07-18-learning-rate-sensitivity/REPORT.md) |
 | 2026-07-18-structured-edit-lr-upper-attempts | Can the boundary be extended immediately? | 0 admitted | partial submissions launched no jobs and provide no evidence | [`learning-rate report`](reports/sequence_edit/2026-07-18-learning-rate-sensitivity/REPORT.md) |
 | 2026-07-20-multiscale-mpc-prior-factorial-wave80 | Which token/sentence architecture and prior gradient mode is valid for actual edit generation? | 4 jobs / 12 matched conditions submitted | active; implementation and 51 focused tests pass, no generation claim yet | [`executable generation cycle`](cycles/sequence_edit/2026-07-20-multiscale-mpc-generation.md) |
+| 2026-07-20-hierarchical-subgoal-cem-decoder-wave81/81r | Should top-down edit planning use decoder-free subgoals, decoded options, or decoded proposals refined by lower search? | 3 decoder cells submitted; 5 inference modes each | active; 55 focused tests and tiny process evaluations pass, no planning winner yet | [`executable generation cycle`](cycles/sequence_edit/2026-07-20-multiscale-mpc-generation.md) |
 
 Historical waves remain indexed by the subproject READMEs. Add one row per new
 controller round and keep invalid/failed rounds visible.

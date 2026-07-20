@@ -12,6 +12,13 @@ each crossing no learned prior, detached prior, and representation-shaping
 prior. Full depth `{1,2,4,8,16}` ID/OOD evaluation waits for these checkpoint
 validity gates.
 
+Nested hierarchical planning is also implemented. High-level CEM can now
+optimize macro codes whose predicted sentence states become subgoals for a
+lower token beam, requiring no decoder. A separately trained closed-loop macro
+option decoder and decoder-plus-refinement path provide amortized controls.
+Wave 81/81r train detached weight-1 and attached weight-0.1/1 decoder models;
+all are submitted on Lise or Grete.
+
 Current result (2026-07-18): the token-aligned structured primitive passes
 operation, current-pointer, and local-content causal gates. Fixed mixed EMA is
 the default; 18k presentations replicate across three seeds, d512 improves

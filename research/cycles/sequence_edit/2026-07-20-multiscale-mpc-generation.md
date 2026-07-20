@@ -54,3 +54,21 @@ MPC generation, ID/OOD evaluation, depth ablation, and base/macro prior
 ablations. The controller's protected boundary and 16 GPU-hour round
 allocation remain in force.
 
+## Nested subgoal CEM and option-decoder extension
+
+The user corrected an important design distinction: a macro decoder is not
+required when high-level CEM proposes a sentence latent subgoal and a
+goal-conditioned lower planner searches for primitive actions that reach it.
+That lower search is the implicit inverse. The implementation now compares
+five matched inference paths: primitive beam with macro reranking;
+decoder-free subgoal CEM; open-loop macro decoding; closed-loop option
+decoding; and decoder proposals followed by lower-level refinement.
+
+The decoder receives the current token state, prompt, macro code, and option
+step, and predicts position then content. It is teacher-forced over exact
+four-action windows. Detached weight 1 and attached weights 0.1/1 separate
+decoder capacity from representation shaping and loss-scale damage. Fifty-five
+focused tests plus tiny train/checkpoint evaluations pass. Wave 81 submitted
+the detached cell on Lise; its Grünau placement race left the round partial.
+Recovery wave 81r submitted the two attached cells on Lise and Grete. Alex was
+excluded because its vault is already above the soft inode quota.
