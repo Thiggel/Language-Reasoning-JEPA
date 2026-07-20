@@ -12,6 +12,9 @@ model:
   action_support_detach_inputs: true
   action_prior_states: all
   action_prior_detach_inputs: true
+  # The deployable planner ranks the full prompt-derived catalogue. Training
+  # against that same set prevents unconstrained scores on infeasible actions.
+  action_prior_candidate_scope: catalogue
 data:
   all_action_supervision: true
   geo_rank_k: 0
@@ -31,4 +34,3 @@ train:
   epochs: 5
   lr: 0.001
   warmup_steps: 200
-

@@ -85,6 +85,7 @@ class DiscourseJEPA(nn.Module):
         action_prior: bool = False,
         action_prior_detach_inputs: bool = True,
         action_prior_states: str = "true",
+        action_prior_candidate_scope: str = "feasible",
         action_support_detach_inputs: bool | None = None,
     ):
         super().__init__()
@@ -101,6 +102,12 @@ class DiscourseJEPA(nn.Module):
                 f"unknown action-prior state mode: {action_prior_states}"
             )
         self.action_prior_states = action_prior_states
+        if action_prior_candidate_scope not in {"feasible", "catalogue"}:
+            raise ValueError(
+                "unknown action-prior candidate scope: "
+                f"{action_prior_candidate_scope}"
+            )
+        self.action_prior_candidate_scope = action_prior_candidate_scope
         self.action_prior_detach_inputs = bool(action_prior_detach_inputs)
         self.action_support_detach_inputs = (
             bool(value_detach)
@@ -508,8 +515,10 @@ class DiscourseJEPA(nn.Module):
             prior_valid = (
                 out.step_mask.unsqueeze(-1)
                 & batch["action_candidate_mask"].unsqueeze(1)
-                & batch["action_feasible"]
-            ).unsqueeze(1).expand(B, P, T, V)
+            )
+            if self.action_prior_candidate_scope == "feasible":
+                prior_valid = prior_valid & batch["action_feasible"]
+            prior_valid = prior_valid.unsqueeze(1).expand(B, P, T, V)
             if P == 1:
                 prior_logits = prior_logits[:, 0]
                 prior_valid = prior_valid[:, 0]

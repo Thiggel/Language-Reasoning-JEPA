@@ -392,17 +392,18 @@ class ActionFeasibility(Objective):
 
 
 class ActionPrior(Objective):
-    """Behavior cloning over the currently feasible intent-phrase menu.
+    """Behavior cloning over the configured intent-phrase candidate set.
 
     The demonstrated action is the positive, so this is explicit policy
-    supervision rather than an action-free JEPA objective.
+    supervision rather than an action-free JEPA objective.  Catalogue scope
+    also teaches the prior to rank the demonstration above unavailable actions.
     """
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         if "action_prior_logits" not in out.extras:
             return out.preds.sum() * 0.0
         logits = out.extras["action_prior_logits"]
-        feasible = out.extras["action_prior_valid"]
+        candidates = out.extras["action_prior_valid"]
         target = out.extras["action_prior_target"]
         row_valid = out.step_mask & target.ge(0)
         if logits.ndim == 4:
@@ -412,14 +413,14 @@ class ActionPrior(Objective):
         if not bool(row_valid.any()):
             return logits.sum() * 0.0
         selected_logits = logits[row_valid]
-        selected_feasible = feasible[row_valid]
+        selected_candidates = candidates[row_valid]
         selected_target = target[row_valid]
-        target_is_feasible = selected_feasible.gather(
+        target_is_present = selected_candidates.gather(
             1, selected_target[:, None]
         ).squeeze(1)
-        if not bool(target_is_feasible.all()):
-            raise ValueError("action-prior target is absent from feasible menu")
+        if not bool(target_is_present.all()):
+            raise ValueError("action-prior target is absent from candidate set")
         selected_logits = selected_logits.masked_fill(
-            ~selected_feasible, torch.finfo(selected_logits.dtype).min
+            ~selected_candidates, torch.finfo(selected_logits.dtype).min
         )
         return F.cross_entropy(selected_logits, selected_target)

@@ -33,6 +33,7 @@ high_state_encoder_layers: 2
 action_prior: false
 action_prior_detach_inputs: true
 action_prior_states: "true"  # true | all (also one-step/open-loop states)
+action_prior_candidate_scope: "feasible"  # feasible | catalogue
 value_detach: true
 dropout: 0.0
 geo_proj: false

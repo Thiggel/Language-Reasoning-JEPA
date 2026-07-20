@@ -227,6 +227,7 @@ def test_learned_catalogue_checkpoint_gate_rejects_untrained_support():
             "action_prior": True,
             "action_support_states": "all",
             "action_prior_states": "all",
+            "action_prior_candidate_scope": "feasible",
         },
         "data": {"all_action_supervision": True},
         "objective": {
@@ -237,6 +238,9 @@ def test_learned_catalogue_checkpoint_gate_rejects_untrained_support():
     with pytest.raises(ValueError, match="action_feasibility"):
         validate_learned_catalogue_checkpoint(cfg)
     cfg.objective.action_feasibility.weight = 1.0
+    with pytest.raises(ValueError, match="action_prior_candidate_scope"):
+        validate_learned_catalogue_checkpoint(cfg)
+    cfg.model.action_prior_candidate_scope = "catalogue"
     validate_learned_catalogue_checkpoint(cfg)
 
 

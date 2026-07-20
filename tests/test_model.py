@@ -537,6 +537,38 @@ def test_action_prior_is_masked_to_feasible_menu_and_detached(setup):
     assert all(p.grad is None for p in model.action_encoder.parameters())
 
 
+def test_catalogue_action_prior_competes_against_infeasible_actions(setup):
+    from textjepa.objectives import ActionPrior
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=8, seed=146, all_action_supervision=True
+    )
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        macro_k=0, action_prior=True,
+        action_prior_candidate_scope="catalogue",
+    )
+    out = model(batch)
+    expected_valid = (
+        out.step_mask.unsqueeze(-1)
+        & batch["action_candidate_mask"].unsqueeze(1)
+    )
+    torch.testing.assert_close(out.extras["action_prior_valid"], expected_valid)
+    competing = expected_valid & ~batch["action_feasible"]
+    assert bool(competing.any())
+
+    base_loss = ActionPrior()(out, batch)
+    row, step, action = competing.nonzero()[0].tolist()
+    penalized_logits = out.extras["action_prior_logits"].clone()
+    penalized_logits[row, step, action] = 100.0
+    out.extras["action_prior_logits"] = penalized_logits
+    assert ActionPrior()(out, batch) > base_loss
+
+
 def test_action_support_all_states_is_detached_from_world_model(setup):
     from textjepa.objectives import ActionFeasibility
 

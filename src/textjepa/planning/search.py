@@ -33,6 +33,8 @@ def validate_learned_catalogue_checkpoint(cfg) -> None:
         errors.append("model.action_support_states must be 'all'")
     if cfg.model.get("action_prior_states", "true") != "all":
         errors.append("model.action_prior_states must be 'all'")
+    if cfg.model.get("action_prior_candidate_scope", "feasible") != "catalogue":
+        errors.append("model.action_prior_candidate_scope must be 'catalogue'")
     if not bool(cfg.data.get("all_action_supervision", False)):
         errors.append("data.all_action_supervision must be enabled")
     feasibility = cfg.objective.get("action_feasibility", {})
