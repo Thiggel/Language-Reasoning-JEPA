@@ -231,10 +231,11 @@ class MultiscaleEditJEPA(nn.Module):
     ``token``: token transition only.
     ``sentence``: primitive sentence transition only.
     ``token_sentence``: token transition plus sentence correction.
-    ``token_sentence_macro``: the preceding model plus K-action sentence subgoals.
+    ``sentence_macro``: direct sentence dynamics plus K-action sentence subgoals.
+    ``token_sentence_macro``: token correction plus K-action sentence subgoals.
     """
 
-    VALID_VARIANTS = {"token", "sentence", "token_sentence",
+    VALID_VARIANTS = {"token", "sentence", "sentence_macro", "token_sentence",
                       "token_sentence_macro"}
 
     def __init__(self, vocab_size: int, pad_id: int, variant: str,
@@ -254,9 +255,9 @@ class MultiscaleEditJEPA(nn.Module):
         if dropout != 0:
             raise ValueError("multiscale edit JEPA requires dropout=0")
         self.variant = variant
-        self.use_token_loss = variant != "sentence"
+        self.use_token_loss = variant not in {"sentence", "sentence_macro"}
         self.use_sentence = variant != "token"
-        self.use_macro = variant == "token_sentence_macro"
+        self.use_macro = variant in {"sentence_macro", "token_sentence_macro"}
         self.macro_k = int(macro_k)
         self.max_transitions_per_forward = max(
             0, int(max_transitions_per_forward)
@@ -267,16 +268,16 @@ class MultiscaleEditJEPA(nn.Module):
             sentence_pooling,
         )
         self.teacher = EMATeacher(self.encoder)
-        self.token_pred = None if variant == "sentence" else TokenAlignedEditPredictor(
+        self.token_pred = None if variant in {"sentence", "sentence_macro"} else TokenAlignedEditPredictor(
             d_model, d_action, predictor_layers, n_heads,
             relative_radius=token_relative_radius,
         )
         self.sentence_action = PrimitiveEditActionEncoder(
             d_model, d_action
-        ) if variant == "sentence" else None
+        ) if variant in {"sentence", "sentence_macro"} else None
         self.sentence_pred = None if not self.use_sentence else SentenceEditPredictor(
             d_model, d_action, predictor_layers, n_heads,
-            correction=variant != "sentence",
+            correction=variant not in {"sentence", "sentence_macro"},
         )
         self.macro_model = None
         self.macro_pred = None
@@ -449,7 +450,7 @@ class MultiscaleEditJEPA(nn.Module):
 
         sentence_pred = None
         if self.use_sentence:
-            if self.variant == "sentence":
+            if self.variant in {"sentence", "sentence_macro"}:
                 base = sentences[:, :-1]
             else:
                 next_ids, next_mask, _ = self.transition_sentence_ids(
@@ -469,7 +470,7 @@ class MultiscaleEditJEPA(nn.Module):
                 sentence_mask[:, :-1].reshape(b * steps, sentences.shape[2]),
                 action.reshape(b * steps, -1), affected.reshape(-1),
                 sentences[:, :-1].reshape(b * steps, sentences.shape[2], dim)
-                if self.variant != "sentence" else None,
+                if self.variant not in {"sentence", "sentence_macro"} else None,
             ).reshape(b, steps, sentences.shape[2], dim)
 
         if sentence_pred is not None:

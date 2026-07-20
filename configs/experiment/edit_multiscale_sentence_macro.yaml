@@ -1,0 +1,11 @@
+# @package _global_
+defaults: [edit_multiscale_base, _self_]
+run_name: edit_multiscale_sentence_macro
+model:
+  variant: sentence_macro
+  macro_k: 4
+objective:
+  token_aligned_pred: {weight: 0.0}
+  sentence_level: {weight: 1.0, changed_weight: 1.0, unchanged_weight: 0.1}
+  macro_sentence: {weight: 1.0}
+  macro_prior_distill: {weight: 0.1}

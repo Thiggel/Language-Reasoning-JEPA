@@ -85,7 +85,8 @@ def test_pointer_to_sentence_mapping_and_insert_boundary_are_mechanical():
 
 
 @pytest.mark.parametrize("variant", [
-    "token", "sentence", "token_sentence", "token_sentence_macro"
+    "token", "sentence", "sentence_macro", "token_sentence",
+    "token_sentence_macro"
 ])
 def test_all_four_variants_have_explicit_non_leaking_paths(variant):
     torch.manual_seed(5)
@@ -95,13 +96,13 @@ def test_all_four_variants_have_explicit_non_leaking_paths(variant):
     assert out.step_states_tgt.requires_grad is False
     assert model.teacher.training is False
     assert model.teacher.module.training is False
-    if variant == "sentence":
+    if variant in {"sentence", "sentence_macro"}:
         assert model.token_pred is None
         assert out.extras["token_predictions"] is None
     if variant == "token":
         assert model.sentence_pred is None
         assert out.extras["sentence_predictions"] is None
-    if variant == "token_sentence_macro":
+    if variant in {"sentence_macro", "token_sentence_macro"}:
         assert out.extras["macro_codes"].shape == (1, 1, 3)
         assert out.extras["macro_window_starts"].tolist() == [0]
         assert out.extras["macro_window_endpoints"].tolist() == [2]
@@ -134,6 +135,16 @@ def test_macro_code_uses_all_actions_and_preserves_order():
     assert not torch.allclose(
         out.extras["macro_codes"], reversed_out.extras["macro_codes"]
     )
+
+
+def test_sentence_macro_is_a_clean_macro_isolation_without_token_dynamics():
+    model = _model("sentence_macro")
+    out = model(_batch())
+    assert model.token_pred is None
+    assert model.sentence_pred.correction is False
+    assert out.extras["token_predictions"] is None
+    assert out.extras["sentence_predictions"] is not None
+    assert out.extras["macro_sentence_predictions"] is not None
 
 
 def test_sentence_ldad_uses_changed_sentence_delta_and_reaches_encoder():
