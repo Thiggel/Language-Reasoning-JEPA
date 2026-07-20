@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 
 from textjepa.objectives.base import Objective, latent_distance, masked_mean
 
@@ -170,6 +171,61 @@ class MacroPriorDistillation(Objective):
                 logvar + (code.detach() - mu).square() * (-logvar).exp()
             ).sum(-1)
         return masked_mean(distance, out.hi_mask.float())
+
+
+class BaseActionValue(Objective):
+    """Distil exact token-edit advantage into deployment-time ``V(s,a)``.
+
+    Exact clean-target distances are labels only.  The predicted value sees
+    the online current state and executable action code, never the goal.
+    Counterfactual proposals provide the negative and alternative-token
+    support needed for this to be a ranking signal rather than expert-only
+    regression.
+    """
+
+    def __init__(self, expert_weight: float = 1.0,
+                 alternative_weight: float = 1.0):
+        super().__init__()
+        self.expert_weight = float(expert_weight)
+        self.alternative_weight = float(alternative_weight)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        prediction = out.extras.get("base_action_value")
+        target = out.extras.get("base_action_value_target")
+        if prediction is None or target is None:
+            return out.preds.sum() * 0.0
+        valid = out.step_mask[:, :prediction.shape[1]]
+        expert = masked_mean(
+            F.smooth_l1_loss(prediction, target, reduction="none"),
+            valid.float(),
+        )
+        alt_prediction = out.extras.get("base_alt_action_value")
+        if alt_prediction is None:
+            return self.expert_weight * expert
+        alt = masked_mean(
+            F.smooth_l1_loss(
+                alt_prediction, out.extras["base_alt_action_target"],
+                reduction="none",
+            ),
+            out.extras["base_alt_action_valid"].float(),
+        )
+        return self.expert_weight * expert + self.alternative_weight * alt
+
+
+class StateGoalDistance(Objective):
+    """Distil clean-token distance into a target-free state value head."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        prediction = out.extras.get("state_goal_distance_prediction")
+        if prediction is None:
+            return out.preds.sum() * 0.0
+        return masked_mean(
+            F.smooth_l1_loss(
+                prediction, out.extras["state_goal_distance_target"],
+                reduction="none",
+            ),
+            out.extras["state_goal_distance_mask"].float(),
+        )
 
 
 class RolloutPrediction(Objective):

@@ -13,7 +13,9 @@ from torch.utils.data import Dataset
 
 from textjepa.data.edits.dataset import collate_edits
 from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
-from textjepa.data.token_edit_distance import exact_one_step_advantages
+from textjepa.data.token_edit_distance import (
+    boundary_token_edit_distance, exact_one_step_advantages,
+)
 from textjepa.data.vocab import Vocab
 
 
@@ -523,6 +525,12 @@ class FaithfulTokenEditDataset(Dataset):
             "n_vars": 0,
             "index": source_index,
             "trajectory_variant": trajectory_variant,
+            # Terminal-privileged supervision for a deployable state-value
+            # head. The planner never receives this field.
+            "goal_distance": [
+                boundary_token_edit_distance(buffer, target)
+                for buffer in buffers
+            ],
             "edit_pos": [min(action[1], 15) for action in repairs],
             "changed": changed,
             "defect_masks": [[] for _ in repairs],

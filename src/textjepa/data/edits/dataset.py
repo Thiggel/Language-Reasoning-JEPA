@@ -231,6 +231,10 @@ def collate_edits(batch: list[dict], pad_id: int) -> dict:
         out["gar_token_edit_target"] = _pad_labels([
             item["gar_token_edit_target"] for item in batch
         ])
+    if "goal_distance" in batch[0]:
+        out["goal_distance"] = _pad_labels([
+            item["goal_distance"] for item in batch
+        ])
     return out
 
 

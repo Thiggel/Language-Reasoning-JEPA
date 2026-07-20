@@ -225,6 +225,46 @@ class PrimitiveEditActionEncoder(nn.Module):
         ], -1))
 
 
+class TokenReplacementPrior(nn.Module):
+    """Factorized deployment prior over ``position`` then ``token``.
+
+    The prior consumes only the current online state and prompt.  In
+    particular, neither the clean buffer nor an EMA goal is an input.  The
+    optional stop-gradient is the clean ablation between a read-only policy
+    head and a policy loss that is allowed to shape the representation.
+    """
+
+    def __init__(self, d_model: int, vocab_size: int, detach_state: bool):
+        super().__init__()
+        self.detach_state = bool(detach_state)
+        self.position = nn.Sequential(
+            nn.LayerNorm(3 * d_model), nn.Linear(3 * d_model, d_model),
+            nn.GELU(), nn.Linear(d_model, 1),
+        )
+        self.content = nn.Sequential(
+            nn.LayerNorm(3 * d_model), nn.Linear(3 * d_model, d_model),
+            nn.GELU(), nn.Linear(d_model, vocab_size),
+        )
+
+    def forward(self, states: torch.Tensor, mask: torch.Tensor,
+                prompt: torch.Tensor, positions: torch.Tensor):
+        if self.detach_state:
+            states, prompt = states.detach(), prompt.detach()
+        pooled = _masked_pool(states, mask)
+        shared = torch.cat([
+            states, pooled.unsqueeze(1).expand_as(states),
+            prompt.unsqueeze(1).expand_as(states),
+        ], -1)
+        position_logits = self.position(shared).squeeze(-1)
+        position_logits = position_logits.masked_fill(~mask, -torch.inf)
+        row = torch.arange(len(states), device=states.device)
+        selected = states[
+            row, positions.clamp(0, states.shape[1] - 1)
+        ]
+        content_logits = self.content(torch.cat([selected, pooled, prompt], -1))
+        return position_logits, content_logits
+
+
 class MultiscaleEditJEPA(nn.Module):
     """Four controlled variants of token/sentence edit dynamics.
 
@@ -249,7 +289,9 @@ class MultiscaleEditJEPA(nn.Module):
                  ldad_max_len: int = 12, dropout: float = 0.0,
                  max_transitions_per_forward: int = 8,
                  sentence_pooling: str = "attention",
-                 macro_prior_detach_state: bool = True):
+                 macro_prior_detach_state: bool = True,
+                 base_prior: bool = False,
+                 base_prior_detach_state: bool = True):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
@@ -297,10 +339,29 @@ class MultiscaleEditJEPA(nn.Module):
             d_model, vocab_size, ldad_max_len,
             n_layers=predictor_layers, n_heads=n_heads,
         ) if observed_action_ldad and self.use_sentence else None
+        self.base_prior = TokenReplacementPrior(
+            d_model, vocab_size, base_prior_detach_state
+        ) if base_prior else None
+        self.base_q_head = nn.Sequential(
+            nn.LayerNorm(d_model + d_action),
+            nn.Linear(d_model + d_action, d_model), nn.GELU(),
+            nn.Linear(d_model, 1),
+        )
         self.value_head = nn.Sequential(
             nn.LayerNorm(d_model), nn.Linear(d_model, d_model), nn.GELU(),
             nn.Linear(d_model, 1),
         )
+
+    def replacement_prior(self, states: torch.Tensor, mask: torch.Tensor,
+                          prompt: torch.Tensor, positions: torch.Tensor):
+        if self.base_prior is None:
+            raise RuntimeError("checkpoint has no base token-action prior")
+        return self.base_prior(states, mask, prompt, positions)
+
+    def action_value(self, state: torch.Tensor,
+                     action: torch.Tensor) -> torch.Tensor:
+        """Deployment-time V(s,a); the privileged goal is never an input."""
+        return self.base_q_head(torch.cat([state, action], -1)).squeeze(-1)
 
     @torch.no_grad()
     def update_teachers(self, momentum: float):
@@ -395,8 +456,13 @@ class MultiscaleEditJEPA(nn.Module):
             start = maximum_start // 2
         batch["buffer_tokens"] = batch["buffer_tokens"][:, start:start + keep + 1]
         batch["buffer_mask"] = batch["buffer_mask"][:, start:start + keep + 1]
+        if "goal_distance" in batch:
+            batch["goal_distance"] = batch["goal_distance"][
+                :, start:start + keep + 1
+            ]
         excluded = {
             "prompt_tokens", "prompt_mask", "buffer_tokens", "buffer_mask",
+            "goal_distance",
             "goal_buffer_tokens", "goal_buffer_mask", "answer", "n_necessary",
             "n_vars", "index",
         }
@@ -515,6 +581,76 @@ class MultiscaleEditJEPA(nn.Module):
             "transition_slice_start": transition_start,
             "observed_action_targets": batch["action_tokens"][:, :steps],
         })
+        if "goal_distance" in batch:
+            out.extras["state_goal_distance_prediction"] = value
+            raw_goal_distance = batch["goal_distance"][:, :states].float()
+            out.extras["state_goal_distance_target"] = (
+                raw_goal_distance
+                / raw_goal_distance[:, :1].clamp_min(1)
+            ).detach()
+            out.extras["state_goal_distance_mask"] = torch.cat([
+                torch.ones_like(step_mask[:, :1]), step_mask
+            ], 1)
+        pooled_current = global_states[:, :-1]
+        out.extras["base_action_value"] = self.action_value(
+            pooled_current, action
+        )
+        if "gar_token_edit_target" in batch:
+            out.extras["base_action_value_target"] = (
+                batch["gar_token_edit_target"][:, :steps].float().detach()
+            )
+
+        if self.base_prior is not None:
+            flat_prompt = prompt_emb[:, None].expand(b, steps, dim).reshape(-1, dim)
+            position_logits, content_logits = self.replacement_prior(
+                current, current_mask, flat_prompt, pos.reshape(-1)
+            )
+            out.extras.update({
+                "refinement_position_logits": position_logits.reshape(
+                    b, steps, -1
+                ),
+                "refinement_content_logits": content_logits.reshape(
+                    b, steps, -1
+                ),
+            })
+
+        proposal_ops = batch.get("proposal_op")
+        if proposal_ops is not None:
+            proposal_steps = min(steps, proposal_ops.shape[1])
+            candidates = proposal_ops.shape[2]
+            p_states = tokens[:, :proposal_steps].unsqueeze(2).expand(
+                -1, -1, candidates, -1, -1
+            )
+            p_masks = token_mask[:, :proposal_steps].unsqueeze(2).expand(
+                -1, -1, candidates, -1
+            )
+            p_content = self.encoder.tok(
+                batch["proposal_edit_content_token"][:, :proposal_steps]
+            )
+            p_action_fn = (
+                self.sentence_action if self.token_pred is None
+                else self.token_pred.encode_action
+            )
+            p_actions = p_action_fn(
+                p_states.reshape(-1, width, dim),
+                p_masks.reshape(-1, width),
+                proposal_ops[:, :proposal_steps].reshape(-1),
+                batch["proposal_edit_position"][:, :proposal_steps].reshape(-1),
+                p_content.reshape(-1, dim),
+            ).reshape(b, proposal_steps, candidates, -1)
+            p_global = global_states[:, :proposal_steps].unsqueeze(2).expand(
+                -1, -1, candidates, -1
+            )
+            out.extras.update({
+                "base_alt_action_value": self.action_value(p_global, p_actions),
+                "base_alt_action_valid": (
+                    batch["proposal_valid"][:, :proposal_steps]
+                    & step_mask[:, :proposal_steps].unsqueeze(-1)
+                ),
+                "base_alt_action_target": batch[
+                    "gar_proposal_token_edit_target"
+                ][:, :proposal_steps].float().detach(),
+            })
         if self.ldad is not None:
             row = torch.arange(b, device=tokens.device)[:, None]
             time = torch.arange(steps, device=tokens.device)[None, :]

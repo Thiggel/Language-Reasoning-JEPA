@@ -57,6 +57,45 @@ def main():
             shuffled_out = model(shuffled)
             valid_step = out.step_mask
 
+            position_logits = out.extras.get("refinement_position_logits")
+            if position_logits is not None:
+                prior_valid = valid_step & batch["op"][:, :valid_step.shape[1]].eq(2)
+                add("base_prior_position_accuracy", (
+                    position_logits.argmax(-1)[prior_valid]
+                    == batch["edit_position"][:, :valid_step.shape[1]][prior_valid]
+                ).float().mean().item())
+                content_logits = out.extras["refinement_content_logits"]
+                add("base_prior_content_accuracy", (
+                    content_logits.argmax(-1)[prior_valid]
+                    == batch["edit_content_token"][:, :valid_step.shape[1]][prior_valid]
+                ).float().mean().item())
+
+            q = out.extras.get("base_action_value")
+            q_target = out.extras.get("base_action_value_target")
+            if q_target is not None:
+                add("base_action_value_mae", (q[valid_step] - q_target[valid_step])
+                    .abs().mean().item())
+                add("base_action_value_sign_accuracy", (
+                    q[valid_step].gt(0) == q_target[valid_step].gt(0)
+                ).float().mean().item())
+            alt_q = out.extras.get("base_alt_action_value")
+            if alt_q is not None:
+                alt_valid = out.extras["base_alt_action_valid"]
+                alt_target = out.extras["base_alt_action_target"]
+                add("base_alt_action_value_mae", (
+                    alt_q[alt_valid] - alt_target[alt_valid]
+                ).abs().mean().item())
+                add("base_alt_action_value_sign_accuracy", (
+                    alt_q[alt_valid].gt(0) == alt_target[alt_valid].gt(0)
+                ).float().mean().item())
+            state_value = out.extras.get("state_goal_distance_prediction")
+            if state_value is not None:
+                state_valid = out.extras["state_goal_distance_mask"]
+                state_target = out.extras["state_goal_distance_target"]
+                add("state_goal_distance_mae", (
+                    state_value[state_valid] - state_target[state_valid]
+                ).abs().mean().item())
+
             token_pred = out.extras.get("token_predictions")
             if token_pred is not None:
                 token_valid = (

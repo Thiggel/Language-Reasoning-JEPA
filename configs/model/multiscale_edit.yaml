@@ -18,3 +18,5 @@ dropout: 0.0
 max_transitions_per_forward: 8
 sentence_pooling: attention
 macro_prior_detach_state: true
+base_prior: false
+base_prior_detach_state: true
