@@ -174,6 +174,15 @@ def test_multiscale_objectives_are_finite_and_train_both_levels():
     assert model.macro_model.prior[0].weight.grad is not None
 
 
+def test_macro_prior_distillation_does_not_reshape_state_encoder_by_default():
+    model = _model("sentence_macro")
+    batch = _batch()
+    out = model(batch)
+    MacroPriorDistillation()(out, batch).backward()
+    assert model.macro_model.prior[0].weight.grad is not None
+    assert model.encoder.pool_score[1].weight.grad is None
+
+
 def test_dropout_and_degenerate_macro_are_rejected():
     with pytest.raises(ValueError, match="dropout=0"):
         _model("token", dropout=0.1)

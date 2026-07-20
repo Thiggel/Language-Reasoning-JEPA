@@ -248,7 +248,8 @@ class MultiscaleEditJEPA(nn.Module):
                  observed_action_ldad: bool = False,
                  ldad_max_len: int = 12, dropout: float = 0.0,
                  max_transitions_per_forward: int = 8,
-                 sentence_pooling: str = "attention"):
+                 sentence_pooling: str = "attention",
+                 macro_prior_detach_state: bool = True):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
@@ -259,6 +260,7 @@ class MultiscaleEditJEPA(nn.Module):
         self.use_sentence = variant != "token"
         self.use_macro = variant in {"sentence_macro", "token_sentence_macro"}
         self.macro_k = int(macro_k)
+        self.macro_prior_detach_state = bool(macro_prior_detach_state)
         self.max_transitions_per_forward = max(
             0, int(max_transitions_per_forward)
         )
@@ -546,9 +548,14 @@ class MultiscaleEditJEPA(nn.Module):
             out.hi_preds = _masked_pool(macro_pred, endpoint_mask)
             out.hi_targets = _masked_pool(endpoint, endpoint_mask).detach()
             out.hi_mask = macro_valid
-            prior_mu, prior_logvar = self.macro_model.prior_params(
-                _masked_pool(start_states, start_mask)
-            )
+            prior_state = _masked_pool(start_states, start_mask)
+            if self.macro_prior_detach_state:
+                # Prior fitting must learn a deployable proposal distribution,
+                # not reshape the state encoder through a potentially negative
+                # Gaussian log-density. Macro endpoint prediction remains the
+                # representation-learning signal.
+                prior_state = prior_state.detach()
+            prior_mu, prior_logvar = self.macro_model.prior_params(prior_state)
             out.extras.update({
                 "macro_codes": macro,
                 "macro_sentence_predictions": macro_pred,
