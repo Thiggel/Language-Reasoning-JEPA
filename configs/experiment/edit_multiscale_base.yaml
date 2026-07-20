@@ -35,6 +35,7 @@ objective:
   macro_prior_distill:
     _target_: textjepa.objectives.MacroPriorDistillation
     weight: 0.0
+    kind: gaussian_nll
   multiscale_vicreg:
     _target_: textjepa.objectives.MultiscaleVICReg
     weight: 0.0

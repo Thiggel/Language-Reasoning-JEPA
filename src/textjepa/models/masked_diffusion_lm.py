@@ -9,6 +9,16 @@ from torch import nn
 from textjepa.models.layers import encoder_stack
 
 
+def select_terminal_buffers(buffer_tokens: torch.Tensor,
+                            step_mask: torch.Tensor) -> torch.Tensor:
+    """Select each example's clean T+1 state from a padded trajectory batch."""
+    terminal = step_mask.long().sum(-1)
+    if terminal.ge(buffer_tokens.shape[1]).any():
+        raise ValueError("step mask points beyond the available buffer states")
+    row = torch.arange(len(buffer_tokens), device=buffer_tokens.device)
+    return buffer_tokens[row, terminal]
+
+
 class MaskedDiffusionLM(nn.Module):
     """MDLM-style prompt-conditional model with SUBS parameterization."""
 
@@ -130,4 +140,3 @@ class MaskedDiffusionLM(nn.Module):
                 reveal = unresolved
             tokens = torch.where(reveal, proposal, tokens)
         return tokens, valid, response
-

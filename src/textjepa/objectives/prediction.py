@@ -151,14 +151,25 @@ class MacroSentencePrediction(Objective):
 class MacroPriorDistillation(Objective):
     """Fit deployable p(macro action | state) to observed macro codes."""
 
+    def __init__(self, kind: str = "gaussian_nll"):
+        super().__init__()
+        if kind not in {"gaussian_nll", "fixed_variance_mse"}:
+            raise ValueError(f"unknown macro-prior distillation kind: {kind}")
+        self.kind = kind
+
     def forward(self, out, batch: dict) -> torch.Tensor:
         code = out.extras.get("macro_codes")
         if code is None:
             return out.preds.sum() * 0.0
         mu = out.extras["macro_prior_mu"]
         logvar = out.extras["macro_prior_logvar"]
-        nll = 0.5 * (logvar + (code.detach() - mu).square() * (-logvar).exp()).sum(-1)
-        return masked_mean(nll, out.hi_mask.float())
+        if self.kind == "fixed_variance_mse":
+            distance = (code.detach() - mu).square().mean(-1)
+        else:
+            distance = 0.5 * (
+                logvar + (code.detach() - mu).square() * (-logvar).exp()
+            ).sum(-1)
+        return masked_mean(distance, out.hi_mask.float())
 
 
 class RolloutPrediction(Objective):

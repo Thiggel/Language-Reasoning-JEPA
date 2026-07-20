@@ -183,6 +183,22 @@ def test_macro_prior_distillation_does_not_reshape_state_encoder_by_default():
     assert model.encoder.pool_score[1].weight.grad is None
 
 
+def test_fixed_variance_macro_prior_is_nonnegative_and_can_shape_state():
+    model = MultiscaleEditJEPA(
+        32, 0, "sentence_macro", d_model=16, d_action=4,
+        d_macro=3, macro_k=2, n_heads=4, token_layers=1,
+        sentence_layers=1, predictor_layers=1, max_sequence_len=32,
+        max_sentences=4, macro_prior_detach_state=False,
+    )
+    batch = _batch()
+    loss = MacroPriorDistillation(kind="fixed_variance_mse")(
+        model(batch), batch
+    )
+    loss.backward()
+    assert loss.item() >= 0
+    assert model.encoder.pool_score[1].weight.grad is not None
+
+
 def test_dropout_and_degenerate_macro_are_rejected():
     with pytest.raises(ValueError, match="dropout=0"):
         _model("token", dropout=0.1)

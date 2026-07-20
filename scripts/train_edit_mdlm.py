@@ -15,7 +15,10 @@ from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
 from textjepa.data.faithful_token_edits import MASK_TOKEN, faithful_token_edit_vocab
-from textjepa.models.masked_diffusion_lm import MaskedDiffusionLM
+from textjepa.models.masked_diffusion_lm import (
+    MaskedDiffusionLM,
+    select_terminal_buffers,
+)
 from textjepa.utils.checkpoint import build_dataset, collate_for
 
 
@@ -43,7 +46,9 @@ def loader(cfg, vocab, split, batch_size, shuffle):
 
 def clean_batch(model, batch, device):
     prompt = batch["prompt_tokens"].to(device)
-    target = batch["buffer_tokens"][:, -1].to(device)
+    target = select_terminal_buffers(
+        batch["buffer_tokens"], batch["step_mask"]
+    ).to(device)
     return model.pack_clean(prompt, target)
 
 

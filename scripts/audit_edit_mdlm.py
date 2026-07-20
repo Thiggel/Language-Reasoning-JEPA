@@ -14,6 +14,7 @@ from torch.utils.data import DataLoader
 from train_edit_mdlm import make_cfg
 from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
 from textjepa.models.masked_diffusion_lm import MaskedDiffusionLM
+from textjepa.models.masked_diffusion_lm import select_terminal_buffers
 from textjepa.utils.checkpoint import build_dataset, collate_for
 
 
@@ -47,7 +48,9 @@ def main():
             if batch_index >= args.batches:
                 break
             prompt = batch["prompt_tokens"].to(args.device)
-            target_buffer = batch["buffer_tokens"][:, -1].to(args.device)
+            target_buffer = select_terminal_buffers(
+                batch["buffer_tokens"], batch["step_mask"]
+            ).to(args.device)
             initial_buffer = batch["buffer_tokens"][:, 0].to(args.device)
             clean, valid, response = model.pack_clean(prompt, target_buffer)
             for fraction in (0.25, 0.5, 0.75, 1.0):

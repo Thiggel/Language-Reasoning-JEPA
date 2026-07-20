@@ -1,6 +1,9 @@
 import torch
 
-from textjepa.models.masked_diffusion_lm import MaskedDiffusionLM
+from textjepa.models.masked_diffusion_lm import (
+    MaskedDiffusionLM,
+    select_terminal_buffers,
+)
 
 
 def _model():
@@ -68,3 +71,15 @@ def test_dropout_is_rejected_for_matched_comparison():
     else:
         raise AssertionError("dropout must be rejected")
 
+
+def test_terminal_buffer_selection_uses_each_examples_step_count():
+    buffers = torch.tensor([
+        [[[10]], [[11]], [[12]], [[0]]],
+        [[[20]], [[21]], [[22]], [[23]]],
+    ])
+    step_mask = torch.tensor([
+        [True, True, False],
+        [True, True, True],
+    ])
+    terminal = select_terminal_buffers(buffers, step_mask)
+    assert terminal[:, 0, 0].tolist() == [12, 23]
