@@ -5,6 +5,7 @@ python_bin=${1:?python executable}
 mode=${2:?decomposition, prior-flat, or prior-hierarchy}
 ckpt=${3:?checkpoint path}
 run_dir=${RUN_DIR:?RUN_DIR must be supplied by researchctl}
+episodes=${TOKEN_LADDER_EPISODES:-8}
 
 case "$mode" in
   decomposition)
@@ -16,7 +17,7 @@ case "$mode" in
     ;;
   prior-flat|prior-hierarchy)
     common=(
-      --ckpt "$ckpt" --device cuda:0 --episodes 8 --max-tokens 64
+      --ckpt "$ckpt" --device cuda:0 --episodes "$episodes" --max-tokens 64
       --high-horizon 2 --flat-horizon 1 --token-execution-chunk 1
       --macro-candidates 256 --macro-iterations 10 --macro-elites 32
       --token-candidates 128 --token-iterations 5 --token-elites 16

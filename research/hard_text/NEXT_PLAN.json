@@ -1,41 +1,49 @@
 {
   "schema_version": 2,
   "project": "token_igsm",
-  "round_id": "2026-07-20-token-planning-bottleneck-ladder",
-  "decision": "Where does the strong teacher-forced token prior fail in deployment? Separate generated-prefix exposure from recursive predictor drift, learned-score error from oracle-outcome geometry, and flat prior execution from hierarchical planning, without symbolic feasibility filtering or an auxiliary LM.",
+  "round_id": "2026-07-20-token-oracle-continuation-teacher-gate",
+  "decision": "Before training another value objective, does prior-supported non-symbolic continuation search make the factual root token better aligned with terminal goal distance at horizons 2, 4, or 8 than the one-step teacher? In parallel, recover a two-episode faithful hierarchy diagnostic after the eight-episode evaluation exceeded its walltime.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "token-closed-loop-causal-decomposition",
+      "id": "token-continuation-teacher-h1",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_token_bottleneck_ladder.sh", "{python}", "decomposition", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-17-gar-proposal-coverage/gar-k32-prior-proposals-seed-0/model/best.pt"],
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 90,
-      "purpose": "Compare re-encoded and predictor-rolled generated prefixes under prior-only, predicted geometry, learned value, and an explicitly privileged oracle-outcome ceiling.",
-      "expected_artifacts": ["closed_loop_decomposition.json", "metrics.json"]
+      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "1", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 30,
+      "purpose": "Immediate-outcome teacher control.",
+      "expected_artifacts": ["metrics.json"]
     },
     {
-      "id": "token-prior-flat-receding-h1",
+      "id": "token-continuation-teacher-h2",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/run_token_bottleneck_ladder.sh", "{python}", "prior-flat", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-17-gar-proposal-coverage/gar-k32-prior-proposals-seed-0/model/best.pt"],
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 60,
-      "purpose": "Measure pure state-conditioned prior execution with one-token receding re-encoding and no hierarchical intervention.",
-      "expected_artifacts": ["prior_flat.json", "metrics.json"]
+      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "2", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 45,
+      "purpose": "Two-step approximately optimal continuation teacher.",
+      "expected_artifacts": ["metrics.json"]
     },
     {
-      "id": "token-prior-hierarchy-faithful-cem",
+      "id": "token-continuation-teacher-h4",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "4", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 60,
+      "purpose": "Four-step approximately optimal continuation teacher.",
+      "expected_artifacts": ["metrics.json"]
+    },
+    {
+      "id": "token-continuation-teacher-h8",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "8", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 90,
+      "purpose": "Eight-step approximately optimal continuation teacher.",
+      "expected_artifacts": ["metrics.json"]
+    },
+    {
+      "id": "token-prior-hierarchy-faithful-cem-recovery-e2",
       "cluster": "gruenau",
       "command": ["bash", "scripts/run_token_bottleneck_ladder.sh", "{python}", "prior-hierarchy", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-17-gar-proposal-coverage/gar-k32-prior-proposals-seed-0/model/best.pt"],
-      "gpus": 1,
-      "cpus": 4,
-      "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 150,
-      "purpose": "Measure whether support-constrained, reachability-refined hierarchy improves or damages the same prior using 256 macro candidates and 10 CEM updates.",
+      "env": {"TOKEN_LADDER_EPISODES": "2"},
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 75,
+      "purpose": "Recover executable hierarchy signal with the same 256-candidate, 10-update CEM but two episodes instead of eight.",
       "expected_artifacts": ["prior_hierarchy.json", "metrics.json"]
     }
   ]
