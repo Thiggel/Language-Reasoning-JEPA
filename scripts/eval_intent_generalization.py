@@ -15,6 +15,7 @@ import torch
 from omegaconf import OmegaConf
 
 from textjepa.planning import LatentPlanner, evaluate_planning
+from textjepa.planning.search import validate_learned_catalogue_checkpoint
 from textjepa.utils import seed_everything
 from textjepa.utils.checkpoint import build_dataset, load_run
 
@@ -56,24 +57,44 @@ def main() -> None:
     parser.add_argument("--prior-top-m", type=int, default=0)
     parser.add_argument("--prior-only", action="store_true")
     parser.add_argument("--allow-oracle-future-actions", action="store_true")
+    parser.add_argument(
+        "--proposal-source",
+        choices=["current_feasible", "learned_catalogue"],
+        default="current_feasible",
+    )
+    parser.add_argument("--proposal-top-m", type=int, default=0)
+    parser.add_argument("--proposal-beam-width", type=int, default=1)
+    parser.add_argument("--proposal-prior-weight", type=float, default=1.0)
+    parser.add_argument("--proposal-support-weight", type=float, default=1.0)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
     n_vars_override = tuple(args.n_vars_range) if args.n_vars_range else None
 
-    if args.lookahead > 1 and not args.allow_oracle_future_actions:
+    if (
+        args.lookahead > 1
+        and args.proposal_source == "current_feasible"
+        and not args.allow_oracle_future_actions
+    ):
         parser.error("lookahead > 1 is an oracle-future-action diagnostic")
     seed_everything(args.seed)
     model, vocab, checkpoint_cfg = load_run(args.ckpt, args.device)
+    if args.proposal_source == "learned_catalogue":
+        validate_learned_catalogue_checkpoint(checkpoint_cfg)
     payload = {
         "checkpoint": args.ckpt,
         "length_definition": "exact number of necessary actions",
         "train_steps_range": list(checkpoint_cfg.data.steps_range),
         "slacks": args.slacks,
         "lookahead": args.lookahead,
-        "oracle_future_actions": bool(args.lookahead > 1),
+        "oracle_future_actions": bool(args.allow_oracle_future_actions),
         "prior_top_m": args.prior_top_m,
         "prior_only": args.prior_only,
+        "proposal_source": args.proposal_source,
+        "proposal_top_m": args.proposal_top_m,
+        "proposal_beam_width": args.proposal_beam_width,
+        "proposal_prior_weight": args.proposal_prior_weight,
+        "proposal_support_weight": args.proposal_support_weight,
         "n_vars_range_override": list(n_vars_override) if n_vars_override else None,
         "curves": {},
     }
@@ -101,6 +122,11 @@ def main() -> None:
                 allow_oracle_future_actions=args.allow_oracle_future_actions,
                 prior_top_m=args.prior_top_m,
                 prior_only=args.prior_only,
+                proposal_source=args.proposal_source,
+                proposal_top_m=args.proposal_top_m,
+                proposal_beam_width=args.proposal_beam_width,
+                proposal_prior_weight=args.proposal_prior_weight,
+                proposal_support_weight=args.proposal_support_weight,
             )
             length_rows[str(slack)] = evaluate_planning(
                 planner, dataset, args.episodes, slack=slack, seed=args.seed

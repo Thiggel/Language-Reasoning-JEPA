@@ -24,12 +24,37 @@ from textjepa.data.igsm.render import prompt_sentences
 from textjepa.data.vocab import Vocab
 
 
+def validate_learned_catalogue_checkpoint(cfg) -> None:
+    """Reject checkpoints that cannot support the claimed planner protocol."""
+    errors = []
+    if not bool(cfg.model.get("action_prior", False)):
+        errors.append("model.action_prior must be enabled")
+    if cfg.model.get("action_support_states", "true") != "all":
+        errors.append("model.action_support_states must be 'all'")
+    if cfg.model.get("action_prior_states", "true") != "all":
+        errors.append("model.action_prior_states must be 'all'")
+    if not bool(cfg.data.get("all_action_supervision", False)):
+        errors.append("data.all_action_supervision must be enabled")
+    feasibility = cfg.objective.get("action_feasibility", {})
+    if float(feasibility.get("weight", 0.0)) <= 0.0:
+        errors.append("objective.action_feasibility.weight must be positive")
+    prior = cfg.objective.get("action_prior", {})
+    if float(prior.get("weight", 0.0)) <= 0.0:
+        errors.append("objective.action_prior.weight must be positive")
+    if errors:
+        raise ValueError(
+            "checkpoint is invalid for learned-catalogue planning: "
+            + "; ".join(errors)
+        )
+
+
 @dataclass
 class EpisodeResult:
     solved: bool
     steps: int
     n_necessary: int
     n_distractor: int
+    n_invalid: int = 0
 
 
 def _feasible(problem: Problem, resolved: frozenset[int]) -> list[int]:
@@ -76,8 +101,19 @@ class LatentPlanner:
         allow_oracle_future_actions: bool = False,
         prior_top_m: int = 0,
         prior_only: bool = False,
+        proposal_source: str = "current_feasible",
+        proposal_top_m: int = 0,
+        proposal_beam_width: int = 1,
+        proposal_prior_weight: float = 1.0,
+        proposal_support_weight: float = 1.0,
     ):
-        if lookahead > 1 and not allow_oracle_future_actions:
+        if proposal_source not in {"current_feasible", "learned_catalogue"}:
+            raise ValueError(f"unknown proposal source: {proposal_source}")
+        if (
+            lookahead > 1
+            and proposal_source == "current_feasible"
+            and not allow_oracle_future_actions
+        ):
             raise ValueError(
                 "lookahead > 1 enumerates future actions with the reference "
                 "dependency graph; set allow_oracle_future_actions=true "
@@ -94,12 +130,40 @@ class LatentPlanner:
         self.allow_oracle_future_actions = allow_oracle_future_actions
         self.prior_top_m = max(0, int(prior_top_m))
         self.prior_only = bool(prior_only)
+        self.proposal_source = proposal_source
+        self.proposal_top_m = max(0, int(proposal_top_m))
+        self.proposal_beam_width = max(1, int(proposal_beam_width))
+        self.proposal_prior_weight = float(proposal_prior_weight)
+        self.proposal_support_weight = float(proposal_support_weight)
+        if self.proposal_source == "learned_catalogue":
+            if self.proposal_top_m < 1:
+                raise ValueError(
+                    "learned-catalogue planning requires proposal_top_m >= 1"
+                )
+            if allow_oracle_future_actions:
+                raise ValueError(
+                    "learned-catalogue planning cannot enable oracle future actions"
+                )
+            if simulator != "latent":
+                raise ValueError(
+                    "learned-catalogue planning requires latent simulation"
+                )
         if (self.prior_top_m or self.prior_only) and getattr(
             model, "action_prior_head", None
         ) is None:
             raise ValueError("prior planning requires an action-prior checkpoint")
+        if self.proposal_source == "learned_catalogue" and getattr(
+            model, "action_prior_head", None
+        ) is None:
+            raise ValueError(
+                "learned-catalogue planning requires an action-prior checkpoint"
+            )
         self.prior_decisions = 0
         self.prior_necessary_recall_sum = 0.0
+        self.proposal_decisions = 0
+        self.proposal_root_necessary_recall_sum = 0.0
+        self.proposal_root_feasible_recall_sum = 0.0
+        self.proposal_root_feasible_precision_sum = 0.0
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -120,13 +184,18 @@ class LatentPlanner:
         action_history: list[int] = []
         budget = problem.n_necessary_steps + slack
         n_distractor = 0
+        attempts = 0
+        self._episode_catalogue = [variable.idx for variable in problem.vars]
+        random.Random(f"{seed}:learned-catalogue").shuffle(
+            self._episode_catalogue
+        )
         goal_state = (
             self._oracle_goal_state(problem, prompt_tokens, prompt_mask)
             if self.energy == "oracle_goal"
             else None
         )
 
-        while not env.solved and len(step_texts) < budget:
+        while not env.solved and attempts < budget:
             s = self._current_state(prompt_tokens, prompt_mask, step_texts)
             s0 = self._s0(prompt_tokens, prompt_mask)
             state_history, action_codes = self._causal_history(
@@ -136,24 +205,197 @@ class LatentPlanner:
                 problem,
                 action_history,
             )
-            seqs = _sequences(
-                problem, frozenset(env.resolved_set), self.lookahead, self.max_expand
-            )
-            seqs = self._apply_action_prior(s, problem, seqs)
-            best = self._best_sequence(
-                s, s0, problem, seqs, goal_state,
-                state_history=state_history,
-                action_history=action_codes,
-                sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
-            )
+            proposal_costs = None
+            if self.proposal_source == "learned_catalogue":
+                seqs, proposal_costs = self._learned_catalogue_sequences(
+                    s,
+                    problem,
+                    executed=action_history,
+                    state_history=state_history,
+                    action_history=action_codes,
+                )
+                # Post-hoc diagnostic only: hidden relevance never enters
+                # proposal scores, filtering, or trajectory construction.
+                proposed_roots = {sequence[0] for sequence in seqs}
+                true_feasible = set(env.feasible_actions())
+                feasible_necessary = true_feasible & set(
+                    problem.query_ancestors
+                )
+                self.proposal_decisions += 1
+                self.proposal_root_necessary_recall_sum += (
+                    len(feasible_necessary & proposed_roots)
+                    / max(len(feasible_necessary), 1)
+                )
+                self.proposal_root_feasible_recall_sum += (
+                    len(true_feasible & proposed_roots)
+                    / max(len(true_feasible), 1)
+                )
+                self.proposal_root_feasible_precision_sum += (
+                    len(true_feasible & proposed_roots)
+                    / max(len(proposed_roots), 1)
+                )
+            else:
+                seqs = _sequences(
+                    problem,
+                    frozenset(env.resolved_set),
+                    self.lookahead,
+                    self.max_expand,
+                )
+                seqs = self._apply_action_prior(s, problem, seqs)
+            if self.prior_only and proposal_costs is not None:
+                best = seqs[int(proposal_costs.argmin().item())]
+            else:
+                best = self._best_sequence(
+                    s, s0, problem, seqs, goal_state,
+                    state_history=state_history,
+                    action_history=action_codes,
+                    sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
+                )
             chosen = best[0]
             n_distractor += int(chosen not in problem.query_ancestors)
-            step_texts.append(env.step(chosen))
+            attempts += 1
+            try:
+                outcome = env.step(chosen)
+            except ValueError:
+                return EpisodeResult(
+                    False,
+                    attempts,
+                    problem.n_necessary_steps,
+                    n_distractor,
+                    n_invalid=1,
+                )
+            step_texts.append(outcome)
             action_history.append(chosen)
 
         return EpisodeResult(
-            env.solved, len(step_texts), problem.n_necessary_steps, n_distractor
+            env.solved, attempts, problem.n_necessary_steps, n_distractor
         )
+
+    def _proposal_scores(
+        self,
+        state: torch.Tensor,
+        action_codes: torch.Tensor,
+    ) -> torch.Tensor:
+        """Log-score catalogue actions using only learned model heads."""
+        n = action_codes.shape[0]
+        expanded = state.expand(n, -1)
+        support = self.model.core.action_support_head(expanded, action_codes)
+        prior = self.model.action_prior_head(expanded, action_codes)
+        return (
+            self.proposal_prior_weight * torch.log_softmax(prior, dim=0)
+            + self.proposal_support_weight * torch.nn.functional.logsigmoid(
+                support
+            )
+        )
+
+    def _predicted_sequence_state(
+        self,
+        state: torch.Tensor,
+        problem: Problem,
+        sequence: list[int],
+        state_history: torch.Tensor,
+        action_history: torch.Tensor,
+    ) -> torch.Tensor:
+        codes = self._action_codes(problem, sequence).unsqueeze(0)
+        if hasattr(self.model.predictor, "rollout"):
+            return self.model.predictor.rollout(
+                state,
+                codes,
+                state_history=state_history,
+                action_history=action_history,
+            )[:, -1]
+        current = state
+        for step in range(codes.shape[1]):
+            current = self.model.predictor(current, codes[:, step])
+        return current
+
+    @torch.no_grad()
+    def _learned_catalogue_sequences(
+        self,
+        state: torch.Tensor,
+        problem: Problem,
+        executed: list[int],
+        state_history: torch.Tensor,
+        action_history: torch.Tensor,
+    ) -> tuple[list[list[int]], torch.Tensor]:
+        """Build a root-balanced beam without symbolic feasibility queries.
+
+        The fixed catalogue contains every outcome-free intent phrase stated
+        by the prompt.  Only actions known to have executed are removed.  At
+        imagined states, availability and usefulness are estimated entirely
+        by learned heads applied to predicted latents.
+        """
+        executed_set = set(executed)
+        ordered_catalogue = getattr(
+            self,
+            "_episode_catalogue",
+            [variable.idx for variable in problem.vars],
+        )
+        if set(ordered_catalogue) != {variable.idx for variable in problem.vars}:
+            raise RuntimeError("episode action catalogue does not match problem")
+        catalogue = [
+            action for action in ordered_catalogue if action not in executed_set
+        ]
+        if not catalogue:
+            raise RuntimeError("learned action catalogue is empty")
+        root_codes = self._action_codes(problem, catalogue)
+        root_scores = self._proposal_scores(state, root_codes)
+        root_n = min(self.proposal_top_m, len(catalogue))
+        if self.max_expand < root_n:
+            raise ValueError(
+                "max_expand must retain at least one sequence per proposed root"
+            )
+        beam_per_root = min(
+            self.proposal_beam_width,
+            max(1, self.max_expand // root_n),
+        )
+        root_rows = root_scores.topk(root_n).indices.tolist()
+        roots = [catalogue[row] for row in root_rows]
+        root_costs = [-float(root_scores[row]) for row in root_rows]
+        by_root: dict[int, list[tuple[list[int], float]]] = {
+            root: [([root], cost)] for root, cost in zip(roots, root_costs)
+        }
+        for _depth in range(1, self.lookahead):
+            next_by_root: dict[int, list[tuple[list[int], float]]] = {}
+            for root, frontier in by_root.items():
+                expanded: list[tuple[list[int], float]] = []
+                for sequence, cumulative_cost in frontier:
+                    predicted = self._predicted_sequence_state(
+                        state,
+                        problem,
+                        sequence,
+                        state_history,
+                        action_history,
+                    )
+                    used = executed_set | set(sequence)
+                    candidates = [
+                        action for action in ordered_catalogue if action not in used
+                    ]
+                    if not candidates:
+                        expanded.append((sequence, cumulative_cost))
+                        continue
+                    codes = self._action_codes(problem, candidates)
+                    scores = self._proposal_scores(predicted, codes)
+                    keep_n = min(self.proposal_top_m, len(candidates))
+                    for row in scores.topk(keep_n).indices.tolist():
+                        expanded.append((
+                            sequence + [candidates[row]],
+                            cumulative_cost - float(scores[row]),
+                        ))
+                expanded.sort(key=lambda item: item[1])
+                next_by_root[root] = expanded[:beam_per_root]
+            by_root = next_by_root
+
+        candidates = [item for frontier in by_root.values() for item in frontier]
+        if not candidates:
+            raise RuntimeError("learned action catalogue produced no sequences")
+        sequences = [sequence for sequence, _ in candidates]
+        costs = torch.tensor(
+            [cost for _, cost in candidates],
+            dtype=state.dtype,
+            device=state.device,
+        )
+        return sequences, costs
 
     def _apply_action_prior(
         self, state: torch.Tensor, problem: Problem, seqs: list[list[int]]

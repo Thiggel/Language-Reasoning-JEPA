@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-20-learned-action-catalogue-implementation",
+  "project": "intent_phrase",
+  "title": "A non-oracle action catalogue for intent-phrase planning",
+  "created_at": "2026-07-20T17:30:00+02:00",
+  "status": "implementation_validated",
+  "decision": "Run a bounded head-only pilot to test whether learned catalogue expansion supports useful non-oracle depth-two and depth-four JEPA planning.",
+  "plain_summary": "The planner now expands a fixed prompt-derived action catalogue with learned availability and policy scores, never queries symbolic feasibility while imagining trajectories, preserves a separate beam per root, and passes all 119 repository tests.",
+  "report": "REPORT.md",
+  "review_required": true
+}
+

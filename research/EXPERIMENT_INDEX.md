@@ -12,6 +12,7 @@
 | 2026-07-20-intent-action-prior-eval-recovery-v1 | Does JEPA add value when reranking prior proposals? | 3 completed | prior-only wins; more JEPA reranking is harmful; oracle depth-4 diagnostic is promising | [`2026-07-20 report`](reports/intent_phrase/2026-07-20-action-prior-hierarchy-planning/REPORT.md) |
 | 2026-07-20-intent-distinct-hierarchy-wide-cem-v1 | Does wide learned-prior CEM rescue distinct-state hierarchy? | 3 trained; evaluation failed | training valid, original evaluation process-invalid at positional boundary | [`2026-07-20 report`](reports/intent_phrase/2026-07-20-action-prior-hierarchy-planning/REPORT.md) |
 | 2026-07-20-intent-hierarchy-wide-cem-eval-recovery-v1 | Does wide learned-prior CEM beat controls across bottlenecks 4/8/16? | 3 completed | negative; all lose to first-feasible and code/prior-noise success is identical | [`2026-07-20 report`](reports/intent_phrase/2026-07-20-action-prior-hierarchy-planning/REPORT.md) |
+| 2026-07-20-intent-learned-catalogue-planner-pilot-v1 | Can learned all-action proposals support non-oracle depth-two/four JEPA planning? | 2 head-only learning-rate pilots planned | implementation validated; submission pending | [`implementation cycle`](cycles/intent_phrase/2026-07-20-learned-action-catalogue-planner.md) |
 
 Historical waves remain indexed by the subproject READMEs. Add one row per new
 controller round and keep invalid/failed rounds visible.

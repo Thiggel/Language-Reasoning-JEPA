@@ -22,6 +22,8 @@ train:
   train_macro_value_head: false
   train_low_predictor: false
   train_low_value_head: false
+  train_action_support: false
+  train_action_prior: false
   batch_size: 128
   num_workers: 8
   epochs: 20

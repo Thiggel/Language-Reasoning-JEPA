@@ -1,7 +1,9 @@
 import math
+from unittest.mock import patch
 
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from textjepa.data.igsm.dataset import IGSMDataset, build_vocab
 from textjepa.models import DiscourseJEPA
@@ -10,6 +12,7 @@ from textjepa.planning import (
     LatentPlanner,
     evaluate_planning,
 )
+from textjepa.planning.search import validate_learned_catalogue_checkpoint
 
 
 def test_planner_runs_end_to_end():
@@ -56,6 +59,185 @@ def test_action_prior_top_m_planning_and_missing_head_guard():
     metrics = results["latent_planner"]
     assert metrics["prior_decisions"] >= 2
     assert 0.0 <= metrics["prior_root_necessary_recall"] <= 1.0
+
+
+def test_learned_catalogue_allows_nonoracle_multistep_planning():
+    vocab = build_vocab(23)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+
+    planner = LatentPlanner(
+        model,
+        vocab,
+        torch.device("cpu"),
+        lookahead=3,
+        proposal_source="learned_catalogue",
+        proposal_top_m=3,
+        proposal_beam_width=2,
+    )
+    assert planner.lookahead == 3
+
+
+def test_learned_catalogue_proposals_never_query_symbolic_feasibility():
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=1, seed=17)
+    problem, _ = ds.problem(0)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    planner = LatentPlanner(
+        model,
+        vocab,
+        torch.device("cpu"),
+        lookahead=3,
+        proposal_source="learned_catalogue",
+        proposal_top_m=3,
+        proposal_beam_width=2,
+    )
+    state = torch.randn(1, 64)
+    state_history = state.unsqueeze(1)
+    action_history = torch.empty(1, 0, 8)
+
+    with patch(
+        "textjepa.data.igsm.env.SymbolicEnv.feasible_actions",
+        side_effect=AssertionError("proposal generation queried feasibility"),
+    ):
+        sequences, costs = planner._learned_catalogue_sequences(
+            state,
+            problem,
+            executed=[],
+            state_history=state_history,
+            action_history=action_history,
+        )
+
+    assert sequences
+    assert len(sequences) == len(costs)
+    assert all(len(sequence) == 3 for sequence in sequences)
+
+
+def test_learned_catalogue_beam_is_root_balanced():
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=1, seed=19)
+    problem, _ = ds.problem(0)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    planner = LatentPlanner(
+        model,
+        vocab,
+        torch.device("cpu"),
+        lookahead=3,
+        proposal_source="learned_catalogue",
+        proposal_top_m=3,
+        proposal_beam_width=2,
+    )
+    state = torch.randn(1, 64)
+    sequences, _ = planner._learned_catalogue_sequences(
+        state,
+        problem,
+        executed=[],
+        state_history=state.unsqueeze(1),
+        action_history=torch.empty(1, 0, 8),
+    )
+
+    roots = {sequence[0] for sequence in sequences}
+    assert len(roots) == min(3, len(problem.vars))
+    assert all(
+        sum(sequence[0] == root for sequence in sequences) <= 2
+        for root in roots
+    )
+
+
+def test_learned_catalogue_respects_global_expansion_cap():
+    vocab = build_vocab(23)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    planner = LatentPlanner(
+        model,
+        vocab,
+        torch.device("cpu"),
+        lookahead=4,
+        max_expand=6,
+        proposal_source="learned_catalogue",
+        proposal_top_m=3,
+        proposal_beam_width=8,
+    )
+    ds = IGSMDataset(vocab, size=1, seed=23)
+    problem, _ = ds.problem(0)
+    state = torch.randn(1, 64)
+    sequences, _ = planner._learned_catalogue_sequences(
+        state,
+        problem,
+        executed=[],
+        state_history=state.unsqueeze(1),
+        action_history=torch.empty(1, 0, 8),
+    )
+    assert len(sequences) <= 6
+    assert len({sequence[0] for sequence in sequences}) == 3
+
+
+def test_learned_catalogue_invalid_execution_is_reported_as_failure():
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=1, seed=29)
+    problem, _ = ds.problem(0)
+    infeasible = next(variable.idx for variable in problem.vars if variable.parents)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    planner = LatentPlanner(
+        model,
+        vocab,
+        torch.device("cpu"),
+        lookahead=2,
+        proposal_source="learned_catalogue",
+        proposal_top_m=2,
+        prior_only=True,
+    )
+    with patch.object(
+        planner,
+        "_learned_catalogue_sequences",
+        return_value=([[infeasible]], torch.tensor([0.0])),
+    ):
+        result = planner.plan_episode(problem)
+    assert not result.solved
+    assert result.steps == 1
+    assert result.n_invalid == 1
+
+
+def test_learned_catalogue_checkpoint_gate_rejects_untrained_support():
+    cfg = OmegaConf.create({
+        "model": {
+            "action_prior": True,
+            "action_support_states": "all",
+            "action_prior_states": "all",
+        },
+        "data": {"all_action_supervision": True},
+        "objective": {
+            "action_feasibility": {"weight": 0.0},
+            "action_prior": {"weight": 1.0},
+        },
+    })
+    with pytest.raises(ValueError, match="action_feasibility"):
+        validate_learned_catalogue_checkpoint(cfg)
+    cfg.objective.action_feasibility.weight = 1.0
+    validate_learned_catalogue_checkpoint(cfg)
 
 
 def _distinct_model(vocab):

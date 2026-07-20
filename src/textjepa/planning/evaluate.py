@@ -78,6 +78,7 @@ def _aggregate(results: list[EpisodeResult]) -> dict[str, float]:
         ),
         "distractor_rate": sum(r.n_distractor for r in results)
         / max(sum(r.steps for r in results), 1),
+        "invalid_action_rate": sum(r.n_invalid for r in results) / n,
     }
 
 
@@ -113,6 +114,22 @@ def evaluate_planning(
                 planner.prior_necessary_recall_sum / planner.prior_decisions
             ),
             "prior_decisions": float(planner.prior_decisions),
+        })
+    if getattr(planner, "proposal_decisions", 0):
+        planned_metrics.update({
+            "proposal_root_necessary_recall": (
+                planner.proposal_root_necessary_recall_sum
+                / planner.proposal_decisions
+            ),
+            "proposal_root_feasible_recall": (
+                planner.proposal_root_feasible_recall_sum
+                / planner.proposal_decisions
+            ),
+            "proposal_root_feasible_precision": (
+                planner.proposal_root_feasible_precision_sum
+                / planner.proposal_decisions
+            ),
+            "proposal_decisions": float(planner.proposal_decisions),
         })
     return {
         planner_name: planned_metrics,

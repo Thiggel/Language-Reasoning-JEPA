@@ -537,6 +537,59 @@ def test_action_prior_is_masked_to_feasible_menu_and_detached(setup):
     assert all(p.grad is None for p in model.action_encoder.parameters())
 
 
+def test_action_support_all_states_is_detached_from_world_model(setup):
+    from textjepa.objectives import ActionFeasibility
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=8, seed=144, all_action_supervision=True
+    )
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        macro_k=2, value_detach=False,
+        action_support_states="all", action_support_detach_inputs=True,
+    )
+    out = model(batch)
+    assert out.extras["action_support_logits"].shape[:2] == (8, 3)
+    loss = ActionFeasibility()(out, batch)
+    loss.backward()
+    assert any(
+        p.grad is not None for p in model.core.action_support_head.parameters()
+    )
+    assert all(p.grad is None for p in model.state_model.parameters())
+    assert all(p.grad is None for p in model.action_encoder.parameters())
+    assert all(p.grad is None for p in model.core.predictor.parameters())
+
+
+def test_action_prior_all_states_trains_on_predicted_latents(setup):
+    from textjepa.objectives import ActionPrior
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=8, seed=145, all_action_supervision=True
+    )
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        macro_k=0, action_prior=True,
+        action_prior_states="all", action_prior_detach_inputs=True,
+    )
+    out = model(batch)
+    assert out.extras["action_prior_logits"].shape[:2] == (8, 3)
+    loss = ActionPrior()(out, batch)
+    assert torch.isfinite(loss) and loss > 0
+    loss.backward()
+    assert any(p.grad is not None for p in model.action_prior_head.parameters())
+    assert all(p.grad is None for p in model.state_model.parameters())
+    assert all(p.grad is None for p in model.action_encoder.parameters())
+    assert all(p.grad is None for p in model.core.predictor.parameters())
+
+
 def test_enabling_detached_action_prior_preserves_seeded_base_initialization(setup):
     vocab, _, _ = setup
     kwargs = dict(

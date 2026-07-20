@@ -84,6 +84,8 @@ class DiscourseJEPA(nn.Module):
         high_state_encoder_layers: int = 2,
         action_prior: bool = False,
         action_prior_detach_inputs: bool = True,
+        action_prior_states: str = "true",
+        action_support_detach_inputs: bool | None = None,
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -94,7 +96,17 @@ class DiscourseJEPA(nn.Module):
                 f"unknown action-support state mode: {action_support_states}"
             )
         self.action_support_states = action_support_states
+        if action_prior_states not in {"true", "all"}:
+            raise ValueError(
+                f"unknown action-prior state mode: {action_prior_states}"
+            )
+        self.action_prior_states = action_prior_states
         self.action_prior_detach_inputs = bool(action_prior_detach_inputs)
+        self.action_support_detach_inputs = (
+            bool(value_detach)
+            if action_support_detach_inputs is None
+            else bool(action_support_detach_inputs)
+        )
         self.macro_support_scales = tuple(macro_support_scales or [3.0])
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
@@ -447,9 +459,11 @@ class DiscourseJEPA(nn.Module):
                 torch.cat([out.s0.unsqueeze(1), out.rollout[:, :-1]], dim=1),
             ])
         states = torch.stack(states, dim=1)
-        if self.core.value_detach:
+        if self.action_support_detach_inputs:
             states = states.detach()
-        action_features = actions.detach() if self.core.value_detach else actions
+        action_features = (
+            actions.detach() if self.action_support_detach_inputs else actions
+        )
         M = states.shape[1]
         logits = self.core.action_support_head(
             states.unsqueeze(3).expand(B, M, T, V, d_state),
@@ -472,20 +486,33 @@ class DiscourseJEPA(nn.Module):
             action_support_target=target,
         )
         if self.action_prior_head is not None:
-            prior_states, prior_actions = out.prev_states, actions
+            prior_states = [out.prev_states]
+            if self.action_prior_states == "all":
+                prior_states.extend([
+                    torch.cat([out.s0.unsqueeze(1), out.preds[:, :-1]], dim=1),
+                    torch.cat([out.s0.unsqueeze(1), out.rollout[:, :-1]], dim=1),
+                ])
+            prior_states = torch.stack(prior_states, dim=1)
+            prior_actions = actions
             if self.action_prior_detach_inputs:
                 prior_states, prior_actions = (
                     prior_states.detach(), prior_actions.detach()
                 )
+            P = prior_states.shape[1]
             prior_logits = self.action_prior_head(
-                prior_states.unsqueeze(2).expand(B, T, V, d_state),
-                prior_actions.unsqueeze(1).expand(B, T, V, -1),
+                prior_states.unsqueeze(3).expand(B, P, T, V, d_state),
+                prior_actions.unsqueeze(1).unsqueeze(1).expand(
+                    B, P, T, V, -1
+                ),
             )
             prior_valid = (
                 out.step_mask.unsqueeze(-1)
                 & batch["action_candidate_mask"].unsqueeze(1)
                 & batch["action_feasible"]
-            )
+            ).unsqueeze(1).expand(B, P, T, V)
+            if P == 1:
+                prior_logits = prior_logits[:, 0]
+                prior_valid = prior_valid[:, 0]
             out.extras.update(
                 action_prior_logits=prior_logits,
                 action_prior_valid=prior_valid,

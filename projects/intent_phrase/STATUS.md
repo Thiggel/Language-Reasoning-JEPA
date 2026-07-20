@@ -48,6 +48,7 @@ two-seed confirmation of `1e-3`, not another context or rate sweep.
 | A supervised action prior improves deployable one-step planning. | supported across three seeds through length 9 |
 | JEPA reranking adds value after prior proposal. | contradicted in the current top-2/top-4 evaluation |
 | Deep latent rollout improves planning. | promising only with oracle future-action menus; not deployable evidence |
+| Learned-catalogue depth-two/four planning works without symbolic menus. | implementation validated; scientific pilot pending |
 | JEPA currently beats the matched token intent policy on the easier stylized domain. | contradicted by the compact comparison: .797 versus .827 strict success |
 
 ## Current causal validation matrix

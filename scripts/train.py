@@ -162,6 +162,12 @@ def main(cfg: DictConfig) -> None:
             model.core.macro_value_head.requires_grad_(True)
         if cfg.train.get("train_action_support", False):
             model.core.action_support_head.requires_grad_(True)
+        if cfg.train.get("train_action_prior", False):
+            if model.action_prior_head is None:
+                raise ValueError(
+                    "train_action_prior requires model.action_prior=true"
+                )
+            model.action_prior_head.requires_grad_(True)
         if cfg.train.get("train_low_predictor", False):
             model.core.predictor.requires_grad_(True)
         if cfg.train.get("train_low_value_head", False):

@@ -30,6 +30,10 @@ def action_prior_metrics(out) -> dict[str, float]:
     feasible = out.extras["action_prior_valid"]
     target = out.extras["action_prior_target"]
     rows = out.step_mask & target.ge(0)
+    if logits.ndim == 4:
+        modes = logits.shape[1]
+        rows = rows.unsqueeze(1).expand(-1, modes, -1)
+        target = target.unsqueeze(1).expand(-1, modes, -1)
     logits = logits[rows]
     feasible = feasible[rows]
     target = target[rows]

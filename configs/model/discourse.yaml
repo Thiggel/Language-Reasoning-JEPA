@@ -24,6 +24,7 @@ high_predictor_heads: 8
 high_predictor_ff_mult: 4
 high_predictor_residual: null
 action_support_states: "true"  # true | all (also one-step/open-loop states)
+action_support_detach_inputs: null  # null preserves legacy value_detach behavior
 macro_support_scales: [3.0]
 dense_rollout_depth: 0
 high_dense_rollout_depth: 0
@@ -31,6 +32,7 @@ distinct_high_state_space: false
 high_state_encoder_layers: 2
 action_prior: false
 action_prior_detach_inputs: true
+action_prior_states: "true"  # true | all (also one-step/open-loop states)
 value_detach: true
 dropout: 0.0
 geo_proj: false

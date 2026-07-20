@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="480" viewBox="0 0 1120 480" role="img" aria-labelledby="title desc">
+  <title id="title">Learned action-catalogue planning without oracle menus</title>
+  <desc id="desc">A fixed prompt catalogue passes through learned availability and behavioral prior heads into root-balanced trajectory expansion. The same trajectories are scored by either the prior or JEPA. Hidden feasibility is outside the proposal boundary and appears only at real execution and audit.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#334155"/></marker>
+    <style>
+      .box{fill:#f8fafc;stroke:#334155;stroke-width:2;rx:12}.learn{fill:#e0f2fe;stroke:#0369a1}.jepa{fill:#dcfce7;stroke:#15803d}.oracle{fill:#fff1f2;stroke:#be123c;stroke-dasharray:8 6}.label{font:16px sans-serif;fill:#0f172a;text-anchor:middle}.small{font:13px sans-serif;fill:#334155;text-anchor:middle}.arrow{stroke:#334155;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect x="30" y="175" width="190" height="90" class="box"/>
+  <text x="125" y="208" class="label">Prompt-derived</text><text x="125" y="232" class="label">action catalogue</text><text x="125" y="253" class="small">all outcome-free phrases</text>
+  <path d="M220 220 H280" class="arrow"/>
+  <rect x="280" y="90" width="190" height="80" class="box learn"/>
+  <text x="375" y="122" class="label">Availability head</text><text x="375" y="147" class="small">p(feasible | state, action)</text>
+  <rect x="280" y="270" width="190" height="80" class="box learn"/>
+  <text x="375" y="302" class="label">Behavioral prior</text><text x="375" y="327" class="small">p(useful | state, action)</text>
+  <path d="M220 220 C250 220 250 130 280 130" class="arrow"/><path d="M220 220 C250 220 250 310 280 310" class="arrow"/>
+  <rect x="535" y="175" width="220" height="90" class="box learn"/>
+  <text x="645" y="207" class="label">Top-M proposals</text><text x="645" y="232" class="label">root-balanced expansion</text><text x="645" y="253" class="small">repeat at predicted states</text>
+  <path d="M470 130 C505 130 500 205 535 205" class="arrow"/><path d="M470 310 C505 310 500 235 535 235" class="arrow"/>
+  <rect x="825" y="70" width="230" height="85" class="box"/>
+  <text x="940" y="104" class="label">Prior-only control</text><text x="940" y="130" class="small">accumulated proposal score</text>
+  <rect x="825" y="190" width="230" height="85" class="box jepa"/>
+  <text x="940" y="224" class="label">JEPA planner</text><text x="940" y="250" class="small">predicted consequence energy</text>
+  <path d="M755 205 C790 205 790 112 825 112" class="arrow"/><path d="M755 235 H825" class="arrow"/>
+  <rect x="535" y="385" width="520" height="65" class="box oracle"/>
+  <text x="795" y="412" class="label">Hidden symbolic environment</text><text x="795" y="435" class="small">real execution and post-hoc metrics only — never proposal construction</text>
+  <path d="M940 275 V385" class="arrow"/>
+</svg>
+

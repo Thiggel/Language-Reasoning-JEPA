@@ -13,6 +13,7 @@ import torch
 from omegaconf import DictConfig
 
 from textjepa.planning import LatentPlanner, evaluate_planning
+from textjepa.planning.search import validate_learned_catalogue_checkpoint
 from textjepa.planning.edit_search import EditPlanner, evaluate_edit_planning
 from textjepa.utils import seed_everything
 from textjepa.utils.checkpoint import build_dataset, load_run
@@ -22,6 +23,8 @@ from textjepa.utils.checkpoint import build_dataset, load_run
 def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
+    if cfg.proposal_source == "learned_catalogue":
+        validate_learned_catalogue_checkpoint(run_cfg)
     split = cfg.get("split", "val")
     if cfg.eval_steps_range is not None:
         run_cfg.data.steps_range = list(cfg.eval_steps_range)
@@ -59,6 +62,11 @@ def main(cfg: DictConfig) -> None:
             allow_oracle_future_actions=cfg.allow_oracle_future_actions,
             prior_top_m=cfg.prior_top_m,
             prior_only=cfg.prior_only,
+            proposal_source=cfg.proposal_source,
+            proposal_top_m=cfg.proposal_top_m,
+            proposal_beam_width=cfg.proposal_beam_width,
+            proposal_prior_weight=cfg.proposal_prior_weight,
+            proposal_support_weight=cfg.proposal_support_weight,
         )
         results = evaluate_planning(
             planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -77,6 +85,11 @@ def main(cfg: DictConfig) -> None:
         suffix += "_prior_only"
     elif cfg.prior_top_m:
         suffix += f"_prior_top{cfg.prior_top_m}"
+    if cfg.proposal_source == "learned_catalogue":
+        suffix += (
+            f"_learned_catalogue_top{cfg.proposal_top_m}"
+            f"_beam{cfg.proposal_beam_width}"
+        )
     if cfg.eval_steps_range is not None:
         suffix += "_len" + "-".join(str(x) for x in cfg.eval_steps_range)
     if cfg.eval_n_vars_range is not None:

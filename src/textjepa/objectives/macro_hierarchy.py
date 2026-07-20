@@ -405,6 +405,10 @@ class ActionPrior(Objective):
         feasible = out.extras["action_prior_valid"]
         target = out.extras["action_prior_target"]
         row_valid = out.step_mask & target.ge(0)
+        if logits.ndim == 4:
+            modes = logits.shape[1]
+            row_valid = row_valid.unsqueeze(1).expand(-1, modes, -1)
+            target = target.unsqueeze(1).expand(-1, modes, -1)
         if not bool(row_valid.any()):
             return logits.sum() * 0.0
         selected_logits = logits[row_valid]
