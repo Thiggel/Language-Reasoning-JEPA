@@ -155,6 +155,45 @@ def counterfactual_distances(
     return distance.reshape(batch, candidates, continuations).amin(-1)
 
 
+@torch.no_grad()
+def counterfactual_root_outcomes(
+    model, batch_tokens, prompt_len, root_chunks, anchor_tokens, level_index,
+):
+    """EMA endpoint after each root action, without continuation selection."""
+    device = batch_tokens.device
+    batch, candidates, width = root_chunks.shape
+    rows, owners, lengths = [], [], []
+    for b in range(batch):
+        prefix = batch_tokens[b, :int(prompt_len[b]) + int(anchor_tokens)]
+        for c in range(candidates):
+            sequence = torch.cat([prefix, root_chunks[b, c]])
+            rows.append(sequence)
+            owners.append(b)
+            lengths.append(len(sequence))
+    packed = batch_tokens.new_full((len(rows), max(lengths)), model.pad_id)
+    for index, sequence in enumerate(rows):
+        packed[index, :len(sequence)] = sequence
+    encoded = model.teacher(packed)
+    paths = []
+    for index, owner in enumerate(owners):
+        start = int(prompt_len[owner]) - 1
+        paths.append(encoded[index, start:lengths[index]])
+    paths = torch.stack(paths)
+    if level_index is None:
+        outcome = paths[:, -1]
+    else:
+        outcome = model.lift_state_path(
+            paths, through_level=level_index, teacher=True
+        )[level_index][:, -1]
+    return outcome.reshape(batch, candidates, -1)
+
+
+def counterfactual_prediction_mse(prediction, target):
+    prediction = F.layer_norm(prediction, prediction.shape[-1:])
+    target = F.layer_norm(target, target.shape[-1:])
+    return (prediction - target).square().mean()
+
+
 def normalized_goal_distance(rows, goals):
     return (
         F.layer_norm(rows, rows.shape[-1:])
@@ -297,6 +336,9 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
     if float(obj.geo_rank_low) == 0 and float(obj.geo_rank_high) == 0:
         zero = out["low_pred"].sum() * 0
         return zero, {}, zero.detach()
+    value_condition = str(getattr(obj, "geo_rank_value_condition", "goal"))
+    if value_condition not in {"goal", "prompt"}:
+        raise ValueError("geo_rank_value_condition must be goal or prompt")
     k = int(obj.geo_rank_k)
     low_k = (
         int(obj.geo_rank_low_k)
@@ -387,10 +429,21 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         actions = model.token_action(root_ids.reshape(-1))[:, None]
         action_history = torch.cat([previous, actions], 1)
         predicted = model.low_predictor(histories, action_history)[:, -1]
+        root_target = counterfactual_root_outcomes(
+            model, tokens, prompt_len, root_chunks, anchor, None,
+        )
+        counterfactual_mse = counterfactual_prediction_mse(
+            predicted.reshape(batch_size, candidates, -1), root_target
+        )
         if bool(obj.geo_rank_detach_prediction):
             predicted = predicted.detach()
-        goal_rows = goal.repeat_interleave(candidates, 0)
-        energy = model.low_goal_value(predicted, goal_rows).reshape(
+        condition = (
+            out["prompt_state"]
+            if value_condition == "prompt"
+            else goal
+        )
+        condition_rows = condition.repeat_interleave(candidates, 0)
+        energy = model.low_goal_value(predicted, condition_rows).reshape(
             batch_size, candidates
         )
         rank = geometric_preference_loss(
@@ -402,6 +455,8 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         low_total = (
             float(obj.geo_rank_pairwise) * rank
             + float(obj.geo_rank_regression) * regression
+            + float(getattr(obj, "geo_rank_counterfactual_mse", 0.0))
+            * counterfactual_mse
         )
         total = total + float(obj.geo_rank_low) * low_total
         selection = selection + float(obj.geo_rank_low) * low_total.detach()
@@ -410,6 +465,7 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
         )
         items.update({
             "geo_low_rank": rank, "geo_low_regression": regression,
+            "geo_low_counterfactual_mse": counterfactual_mse,
             "geo_low_pair": pair, "geo_low_top1": top1,
             "geo_low_regret": regret,
             "geo_low_candidate_unique": candidate_unique_fraction(root_ids),
@@ -472,9 +528,21 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             predicted = model.levels[int(level["index"])].predictor(
                 state_history, action_history
             )[:, -1]
+            root_target = counterfactual_root_outcomes(
+                model, tokens, prompt_len, roots,
+                anchor * int(level["span"]), int(level["index"]),
+            )
+            counterfactual_mse = counterfactual_prediction_mse(
+                predicted.reshape(batch_size, candidates, -1), root_target
+            )
             if bool(obj.geo_rank_detach_prediction):
                 predicted = predicted.detach()
-            goal_rows = goal.repeat_interleave(candidates, 0)
+            condition = (
+                level["prev"][:, 0]
+                if value_condition == "prompt"
+                else goal
+            )
+            goal_rows = condition.repeat_interleave(candidates, 0)
             energy = model.levels[int(level["index"])].goal_value(
                 predicted, goal_rows
             ).reshape(batch_size, candidates)
@@ -487,6 +555,8 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             level_total = (
                 float(obj.geo_rank_pairwise) * rank
                 + float(obj.geo_rank_regression) * regression
+                + float(getattr(obj, "geo_rank_counterfactual_mse", 0.0))
+                * counterfactual_mse
             )
             weight = float(obj.geo_rank_high) * level_weight
             total = total + weight * level_total
@@ -497,6 +567,7 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
             prefix = f"geo_level{int(level['index']) + 1}"
             items.update({
                 f"{prefix}_rank": rank, f"{prefix}_regression": regression,
+                f"{prefix}_counterfactual_mse": counterfactual_mse,
                 f"{prefix}_pair": pair, f"{prefix}_top1": top1,
                 f"{prefix}_regret": regret,
                 f"{prefix}_candidate_unique": candidate_unique_fraction(roots),

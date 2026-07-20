@@ -216,6 +216,7 @@ class OracleCEMPlanner:
         self.records = []
         self.oracle_goal = None
         self.oracle_level_goals = None
+        self.value_contexts = None
         self.advantage_head = None
         self.advantage_scope = None
         if args.advantage_head:
@@ -249,7 +250,13 @@ class OracleCEMPlanner:
             return None
 
         def score(states, goals):
-            value = head(states, goals)
+            condition = goals
+            if getattr(self.args, "value_conditioning", "goal") == "prompt":
+                if self.value_contexts is None:
+                    raise ValueError("prompt-conditioned value context is unavailable")
+                context_index = 0 if level_index is None else level_index + 1
+                condition = self.value_contexts[context_index].expand_as(goals)
+            value = head(states, condition)
             if mode == "learned_value":
                 return value
             distance = latent_l1(states, goals)
@@ -385,7 +392,9 @@ class OracleCEMPlanner:
             ),
             extra_cost=(extra_cost if cost_terms else None),
             goal_states=transform,
-            goal_cost_fn=self.geometric_goal_cost(value_head, "low"),
+            goal_cost_fn=self.geometric_goal_cost(
+                value_head, "low", level_index=target_level
+            ),
             rollout_batch_size=self.args.cem_rollout_batch_size,
         )
         if target_level is not None:
@@ -437,7 +446,7 @@ class OracleCEMPlanner:
             if target_level is not None else self.model.low_goal_value
         )
         goal_cost_fn = self.geometric_goal_cost(
-            value_head, "low"
+            value_head, "low", level_index=target_level
         )
         goal_cost = (
             goal_cost_fn(scored[:, -1], goal_rows)
@@ -518,7 +527,9 @@ class OracleCEMPlanner:
                 elites=min(self.args.token_elites, candidates),
                 alpha=self.args.alpha, initial_probs=initial,
                 goal_states=transform,
-                goal_cost_fn=self.geometric_goal_cost(value_head, "low"),
+                goal_cost_fn=self.geometric_goal_cost(
+                    value_head, "low", level_index=target_level
+                ),
                 rollout_batch_size=self.args.cem_rollout_batch_size,
             )
             actual = decode(local_result.actions[None])[0]
@@ -562,7 +573,9 @@ class OracleCEMPlanner:
             self.model.levels[target_level].goal_value
             if target_level is not None else self.model.low_goal_value
         )
-        learned = self.geometric_goal_cost(value_head, "low")
+        learned = self.geometric_goal_cost(
+            value_head, "low", level_index=target_level
+        )
 
         def leaf_cost(states):
             scored = states
@@ -846,6 +859,15 @@ class OracleCEMPlanner:
         prefix = torch.tensor([prompt + generated], device=self.device)
         prefix_states = self.model.encoder(prefix)
         prompt_len = len(prompt)
+        prompt_path = prefix_states[:, prompt_len - 1:prompt_len]
+        self.value_contexts = [prompt_path[:, -1]]
+        if self.model.distinct_level_states:
+            lifted_prompt = self.model.lift_state_path(prompt_path)
+            self.value_contexts.extend(path[:, -1] for path in lifted_prompt)
+        else:
+            self.value_contexts.extend(
+                [prompt_path[:, -1]] * len(self.model.levels)
+            )
         start = prefix_states[:, -1]
         low_history = primitive_history(
             self.model, prefix_states, prompt_len, generated
@@ -1159,6 +1181,14 @@ def main():
     ], default="latent_distance")
     parser.add_argument("--value-weight", type=float, default=1.0)
     parser.add_argument(
+        "--value-conditioning", choices=["goal", "prompt"], default="goal",
+        help="condition the GAR value on an oracle/predicted goal or only the prompt",
+    )
+    parser.add_argument(
+        "--goal-source", choices=["oracle", "predicted"], default="oracle",
+        help="use the encoded terminal trace or the prompt-to-goal prediction",
+    )
+    parser.add_argument(
         "--goal-score-scope", choices=["all", "low", "macro", "top"], default="all",
         help="apply learned goal energy at primitive, macro, or all planner levels",
     )
@@ -1219,8 +1249,18 @@ def main():
         full = torch.tensor([item["tokens"]], device=args.device)
         with torch.no_grad():
             teacher_path = model.teacher(full)
-            oracle_goal = teacher_path[:, -1]
-            reasoning_path = teacher_path[:, item["prompt_len"] - 1:]
+            prompt_tensor = torch.tensor([prompt], device=args.device)
+            prompt_state = model.encoder(prompt_tensor)[:, -1]
+            oracle_goal = (
+                teacher_path[:, -1]
+                if args.goal_source == "oracle"
+                else model.goal_head(prompt_state)
+            )
+            reasoning_path = (
+                teacher_path[:, item["prompt_len"] - 1:]
+                if args.goal_source == "oracle"
+                else torch.stack([prompt_state, oracle_goal], 1)
+            )
             oracle_level_goals = (
                 tuple(path[:, -1] for path in model.lift_state_path(
                     reasoning_path, teacher=True
@@ -1262,7 +1302,9 @@ def main():
         "reachability_refine": args.reachability_refine,
         "flat": args.flat,
         "feedback_mode": args.feedback_mode,
-        "oracle_goal": True,
+        "oracle_goal": args.goal_source == "oracle",
+        "goal_source": args.goal_source,
+        "value_conditioning": args.value_conditioning,
         "goal_score": args.goal_score,
         "goal_score_scope": args.goal_score_scope,
         "value_weight": args.value_weight,

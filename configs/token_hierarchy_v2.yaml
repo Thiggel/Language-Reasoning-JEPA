@@ -94,6 +94,11 @@ objective:
   geo_rank_pairwise: 1.0
   geo_rank_temperature: 0.1
   geo_rank_regression: 0.0
+  # Directly anchor F(s,a_cf) to the EMA-encoded counterfactual outcome.
+  geo_rank_counterfactual_mse: 0.0
+  # goal uses the privileged terminal latent during training; prompt distills
+  # the same advantage into a deployable prompt-conditioned value function.
+  geo_rank_value_condition: goal
   geo_rank_detach_prediction: false
 
 train:
