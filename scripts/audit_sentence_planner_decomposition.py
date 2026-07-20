@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -180,7 +181,9 @@ def main():
         ],
     )
     destination = Path(args.output) if args.output else (
-        Path(args.ckpt).parent / "sentence_planner_decomposition.json"
+        Path(os.environ["RUN_DIR"]) / "sentence_planner_decomposition.json"
+        if os.environ.get("RUN_DIR")
+        else Path(args.ckpt).parent / "sentence_planner_decomposition.json"
     )
     destination.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
