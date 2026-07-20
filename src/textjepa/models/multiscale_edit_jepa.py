@@ -457,6 +457,9 @@ class MultiscaleEditJEPA(nn.Module):
             "sentence_target_mask": tgt_sentence_mask[:, 1:],
             "affected_sentence": affected,
             "sentence_attention": attention,
+            "token_states": tokens,
+            "token_states_tgt": tgt_tokens.detach(),
+            "token_state_mask": token_mask,
             "sentence_states": sentences,
             "sentence_states_tgt": tgt_sentences.detach(),
         })
