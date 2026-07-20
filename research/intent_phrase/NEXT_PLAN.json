@@ -1,67 +1,40 @@
 {
   "schema_version": 2,
   "project": "intent_phrase",
-  "round_id": "2026-07-18-j3-width512-lr5e4-seed-confirmation-v1",
-  "decision": "Determine whether the width-512 J3 model at its method-appropriate 5e-4 learning rate provides a seed-stable capacity gain over the existing matched width-256 1e-3 anchor. Run only seeds 1 and 2 because seed 0 is already valid at 0.685 strict and 0.930 slack-two, while the matched anchor is already available for seeds 0, 1, and 2 at 0.660, 0.670, and 0.685 strict. Promote width 512 only if the paired three-seed mean strict-success gain is at least 0.03, no seed loses slack-two success relative to its matched anchor, all losses are finite, state_std is at least 0.5, and state effective rank is at least 64. Otherwise retain width 256 and move to the supported grounded-objective combination screen. The seed-0 width-512 process failure is classified as post-evaluation infrastructure-only because probes and both primary planning artifacts completed before optional matplotlib import failed; the current snapshot skips that optional plot when matplotlib is unavailable.",
-  "git_commit": "AUTO",
+  "round_id": "2026-07-20-intent-distinct-hierarchy-wide-cem-v1",
+  "decision": "Determine whether the corrected distinct-state hierarchy becomes useful when its learned macro prior is used for on-manifold 1200-candidate, 20-update CEM, and select the macro-action bottleneck among 4, 8, and 16. Promote only if prior-noise CEM beats both direct-code CEM and the same checkpoint's flat planner with healthy high-state and macro-code diagnostics, including a consistent exact-length extrapolation signal.",
+  "git_commit": "17fd288d77ef53b16aa1c27fae9d99a97255124f",
   "jobs": [
     {
-      "id": "j3-width512-lr5e4-seed1-confirm-v1",
-      "cluster": "Grete",
-      "command": [
-        "bash",
-        "scripts/run_intent_j3_variant_cell.sh",
-        "{python}",
-        "paper_causal_j3_width512",
-        "1",
-        "0.0005",
-        "10",
-        "1000"
-      ],
+      "id": "intent-hier-d4-wide-cem-seed0-v1",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_intent_hierarchy_cem_pilot.sh", "{python}", "paper_causal_j3_distinct_hier_k2_d4_dense4_value", "0", "0.001", "5", "300", "30000", "20"],
       "gpus": 1,
-      "walltime_minutes": 480,
+      "walltime_minutes": 300,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Paired seed-1 confirmation of the width-512 lower-learning-rate capacity result against the existing seed-1 width-256 anchor.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/metrics.csv",
-        "model/gar_teacher_audit.json",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json"
-      ]
+      "purpose": "Narrow four-dimensional macro-action bottleneck with direct and prior-noise wide CEM.",
+      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/metrics.csv", "model/length_curve_flat.json", "model/plan_hier_code_slack0.json", "model/plan_hier_code_slack2.json", "model/plan_hier_prior_noise_slack0.json", "model/plan_hier_prior_noise_slack2.json", "model/plan_hier_prior_noise_len9_slack0.json", "model/plan_hier_prior_noise_len12_slack0.json", "model/plan_hier_prior_noise_len15_slack0.json"]
     },
     {
-      "id": "j3-width512-lr5e4-seed2-confirm-v1",
-      "cluster": "Grete",
-      "command": [
-        "bash",
-        "scripts/run_intent_j3_variant_cell.sh",
-        "{python}",
-        "paper_causal_j3_width512",
-        "2",
-        "0.0005",
-        "10",
-        "1000"
-      ],
+      "id": "intent-hier-d8-wide-cem-seed0-v1",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_intent_hierarchy_cem_pilot.sh", "{python}", "paper_causal_j3_distinct_hier_k2_d8_dense4_value", "0", "0.001", "5", "300", "30000", "20"],
       "gpus": 1,
-      "walltime_minutes": 480,
+      "walltime_minutes": 300,
       "min_gpu_memory_mb": 30000,
-      "purpose": "Paired seed-2 confirmation of the width-512 lower-learning-rate capacity result against the existing seed-2 width-256 anchor.",
-      "expected_artifacts": [
-        "run_summary.json",
-        "metrics.json",
-        "stdout.log",
-        "stderr.log",
-        "model/metrics.csv",
-        "model/gar_teacher_audit.json",
-        "model/probe_results.csv",
-        "model/plan_slack0_look1.json",
-        "model/plan_slack2_look1.json"
-      ]
+      "purpose": "Eight-dimensional macro-action bottleneck with direct and prior-noise wide CEM.",
+      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/metrics.csv", "model/length_curve_flat.json", "model/plan_hier_code_slack0.json", "model/plan_hier_code_slack2.json", "model/plan_hier_prior_noise_slack0.json", "model/plan_hier_prior_noise_slack2.json", "model/plan_hier_prior_noise_len9_slack0.json", "model/plan_hier_prior_noise_len12_slack0.json", "model/plan_hier_prior_noise_len15_slack0.json"]
+    },
+    {
+      "id": "intent-hier-d16-wide-cem-seed0-v1",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_intent_hierarchy_cem_pilot.sh", "{python}", "paper_causal_j3_distinct_hier_k2_d16_dense4_value", "0", "0.001", "5", "300", "30000", "20"],
+      "gpus": 1,
+      "walltime_minutes": 300,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Wider sixteen-dimensional macro-action bottleneck with direct and prior-noise wide CEM.",
+      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/metrics.csv", "model/length_curve_flat.json", "model/plan_hier_code_slack0.json", "model/plan_hier_code_slack2.json", "model/plan_hier_prior_noise_slack0.json", "model/plan_hier_prior_noise_slack2.json", "model/plan_hier_prior_noise_len9_slack0.json", "model/plan_hier_prior_noise_len12_slack0.json", "model/plan_hier_prior_noise_len15_slack0.json"]
     }
   ]
 }
+
