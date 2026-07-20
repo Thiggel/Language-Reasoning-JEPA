@@ -143,13 +143,26 @@ def categorical_cem(
     model, context, codebook, horizon=2, candidates=256, updates=10,
     elite=32, pool_size=64, smoothing=0.25, goal_weight=1.0,
     value_weight=1.0, prior_weight=0.1, support_weight=0.0,
-    reachability_weight=0.0,
+    reachability_weight=0.0, pool_filter="prior",
 ):
     p_mu, p_logvar = model.macro_action.prior_params(context["high_state"])
     nll = 0.5 * (
         p_logvar + (codebook - p_mu).square() * (-p_logvar).exp()
     ).mean(-1)
-    pool_index = nll.topk(min(pool_size, len(codebook)), largest=False).indices
+    pool_size = min(pool_size, len(codebook))
+    if pool_filter == "prior":
+        pool_index = nll.topk(pool_size, largest=False).indices
+    elif pool_filter == "support":
+        support = model.macro_support(
+            context["high_state"].expand(len(codebook), -1), codebook
+        )
+        pool_index = support.topk(pool_size).indices
+    elif pool_filter == "global":
+        pool_index = torch.linspace(
+            0, len(codebook) - 1, pool_size, device=codebook.device
+        ).long().unique()
+    else:
+        raise ValueError(f"unknown codebook pool filter: {pool_filter}")
     pool = codebook[pool_index]
     logits = pool.new_zeros(horizon, len(pool))
     logits[0] = -nll[pool_index]
@@ -268,7 +281,8 @@ def plan_trace(model, prompt, period_id, codebook, args):
         )
         if args.macro_support == "codebook":
             proposal = categorical_cem(
-                model, context, codebook, pool_size=args.codebook_pool, **kwargs
+                model, context, codebook, pool_size=args.codebook_pool,
+                pool_filter=args.pool_filter, **kwargs
             )
         else:
             proposal = continuous_prior_cem(model, context, **kwargs)
@@ -328,6 +342,7 @@ def main():
     parser.add_argument("--cem-elite", type=int, default=32)
     parser.add_argument("--cem-smoothing", type=float, default=0.25)
     parser.add_argument("--codebook-pool", type=int, default=64)
+    parser.add_argument("--pool-filter", choices=["global", "prior", "support"], default="prior")
     parser.add_argument("--token-topk", type=int, default=20)
     parser.add_argument("--max-sentence-tokens", type=int, default=48)
     parser.add_argument("--max-sentences", type=int, default=12)

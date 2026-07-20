@@ -8,7 +8,8 @@ macro_prior_eval=${4:?planning macro-prior weight}
 support_eval=${5:?planning support weight}
 reachability_eval=${6:?planning reachability weight}
 extended_eval=${7:?whether to run the extended planner matrix}
-shift 7
+pool_filter=${8:?codebook pool filter}
+shift 8
 if [[ -z "${RUN_DIR:-}" ]]; then
   echo "RUN_DIR must be supplied by researchctl" >&2
   exit 2
@@ -29,6 +30,7 @@ ckpt="$model_dir/best.pt"
   --ckpt "$ckpt" --device cuda:0 --examples 2 --codebook-examples 256 \
   --macro-support codebook --high-horizon 2 --cem-candidates 256 \
   --cem-updates 10 --cem-elite 32 --codebook-pool 64 --token-topk 20 \
+  --pool-filter "$pool_filter" \
   --max-sentence-tokens 32 --max-sentences 8 --max-tokens 64 \
   --goal-weight 1 --value-weight "$value_weight" \
   --macro-prior-weight "$macro_prior_eval" --support-weight "$support_eval" \
@@ -38,6 +40,7 @@ if [[ "$extended_eval" == "1" ]]; then
     --ckpt "$ckpt" --device cuda:0 --examples 2 --codebook-examples 256 \
     --macro-support codebook --high-horizon 2 --cem-candidates 256 \
     --cem-updates 10 --cem-elite 32 --codebook-pool 64 --token-topk 20 \
+    --pool-filter "$pool_filter" \
     --max-sentence-tokens 32 --max-sentences 8 --max-tokens 64 \
     --goal-weight 1 --value-weight "$value_weight" \
     --macro-prior-weight "$macro_prior_eval" --support-weight "$support_eval" \
@@ -48,6 +51,7 @@ if [[ "$extended_eval" == "1" ]]; then
       --ckpt "$ckpt" --device cuda:0 --examples 2 --codebook-examples 256 \
       --macro-support codebook --high-horizon "$horizon" --cem-candidates 256 \
       --cem-updates 10 --cem-elite 32 --codebook-pool 64 --token-topk 20 \
+      --pool-filter "$pool_filter" \
       --max-sentence-tokens 32 --max-sentences 8 --max-tokens 64 \
       --goal-weight 1 --value-weight "$value_weight" \
       --macro-prior-weight "$macro_prior_eval" --support-weight "$support_eval" \
