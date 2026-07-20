@@ -108,6 +108,7 @@ class LatentPlanner:
         proposal_beam_width: int = 1,
         proposal_prior_weight: float = 1.0,
         proposal_support_weight: float = 1.0,
+        proposal_rerank_weight: float = 0.0,
     ):
         if proposal_source not in {"current_feasible", "learned_catalogue"}:
             raise ValueError(f"unknown proposal source: {proposal_source}")
@@ -137,6 +138,17 @@ class LatentPlanner:
         self.proposal_beam_width = max(1, int(proposal_beam_width))
         self.proposal_prior_weight = float(proposal_prior_weight)
         self.proposal_support_weight = float(proposal_support_weight)
+        self.proposal_rerank_weight = float(proposal_rerank_weight)
+        if self.proposal_rerank_weight < 0:
+            raise ValueError("proposal_rerank_weight must be non-negative")
+        if self.proposal_rerank_weight and proposal_source != "learned_catalogue":
+            raise ValueError(
+                "proposal reranking requires learned-catalogue proposals"
+            )
+        if self.proposal_rerank_weight and prior_only:
+            raise ValueError(
+                "proposal reranking and prior-only selection are mutually exclusive"
+            )
         if self.proposal_source == "learned_catalogue":
             if self.proposal_top_m < 1:
                 raise ValueError(
@@ -251,6 +263,7 @@ class LatentPlanner:
                     s, s0, problem, seqs, goal_state,
                     state_history=state_history,
                     action_history=action_codes,
+                    proposal_costs=proposal_costs,
                     sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
                 )
             chosen = best[0]
@@ -688,6 +701,7 @@ class LatentPlanner:
         goal_state: torch.Tensor | None = None,
         state_history: torch.Tensor | None = None,
         action_history: torch.Tensor | None = None,
+        proposal_costs: torch.Tensor | None = None,
         sym_ctx: tuple | None = None,  # (env, step_texts, prompt_t, prompt_m)
     ) -> list[int]:
         if self.simulator == "symbolic" and sym_ctx is not None:
@@ -695,6 +709,7 @@ class LatentPlanner:
             total = self._symbolic_costs(
                 env, step_texts, s0, pt, pm, seqs, goal_state
             )
+            total = self._combine_proposal_and_latent_costs(total, proposal_costs)
             return seqs[int(total.argmin().item())]
         K = max(int(self.model.core.macro_k), 1)
         full_len = (max(len(q) for q in seqs) // K) * K
@@ -714,9 +729,44 @@ class LatentPlanner:
                 ))
                 cands += rest
             total = torch.cat(costs)
+            if proposal_costs is not None and cands != seqs:
+                raise ValueError(
+                    "proposal reranking does not support reordered hierarchy candidates"
+                )
+            total = self._combine_proposal_and_latent_costs(total, proposal_costs)
             return cands[int(total.argmin().item())]
         total = self._flat_costs(
             s, s0, problem, seqs, goal_state,
             state_history, action_history,
         )
+        total = self._combine_proposal_and_latent_costs(total, proposal_costs)
         return seqs[int(total.argmin().item())]
+
+    def _combine_proposal_and_latent_costs(
+        self,
+        latent_costs: torch.Tensor,
+        proposal_costs: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Combine candidate-prior and JEPA costs without assuming shared units.
+
+        The value head and catalogue log-score have unrelated numerical scales.
+        Standardizing within the candidate bank makes the mixture coefficient
+        describe relative ranking influence at each decision.  Weight zero is
+        an exact pass-through for the historical pure-JEPA endpoint.
+        """
+        if self.proposal_rerank_weight == 0.0:
+            return latent_costs
+        if proposal_costs is None:
+            raise ValueError("proposal costs are required for proposal reranking")
+        if proposal_costs.shape != latent_costs.shape:
+            raise ValueError("proposal and latent costs must have identical shapes")
+
+        def standardized(costs: torch.Tensor) -> torch.Tensor:
+            centered = costs - costs.mean()
+            scale = centered.square().mean().sqrt().clamp_min(1e-6)
+            return centered / scale
+
+        return (
+            standardized(latent_costs)
+            + self.proposal_rerank_weight * standardized(proposal_costs)
+        )

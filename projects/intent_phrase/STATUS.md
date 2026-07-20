@@ -49,6 +49,8 @@ two-seed confirmation of `1e-3`, not another context or rate sweep.
 | JEPA reranking adds value after prior proposal. | contradicted in the current top-2/top-4 evaluation |
 | Deep latent rollout improves planning. | promising only with oracle future-action menus; not deployable evidence |
 | Learned-catalogue depth-two/four planning works without symbolic menus. | implementation validated; scientific pilot pending |
+| Explicit causal action history improves catalogue availability. | supported one-seed mechanism result; length-nine validity gate still fails |
+| Pure JEPA scoring should discard the learned proposal score after top-four construction. | contradicted by endpoint results; calibrated hybrid test pending |
 | JEPA currently beats the matched token intent policy on the easier stylized domain. | contradicted by the compact comparison: .797 versus .827 strict success |
 
 ## Current causal validation matrix
@@ -80,3 +82,6 @@ causal reference is not yet strong enough to support the desired headline.
    final test?
 5. Which representation properties causally predict robust action selection,
    rather than merely being linearly decodable?
+6. Does retaining calibrated proposal evidence make JEPA consequence
+   simulation useful, or does the current value model add no deployable
+   ordering signal?

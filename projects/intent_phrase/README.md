@@ -60,3 +60,4 @@ information-matched planning protocols.
 - [Paper-facing experiment specification](../../research/intent_phrase/PAPER_PLAN.md)
 - [Staged historical backlog](../../research/intent_phrase/BACKLOG.md)
 - [Current causal matrix](../../research/intent_phrase/waves/12_causal_paper_matrix.md)
+- [Current calibrated proposal/JEPA reranking cycle](../../research/cycles/intent_phrase/2026-07-20-hybrid-proposal-jepa-reranking.md)

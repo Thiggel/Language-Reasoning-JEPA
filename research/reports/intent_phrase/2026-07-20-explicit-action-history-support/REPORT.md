@@ -2,7 +2,7 @@
 
 ## The one-sentence answer
 
-The full-catalogue planner still fails because moderate per-step feasibility errors compound across long solutions, so the next decisive experiment gives a learned candidate scorer explicit access to the causal intent history and compares it with an architecturally identical history-masked control.
+Explicit causal intent history makes the learned action catalogue substantially more executable, but length-nine errors remain too frequent and pure JEPA reranking discards this gain; the evidence is a strong one-seed mechanism result rather than a final recipe.
 
 ## First, the idea in everyday language
 
@@ -21,6 +21,18 @@ This also clarifies what “action prior” means. The prior learns which demons
 Three catalogue-wide prior jobs at learning rates 3e-4, 1e-3, and 3e-3 completed correctly. The 3e-3 model had the best validation loss, prior top-one accuracy .386, and prior top-four accuracy .853. Nevertheless, length-nine invalid-action rate was .98--1.00 and strict success was effectively zero. Length-six invalid rate was .80--.98, with best strict success .067.
 
 A state-level audit explains the discrepancy. The combined support-plus-prior score chose a feasible action on .82 of mixed validation states, .69 of exact length-six states, and .58 of exact length-nine states. These are per-decision rates; completing six or nine decisions without one failure is much harder. Availability-only scoring, prior down-weighting, and availability weights through ten did not repair the loop. The failure is therefore not a missing scalar coefficient.
+
+All three new jobs completed with all 54 declared evaluation files. The aligned-history heads reached .981--.983 validation availability accuracy, compared with .819 for the equal-capacity history-masked control. The clearest closed-loop comparison uses support weight ten and the prior endpoint:
+
+| System | Depth | Length-6 strict | Length-6 invalid | Length-9 strict | Length-9 invalid | Length-9 plus two |
+|---|---:|---:|---:|---:|---:|---:|
+| History masked, learning rate 3e-3 | 2 | .050 | .583 | .000 | .967 | .000 |
+| Causal history, learning rate 1e-3 | 1 | .183 | .167 | .050 | .483 | .367 |
+| Causal history, learning rate 3e-3 | 1 | .150 | .100 | .083 | .483 | .367 |
+| Causal history, learning rate 3e-3 | 2 | .150 | .133 | .100 | .583 | .333 |
+| Causal history, learning rate 3e-3 | 4 | .217 | .133 | .083 | .567 | .333 |
+
+Each row contains 60 fixed episodes at each length and budget. The aligned-versus-masked contrast is large, but this is only one training seed. At length nine, the predeclared invalid-rate gate of .25 was not reached. Pure JEPA reranking was worse than the prior endpoint across the completed grid, commonly selecting an invalid member of a top-four set whose feasible-action recall was .96--.98.
 
 ## What a fair comparison means here
 
@@ -56,15 +68,15 @@ Test-first implementation produced expected constructor and planner-interface fa
 
 ## What we can conclude
 
-We can conclude that the prior catalogue-wide correction alone was insufficient and that further scalar tuning of the same pairwise factorization is low value. We can also conclude that explicit action history is legitimate deployable information in this environment and can be supplied causally at imagined depths.
+We can conclude that explicit action history supplies real prerequisite information: the matched masked control remains almost entirely non-executable on length-nine problems while aligned history obtains nonzero success and roughly halves the invalid-action rate. We can also conclude that the current planner has a scoring-interface defect for this regime: after proposing roots with the learned prior and availability score, pure JEPA mode drops that score and reranks solely by latent value.
 
 ## What we cannot conclude
 
-We cannot yet conclude that history attention learns the prerequisite rule, generalizes to length nine, or makes JEPA reranking useful. Those are the outcomes of the submitted pilot. We also cannot claim that observed intent histories are discovered abstractions: they are supplied action phrases in this controlled subproject. Success would validate a supervised proposal interface, not an action-free policy.
+We cannot conclude that history attention is sufficiently accurate for a final deployable planner, because length-nine invalid rates remain .48--.58 and the original .25 gate failed. We cannot conclude that JEPA simulation contains no useful signal until it is tested without deleting the proposal evidence. We also cannot claim discovered abstractions: executed intent phrases and feasibility labels are explicitly supplied in this controlled subproject.
 
 ## What happens next
 
-The primary gate is length-nine invalid episode rate below .25 for aligned history with the masked control remaining poor. If both improve equally, the larger lexical scorer is sufficient and history should be removed. If only aligned improves at length six, the next experiment is a length-balanced training curriculum. If neither improves, the proposal should become a token-level prerequisite parser or policy language model rather than another MLP sweep. Only after proposal validity passes will additional seeds, width scaling, GAR breadth, or hierarchy be scientifically useful.
+The smallest next decision is an inference-only hybrid scorer on the fixed best aligned-history checkpoint. It standardizes the JEPA energy and learned proposal cost within the same candidate bank, then sweeps their relative weight while retaining pure-JEPA and prior-only endpoints. If an interior mixture beats both endpoints and improves with depth, JEPA simulation is useful once feasibility evidence is retained. If the optimum collapses to prior-only, the current JEPA value/dynamics add no deployable ordering signal. If every mixture remains too invalid, the proposal interface must move to a length-balanced token prerequisite parser or policy language model before model scaling.
 
 ## Words used in this report
 

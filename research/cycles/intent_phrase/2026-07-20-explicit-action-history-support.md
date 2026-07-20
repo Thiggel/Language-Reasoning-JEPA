@@ -1,6 +1,6 @@
 # Cycle: explicit action-history support
 
-Status: implementation validated; bounded causal pilot planned
+Status: completed; mechanism supported at one seed, deployment gate failed
 
 ## Decision
 
@@ -52,3 +52,17 @@ depth-two evaluation. The full repository suite reports 124 passing tests.
 Human-facing implementation report:
 [`../../reports/intent_phrase/2026-07-20-explicit-action-history-support/REPORT.md`](../../reports/intent_phrase/2026-07-20-explicit-action-history-support/REPORT.md).
 
+## Result
+
+All three jobs completed and all 54 evaluation artifacts are present. Aligned
+history reached .981--.983 availability accuracy versus .819 when history was
+masked. At support weight ten, aligned history reached .367 length-nine
+plus-two success while the masked control remained at zero. Length-nine
+invalid-action rate improved from .967--1.0 to .483--.583 but missed the
+predeclared .25 gate. Pure JEPA reranking remained worse than prior-only.
+
+The mechanism is therefore supported provisionally, but the proposal is not
+yet reliable enough to freeze. Code inspection also found that JEPA mode drops
+proposal costs after top-four construction. The next bounded decision tests a
+calibrated hybrid score on the frozen checkpoint before replacing the proposal
+architecture.

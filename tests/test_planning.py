@@ -258,6 +258,64 @@ def test_learned_catalogue_invalid_execution_is_reported_as_failure():
     assert result.n_invalid == 1
 
 
+def test_proposal_reranking_preserves_endpoints_and_normalizes_scales():
+    vocab = build_vocab(23)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    latent = torch.tensor([0.0, 1.0, 2.0, 3.0])
+    proposal = torch.tensor([300.0, 200.0, 100.0, 0.0])
+
+    pure = LatentPlanner(
+        model, vocab, torch.device("cpu"),
+        proposal_source="learned_catalogue", proposal_top_m=4,
+    )
+    assert torch.equal(
+        pure._combine_proposal_and_latent_costs(latent, proposal), latent
+    )
+
+    mixed = LatentPlanner(
+        model, vocab, torch.device("cpu"),
+        proposal_source="learned_catalogue", proposal_top_m=4,
+        proposal_rerank_weight=2.0,
+    )
+    combined = mixed._combine_proposal_and_latent_costs(latent, proposal)
+    assert combined.argmin().item() == 3
+    assert torch.allclose(
+        combined,
+        mixed._combine_proposal_and_latent_costs(latent, proposal / 100.0),
+    )
+
+
+def test_proposal_reranking_rejects_invalid_protocol_combinations():
+    vocab = build_vocab(23)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    with pytest.raises(ValueError, match="learned-catalogue"):
+        LatentPlanner(
+            model, vocab, torch.device("cpu"), proposal_rerank_weight=1.0
+        )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        LatentPlanner(
+            model, vocab, torch.device("cpu"),
+            proposal_source="learned_catalogue", proposal_top_m=4,
+            proposal_rerank_weight=1.0, prior_only=True,
+        )
+    with pytest.raises(ValueError, match="non-negative"):
+        LatentPlanner(
+            model, vocab, torch.device("cpu"),
+            proposal_source="learned_catalogue", proposal_top_m=4,
+            proposal_rerank_weight=-1.0,
+        )
+
+
 def test_learned_catalogue_checkpoint_gate_rejects_untrained_support():
     cfg = OmegaConf.create({
         "model": {

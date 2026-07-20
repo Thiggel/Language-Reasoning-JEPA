@@ -66,6 +66,7 @@ def main() -> None:
     parser.add_argument("--proposal-beam-width", type=int, default=1)
     parser.add_argument("--proposal-prior-weight", type=float, default=1.0)
     parser.add_argument("--proposal-support-weight", type=float, default=1.0)
+    parser.add_argument("--proposal-rerank-weight", type=float, default=0.0)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
@@ -95,6 +96,7 @@ def main() -> None:
         "proposal_beam_width": args.proposal_beam_width,
         "proposal_prior_weight": args.proposal_prior_weight,
         "proposal_support_weight": args.proposal_support_weight,
+        "proposal_rerank_weight": args.proposal_rerank_weight,
         "n_vars_range_override": list(n_vars_override) if n_vars_override else None,
         "curves": {},
     }
@@ -127,6 +129,7 @@ def main() -> None:
                 proposal_beam_width=args.proposal_beam_width,
                 proposal_prior_weight=args.proposal_prior_weight,
                 proposal_support_weight=args.proposal_support_weight,
+                proposal_rerank_weight=args.proposal_rerank_weight,
             )
             length_rows[str(slack)] = evaluate_planning(
                 planner, dataset, args.episodes, slack=slack, seed=args.seed
