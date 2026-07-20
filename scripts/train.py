@@ -134,6 +134,8 @@ def main(cfg: DictConfig) -> None:
             reset_names.append("hi_predictor")
         if cfg.train.get("reset_macro_value_head", False):
             reset_names.append("macro_value_head")
+        if cfg.train.get("reset_action_support_head", False):
+            reset_names.append("action_support_head")
         for name in reset_names:
             module = getattr(model.core, name)
             for child in module.modules():

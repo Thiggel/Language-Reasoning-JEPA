@@ -25,6 +25,9 @@ high_predictor_ff_mult: 4
 high_predictor_residual: null
 action_support_states: "true"  # true | all (also one-step/open-loop states)
 action_support_detach_inputs: null  # null preserves legacy value_detach behavior
+action_support_kind: "pairwise"  # pairwise | history_attention
+action_support_history_mode: "aligned"  # aligned | none (negative control)
+action_support_heads: 2
 macro_support_scales: [3.0]
 dense_rollout_depth: 0
 high_dense_rollout_depth: 0

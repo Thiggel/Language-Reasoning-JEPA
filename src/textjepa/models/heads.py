@@ -82,9 +82,88 @@ class ActionSupportHead(nn.Module):
         )
 
     def forward(
-        self, state: torch.Tensor, action: torch.Tensor
+        self,
+        state: torch.Tensor,
+        action: torch.Tensor,
+        history: torch.Tensor | None = None,
+        history_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         return self.net(torch.cat([state, action], -1)).squeeze(-1)
+
+
+class HistoryActionSupportHead(nn.Module):
+    """Score availability using an explicit, non-oracle action history.
+
+    Candidate intent phrases query the intents already executed (or imagined
+    within a beam). This exposes prerequisite identity without modifying the
+    frozen JEPA state or consulting symbolic feasibility at inference.
+    """
+
+    def __init__(
+        self,
+        d_state: int,
+        d_action: int,
+        n_heads: int = 2,
+        hidden_mult: int = 2,
+        use_history: bool = True,
+    ):
+        super().__init__()
+        if d_action % n_heads:
+            raise ValueError("action history attention heads must divide d_action")
+        self.use_history = bool(use_history)
+        self.null_history = nn.Parameter(torch.zeros(1, 1, d_action))
+        self.attention = nn.MultiheadAttention(
+            d_action, n_heads, batch_first=True
+        )
+        width = d_state + 2 * d_action
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], 1),
+        )
+
+    def forward(
+        self,
+        state: torch.Tensor,
+        action: torch.Tensor,
+        history: torch.Tensor | None = None,
+        history_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        leading = state.shape[:-1]
+        flat_action = action.reshape(-1, action.shape[-1])
+        query = flat_action.unsqueeze(1)
+        if history is None:
+            history = action.new_zeros(*leading, 0, action.shape[-1])
+        flat_history = history.reshape(
+            flat_action.shape[0], history.shape[-2], history.shape[-1]
+        )
+        if history_mask is None:
+            flat_mask = torch.ones(
+                flat_history.shape[:2], dtype=torch.bool, device=action.device
+            )
+        else:
+            flat_mask = history_mask.reshape(
+                flat_action.shape[0], history_mask.shape[-1]
+            ).bool()
+        if not self.use_history:
+            flat_mask = torch.zeros_like(flat_mask)
+        null = self.null_history.expand(flat_history.shape[0], -1, -1)
+        keys = torch.cat([null, flat_history], dim=1)
+        key_padding = torch.cat([
+            torch.zeros(
+                flat_mask.shape[0], 1, dtype=torch.bool, device=action.device
+            ),
+            ~flat_mask,
+        ], dim=1)
+        context, _ = self.attention(
+            query, keys, keys, key_padding_mask=key_padding,
+            need_weights=False,
+        )
+        features = torch.cat([
+            state.reshape(-1, state.shape[-1]),
+            flat_action,
+            context.squeeze(1),
+        ], dim=-1)
+        return self.net(features).reshape(leading)
 
 
 class SubgoalActionHead(nn.Module):

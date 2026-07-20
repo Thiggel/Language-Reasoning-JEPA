@@ -1,6 +1,6 @@
 # Cycle: global catalogue prior recovery
 
-Status: implementation validated; bounded recovery planned
+Status: terminal; validity gate failed
 
 ## Decision
 
@@ -51,6 +51,16 @@ checkpoint-initialized CPU smoke trained exactly the two intended heads with
 finite losses before passing learned-catalogue checkpoint validation and
 evaluation.
 
+## Terminal outcome
+
+All three learning-rate cells completed with correct source hashes and finite
+metrics. The best optimization cell was 3e-3, but selected-action invalid rate
+remained .98--1.00 at length nine and .80--.98 at length six. On an exact-length
+audit, the combined score selected a feasible action on only .69 of true
+length-six states and .58 of true length-nine states. Availability/prior score
+weights from availability-only through support weight ten did not repair the
+closed loop. Per-step errors therefore compound across a trajectory; the
+predeclared decision is to stop tuning this factorization.
+
 Human-facing result report:
 [`../../reports/intent_phrase/2026-07-20-learned-catalogue-pilot-result/REPORT.md`](../../reports/intent_phrase/2026-07-20-learned-catalogue-pilot-result/REPORT.md).
-

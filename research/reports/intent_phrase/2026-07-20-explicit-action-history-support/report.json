@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-20-explicit-action-history-support",
+  "project": "intent_phrase",
+  "title": "Testing explicit intent history for non-oracle action availability",
+  "created_at": "2026-07-20T18:45:00+02:00",
+  "status": "implementation_validated",
+  "decision": "Run an aligned-history versus masked-history proposal pilot before redesigning the policy as a token language model.",
+  "plain_summary": "The previous frozen-state heads make too many per-step feasibility mistakes; a tested attention head now lets candidate phrases inspect only the intents already executed or imagined, with an otherwise identical no-history negative control.",
+  "report": "REPORT.md",
+  "review_required": true
+}
+

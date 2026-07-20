@@ -190,6 +190,43 @@ def test_learned_catalogue_respects_global_expansion_cap():
     assert len({sequence[0] for sequence in sequences}) == 3
 
 
+def test_learned_catalogue_passes_imagined_action_history_to_support_head():
+    class RecordingSupport(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.history_lengths = []
+
+        def forward(self, state, action, history=None, history_mask=None):
+            self.history_lengths.append(0 if history is None else history.shape[-2])
+            return state.new_zeros(state.shape[:-1])
+
+    vocab = build_vocab(23)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        action_prior=True,
+    ).eval()
+    recorder = RecordingSupport()
+    model.core.action_support_head = recorder
+    planner = LatentPlanner(
+        model, vocab, torch.device("cpu"), lookahead=2,
+        proposal_source="learned_catalogue", proposal_top_m=2,
+    )
+    problem, _ = IGSMDataset(vocab, size=1, seed=24).problem(0)
+    state = torch.randn(1, 64)
+    executed = [problem.vars[0].idx]
+    history = planner._action_codes(problem, executed).unsqueeze(0)
+    planner._episode_catalogue = [variable.idx for variable in problem.vars]
+    planner._learned_catalogue_sequences(
+        state, problem, executed=executed,
+        state_history=torch.stack([state, state], dim=1),
+        action_history=history,
+    )
+    assert recorder.history_lengths[0] == 1
+    assert all(length == 2 for length in recorder.history_lengths[1:])
+
+
 def test_learned_catalogue_invalid_execution_is_reported_as_failure():
     vocab = build_vocab(23)
     ds = IGSMDataset(vocab, size=1, seed=29)

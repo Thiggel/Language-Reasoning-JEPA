@@ -16,6 +16,7 @@ from textjepa.models.action import MacroActionModel
 from textjepa.models.delta_decoder import DeltaActionDecoder
 from textjepa.models.heads import (
     ActionSupportHead,
+    HistoryActionSupportHead,
     ControllerOutcomeHead,
     SubgoalActionHead,
     MacroSupportHead,
@@ -59,6 +60,9 @@ class LatentDynamicsCore(nn.Module):
         high_predictor_residual: bool | None = None,
         dense_rollout_depth: int = 0,
         high_dense_rollout_depth: int = 0,
+        action_support_kind: str = "pairwise",
+        action_support_history_mode: str = "aligned",
+        action_support_heads: int = 2,
     ):
         super().__init__()
         self.d_action = d_action
@@ -137,7 +141,17 @@ class LatentDynamicsCore(nn.Module):
         self.hi_value_head = ValueHead(d_model)
         self.macro_value_head = MacroValueHead(d_model, d_macro)
         self.macro_support_head = MacroSupportHead(d_model, d_macro)
-        self.action_support_head = ActionSupportHead(d_model, d_action)
+        if action_support_kind == "pairwise":
+            self.action_support_head = ActionSupportHead(d_model, d_action)
+        elif action_support_kind == "history_attention":
+            self.action_support_head = HistoryActionSupportHead(
+                d_model,
+                d_model,
+                n_heads=action_support_heads,
+                use_history=action_support_history_mode == "aligned",
+            )
+        else:
+            raise ValueError(f"unknown action-support kind: {action_support_kind}")
         self.subgoal_action_head = SubgoalActionHead(d_model, d_action)
         self.controller_remaining_head = ControllerOutcomeHead(d_model)
         self.controller_residual_head = ControllerOutcomeHead(d_model)

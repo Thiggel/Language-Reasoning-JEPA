@@ -277,11 +277,26 @@ class LatentPlanner:
         self,
         state: torch.Tensor,
         action_codes: torch.Tensor,
+        action_history: torch.Tensor | None = None,
+        support_codes: torch.Tensor | None = None,
+        support_history: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """Log-score catalogue actions using only learned model heads."""
         n = action_codes.shape[0]
         expanded = state.expand(n, -1)
-        support = self.model.core.action_support_head(expanded, action_codes)
+        support_codes = action_codes if support_codes is None else support_codes
+        history = history_mask = None
+        history_source = (
+            action_history if support_history is None else support_history
+        )
+        if history_source is not None:
+            history = history_source.expand(n, -1, -1)
+            history_mask = torch.ones(
+                history.shape[:2], dtype=torch.bool, device=history.device
+            )
+        support = self.model.core.action_support_head(
+            expanded, support_codes, history, history_mask
+        )
         prior = self.model.action_prior_head(expanded, action_codes)
         return (
             self.proposal_prior_weight * torch.log_softmax(prior, dim=0)
@@ -341,7 +356,15 @@ class LatentPlanner:
         if not catalogue:
             raise RuntimeError("learned action catalogue is empty")
         root_codes = self._action_codes(problem, catalogue)
-        root_scores = self._proposal_scores(state, root_codes)
+        root_support_codes = self._support_codes(problem, catalogue)
+        executed_support = self._support_codes(problem, executed).unsqueeze(0)
+        root_scores = self._proposal_scores(
+            state,
+            root_codes,
+            action_history,
+            root_support_codes,
+            executed_support,
+        )
         root_n = min(self.proposal_top_m, len(catalogue))
         if self.max_expand < root_n:
             raise ValueError(
@@ -377,7 +400,23 @@ class LatentPlanner:
                         expanded.append((sequence, cumulative_cost))
                         continue
                     codes = self._action_codes(problem, candidates)
-                    scores = self._proposal_scores(predicted, codes)
+                    support_codes = self._support_codes(problem, candidates)
+                    sequence_history = self._action_codes(
+                        problem, sequence
+                    ).unsqueeze(0)
+                    proposal_history = torch.cat([
+                        action_history, sequence_history
+                    ], dim=1)
+                    proposal_support_history = self._support_codes(
+                        problem, list(executed) + sequence
+                    ).unsqueeze(0)
+                    scores = self._proposal_scores(
+                        predicted,
+                        codes,
+                        proposal_history,
+                        support_codes,
+                        proposal_support_history,
+                    )
                     keep_n = min(self.proposal_top_m, len(candidates))
                     for row in scores.topk(keep_n).indices.tolist():
                         expanded.append((
@@ -514,6 +553,18 @@ class LatentPlanner:
         texts = [action_phrase(problem, i) for i in idxs]
         tokens = self._tokens(texts).squeeze(0).unsqueeze(1)  # [n, 1, L]
         return self.model.encode_actions(tokens).squeeze(1)
+
+    def _support_codes(self, problem: Problem, idxs: list[int]) -> torch.Tensor:
+        if getattr(self.model, "action_support_kind", "pairwise") != "history_attention":
+            return self._action_codes(problem, idxs)
+        from textjepa.data.igsm.render import action_phrase
+
+        if not idxs:
+            width = self.model.chunk_encoder.norm.normalized_shape[0]
+            return torch.empty(0, width, device=self.device)
+        texts = [action_phrase(problem, i) for i in idxs]
+        tokens = self._tokens(texts).squeeze(0).unsqueeze(1)
+        return self.model.encode_chunks(tokens).squeeze(1)
 
     def _flat_costs(
         self,

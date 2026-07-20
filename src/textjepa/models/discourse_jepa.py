@@ -82,6 +82,9 @@ class DiscourseJEPA(nn.Module):
         high_dense_rollout_depth: int = 0,
         distinct_high_state_space: bool = False,
         high_state_encoder_layers: int = 2,
+        action_support_kind: str = "pairwise",
+        action_support_history_mode: str = "aligned",
+        action_support_heads: int = 2,
         action_prior: bool = False,
         action_prior_detach_inputs: bool = True,
         action_prior_states: str = "true",
@@ -97,6 +100,13 @@ class DiscourseJEPA(nn.Module):
                 f"unknown action-support state mode: {action_support_states}"
             )
         self.action_support_states = action_support_states
+        self.action_support_kind = action_support_kind
+        if action_support_history_mode not in {"aligned", "none"}:
+            raise ValueError(
+                "unknown action-support history mode: "
+                f"{action_support_history_mode}"
+            )
+        self.action_support_history_mode = action_support_history_mode
         if action_prior_states not in {"true", "all"}:
             raise ValueError(
                 f"unknown action-prior state mode: {action_prior_states}"
@@ -203,6 +213,9 @@ class DiscourseJEPA(nn.Module):
             high_predictor_residual=high_predictor_residual,
             dense_rollout_depth=dense_rollout_depth,
             high_dense_rollout_depth=high_dense_rollout_depth,
+            action_support_kind=action_support_kind,
+            action_support_history_mode=action_support_history_mode,
+            action_support_heads=action_support_heads,
         )
         # Construct this after the complete JEPA core so enabling a detached
         # prior does not perturb the seeded initialization of any base-model
@@ -457,6 +470,11 @@ class DiscourseJEPA(nn.Module):
     def _action_support(self, batch: dict, out) -> None:
         """Score every problem action at every observed prefix state."""
         actions = self.encode_actions(batch["action_candidate_tokens"])
+        support_actions = (
+            self.encode_chunks(batch["action_candidate_tokens"])
+            if self.action_support_kind == "history_attention"
+            else actions
+        )
         B, T, d_state = out.prev_states.shape
         V = actions.shape[1]
         states = [out.prev_states]
@@ -469,14 +487,32 @@ class DiscourseJEPA(nn.Module):
         if self.action_support_detach_inputs:
             states = states.detach()
         action_features = (
-            actions.detach() if self.action_support_detach_inputs else actions
+            support_actions.detach()
+            if self.action_support_detach_inputs else support_actions
         )
+        trace = batch["var_idx"]
+        safe_trace = trace.clamp(min=0, max=max(V - 1, 0))
+        executed_actions = action_features.gather(
+            1, safe_trace.unsqueeze(-1).expand(-1, -1, action_features.shape[-1])
+        )
+        positions = torch.arange(T, device=trace.device)
+        history_mask = (
+            (out.step_mask & trace.ge(0)).unsqueeze(1)
+            & (positions.view(1, 1, T) < positions.view(1, T, 1))
+        )
+        if self.action_support_history_mode == "none":
+            history_mask = torch.zeros_like(history_mask)
+        history = executed_actions.unsqueeze(1).expand(B, T, T, -1)
         M = states.shape[1]
         logits = self.core.action_support_head(
             states.unsqueeze(3).expand(B, M, T, V, d_state),
             action_features.unsqueeze(1).unsqueeze(1).expand(
                 B, M, T, V, -1
             ),
+            history.unsqueeze(1).unsqueeze(3).expand(
+                B, M, T, V, T, -1
+            ),
+            history_mask.unsqueeze(1).unsqueeze(3).expand(B, M, T, V, T),
         )
         valid = (
             out.step_mask.unsqueeze(-1)
@@ -491,6 +527,7 @@ class DiscourseJEPA(nn.Module):
             action_support_logits=logits,
             action_support_valid=valid,
             action_support_target=target,
+            action_support_history_mask=history_mask,
         )
         if self.action_prior_head is not None:
             prior_states = [out.prev_states]

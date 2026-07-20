@@ -55,6 +55,7 @@ information-matched planning protocols.
 - [Action-prior and hierarchy planning report](../../research/reports/intent_phrase/2026-07-20-action-prior-hierarchy-planning/REPORT.md)
 - [Learned action-catalogue implementation audit](../../research/reports/intent_phrase/2026-07-20-learned-action-catalogue-implementation/REPORT.md)
 - [Learned action-catalogue pilot result](../../research/reports/intent_phrase/2026-07-20-learned-catalogue-pilot-result/REPORT.md)
+- [Explicit action-history support implementation](../../research/reports/intent_phrase/2026-07-20-explicit-action-history-support/REPORT.md)
 - [Detailed historical waves](../../research/intent_phrase/README.md)
 - [Paper-facing experiment specification](../../research/intent_phrase/PAPER_PLAN.md)
 - [Staged historical backlog](../../research/intent_phrase/BACKLOG.md)

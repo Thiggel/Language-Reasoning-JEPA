@@ -596,6 +596,72 @@ def test_action_support_all_states_is_detached_from_world_model(setup):
     assert all(p.grad is None for p in model.core.predictor.parameters())
 
 
+def test_history_attention_support_uses_only_executed_prefixes(setup):
+    from textjepa.objectives import ActionFeasibility
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=8, seed=147, all_action_supervision=True
+    )
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        macro_k=2, action_support_kind="history_attention",
+        action_support_history_mode="aligned",
+        action_support_detach_inputs=True,
+    )
+    out = model(batch)
+    history_mask = out.extras["action_support_history_mask"]
+    assert history_mask.shape == (*batch["step_mask"].shape, batch["step_mask"].shape[1])
+    for step in range(history_mask.shape[1]):
+        assert not bool(history_mask[:, step, step:].any())
+        torch.testing.assert_close(
+            history_mask[:, step, :step], batch["step_mask"][:, :step]
+        )
+    loss = ActionFeasibility()(out, batch)
+    loss.backward()
+    assert any(
+        parameter.grad is not None
+        for parameter in model.core.action_support_head.attention.parameters()
+    )
+
+
+def test_history_attention_support_negative_control_hides_history(setup):
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=4, seed=148, all_action_supervision=True
+    )
+    batch = collate([ds[i] for i in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        macro_k=0, action_support_kind="history_attention",
+        action_support_history_mode="none",
+    )
+    out = model(batch)
+    assert not bool(out.extras["action_support_history_mask"].any())
+
+
+def test_history_attention_support_accepts_empty_initial_history(setup):
+    vocab, _, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        macro_k=0, action_support_kind="history_attention",
+    )
+    state = torch.randn(5, 64)
+    action = torch.randn(5, 64)
+    history = torch.empty(5, 0, 64)
+    mask = torch.empty(5, 0, dtype=torch.bool)
+    scores = model.core.action_support_head(state, action, history, mask)
+    assert scores.shape == (5,)
+    assert torch.isfinite(scores).all()
+
+
 def test_action_prior_all_states_trains_on_predicted_latents(setup):
     from textjepa.objectives import ActionPrior
 
