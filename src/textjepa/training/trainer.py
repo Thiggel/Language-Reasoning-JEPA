@@ -163,6 +163,21 @@ class Trainer:
                 items["observed_action_sequence_exact"] = (
                     sequence_correct[out.step_mask].float().mean().item()
                 )
+            prior_position = out.extras.get("refinement_position_logits")
+            if prior_position is not None:
+                steps = prior_position.shape[1]
+                valid = out.step_mask[:, :steps] & batch["op"][:, :steps].eq(2)
+                items["refinement_position_accuracy"] = (
+                    prior_position.argmax(-1)[valid]
+                    .eq(batch["edit_position"][:, :steps][valid])
+                    .float().mean().item()
+                )
+                prior_content = out.extras["refinement_content_logits"]
+                items["refinement_content_accuracy"] = (
+                    prior_content.argmax(-1)[valid]
+                    .eq(batch["edit_content_token"][:, :steps][valid])
+                    .float().mean().item()
+                )
             multistep_logits = out.extras.get("observed_action_multistep_logits")
             if multistep_logits is not None and multistep_logits.shape[1] > 0:
                 horizon = multistep_logits.shape[-3]

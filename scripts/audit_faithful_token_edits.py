@@ -466,7 +466,7 @@ def main():
     )
     parser.add_argument(
         "--corruption-mode",
-        choices=("mixed", "mask", "replace", "remove"),
+        choices=("mixed", "mask", "replace", "remove", "iterative_refinement"),
         help="override the validation corruption family for a matched cross-regime audit",
     )
     parser.add_argument(
