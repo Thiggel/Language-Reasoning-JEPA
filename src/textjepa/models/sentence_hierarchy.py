@@ -341,6 +341,7 @@ class SentenceHierarchyJEPA(nn.Module):
         prompt_len: torch.Tensor,
         k: int = 4,
         source: str = "in_batch",
+        max_anchors: int | None = None,
     ) -> dict[str, torch.Tensor]:
         """Evaluate factual plus same-batch alternative complete sentences.
 
@@ -354,25 +355,40 @@ class SentenceHierarchyJEPA(nn.Module):
             raise ValueError(f"unknown sentence counterfactual source: {source}")
         level = out["sentence_level"]
         anchors = level["valid"].nonzero(as_tuple=False)
+        if max_anchors is not None and len(anchors) > int(max_anchors):
+            select = torch.linspace(
+                0, len(anchors) - 1, int(max_anchors), device=anchors.device
+            ).long().unique()
+            anchors = anchors[select]
         n = len(anchors)
         if n == 0:
             raise ValueError("counterfactual GAR requires a valid sentence")
         k = max(1, min(int(k), n))
-        bank_codes = level["codes"][level["valid"]]
-        bank_ids = level["raw_action_ids"][level["valid"]]
-        bank_valid = level["raw_action_valid"][level["valid"]]
-        if source == "nearest" and n > 1:
-            distance = torch.cdist(bank_codes.detach(), bank_codes.detach())
-            distance.fill_diagonal_(torch.inf)
-            neighbour_count = min(k - 1, n - 1)
+        full_codes = level["codes"][level["valid"]]
+        full_ids = level["raw_action_ids"][level["valid"]]
+        full_valid = level["raw_action_valid"][level["valid"]]
+        # Candidate zero must correspond to each selected factual anchor.
+        flat_lookup = torch.full(
+            level["valid"].shape, -1, dtype=torch.long,
+            device=anchors.device,
+        )
+        flat_lookup[level["valid"]] = torch.arange(
+            len(full_codes), device=anchors.device
+        )
+        anchor_bank_index = flat_lookup[anchors[:, 0], anchors[:, 1]]
+        bank_codes, bank_ids, bank_valid = full_codes, full_ids, full_valid
+        if source == "nearest" and len(bank_codes) > 1:
+            distance = torch.cdist(
+                bank_codes[anchor_bank_index].detach(), bank_codes.detach()
+            )
+            distance.scatter_(1, anchor_bank_index[:, None], torch.inf)
+            neighbour_count = min(k - 1, len(bank_codes) - 1)
             nearest = distance.topk(neighbour_count, largest=False).indices
-            factual = torch.arange(n, device=tokens.device).unsqueeze(1)
+            factual = anchor_bank_index.unsqueeze(1)
             candidate_index = torch.cat([factual, nearest], 1)
         else:
-            base = torch.arange(n, device=tokens.device)
-            candidate_index = torch.stack(
-                [(base + shift) % n for shift in range(k)], 1
-            )
+            shifts = torch.arange(k, device=tokens.device).unsqueeze(0)
+            candidate_index = (anchor_bank_index.unsqueeze(1) + shifts) % len(bank_codes)
         k_eff = candidate_index.shape[1]
         candidate_ids = bank_ids[candidate_index]
         candidate_valid = bank_valid[candidate_index]

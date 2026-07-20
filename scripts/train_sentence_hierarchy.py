@@ -168,6 +168,7 @@ def compute_sentence_losses(out, cfg, model, batch):
             out, batch["tokens"].to(out["states"].device),
             batch["prompt_len"].to(out["states"].device),
             k=int(obj.gar_k), source=str(obj.gar_source),
+            max_anchors=int(obj.gar_max_anchors),
         )
         gar_regression = F.smooth_l1_loss(cf["value"], cf["advantage_target"])
         gar_ranking = _pairwise_advantage_loss(

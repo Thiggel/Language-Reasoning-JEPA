@@ -141,7 +141,7 @@ def main():
                 store["reach_auc"].append(roc_auc_score(y, s))
             cf = model.sentence_counterfactuals(
                 out, gpu["tokens"], gpu["prompt_len"], k=args.gar_k,
-                source="nearest",
+                source="nearest", max_anchors=32,
             )
             store["gar_pair"].append(pairwise_accuracy(
                 cf["value"], cf["advantage_target"]

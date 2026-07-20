@@ -53,6 +53,7 @@ objective:
   monotonicity_margin: 0.0
   gar_weight: 0.0
   gar_k: 4
+  gar_max_anchors: 16
   gar_source: in_batch
   gar_regression: 1.0
   gar_ranking: 1.0
