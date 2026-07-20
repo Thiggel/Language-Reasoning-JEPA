@@ -48,6 +48,7 @@ from textjepa.objectives.variational import (
     TargetDistributionKL,
     VariationalLatentPrediction,
 )
+from textjepa.objectives.refinement import RefinementActionPrior
 
 __all__ = [
     "ActionFeasibility",
@@ -101,4 +102,5 @@ __all__ = [
     "DeltaAction",
     "ObservedActionLDAD",
     "ValueRegression",
+    "RefinementActionPrior",
 ]

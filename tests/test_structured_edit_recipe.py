@@ -18,7 +18,8 @@ from textjepa.models.edit_jepa import EditJEPA
 from textjepa.models.ema import EMATeacher
 from textjepa.models.predictor import TokenAlignedEditPredictor
 from textjepa.objectives import (
-    GoalAdvantageDistill, TokenAlignedCounterfactualPrediction,
+    GoalAdvantageDistill, RefinementActionPrior,
+    TokenAlignedCounterfactualPrediction,
 )
 from scripts.audit_faithful_token_edits import shuffled_action_prediction
 
@@ -182,6 +183,32 @@ def test_grouped_trajectory_sampler_emits_n_by_m_batches():
         assert all(group == list(range(group[0], group[0] + 4)) for group in groups)
     sampler.set_epoch(1)
     assert min(index // 4 for batch in sampler for index in batch) >= 6
+
+
+def test_refinement_prior_supervises_pointer_and_full_vocab_content():
+    vocab = faithful_token_edit_vocab()
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=2, seed=51, max_op=5, max_edge=10,
+        op_range=(3, 5), corruption_mode="iterative_refinement",
+        trajectory_variants=2, refinement_probability=0.5,
+    )
+    batch = collate_edits([dataset[0], dataset[1]], vocab.pad_id)
+    model = EditJEPA(
+        len(vocab), vocab.pad_id, d_model=32, chunk_layers=1,
+        chunk_heads=4, slot_layers=1, slot_heads=4, n_slots=2,
+        predictor_layers=1, predictor_heads=4, max_chunk_len=320,
+        max_buffer_len=16, d_action=8, macro_k=0, token_aligned=True,
+        token_predictor_layers=1, dropout=0.0, refinement_prior=True,
+    )
+    out = model(batch)
+    assert out.extras["refinement_position_logits"].shape[:2] == out.step_mask.shape
+    assert out.extras["refinement_content_logits"].shape == (
+        *out.step_mask.shape, len(vocab)
+    )
+    loss = RefinementActionPrior()(out, batch)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.refinement_content_head[-1].weight.grad is not None
 
 
 def test_curriculum_changes_corruption_family_by_epoch():

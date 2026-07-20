@@ -8,10 +8,22 @@ data:
   trajectory_variants: 4
   eval_trajectory_variants: 1
   refinement_probability: 0.25
-  train_size: 1000
+  train_size: 512
+  val_size: 64
+  max_op: 6
+  max_edge: 12
+  op_range: [3, 6]
   fresh_per_epoch: true
-  proposal_pool_k: 64
+  proposal_pool_k: 16
   proposal_token_pool: prompt_plus_current
+model:
+  refinement_prior: true
+objective:
+  refinement_action_prior:
+    _target_: textjepa.objectives.RefinementActionPrior
+    weight: 1.0
+    position_weight: 1.0
+    content_weight: 1.0
 train:
   batch_size: 8
   epochs: 2

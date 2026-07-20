@@ -111,6 +111,7 @@ class EditJEPA(nn.Module):
         selected_k: int = 0,
         proposal_selection: str = "hard",
         gar_teacher: str = "latent_distance",
+        refinement_prior: bool = False,
         ldad_decoder_layers: int = 2,
         ldad_max_len: int = 12,
     ):
@@ -124,6 +125,7 @@ class EditJEPA(nn.Module):
         self.selected_k = max(0, int(selected_k))
         self.proposal_selection = str(proposal_selection)
         self.gar_teacher = str(gar_teacher)
+        self.refinement_prior_enabled = bool(refinement_prior)
         if self.proposal_selection not in {
             "hard", "random", "positive_anchor"
         }:
@@ -187,6 +189,19 @@ class EditJEPA(nn.Module):
             nn.Linear(d_model + d_action, d_model * 2), nn.GELU(),
             nn.Linear(d_model * 2, 1),
         )
+        if self.refinement_prior_enabled:
+            prior_dim = d_model * 3
+            self.refinement_position_head = nn.Sequential(
+                nn.LayerNorm(prior_dim), nn.Linear(prior_dim, d_model),
+                nn.GELU(), nn.Linear(d_model, 1),
+            )
+            self.refinement_content_head = nn.Sequential(
+                nn.LayerNorm(prior_dim), nn.Linear(prior_dim, d_model * 2),
+                nn.GELU(), nn.Linear(d_model * 2, vocab_size),
+            )
+        else:
+            self.refinement_position_head = None
+            self.refinement_content_head = None
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.buffer_teacher = EMATeacher(self.buffer_encoder)
         # frozen random-init copies: fixed outcome anchors (never updated)
@@ -337,6 +352,32 @@ class EditJEPA(nn.Module):
             pred, pred_mask, torch.stack(rollout, 1),
             torch.stack(rollout_mask, 1), actions,
         )
+
+    def refinement_prior(
+        self, states: torch.Tensor, mask: torch.Tensor,
+        prompt: torch.Tensor, positions: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Factorized replacement prior over pointers then token content."""
+        if self.refinement_position_head is None:
+            raise ValueError("checkpoint has no refinement action prior")
+        pooled = self._pool_tokens(states, mask)
+        width = states.shape[-2]
+        shared = torch.cat([
+            states,
+            pooled.unsqueeze(-2).expand(-1, width, -1),
+            prompt.unsqueeze(-2).expand(-1, width, -1),
+        ], dim=-1)
+        position_logits = self.refinement_position_head(shared).squeeze(-1)
+        position_logits = position_logits.masked_fill(
+            ~mask, torch.finfo(position_logits.dtype).min
+        )
+        flat_positions = positions.clamp(0, width - 1)
+        chosen = shared.gather(
+            -2, flat_positions[..., None, None].expand(
+                *flat_positions.shape, 1, shared.shape[-1]
+            )
+        ).squeeze(-2)
+        return position_logits, self.refinement_content_head(chosen)
 
     @torch.no_grad()
     def update_teachers(self, momentum: float) -> None:
@@ -709,6 +750,25 @@ class EditJEPA(nn.Module):
             "token_targets": token_targets[:, 1:].detach(),
             "token_target_mask": target_mask[:, 1:],
         })
+        if self.refinement_prior_enabled:
+            B, T = batch["edit_position"][:, :out.step_mask.shape[1]].shape
+            current_states = token_states[:, :-1].reshape(
+                B * T, token_states.shape[-2], token_states.shape[-1]
+            )
+            current_mask = token_mask[:, :-1].reshape(B * T, token_mask.shape[-1])
+            current_prompt = prompt_emb[:, None].expand(-1, T, -1).reshape(
+                B * T, -1
+            )
+            expert_positions = batch["edit_position"][:, :T].reshape(B * T)
+            position_logits, content_logits = self.refinement_prior(
+                current_states, current_mask, current_prompt, expert_positions
+            )
+            out.extras["refinement_position_logits"] = position_logits.reshape(
+                B, T, -1
+            )
+            out.extras["refinement_content_logits"] = content_logits.reshape(
+                B, T, -1
+            )
         if "proposal_op" in batch:
             self._adaptive_structured_candidates(
                 out, batch, prompt_emb, token_states, token_mask, states
