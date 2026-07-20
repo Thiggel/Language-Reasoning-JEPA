@@ -265,6 +265,55 @@ class TokenReplacementPrior(nn.Module):
         return position_logits, content_logits
 
 
+class MacroOptionDecoder(nn.Module):
+    """Decode a macro code into a closed-loop primitive replacement policy.
+
+    This is an option policy, not a language decoder.  It is called again
+    after every mechanically executed replacement, so position logits always
+    refer to the current token state rather than an obsolete open-loop index.
+    """
+
+    def __init__(self, d_model: int, d_macro: int, vocab_size: int,
+                 span: int, detach_inputs: bool = True):
+        super().__init__()
+        self.detach_inputs = bool(detach_inputs)
+        self.macro = nn.Linear(d_macro, d_model)
+        self.step = nn.Embedding(span, d_model)
+        self.position = nn.Sequential(
+            nn.LayerNorm(5 * d_model), nn.Linear(5 * d_model, d_model),
+            nn.GELU(), nn.Linear(d_model, 1),
+        )
+        self.content = nn.Sequential(
+            nn.LayerNorm(5 * d_model), nn.Linear(5 * d_model, d_model),
+            nn.GELU(), nn.Linear(d_model, vocab_size),
+        )
+
+    def forward(self, states: torch.Tensor, mask: torch.Tensor,
+                prompt: torch.Tensor, macro: torch.Tensor,
+                step: torch.Tensor, positions: torch.Tensor):
+        if self.detach_inputs:
+            states, prompt, macro = (
+                states.detach(), prompt.detach(), macro.detach()
+            )
+        pooled = _masked_pool(states, mask)
+        macro_emb = self.macro(macro)
+        step_emb = self.step(step.clamp(0, self.step.num_embeddings - 1))
+        common = [pooled, prompt, macro_emb, step_emb]
+        position_input = torch.cat([
+            states, *[
+                value.unsqueeze(1).expand_as(states) for value in common
+            ],
+        ], -1)
+        position_logits = self.position(position_input).squeeze(-1)
+        position_logits = position_logits.masked_fill(~mask, -torch.inf)
+        row = torch.arange(len(states), device=states.device)
+        selected = states[
+            row, positions.clamp(0, states.shape[1] - 1)
+        ]
+        content_logits = self.content(torch.cat([selected, *common], -1))
+        return position_logits, content_logits
+
+
 class MultiscaleEditJEPA(nn.Module):
     """Four controlled variants of token/sentence edit dynamics.
 
@@ -291,7 +340,9 @@ class MultiscaleEditJEPA(nn.Module):
                  sentence_pooling: str = "attention",
                  macro_prior_detach_state: bool = True,
                  base_prior: bool = False,
-                 base_prior_detach_state: bool = True):
+                 base_prior_detach_state: bool = True,
+                 macro_decoder: bool = False,
+                 macro_decoder_detach_inputs: bool = True):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
@@ -334,6 +385,14 @@ class MultiscaleEditJEPA(nn.Module):
             )
             self.macro_pred = SentenceEditPredictor(
                 d_model, d_macro, predictor_layers, n_heads
+            )
+        self.macro_decoder = None
+        if macro_decoder:
+            if not self.use_macro:
+                raise ValueError("macro_decoder requires a macro model variant")
+            self.macro_decoder = MacroOptionDecoder(
+                d_model, d_macro, vocab_size, self.macro_k,
+                macro_decoder_detach_inputs,
             )
         self.ldad = ObservedActionDecoder(
             d_model, vocab_size, ldad_max_len,
@@ -704,4 +763,64 @@ class MultiscaleEditJEPA(nn.Module):
                     self.macro_k, self.macro_k + count, device=tokens.device
                 ),
             })
+            if self.macro_decoder is not None:
+                decoder_states = torch.stack([
+                    torch.stack([
+                        tokens[:, start + offset]
+                        for offset in range(self.macro_k)
+                    ], 1)
+                    for start in range(count)
+                ], 1)
+                decoder_masks = torch.stack([
+                    torch.stack([
+                        token_mask[:, start + offset]
+                        for offset in range(self.macro_k)
+                    ], 1)
+                    for start in range(count)
+                ], 1)
+                decoder_positions = torch.stack([
+                    pos[:, start:start + self.macro_k]
+                    for start in range(count)
+                ], 1)
+                decoder_macro = macro.unsqueeze(2).expand(
+                    -1, -1, self.macro_k, -1
+                )
+                decoder_prompt = prompt_emb[:, None, None].expand(
+                    -1, count, self.macro_k, -1
+                )
+                decoder_step = torch.arange(
+                    self.macro_k, device=tokens.device
+                ).view(1, 1, -1).expand(b, count, -1)
+                decoder_position_logits, decoder_content_logits = (
+                    self.macro_decoder(
+                        decoder_states.reshape(-1, width, dim),
+                        decoder_masks.reshape(-1, width),
+                        decoder_prompt.reshape(-1, dim),
+                        decoder_macro.reshape(-1, macro.shape[-1]),
+                        decoder_step.reshape(-1),
+                        decoder_positions.reshape(-1),
+                    )
+                )
+                decoder_valid = macro_valid.unsqueeze(-1).expand(
+                    -1, -1, self.macro_k
+                )
+                out.extras.update({
+                    "macro_decoder_position_logits": (
+                        decoder_position_logits.reshape(
+                            b, count, self.macro_k, width
+                        )
+                    ),
+                    "macro_decoder_content_logits": (
+                        decoder_content_logits.reshape(
+                            b, count, self.macro_k, -1
+                        )
+                    ),
+                    "macro_decoder_position_target": decoder_positions,
+                    "macro_decoder_content_target": torch.stack([
+                        batch["edit_content_token"][
+                            :, start:start + self.macro_k
+                        ] for start in range(count)
+                    ], 1),
+                    "macro_decoder_valid": decoder_valid,
+                })
         return out

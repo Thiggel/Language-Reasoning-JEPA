@@ -20,3 +20,5 @@ sentence_pooling: attention
 macro_prior_detach_state: true
 base_prior: false
 base_prior_detach_state: true
+macro_decoder: false
+macro_decoder_detach_inputs: true

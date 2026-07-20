@@ -56,6 +56,11 @@ objective:
   state_goal_distance:
     _target_: textjepa.objectives.StateGoalDistance
     weight: 1.0
+  macro_option_reconstruction:
+    _target_: textjepa.objectives.MacroOptionReconstruction
+    weight: 0.0
+    position_weight: 1.0
+    content_weight: 1.0
   multiscale_vicreg:
     _target_: textjepa.objectives.MultiscaleVICReg
     weight: 0.0

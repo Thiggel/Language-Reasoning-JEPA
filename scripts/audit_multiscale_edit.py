@@ -95,6 +95,18 @@ def main():
                 add("state_goal_distance_mae", (
                     state_value[state_valid] - state_target[state_valid]
                 ).abs().mean().item())
+            decoder_position = out.extras.get("macro_decoder_position_logits")
+            if decoder_position is not None:
+                decoder_valid = out.extras["macro_decoder_valid"]
+                add("macro_decoder_position_accuracy", (
+                    decoder_position.argmax(-1)[decoder_valid]
+                    == out.extras["macro_decoder_position_target"][decoder_valid]
+                ).float().mean().item())
+                decoder_content = out.extras["macro_decoder_content_logits"]
+                add("macro_decoder_content_accuracy", (
+                    decoder_content.argmax(-1)[decoder_valid]
+                    == out.extras["macro_decoder_content_target"][decoder_valid]
+                ).float().mean().item())
 
             token_pred = out.extras.get("token_predictions")
             if token_pred is not None:

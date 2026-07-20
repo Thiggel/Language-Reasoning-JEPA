@@ -228,6 +228,31 @@ class StateGoalDistance(Objective):
         )
 
 
+class MacroOptionReconstruction(Objective):
+    """Teacher-force an executable K-step option from its macro code."""
+
+    def __init__(self, position_weight: float = 1.0,
+                 content_weight: float = 1.0):
+        super().__init__()
+        self.position_weight = float(position_weight)
+        self.content_weight = float(content_weight)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        position_logits = out.extras.get("macro_decoder_position_logits")
+        if position_logits is None:
+            return out.preds.sum() * 0.0
+        valid = out.extras["macro_decoder_valid"]
+        position = F.cross_entropy(
+            position_logits[valid],
+            out.extras["macro_decoder_position_target"][valid],
+        )
+        content = F.cross_entropy(
+            out.extras["macro_decoder_content_logits"][valid],
+            out.extras["macro_decoder_content_target"][valid],
+        )
+        return self.position_weight * position + self.content_weight * content
+
+
 class RolloutPrediction(Objective):
     """Open-loop rollout from s0 through teacher actions vs EMA targets.
 

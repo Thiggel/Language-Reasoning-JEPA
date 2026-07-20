@@ -35,13 +35,16 @@ def softmax_entropy(scores):
     return float(-(p * p.clamp_min(1e-12).log()).sum())
 
 
-def run_episode(planner, vocab, item, horizon, refinement_rounds):
+def run_episode(planner, vocab, item, horizon, refinement_rounds,
+                max_actions=0):
     current = copy_buffer(item["buffers"][0])
     target = copy_buffer(item["buffers"][-1])
     mask_id = vocab.token_to_id[MASK_TOKEN]
     initial_masks = sum(token == mask_id for token in flatten(current))
     token_count = len(flatten(current))
     budget = initial_masks + int(refinement_rounds) * token_count
+    if int(max_actions) > 0:
+        budget = min(budget, int(max_actions))
     selected_q, entropies = [], []
     stopped = "budget"
     for _ in range(budget):
@@ -99,6 +102,7 @@ def main():
     parser.add_argument("--top-tokens", type=int, default=4)
     parser.add_argument("--max-candidates", type=int, default=16)
     parser.add_argument("--refinement-rounds", type=int, default=0)
+    parser.add_argument("--max-actions", type=int, default=0)
     parser.add_argument("--prior-weight", type=float, default=0.05)
     parser.add_argument("--action-value-weight", type=float, default=1.0)
     parser.add_argument("--state-value-weight", type=float, default=0.25)
@@ -131,7 +135,8 @@ def main():
     for index in range(args.examples):
         item = dataset[index]
         episode = run_episode(
-            planner, vocab, item, args.horizon, args.refinement_rounds
+            planner, vocab, item, args.horizon, args.refinement_rounds,
+            args.max_actions,
         )
         fp, _ = dataset.source.problem(index)
         operation_counts.append(int(fp.p.n_op))

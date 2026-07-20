@@ -8,6 +8,7 @@ from textjepa.models.multiscale_edit_jepa import (
     MultiscaleEditJEPA,
 )
 from textjepa.objectives.prediction import (
+    MacroOptionReconstruction,
     MacroPriorDistillation,
     MacroSentencePrediction,
     SentenceLevelPrediction,
@@ -197,6 +198,38 @@ def test_fixed_variance_macro_prior_is_nonnegative_and_can_shape_state():
     loss.backward()
     assert loss.item() >= 0
     assert model.encoder.pool_score[1].weight.grad is not None
+
+
+def test_macro_option_decoder_reconstructs_each_executable_primitive_step():
+    model = MultiscaleEditJEPA(
+        32, 0, "token_sentence_macro", d_model=16, d_action=4,
+        d_macro=3, macro_k=2, n_heads=4, token_layers=1,
+        sentence_layers=1, predictor_layers=1, max_sequence_len=32,
+        max_sentences=4, macro_decoder=True,
+    )
+    batch = _batch()
+    out = model(batch)
+    assert out.extras["macro_decoder_position_logits"].shape == (1, 1, 2, 4)
+    assert out.extras["macro_decoder_content_logits"].shape == (1, 1, 2, 32)
+    loss = MacroOptionReconstruction()(out, batch)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.macro_decoder.position[1].weight.grad is not None
+    # Detached decoder training does not redefine the macro representation.
+    assert model.macro_model.encoder.out[-1].weight.grad is None
+
+
+def test_attached_macro_option_decoder_can_shape_macro_representation():
+    model = MultiscaleEditJEPA(
+        32, 0, "token_sentence_macro", d_model=16, d_action=4,
+        d_macro=3, macro_k=2, n_heads=4, token_layers=1,
+        sentence_layers=1, predictor_layers=1, max_sequence_len=32,
+        max_sentences=4, macro_decoder=True,
+        macro_decoder_detach_inputs=False,
+    )
+    batch = _batch()
+    MacroOptionReconstruction()(model(batch), batch).backward()
+    assert model.macro_model.encoder.out[-1].weight.grad is not None
 
 
 def test_dropout_and_degenerate_macro_are_rejected():
