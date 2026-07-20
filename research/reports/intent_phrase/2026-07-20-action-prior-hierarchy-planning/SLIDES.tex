@@ -1,0 +1,55 @@
+\documentclass[aspectratio=169]{beamer}
+\usepackage{booktabs}
+\usetheme{default}
+\title{Intent-phrase planning: proposal helps, reranking hurts}
+\author{TextJEPA research cycle}
+\date{20 July 2026}
+\begin{document}
+\frame{\titlepage}
+
+\begin{frame}{The concrete question}
+\begin{itemize}
+\item The model chooses a natural-language instruction, and the environment executes it.
+\item A supervised policy prior proposes likely next instructions.
+\item JEPA predicts latent consequences and reranks those proposals.
+\item Success means solving within the minimum action count, or with two extra actions.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{The prior is stronger than current JEPA reranking}
+\centering
+\begin{tabular}{rcccc}
+\toprule
+Actions & JEPA strict & Prior strict & JEPA +2 & Prior +2\\
+\midrule
+3 & .172 & \textbf{.361} & .511 & \textbf{.744}\\
+6 & .133 & \textbf{.178} & .417 & \textbf{.661}\\
+9 & .067 & \textbf{.183} & .744 & \textbf{.872}\\
+\bottomrule
+\end{tabular}
+\vspace{1em}
+
+\begin{itemize}
+\item What to notice: every nonzero in-range cell favors prior-only planning.
+\item Why it matters: current latent energy removes value rather than adding it.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Deep rollout helps only with privileged future menus}
+\begin{itemize}
+\item At length nine, strict top-four success rises from .061 at depth one to .439 at depth four.
+\item With two extra actions, the same comparison rises from .750 to .994.
+\item Future feasible actions came from the hidden dependency graph, so this is an oracle diagnostic.
+\item Wide hierarchical CEM loses to the first-feasible rule at every tested bottleneck.
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Next decision: separate two kinds of difficulty}
+\begin{itemize}
+\item The old curve changed reasoning length and prompt size at the same boundary.
+\item We will vary prompt variables while holding reasoning length at nine.
+\item We will vary reasoning length from nine to twelve while holding prompts at 24--36 variables.
+\item Only then will we train a deployable predicted-state future-action proposal model.
+\end{itemize}
+\end{frame}
+\end{document}

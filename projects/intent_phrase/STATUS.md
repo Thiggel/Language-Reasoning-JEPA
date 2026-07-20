@@ -1,6 +1,6 @@
 # Intent-phrase project status
 
-_Updated 2026-07-17._
+_Updated 2026-07-20._
 
 The latest terminal audit produced no new scientific metrics. Seven GAR jobs
 timed out before optimization due to an overlong multiprocessing socket path;
@@ -45,6 +45,9 @@ two-seed confirmation of `1e-3`, not another context or rate sweep.
 | Dense rollout depth four does not improve control and increases seed variance. | supported for the current recipe |
 | LDAD and monotonicity improve strict success separately. | provisional until combined/matched confirmation |
 | Hierarchical planning improves this project. | contradicted by corrected confirmations |
+| A supervised action prior improves deployable one-step planning. | supported across three seeds through length 9 |
+| JEPA reranking adds value after prior proposal. | contradicted in the current top-2/top-4 evaluation |
+| Deep latent rollout improves planning. | promising only with oracle future-action menus; not deployable evidence |
 | JEPA currently beats the matched token intent policy on the easier stylized domain. | contradicted by the compact comparison: .797 versus .827 strict success |
 
 ## Current causal validation matrix
