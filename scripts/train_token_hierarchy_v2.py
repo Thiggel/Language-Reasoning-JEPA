@@ -504,6 +504,75 @@ def end_to_end_geometric_preferences(model, batch, out, cfg):
     return total, items, selection
 
 
+def token_prior_self_rollout_loss(model, out, obj):
+    """Train the prior on states induced by its own discrete token choices.
+
+    Targets remain the observed continuation at the same relative position.
+    The generated tokens and states contain no symbolic feasibility signal.
+    Detaching states isolates policy recovery from representation changes;
+    joint gradients remain an explicit ablation rather than a hidden default.
+    """
+    weight = float(getattr(obj, "token_prior_self_rollout", 0.0))
+    if weight == 0 or model.token_prior is None:
+        zero = out["low_pred"].sum() * 0
+        return zero, {}
+    depth = int(getattr(obj, "token_prior_self_rollout_depth", 1))
+    if depth < 1:
+        raise ValueError("token_prior_self_rollout_depth must be positive")
+    lengths = out["valid"].sum(1).long()
+    if int(lengths.min()) < depth:
+        raise ValueError("self-rollout depth exceeds shortest reasoning trace")
+    max_anchor = int(lengths.min()) - depth
+    anchor = int(torch.randint(max_anchor + 1, ()).item())
+    policy = str(getattr(obj, "token_prior_self_rollout_policy", "greedy"))
+    if policy not in {"greedy", "sample"}:
+        raise ValueError(f"unknown token prior self-rollout policy: {policy}")
+    topk = int(getattr(obj, "token_prior_self_rollout_topk", 8))
+    temperature = float(
+        getattr(obj, "token_prior_self_rollout_temperature", 1.0)
+    )
+    detach_state = bool(
+        getattr(obj, "token_prior_self_rollout_detach_state", True)
+    )
+    state_history = out["prev"][:, :anchor + 1]
+    action_history = out["token_actions"][:, :anchor]
+    current = state_history[:, -1]
+    losses, accuracies, items = [], [], {}
+    for step in range(depth):
+        prior_state = current.detach() if detach_state else current
+        logits = model.token_prior(prior_state)
+        target = out["action_ids"][:, anchor + step]
+        loss = F.cross_entropy(
+            logits, target,
+            label_smoothing=float(obj.token_prior_label_smoothing),
+        )
+        accuracy = logits.argmax(-1).eq(target).float().mean()
+        losses.append(loss)
+        accuracies.append(accuracy)
+        items[f"token_prior_self_rollout_h{step + 1}"] = loss
+        items[f"token_prior_self_rollout_acc_h{step + 1}"] = accuracy
+        policy_logits = logits.detach().clone()
+        policy_logits[:, model.pad_id] = -torch.inf
+        if policy == "greedy":
+            chosen = policy_logits.argmax(-1)
+        else:
+            supported = policy_logits.topk(min(topk, logits.shape[-1] - 1), -1)
+            distribution = torch.distributions.Categorical(
+                logits=supported.values / temperature
+            )
+            local = distribution.sample()
+            chosen = supported.indices.gather(1, local[:, None]).squeeze(1)
+        action_history = torch.cat([
+            action_history, model.token_action(chosen)[:, None]
+        ], 1)
+        current = model.low_predictor(state_history, action_history)[:, -1]
+        state_history = torch.cat([state_history, current[:, None]], 1)
+    total = torch.stack(losses).mean()
+    items["token_prior_self_rollout"] = total
+    items["token_prior_self_rollout_accuracy"] = torch.stack(accuracies).mean()
+    return total, items
+
+
 def compute_losses(out, cfg, model=None, batch=None):
     obj = cfg.objective
     low_dense_discount = (
@@ -602,6 +671,17 @@ def compute_losses(out, cfg, model=None, batch=None):
                 + obj.token_prior_rollout * token_prior_rollout.detach()
             )
             items["token_prior_rollout"] = token_prior_rollout
+        if model is not None:
+            self_rollout, self_items = token_prior_self_rollout_loss(
+                model, out, obj
+            )
+            total = total + float(
+                getattr(obj, "token_prior_self_rollout", 0.0)
+            ) * self_rollout
+            selection = selection + float(
+                getattr(obj, "token_prior_self_rollout", 0.0)
+            ) * self_rollout.detach()
+            items.update(self_items)
     configured_level_weights = list(
         getattr(obj, "high_level_weights", [1.0])
     )

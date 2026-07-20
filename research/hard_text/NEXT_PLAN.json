@@ -1,50 +1,44 @@
 {
   "schema_version": 2,
   "project": "token_igsm",
-  "round_id": "2026-07-20-token-oracle-continuation-teacher-gate",
-  "decision": "Before training another value objective, does prior-supported non-symbolic continuation search make the factual root token better aligned with terminal goal distance at horizons 2, 4, or 8 than the one-step teacher? In parallel, recover a two-episode faithful hierarchy diagnostic after the eight-episode evaluation exceeded its walltime.",
+  "round_id": "2026-07-20-token-prior-self-rollout-screen",
+  "decision": "Does training the token prior on states induced by its own non-symbolic token choices delay the first closed-loop error and improve executable validity? Compare a matched no-self-rollout control with greedy depths 2, 4, and 8 and a sampled depth-4 exposure condition.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "token-continuation-teacher-h1",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "1", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 30,
-      "purpose": "Immediate-outcome teacher control.",
-      "expected_artifacts": ["metrics.json"]
-    },
-    {
-      "id": "token-continuation-teacher-h2",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "2", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 45,
-      "purpose": "Two-step approximately optimal continuation teacher.",
-      "expected_artifacts": ["metrics.json"]
-    },
-    {
-      "id": "token-continuation-teacher-h4",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "4", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 60,
-      "purpose": "Four-step approximately optimal continuation teacher.",
-      "expected_artifacts": ["metrics.json"]
-    },
-    {
-      "id": "token-continuation-teacher-h8",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_token_continuation_teacher_audit.sh", "{python}", "8", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-token-gar-lr-objective-screen/token-gar-rank-mse-lr1e3-seed0/model/best.pt"],
+      "id": "token-prior-selfroll-control-seed0", "cluster": "gruenau",
+      "command": ["bash", "scripts/run_token_prior_self_rollout_cell.sh", "{python}", "token-prior-selfroll-control-seed0", "0", "1", "greedy", "3e-4"],
       "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 90,
-      "purpose": "Eight-step approximately optimal continuation teacher.",
-      "expected_artifacts": ["metrics.json"]
+      "purpose": "Matched training and evaluation control without self-rollout exposure.",
+      "expected_artifacts": ["model/best.pt", "closed_loop_decomposition.json", "prior_flat.json", "metrics.json"]
     },
     {
-      "id": "token-prior-hierarchy-faithful-cem-recovery-e2",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_token_bottleneck_ladder.sh", "{python}", "prior-hierarchy", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-17-gar-proposal-coverage/gar-k32-prior-proposals-seed-0/model/best.pt"],
-      "env": {"TOKEN_LADDER_EPISODES": "2"},
-      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 75,
-      "purpose": "Recover executable hierarchy signal with the same 256-candidate, 10-update CEM but two episodes instead of eight.",
-      "expected_artifacts": ["prior_hierarchy.json", "metrics.json"]
+      "id": "token-prior-selfroll-greedy-d2-seed0", "cluster": "gruenau",
+      "command": ["bash", "scripts/run_token_prior_self_rollout_cell.sh", "{python}", "token-prior-selfroll-greedy-d2-seed0", "1", "2", "greedy", "3e-4"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 90,
+      "purpose": "Two-step greedy self-rollout recovery objective.",
+      "expected_artifacts": ["model/best.pt", "closed_loop_decomposition.json", "prior_flat.json", "metrics.json"]
+    },
+    {
+      "id": "token-prior-selfroll-greedy-d4-seed0", "cluster": "gruenau",
+      "command": ["bash", "scripts/run_token_prior_self_rollout_cell.sh", "{python}", "token-prior-selfroll-greedy-d4-seed0", "1", "4", "greedy", "3e-4"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 90,
+      "purpose": "Four-step greedy self-rollout recovery objective.",
+      "expected_artifacts": ["model/best.pt", "closed_loop_decomposition.json", "prior_flat.json", "metrics.json"]
+    },
+    {
+      "id": "token-prior-selfroll-greedy-d8-seed0", "cluster": "gruenau",
+      "command": ["bash", "scripts/run_token_prior_self_rollout_cell.sh", "{python}", "token-prior-selfroll-greedy-d8-seed0", "1", "8", "greedy", "3e-4"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 90,
+      "purpose": "Eight-step greedy self-rollout recovery objective.",
+      "expected_artifacts": ["model/best.pt", "closed_loop_decomposition.json", "prior_flat.json", "metrics.json"]
+    },
+    {
+      "id": "token-prior-selfroll-sampled-d4-seed0", "cluster": "gruenau",
+      "command": ["bash", "scripts/run_token_prior_self_rollout_cell.sh", "{python}", "token-prior-selfroll-sampled-d4-seed0", "1", "4", "sample", "3e-4"],
+      "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 90,
+      "purpose": "Four-step top-8 sampled exposure to test whether broader recoverable prefixes help more than greedy states.",
+      "expected_artifacts": ["model/best.pt", "closed_loop_decomposition.json", "prior_flat.json", "metrics.json"]
     }
   ]
 }

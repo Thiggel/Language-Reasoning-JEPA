@@ -54,6 +54,15 @@ objective:
   token_prior_rollout: 0.0
   token_prior_rollout_discount: 0.7
   token_prior_label_smoothing: 0.0
+  # Exposure-robust imitation: roll from a factual prefix under the model's
+  # own token choices, then predict the observed continuation. This uses no
+  # symbolic feasibility or environment-derived ranking label.
+  token_prior_self_rollout: 0.0
+  token_prior_self_rollout_depth: 4
+  token_prior_self_rollout_policy: greedy
+  token_prior_self_rollout_topk: 8
+  token_prior_self_rollout_temperature: 1.0
+  token_prior_self_rollout_detach_state: true
   # End-to-end geometric advantage ranking (GAR). Candidate outcomes are
   # EMA-encoded same-prefix counterfactual token sequences; no symbolic
   # remaining-step or feasibility label enters the preference target.
