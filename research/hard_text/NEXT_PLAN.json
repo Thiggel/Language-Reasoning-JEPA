@@ -1,32 +1,75 @@
 {
   "schema_version": 2,
   "project": "token_igsm",
-  "round_id": "2026-07-18-gar-lr-objective-screen",
-  "decision": "At fixed deterministic hierarchy, prior-only K=32 counterfactuals, data, and seed, is the primitive GAR learner's failure caused by optimization sensitivity or objective shape? Compare MSE-only and pairwise-plus-0.25-MSE at learning rates 1e-4, 3e-4, and 1e-3. A recipe remains viable only if it is finite and non-collapsed, keeps held-out pair accuracy at or above 0.80, materially improves full-vocabulary reference top-5 or constrained-planning top-20 recall over the 3e-4 anchor, and yields at least one valid token fragment; otherwise stop tuning this end-to-end goal-value interface and redirect to a separately fitted primitive advantage head or a different action representation.",
+  "round_id": "2026-07-20-token-gar-lr-objective-screen",
+  "decision": "At fixed deterministic hierarchy, prior-supported K=32 counterfactuals, data, and seed, is primitive GAR failure caused by optimization sensitivity or objective shape? Compare MSE-only and pairwise-plus-0.25-MSE at learning rates 1e-4, 3e-4, and 1e-3. Promote only finite, non-collapsed cells that keep held-out pair accuracy at least 0.80 and improve full-vocabulary reference recall or executable validity.",
   "git_commit": "AUTO",
   "jobs": [
     {
-      "id": "gar-lr-objective-screen-seed-0",
+      "id": "token-gar-mse-lr1e4-seed0",
       "cluster": "gruenau",
-      "command": [
-        "bash",
-        "scripts/run_gar_lr_objective_screen.sh",
-        "{python}"
-      ],
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "token-gar-mse-lr1e4-seed0", "0", "1", "false", "0", "0.3", "1", "combined", "0.3", "prior", "sampled", "4", "32", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32", "1e-4"],
       "gpus": 1,
       "cpus": 4,
       "min_gpu_memory_mb": 40000,
-      "walltime_minutes": 900,
-      "purpose": "Single-seed matched optimization screen for the non-symbolic primitive GAR learner. Each of MSE-only and rank-plus-MSE receives the same three-point log learning-rate curve; executable validity and reference recall gate any continuation.",
-      "expected_artifacts": [
-        "metrics.json",
-        "mse-only-lr1e-4/metrics.json",
-        "mse-only-lr3e-4/metrics.json",
-        "mse-only-lr1e-3/metrics.json",
-        "rank-mse025-lr1e-4/metrics.json",
-        "rank-mse025-lr3e-4/metrics.json",
-        "rank-mse025-lr1e-3/metrics.json"
-      ]
+      "walltime_minutes": 150,
+      "purpose": "MSE-only primitive GAR at learning rate 1e-4.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
+    },
+    {
+      "id": "token-gar-mse-lr3e4-seed0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "token-gar-mse-lr3e4-seed0", "0", "1", "false", "0", "0.3", "1", "combined", "0.3", "prior", "sampled", "4", "32", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32", "3e-4"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "MSE-only primitive GAR at learning rate 3e-4.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
+    },
+    {
+      "id": "token-gar-mse-lr1e3-seed0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "token-gar-mse-lr1e3-seed0", "0", "1", "false", "0", "0.3", "1", "combined", "0.3", "prior", "sampled", "4", "32", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32", "1e-3"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "MSE-only primitive GAR at learning rate 1e-3.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
+    },
+    {
+      "id": "token-gar-rank-mse-lr1e4-seed0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "token-gar-rank-mse-lr1e4-seed0", "0", "0.25", "false", "1", "0.3", "1", "combined", "0.3", "prior", "sampled", "4", "32", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32", "1e-4"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "Pairwise ranking plus 0.25-weighted MSE GAR at learning rate 1e-4.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
+    },
+    {
+      "id": "token-gar-rank-mse-lr3e4-seed0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "token-gar-rank-mse-lr3e4-seed0", "0", "0.25", "false", "1", "0.3", "1", "combined", "0.3", "prior", "sampled", "4", "32", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32", "3e-4"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "Pairwise ranking plus 0.25-weighted MSE GAR at the current 3e-4 anchor.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
+    },
+    {
+      "id": "token-gar-rank-mse-lr1e3-seed0",
+      "cluster": "gruenau",
+      "command": ["bash", "scripts/run_corrected_gar_search_cell.sh", "{python}", "token-gar-rank-mse-lr1e3-seed0", "0", "0.25", "false", "1", "0.3", "1", "combined", "0.3", "prior", "sampled", "4", "32", "1", "4", "4", "2000", "2", "6", "32", "16", "pairwise", "32", "1e-3"],
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 150,
+      "purpose": "Pairwise ranking plus 0.25-weighted MSE GAR at learning rate 1e-3.",
+      "expected_artifacts": ["model/best.pt", "model/token_selection_audit.json", "model/planner_interface_audit.json", "metrics.json"]
     }
   ]
 }
