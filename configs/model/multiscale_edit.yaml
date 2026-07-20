@@ -16,3 +16,4 @@ observed_action_ldad: false
 ldad_max_len: 12
 dropout: 0.0
 max_transitions_per_forward: 8
+sentence_pooling: attention

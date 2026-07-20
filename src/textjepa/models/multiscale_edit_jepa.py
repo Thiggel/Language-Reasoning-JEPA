@@ -31,8 +31,11 @@ class HierarchicalBufferEncoder(nn.Module):
                  token_layers: int = 2, sentence_layers: int = 2,
                  n_heads: int = 8, ff_mult: int = 4,
                  max_sequence_len: int = 1024, max_sentences: int = 64,
-                 dropout: float = 0.0):
+                 dropout: float = 0.0, pooling: str = "attention"):
         super().__init__()
+        if pooling not in {"attention", "mean"}:
+            raise ValueError(f"unknown sentence pooling: {pooling}")
+        self.pooling = pooling
         self.pad_id = int(pad_id)
         self.max_sequence_len = int(max_sequence_len)
         self.tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
@@ -132,11 +135,14 @@ class HierarchicalBufferEncoder(nn.Module):
         for sentence in range(n_sentences):
             members = token_mask & sentence_ids.eq(sentence)
             sentence_mask[:, sentence] = members.any(-1)
-            score = raw_score.masked_fill(~members, -torch.inf)
-            # Avoid NaNs for absent/padded sentences; the output is masked.
-            score = torch.where(members.any(-1, keepdim=True), score,
-                                torch.zeros_like(score))
-            weight = torch.softmax(score, -1) * members.to(score.dtype)
+            if self.pooling == "attention":
+                score = raw_score.masked_fill(~members, -torch.inf)
+                # Avoid NaNs for absent/padded sentences; output is masked.
+                score = torch.where(members.any(-1, keepdim=True), score,
+                                    torch.zeros_like(score))
+                weight = torch.softmax(score, -1) * members.to(score.dtype)
+            else:
+                weight = members.to(raw_score.dtype)
             weight = weight / weight.sum(-1, keepdim=True).clamp_min(1)
             attention = attention + weight
             pooled[:, sentence] = torch.einsum("nw,nwd->nd", weight, token_states)
@@ -240,7 +246,8 @@ class MultiscaleEditJEPA(nn.Module):
                  token_relative_radius: int = 32,
                  observed_action_ldad: bool = False,
                  ldad_max_len: int = 12, dropout: float = 0.0,
-                 max_transitions_per_forward: int = 8):
+                 max_transitions_per_forward: int = 8,
+                 sentence_pooling: str = "attention"):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
@@ -257,6 +264,7 @@ class MultiscaleEditJEPA(nn.Module):
         self.encoder = HierarchicalBufferEncoder(
             vocab_size, pad_id, d_model, token_layers, sentence_layers,
             n_heads, ff_mult, max_sequence_len, max_sentences, dropout,
+            sentence_pooling,
         )
         self.teacher = EMATeacher(self.encoder)
         self.token_pred = None if variant == "sentence" else TokenAlignedEditPredictor(

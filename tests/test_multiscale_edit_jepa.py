@@ -171,6 +171,22 @@ def test_dropout_and_degenerate_macro_are_rejected():
             32, 0, "token_sentence_macro", d_model=16, d_action=4,
             d_macro=3, macro_k=1, n_heads=4,
         )
+    with pytest.raises(ValueError, match="pooling"):
+        HierarchicalBufferEncoder(32, 0, d_model=16, n_heads=4, pooling="max")
+
+
+def test_mean_pooling_control_is_uniform_within_each_sentence():
+    encoder = HierarchicalBufferEncoder(
+        32, 0, d_model=16, token_layers=1, sentence_layers=1,
+        n_heads=4, max_sequence_len=32, max_sentences=4, pooling="mean",
+    )
+    result = encoder(
+        torch.tensor([[[2, 3, 0]]]),
+        torch.tensor([[[4, 5, 0], [6, 7, 8]]]),
+    )
+    ids, attention = result[2], result[-1]
+    assert torch.allclose(attention[ids.eq(0)], torch.full((2,), 0.5))
+    assert torch.allclose(attention[ids.eq(1)], torch.full((3,), 1 / 3))
 
 
 def test_long_trajectory_is_sliced_consistently_and_keeps_macro_windows_exact():
