@@ -42,6 +42,7 @@ def _context(model, prefix, prompt_length):
 def beam_plan(
     model, prefix, goal, depth=4, width=8, score_mode="oracle",
     proposal_mode="prior", proposal_topk=20, prompt_length=None,
+    prior_score_weight=0.0,
 ):
     """Return one open-loop beam; no grammar or feasibility filter is used."""
     if score_mode not in {"oracle", "value", "prior"}:
@@ -50,10 +51,12 @@ def beam_plan(
         raise ValueError(f"unknown proposal mode: {proposal_mode}")
     if proposal_mode == "prior" and model.token_prior is None:
         raise ValueError("prior proposals require a trained token prior")
+    if proposal_mode == "all" and prior_score_weight:
+        raise ValueError("prior score weight requires prior proposals")
     prompt_length = len(prefix) if prompt_length is None else int(prompt_length)
     context = _context(model, prefix, prompt_length)
-    # tokens, states, actions, cumulative GAR score, ranking score
-    beams = [([], context["states"], context["actions"], 0.0, 0.0)]
+    # tokens, states, actions, cumulative GAR, cumulative log prior, rank
+    beams = [([], context["states"], context["actions"], 0.0, 0.0, 0.0)]
     expanded = 0
     for _ in range(int(depth)):
         beam_count = len(beams)
@@ -92,19 +95,25 @@ def beam_plan(
         cumulative = torch.tensor(
             [item[3] for item in beams], device=current.device
         )[:, None].expand(-1, branch).reshape(-1)
+        cumulative_prior = torch.tensor(
+            [item[4] for item in beams], device=current.device
+        )[:, None].expand(-1, branch).reshape(-1)
+        updated_prior = cumulative_prior + (
+            proposal_logits.reshape(-1) if proposal_logits is not None else 0.0
+        )
         if score_mode == "oracle":
             rank_score = -normalized_distance(
                 predicted, goal.expand(beam_count * branch, -1)
-            )
+            ) + prior_score_weight * updated_prior
             updated = cumulative
         elif score_mode == "value":
             updated = advantage + cumulative
-            rank_score = updated
+            rank_score = updated + prior_score_weight * updated_prior
         else:
             if proposal_logits is None:
                 raise ValueError("prior scoring requires prior proposals")
-            updated = proposal_logits.reshape(-1) + cumulative
-            rank_score = updated
+            updated = cumulative
+            rank_score = updated_prior
         keep = rank_score.topk(min(width, len(rank_score))).indices
         next_beams = []
         for flat in keep.tolist():
@@ -119,12 +128,13 @@ def beam_plan(
                     action_history[parent:parent + 1],
                     actions[flat:flat + 1, None],
                 ], 1),
-                float(updated[flat]), float(rank_score[flat]),
+                float(updated[flat]), float(updated_prior[flat]),
+                float(rank_score[flat]),
             ))
         beams = next_beams
     best = beams[0]
     return {
-        "tokens": best[0], "score": best[4], "expanded": expanded,
+        "tokens": best[0], "score": best[5], "expanded": expanded,
         "uses_symbolic_feasibility": False,
     }
 
@@ -138,6 +148,7 @@ def generate(model, prompt, goal, length, args):
             model, generated, goal, depth=args.depth, width=args.width,
             score_mode=args.score, proposal_mode=args.proposals,
             proposal_topk=args.proposal_topk, prompt_length=len(prompt),
+            prior_score_weight=args.prior_score_weight,
         )
         generated.append(plan["tokens"][0])
         expanded += plan["expanded"]
@@ -155,6 +166,8 @@ def main():
     parser.add_argument("--score", choices=("oracle", "value", "prior"), required=True)
     parser.add_argument("--proposals", choices=("prior", "all"), required=True)
     parser.add_argument("--proposal-topk", type=int, default=20)
+    parser.add_argument("--prior-score-weight", type=float, default=0.0)
+    parser.add_argument("--output-dir", default=None)
     args = parser.parse_args()
     payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(payload["cfg"])
@@ -190,14 +203,18 @@ def main():
         "examples": args.examples, "depth": args.depth, "width": args.width,
         "score": args.score, "proposals": args.proposals,
         "proposal_topk": args.proposal_topk,
+        "prior_score_weight": args.prior_score_weight,
         "mean_expanded_candidates": expanded / args.examples,
         "uses_oracle_goal": args.score == "oracle",
         "uses_oracle_length": True,
         "uses_symbolic_feasibility": False,
         "uses_auxiliary_lm": False,
     }
-    destination = Path(args.ckpt).parent / (
-        f"flat_sentence_beam_{args.proposals}_{args.score}_d{args.depth}_w{args.width}.json"
+    output_dir = Path(args.output_dir) if args.output_dir else Path(args.ckpt).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    destination = output_dir / (
+        f"flat_sentence_beam_{args.proposals}_{args.score}_d{args.depth}_w{args.width}"
+        f"_pw{args.prior_score_weight:g}.json"
     )
     destination.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

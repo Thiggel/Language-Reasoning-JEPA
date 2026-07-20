@@ -96,6 +96,11 @@ def test_beam_depth_changes_rollout_length_without_symbolic_filtering():
         proposal_mode="prior", proposal_topk=8,
     )
     assert len(prior["tokens"]) == 1
+    blended = beam_plan(
+        model, prompt, goal, depth=2, width=8, score_mode="value",
+        proposal_mode="prior", proposal_topk=8, prior_score_weight=0.1,
+    )
+    assert len(blended["tokens"]) == 2
 
 
 def test_joint_prediction_dense_gar_and_prior_objective_backpropagates():
