@@ -340,6 +340,7 @@ def main():
     parser.add_argument("--refine-top", type=int, default=0)
     parser.add_argument("--refine-weight", type=float, default=1.0)
     parser.add_argument("--low-prior-weight", type=float, default=1.0)
+    parser.add_argument("--output-suffix", default="")
     args = parser.parse_args()
     payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(payload["cfg"])
@@ -397,8 +398,9 @@ def main():
         "uses_oracle_goal": False, "iterative_actual_state_replanning": True,
         "episodes": records,
     }
+    suffix = f"_{args.output_suffix}" if args.output_suffix else ""
     destination = Path(args.ckpt).parent / (
-        f"sentence_planning_{args.macro_support}_h{args.high_horizon}.json"
+        f"sentence_planning_{args.macro_support}_h{args.high_horizon}{suffix}.json"
     )
     destination.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
