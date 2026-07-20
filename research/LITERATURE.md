@@ -87,6 +87,46 @@ claim, verify the primary source and current publication status.
   - Keep recursive model-generated alternatives out of the first screen; add
     them only after exact-outcome dynamics and support gates pass.
 
+## 2026-07-20 — faithful masked-discrete diffusion controls
+
+- Query: what must be preserved for MDLM and SEDD to be scientifically valid
+  controls for iterative unmasking and refinement?
+- Primary sources:
+  - MDLM paper: <https://arxiv.org/abs/2406.07524>
+  - MDLM reference implementation: <https://github.com/kuleshov-group/mdlm>
+  - SEDD paper: <https://arxiv.org/abs/2310.16834>
+  - SEDD reference implementation:
+    <https://github.com/louaaron/Score-Entropy-Discrete-Diffusion>
+- Applicable claims:
+  - MDLM uses an absorbing mask state, SUBS parameterization, and a
+    Rao--Blackwellized continuous-time ELBO that becomes a time-weighted masked
+    token cross-entropy. Prompt tokens remain conditioning context rather than
+    diffusion targets.
+  - SEDD learns concrete score ratios under a discrete continuous-time Markov
+    chain with the score-entropy objective. Absorbing and uniform transition
+    graphs are different controls, not interchangeable corruption flags.
+  - Neither objective is equivalent to the edit JEPA latent-transition loss;
+    their role is to test whether explicit token likelihood already solves the
+    denoising/planning task more directly.
+- Limitations:
+  - The papers do not identify which adaptations in the user's Alex BabyLM
+    code produced its best result. That implementation must be audited before
+    claiming a faithful local reproduction.
+  - Likelihood/perplexity, denoising recovery, and fixed-compute iterative
+    refinement must be reported separately from latent prediction error.
+- Design change:
+  - Implement MDLM and SEDD as separate training objectives with matched
+    tokenizer, prompt/answer split, unique-sequence count, presentations, model
+    size, and sampling budget. Do not relabel ordinary masked language modeling
+    as either method.
+  - For MDLM, test the Alex-selected schedule/parameterization first, then one
+    reference-repository control. For SEDD, begin with the absorbing graph for
+    the closest information match and add the uniform graph only if the first
+    validity and compute gates pass.
+  - Compare one-shot and iterative denoising at fixed numbers of network
+    evaluations, and disclose that any clean-target reranking is
+    candidate-privileged rather than deployment-feasible.
+
 ## 2026-07-16 — transfer benchmarks and anticipated review concerns
 
 - Query: language reasoning environments with explicit actions, outcomes, and
