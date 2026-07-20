@@ -13,6 +13,8 @@ epochs=${4:?epochs}
 warmup_steps=${5:?warmup steps}
 train_size=${6:-30000}
 episodes=${7:-60}
+prior_weight=${8:-1.0}
+detach_prior_inputs=${9:-true}
 model_dir="$RUN_DIR/model"
 
 export TMPDIR="/tmp/tj-${SLURM_JOB_ID:-$$}"
@@ -21,9 +23,11 @@ mkdir -p "$TMPDIR"
 "$python_bin" "${TEXTJEPA_ROOT}/scripts/train.py" \
   +experiment=paper_causal_j3_action_prior \
   "hydra.run.dir=$model_dir" \
-  "run_name=paper_causal_j3_action_prior_lr${learning_rate}_s${seed}" \
+  "run_name=paper_causal_j3_action_prior_lr${learning_rate}_w${prior_weight}_detach${detach_prior_inputs}_s${seed}" \
   "seed=$seed" "train.lr=$learning_rate" "train.epochs=$epochs" \
   "train.warmup_steps=$warmup_steps" "data.train_size=$train_size" \
+  "model.action_prior_detach_inputs=$detach_prior_inputs" \
+  "objective.action_prior.weight=$prior_weight" \
   data.val_size=1000 "device=${DEVICE:-cuda:0}"
 
 for mode in jepa prior top2 top4; do
@@ -50,4 +54,3 @@ for depth in 2 4; do
     --lookahead "$depth" --prior-top-m 4 --allow-oracle-future-actions \
     --out "$model_dir/length_curve_top4_oracle_depth${depth}.json"
 done
-

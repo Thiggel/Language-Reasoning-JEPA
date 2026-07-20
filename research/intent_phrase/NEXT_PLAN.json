@@ -1,0 +1,75 @@
+{
+  "schema_version": 2,
+  "project": "intent_phrase",
+  "round_id": "2026-07-20-intent-joint-action-prior-weight-pilot-v1",
+  "decision": "Test whether action supervision helps the deployable planner only when its gradient shapes the shared causal encoder. Compare joint action-prior weights 0.25 and 1.0 at seed 0 against the existing initialization-matched detached-weight-1 checkpoint. Reject joint training if neither cell improves prior-only and JEPA/top-M exact-budget success across trained lengths 3, 6, and 9 without unhealthy representation diagnostics; confirm only the winning weight with seeds 1 and 2. Oracle-future-action curves remain privileged diagnostics and cannot satisfy promotion.",
+  "git_commit": "AUTO",
+  "jobs": [
+    {
+      "id": "intent-joint-action-prior-w025-seed0-v1",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_intent_action_prior_pilot.sh",
+        "{python}",
+        "0",
+        "0.001",
+        "5",
+        "300",
+        "30000",
+        "60",
+        "0.25",
+        "false"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Low-weight joint action supervision with the detached seed-0 run as the matched control.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "stdout.log",
+        "stderr.log",
+        "model/metrics.csv",
+        "model/length_curve_jepa.json",
+        "model/length_curve_prior.json",
+        "model/length_curve_top2.json",
+        "model/length_curve_top4.json",
+        "model/length_curve_top4_oracle_depth2.json",
+        "model/length_curve_top4_oracle_depth4.json"
+      ]
+    },
+    {
+      "id": "intent-joint-action-prior-w1-seed0-v1",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_intent_action_prior_pilot.sh",
+        "{python}",
+        "0",
+        "0.001",
+        "5",
+        "300",
+        "30000",
+        "60",
+        "1.0",
+        "false"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 30000,
+      "purpose": "Full-weight joint action supervision to test whether encoder shaping needs the original coefficient.",
+      "expected_artifacts": [
+        "run_summary.json",
+        "stdout.log",
+        "stderr.log",
+        "model/metrics.csv",
+        "model/length_curve_jepa.json",
+        "model/length_curve_prior.json",
+        "model/length_curve_top2.json",
+        "model/length_curve_top4.json",
+        "model/length_curve_top4_oracle_depth2.json",
+        "model/length_curve_top4_oracle_depth4.json"
+      ]
+    }
+  ]
+}
