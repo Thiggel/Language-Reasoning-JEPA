@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-20-iterative-refinement",
+  "project": "sequence_edit",
+  "title": "Iterative replacement training is viable, but planning is still unmeasured",
+  "created_at": "2026-07-20T15:45:00+02:00",
+  "status": "complete",
+  "review_required": true,
+  "decision": "Use 25% wrong-token refinement and four-to-eight grouped trajectories; run target-free receding-horizon planning before selecting the trajectory count or prior coefficient.",
+  "plain_summary": "Replacement-only multi-path training works, pure unmasking compresses the state geometry, and a learned full-vocabulary prior is necessary because the old candidate pool covers only ten percent of improving actions.",
+  "report": "REPORT.md",
+  "artifacts": ["refinement_loop.svg"],
+  "tags": ["sequence-edit", "iterative-refinement", "action-prior", "GAR", "MPC"]
+}

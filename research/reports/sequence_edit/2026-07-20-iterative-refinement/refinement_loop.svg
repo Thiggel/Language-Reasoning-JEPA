@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="440" viewBox="0 0 1120 440" role="img" aria-labelledby="title desc">
+  <title id="title">Grouped refinement training and receding-horizon deployment</title>
+  <desc id="desc">Several replacement-only paths leave a fully masked sequence. During deployment a learned prior proposes position and word pairs, JEPA and GAR rerank imagined futures, one action is executed, and the system replans.</desc>
+  <rect width="1120" height="440" fill="#fbfbfd"/>
+  <style>.box{fill:#fff;stroke:#27364b;stroke-width:2}.train{fill:#e8f1ff}.plan{fill:#eaf8ef}.warn{fill:#fff1df}.t{font:18px sans-serif;fill:#152235}.s{font:14px sans-serif;fill:#3d4d63}.a{stroke:#506984;stroke-width:2;fill:none;marker-end:url(#m)}</style>
+  <defs><marker id="m" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#506984"/></marker></defs>
+  <text x="35" y="35" class="t">Training: many valid restoration orders</text>
+  <rect x="35" y="65" width="190" height="70" rx="10" class="box train"/><text x="55" y="94" class="t">[MASK] × all tokens</text><text x="55" y="119" class="s">same clean problem</text>
+  <path d="M225 90 C275 70 285 65 330 65" class="a"/><path d="M225 100 C275 120 285 150 330 150" class="a"/><path d="M225 110 C275 175 285 235 330 235" class="a"/>
+  <rect x="330" y="40" width="250" height="55" rx="10" class="box train"/><text x="350" y="66" class="t">Path 1: reveal → repair</text><text x="350" y="86" class="s">replacement actions only</text>
+  <rect x="330" y="125" width="250" height="55" rx="10" class="box train"/><text x="350" y="151" class="t">Path 2: different order</text><text x="350" y="171" class="s">same final clean sequence</text>
+  <rect x="330" y="210" width="250" height="55" rx="10" class="box warn"/><text x="350" y="236" class="t">Path N: wrong → correct</text><text x="350" y="256" class="s">25% refinement noise</text>
+  <text x="635" y="35" class="t">Deployment: target-free closed loop</text>
+  <rect x="635" y="65" width="190" height="65" rx="10" class="box plan"/><text x="655" y="92" class="t">Learned prior</text><text x="655" y="115" class="s">top position + word pairs</text>
+  <path d="M825 98 L865 98" class="a"/>
+  <rect x="865" y="65" width="215" height="65" rx="10" class="box plan"/><text x="885" y="92" class="t">JEPA + GAR beam</text><text x="885" y="115" class="s">imagine H future edits</text>
+  <path d="M973 130 L973 180" class="a"/>
+  <rect x="865" y="180" width="215" height="65" rx="10" class="box plan"/><text x="885" y="207" class="t">Execute first edit</text><text x="885" y="230" class="s">discard imagined remainder</text>
+  <path d="M865 212 C790 212 750 175 735 130" class="a"/>
+  <text x="645" y="285" class="s">Re-encode the actual edited sequence, then propose and plan again.</text>
+  <rect x="35" y="330" width="1045" height="70" rx="10" class="box"/><text x="55" y="359" class="t">Validity boundary</text><text x="55" y="385" class="s">The clean target labels training advantages and post-decision metrics; it never enters the deployment prior, beam search, GAR score, or action choice.</text>
+</svg>
