@@ -1,0 +1,45 @@
+# @package _global_
+defaults:
+  - override /data: igsm_real_token_edit
+  - override /model: multiscale_edit
+  - _self_
+run_name: edit_multiscale_base
+data:
+  # Replacement-only masked diffusion trajectory; refinement_probability is
+  # separately ablated at 0 and 0.25 after the architecture gate.
+  corruption_mode: iterative_refinement
+  trajectory_variants: 4
+  eval_trajectory_variants: 1
+  refinement_probability: 0.0
+  train_size: 2000
+  val_size: 512
+  counterfactual_k: 0
+model:
+  dropout: 0.0
+  observed_action_ldad: false
+objective:
+  latent_pred: {weight: 0.0}
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  value: {weight: 0.0}
+  sentence_level:
+    _target_: textjepa.objectives.SentenceLevelPrediction
+    weight: 0.0
+    changed_weight: 1.0
+    unchanged_weight: 0.1
+  macro_sentence:
+    _target_: textjepa.objectives.MacroSentencePrediction
+    weight: 0.0
+  macro_prior_distill:
+    _target_: textjepa.objectives.MacroPriorDistillation
+    weight: 0.0
+train:
+  batch_size: 8
+  microbatch_size: 8
+  num_workers: 0
+  epochs: 3
+  lr: 0.00003
+  warmup_steps: 100
+  eval_batches: 20

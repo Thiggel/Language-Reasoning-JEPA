@@ -13,7 +13,10 @@ class EMATeacher(nn.Module):
         super().__init__()
         self.module = copy.deepcopy(online)
         self.module.requires_grad_(False)
-        self.module.eval()
+        # Set both the wrapper's and the contained module's public training
+        # flags.  Merely calling ``self.module.eval()`` left
+        # ``EMATeacher.training`` true until its parent was toggled once.
+        self.train(False)
 
     def train(self, mode: bool = True):
         """Keep target networks in evaluation mode under ``parent.train()``.

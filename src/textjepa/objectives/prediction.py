@@ -92,6 +92,75 @@ class TokenAlignedCounterfactualPrediction(Objective):
         return masked_mean(distance, mask.float())
 
 
+class SentenceLevelPrediction(Objective):
+    """JEPA loss in the distinct attention-pooled sentence space.
+
+    ``changed_weight`` makes the low-signal edited sentence explicit while an
+    optional consistency term prevents the other sentence states from
+    drifting.  Setting ``unchanged_weight=0`` is the clean dilution ablation.
+    """
+
+    def __init__(self, kind: str = "smooth_l1", norm_targets: bool = True,
+                 changed_weight: float = 1.0, unchanged_weight: float = 0.1):
+        super().__init__()
+        self.kind = kind
+        self.norm_targets = norm_targets
+        self.changed_weight = float(changed_weight)
+        self.unchanged_weight = float(unchanged_weight)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("sentence_predictions")
+        if pred is None:
+            return out.preds.sum() * 0.0
+        target = out.extras["sentence_targets"]
+        valid = out.extras["sentence_target_mask"] & out.step_mask.unsqueeze(-1)
+        affected = out.extras["affected_sentence"]
+        index = torch.arange(valid.shape[-1], device=valid.device)
+        changed = valid & index.view(1, 1, -1).eq(affected.unsqueeze(-1))
+        unchanged = valid & ~changed
+        distance = latent_distance(
+            pred, target, self.kind, self.norm_targets
+        )
+        changed_loss = masked_mean(distance, changed.float())
+        unchanged_loss = masked_mean(distance, unchanged.float())
+        return (self.changed_weight * changed_loss
+                + self.unchanged_weight * unchanged_loss)
+
+
+class MacroSentencePrediction(Objective):
+    """K-step sentence-subgoal prediction from a bottlenecked macro action."""
+
+    def __init__(self, kind: str = "smooth_l1", norm_targets: bool = True):
+        super().__init__()
+        self.kind = kind
+        self.norm_targets = norm_targets
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("macro_sentence_predictions")
+        if pred is None:
+            return out.preds.sum() * 0.0
+        distance = latent_distance(
+            pred, out.extras["macro_sentence_targets"],
+            self.kind, self.norm_targets,
+        )
+        return masked_mean(
+            distance, out.extras["macro_sentence_mask"].float()
+        )
+
+
+class MacroPriorDistillation(Objective):
+    """Fit deployable p(macro action | state) to observed macro codes."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        code = out.extras.get("macro_codes")
+        if code is None:
+            return out.preds.sum() * 0.0
+        mu = out.extras["macro_prior_mu"]
+        logvar = out.extras["macro_prior_logvar"]
+        nll = 0.5 * (logvar + (code.detach() - mu).square() * (-logvar).exp()).sum(-1)
+        return masked_mean(nll, out.hi_mask.float())
+
+
 class RolloutPrediction(Objective):
     """Open-loop rollout from s0 through teacher actions vs EMA targets.
 

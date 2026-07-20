@@ -8,10 +8,13 @@ from textjepa.objectives.prediction import (
     HierarchyValueRegression,
     LatentPrediction,
     MacroPrior,
+    MacroPriorDistillation,
+    MacroSentencePrediction,
     RolloutPrediction,
     TokenAlignedPrediction,
     TokenAlignedCounterfactualPrediction,
     TokenAlignedRolloutPrediction,
+    SentenceLevelPrediction,
 )
 from textjepa.objectives.vicreg import SIGReg, VICReg
 from textjepa.objectives.delta_action import DeltaAction, ObservedActionLDAD
@@ -98,6 +101,9 @@ __all__ = [
     "HierarchyValueDistill",
     "HierarchyValueRegression",
     "MacroPrior",
+    "MacroPriorDistillation",
+    "MacroSentencePrediction",
+    "SentenceLevelPrediction",
     "VICReg",
     "DeltaAction",
     "ObservedActionLDAD",

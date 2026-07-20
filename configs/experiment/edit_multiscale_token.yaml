@@ -1,0 +1,7 @@
+# @package _global_
+defaults: [edit_multiscale_base, _self_]
+run_name: edit_multiscale_token
+model:
+  variant: token
+objective:
+  token_aligned_pred: {weight: 1.0}

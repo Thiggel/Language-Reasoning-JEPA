@@ -5,9 +5,10 @@ from textjepa.models.sentence_vjepa import SentenceStreamVJEPA
 from textjepa.models.discourse_vjepa import DiscourseVJEPA
 from textjepa.models.token_hierarchy import TokenHierarchyJEPA
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
+from textjepa.models.multiscale_edit_jepa import MultiscaleEditJEPA
 
 __all__ = [
     "DiscourseJEPA", "DiscourseOutputs", "EditJEPA", "JEPAOutputs",
     "SentenceStreamVJEPA", "DiscourseVJEPA", "TokenHierarchyJEPA",
-    "MultilevelTokenHierarchyJEPA",
+    "MultilevelTokenHierarchyJEPA", "MultiscaleEditJEPA",
 ]
