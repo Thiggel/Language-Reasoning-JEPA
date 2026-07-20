@@ -8,6 +8,7 @@ from textjepa.data.semantic_lm import SemanticBoundaryLMDataset, collate_semanti
 from textjepa.models.pooled_sentence_jepa import (
     CausalAttentionPooler, PooledSentenceJEPA,
 )
+from scripts.eval_pooled_sentence_planning import summarize_examples
 
 
 def _batch(size=2):
@@ -137,3 +138,17 @@ def test_default_model_is_approximately_fifty_million_parameters():
         # target, not extra trainable/inference capacity.
         parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
         assert 40_000_000 <= parameters <= 60_000_000
+
+
+def test_planning_summary_reports_uncertainty_and_error_position():
+    result = summarize_examples(
+        generated=[[1, 2, 3, 4], [1, 9, 3, 4]],
+        references=[[1, 2, 3, 4], [1, 2, 3, 4]],
+        boundary_ids={4}, bootstrap_seed=7,
+    )
+    assert result["token_accuracy"] == 0.875
+    assert result["exact_trace_success"] == 0.5
+    assert result["boundary_token_accuracy"] == 1.0
+    assert result["mean_first_error_fraction"] == 0.625
+    assert result["token_accuracy_ci95"][0] <= 0.875 <= result["token_accuracy_ci95"][1]
+    assert len(result["position_quartile_accuracy"]) == 4

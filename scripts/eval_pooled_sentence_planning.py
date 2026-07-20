@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from pathlib import Path
 
 import torch
@@ -13,6 +14,49 @@ from omegaconf import OmegaConf
 from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.semantic_lm import SemanticBoundaryLMDataset
 from textjepa.models.pooled_sentence_jepa import PooledSentenceJEPA
+
+
+def summarize_examples(generated, references, boundary_ids, bootstrap_seed=0):
+    """Aggregate trace-level metrics without hiding the tiny-sample variance."""
+    if len(generated) != len(references) or not references:
+        raise ValueError("generated and reference traces must be nonempty and matched")
+    per_trace, first_error, exact = [], [], 0
+    quartile_correct = [0] * 4
+    quartile_total = [0] * 4
+    boundary_correct = boundary_total = 0
+    for predicted, reference in zip(generated, references):
+        if len(predicted) != len(reference) or not reference:
+            raise ValueError("each generated trace must match its nonempty oracle length")
+        matches = [int(a == b) for a, b in zip(predicted, reference)]
+        per_trace.append(sum(matches) / len(matches))
+        exact += int(all(matches))
+        first = next((index for index, match in enumerate(matches) if not match), len(matches))
+        first_error.append(first / len(matches))
+        for index, (match, token) in enumerate(zip(matches, reference)):
+            bucket = min(3, (4 * index) // len(reference))
+            quartile_correct[bucket] += match
+            quartile_total[bucket] += 1
+            if token in boundary_ids:
+                boundary_correct += match
+                boundary_total += 1
+    rng = random.Random(int(bootstrap_seed))
+    samples = []
+    for _ in range(2000):
+        draw = [per_trace[rng.randrange(len(per_trace))] for _ in per_trace]
+        samples.append(sum(draw) / len(draw))
+    samples.sort()
+    return {
+        "token_accuracy": sum(per_trace) / len(per_trace),
+        "token_accuracy_ci95": [samples[49], samples[1949]],
+        "exact_trace_success": exact / len(references),
+        "mean_first_error_fraction": sum(first_error) / len(first_error),
+        "boundary_token_accuracy": boundary_correct / max(boundary_total, 1),
+        "position_quartile_accuracy": [
+            correct / max(total, 1)
+            for correct, total in zip(quartile_correct, quartile_total)
+        ],
+        "per_trace_token_accuracy": per_trace,
+    }
 
 
 def normalized_distance(left, right):
@@ -162,6 +206,8 @@ def main():
     parser.add_argument("--proposals", choices=("prior", "all"), required=True)
     parser.add_argument("--proposal-topk", type=int, default=20)
     parser.add_argument("--prior-score-weight", type=float, default=1.0)
+    parser.add_argument("--eval-seed", type=int, default=None)
+    parser.add_argument("--output-tag", default="")
     parser.add_argument("--output-dir", default=None)
     args = parser.parse_args()
     payload = torch.load(args.ckpt, map_location="cpu", weights_only=False)
@@ -173,15 +219,16 @@ def main():
     ).to(args.device)
     model.load_state_dict(payload["model"])
     model.eval()
+    eval_seed = cfg.data.val_seed + 104729 if args.eval_seed is None else args.eval_seed
     dataset = SemanticBoundaryLMDataset(
-        vocab, size=args.examples, seed=cfg.data.val_seed + 104729,
+        vocab, size=args.examples, seed=eval_seed,
         boundary_mode="semantic", modulus=cfg.data.modulus,
         n_vars_range=tuple(cfg.data.n_vars_range), leaf_prob=cfg.data.leaf_prob,
         steps_range=tuple(cfg.data.steps_range),
         distractor_prob=cfg.data.distractor_prob,
         max_distractors=cfg.data.max_distractors,
     )
-    exact = correct = total = expanded = 0
+    generated_traces, reference_traces, expanded = [], [], 0
     for index in range(args.examples):
         item = dataset[index]
         prompt = item["tokens"][:item["prompt_len"]]
@@ -189,13 +236,15 @@ def main():
         full = torch.tensor(item["tokens"], device=args.device).unsqueeze(0)
         goal = model.teacher(full)[:, len(item["tokens"]) - 1]
         generated, work = generate(model, prompt, goal, len(reference), args)
-        exact += int(generated == reference)
-        correct += sum(a == b for a, b in zip(generated, reference))
-        total += len(reference)
+        generated_traces.append(generated)
+        reference_traces.append(reference)
         expanded += work
     result = {
-        "exact_trace_success": exact / args.examples,
-        "token_accuracy": correct / max(total, 1), "examples": args.examples,
+        **summarize_examples(
+            generated_traces, reference_traces,
+            {vocab.token_to_id["."], vocab.token_to_id["?"]}, eval_seed,
+        ),
+        "examples": args.examples, "eval_seed": eval_seed,
         "planner": args.planner, "depth": args.depth, "width": args.width,
         "score": args.score, "proposals": args.proposals,
         "proposal_topk": args.proposal_topk,
@@ -206,8 +255,9 @@ def main():
     }
     output_dir = Path(args.output_dir) if args.output_dir else Path(args.ckpt).parent
     output_dir.mkdir(parents=True, exist_ok=True)
+    tag = f"_{args.output_tag}" if args.output_tag else ""
     destination = output_dir / (
-        f"pooled_{args.planner}_{args.proposals}_{args.score}_d{args.depth}_w{args.width}"
+        f"pooled{tag}_{args.planner}_{args.proposals}_{args.score}_d{args.depth}_w{args.width}"
         f"_pw{args.prior_score_weight:g}.json"
     )
     destination.write_text(json.dumps(result, indent=2) + "\n")

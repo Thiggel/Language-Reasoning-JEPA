@@ -113,7 +113,13 @@ def compute_losses(out, cfg, model, batch):
         "gar_advantage_std": cf["advantage_target"].std(),
         "prefix_decoder": decoder_ce, "decoder_state_use": decoder_state_use,
         "decoder_state_gap": decoder_state_gap,
-        "selection": total.detach(),
+        # Select the planning checkpoint using deployable dynamics, proposal,
+        # and value objectives. Auxiliary reconstruction/regularization terms
+        # must not make decoder and no-decoder checkpoint selection inequivalent.
+        "selection": (
+            obj.prediction * prediction + obj.dense * dense
+            + obj.token_prior * prior + obj.gar * gar_total
+        ).detach(),
     }
 
 
