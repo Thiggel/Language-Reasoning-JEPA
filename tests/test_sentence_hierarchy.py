@@ -196,6 +196,11 @@ def test_full_sentence_training_loss_is_finite_and_reports_all_components():
     cfg.objective.gar_k = 3
     cfg.objective.temporal_straightening = 0.1
     cfg.objective.value_monotonicity = 0.1
+    cfg.objective.macro_prior = 0.05
+    cfg.objective.support = 0.1
+    cfg.objective.bridge = 0.25
+    cfg.objective.transition_reachability = 0.25
+    cfg.objective.reachability_classifier = 0.1
     out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
     loss, items = compute_sentence_losses(out, cfg, model, batch)
     assert torch.isfinite(loss)

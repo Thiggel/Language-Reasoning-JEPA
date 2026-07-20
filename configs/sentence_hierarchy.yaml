@@ -39,11 +39,11 @@ objective:
   high_goal: 1.0
   high_value: 1.0
   high_level_weight: 1.0
-  macro_prior: 0.05
-  support: 0.1
-  bridge: 0.25
-  transition_reachability: 0.25
-  reachability_classifier: 0.1
+  macro_prior: 0.0
+  support: 0.0
+  bridge: 0.0
+  transition_reachability: 0.0
+  reachability_classifier: 0.0
   vicreg_low: 1.0
   vicreg_high: 1.0
   covariance: 0.04
