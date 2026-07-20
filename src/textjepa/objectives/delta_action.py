@@ -61,7 +61,7 @@ class ObservedActionLDAD(Objective):
         logits = out.extras.get("observed_action_logits")
         if logits is None:
             return out.step_states.sum() * 0.0
-        target = batch["action_tokens"]
+        target = out.extras.get("observed_action_targets", batch["action_tokens"])
         L = min(logits.shape[-2], target.shape[-1])
         logits = logits[..., :L, :]
         target = target[..., :L]

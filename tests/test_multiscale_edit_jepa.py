@@ -171,3 +171,28 @@ def test_dropout_and_degenerate_macro_are_rejected():
             32, 0, "token_sentence_macro", d_model=16, d_action=4,
             d_macro=3, macro_k=1, n_heads=4,
         )
+
+
+def test_long_trajectory_is_sliced_consistently_and_keeps_macro_windows_exact():
+    batch = _batch()
+    # Repeat the two exact replacement transitions to make six steps.
+    batch["buffer_tokens"] = torch.cat([
+        batch["buffer_tokens"], batch["buffer_tokens"][:, 1:],
+        batch["buffer_tokens"][:, 1:],
+    ], 1)
+    for key in ("op", "edit_position", "edit_content_token", "step_mask",
+                "action_tokens"):
+        batch[key] = batch[key].repeat(1, 3, *([1] if batch[key].ndim == 3 else []))
+    model = MultiscaleEditJEPA(
+        32, 0, "token_sentence_macro", d_model=16, d_action=4,
+        d_macro=3, macro_k=2, n_heads=4, token_layers=1,
+        sentence_layers=1, predictor_layers=1, max_sequence_len=32,
+        max_sentences=4, max_transitions_per_forward=3,
+    ).eval()
+    out = model(batch)
+    assert out.step_mask.shape == (1, 3)
+    assert batch["op"].shape == (1, 3)
+    assert batch["buffer_tokens"].shape[1] == 4
+    assert out.extras["observed_action_targets"].shape[1] == 3
+    assert out.extras["macro_window_starts"].tolist() == [0, 1]
+    assert out.extras["macro_window_endpoints"].tolist() == [2, 3]

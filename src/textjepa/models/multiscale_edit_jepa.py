@@ -239,7 +239,8 @@ class MultiscaleEditJEPA(nn.Module):
                  max_sequence_len: int = 1024, max_sentences: int = 64,
                  token_relative_radius: int = 32,
                  observed_action_ldad: bool = False,
-                 ldad_max_len: int = 12, dropout: float = 0.0):
+                 ldad_max_len: int = 12, dropout: float = 0.0,
+                 max_transitions_per_forward: int = 8):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
@@ -250,6 +251,9 @@ class MultiscaleEditJEPA(nn.Module):
         self.use_sentence = variant != "token"
         self.use_macro = variant == "token_sentence_macro"
         self.macro_k = int(macro_k)
+        self.max_transitions_per_forward = max(
+            0, int(max_transitions_per_forward)
+        )
         self.encoder = HierarchicalBufferEncoder(
             vocab_size, pad_id, d_model, token_layers, sentence_layers,
             n_heads, ff_mult, max_sequence_len, max_sentences, dropout,
@@ -357,7 +361,42 @@ class MultiscaleEditJEPA(nn.Module):
             attention.reshape(b, states, -1),
         )
 
+    def _limit_trajectory(self, batch: dict) -> int:
+        """Sample a contiguous exact-transition segment to bound O(T L^2).
+
+        Iterative unmasking can have one full-buffer snapshot per token.  A
+        full bidirectional encoder over every snapshot at once is neither
+        needed for a stationary transition model nor computationally viable.
+        The same contiguous slice is applied in-place to all step-aligned
+        fields, so objectives and generic trainer metrics cannot drift out of
+        alignment.  Macro windows remain genuinely consecutive.
+        """
+        total = batch["buffer_tokens"].shape[1] - 1
+        keep = self.max_transitions_per_forward
+        if not keep or total <= keep:
+            return 0
+        maximum_start = total - keep
+        if self.training:
+            start = int(torch.randint(
+                maximum_start + 1, (), device=batch["buffer_tokens"].device
+            ).item())
+        else:
+            start = maximum_start // 2
+        batch["buffer_tokens"] = batch["buffer_tokens"][:, start:start + keep + 1]
+        batch["buffer_mask"] = batch["buffer_mask"][:, start:start + keep + 1]
+        excluded = {
+            "prompt_tokens", "prompt_mask", "buffer_tokens", "buffer_mask",
+            "goal_buffer_tokens", "goal_buffer_mask", "answer", "n_necessary",
+            "n_vars", "index",
+        }
+        for name, value in list(batch.items()):
+            if (name not in excluded and torch.is_tensor(value)
+                    and value.ndim >= 2 and value.shape[1] == total):
+                batch[name] = value[:, start:start + keep]
+        return start
+
     def forward(self, batch: dict) -> JEPAOutputs:
+        transition_start = self._limit_trajectory(batch)
         tokens, token_mask, ids, sentences, sentence_mask, attention = (
             self._encode_trajectory(batch)
         )
@@ -462,6 +501,8 @@ class MultiscaleEditJEPA(nn.Module):
             "token_state_mask": token_mask,
             "sentence_states": sentences,
             "sentence_states_tgt": tgt_sentences.detach(),
+            "transition_slice_start": transition_start,
+            "observed_action_targets": batch["action_tokens"][:, :steps],
         })
         if self.ldad is not None:
             row = torch.arange(b, device=tokens.device)[:, None]
