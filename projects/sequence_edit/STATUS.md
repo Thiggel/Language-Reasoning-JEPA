@@ -1,5 +1,17 @@
 # Sequence-edit status
 
+Current decision (2026-07-20): executable, target-hidden receding-horizon
+generation is implemented for the multiscale token/sentence models. It uses a
+factorized token action prior, exact-counterfactual `V(s,a)`, normalized
+goal-distance value, and literal token replacement beams. Macro models rerank
+only macro codes assembled from executable primitive sequences. The clean
+solution is evaluator-only at planning time, but target sentence/token slot
+structure is supplied and explicitly labelled privileged. Wave 80 is active
+across Grünau, Alex, Lise, and Grete: four approximately 10M architectures,
+each crossing no learned prior, detached prior, and representation-shaping
+prior. Full depth `{1,2,4,8,16}` ID/OOD evaluation waits for these checkpoint
+validity gates.
+
 Current result (2026-07-18): the token-aligned structured primitive passes
 operation, current-pointer, and local-content causal gates. Fixed mixed EMA is
 the default; 18k presentations replicate across three seeds, d512 improves

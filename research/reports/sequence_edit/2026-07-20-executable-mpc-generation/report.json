@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-20-executable-mpc-generation",
+  "project": "sequence_edit",
+  "title": "From predicting edits to generating an iGSM solution",
+  "created_at": "2026-07-20T19:45:00+02:00",
+  "status": "complete",
+  "review_required": true,
+  "decision": "Validate four multiscale architectures and detached, attached, and absent action priors before admitting the expensive MPC depth and ID/OOD generation sweep.",
+  "plain_summary": "An executable target-hidden generator now exists, but scientific generation results require newly trained proposal and value heads.",
+  "report": "REPORT.md",
+  "artifacts": ["planner.svg"],
+  "tags": ["sequence-edit", "generation", "mpc", "beam-search", "action-prior"]
+}
+

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="290" viewBox="0 0 960 290">
+  <style>.b{fill:#eef5ff;stroke:#28527a;stroke-width:2}.h{fill:#fff3dc;stroke:#9b5d00;stroke-width:2}.t{font:16px sans-serif;fill:#17202a}.s{font:13px sans-serif;fill:#34495e}.a{stroke:#34495e;stroke-width:2;marker-end:url(#m)}</style>
+  <defs><marker id="m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#34495e"/></marker></defs>
+  <rect class="b" x="20" y="75" width="165" height="110" rx="12"/><text class="t" x="42" y="105">Prompt + masks</text><text class="s" x="37" y="133">Only observable input</text><text class="s" x="43" y="157">Sentence slots known</text>
+  <rect class="b" x="230" y="25" width="190" height="90" rx="12"/><text class="t" x="252" y="57">Token action prior</text><text class="s" x="247" y="84">position × replacement</text>
+  <rect class="b" x="230" y="155" width="190" height="90" rx="12"/><text class="t" x="255" y="187">JEPA + V(s,a)</text><text class="s" x="249" y="214">predict and value action</text>
+  <rect class="h" x="470" y="75" width="190" height="110" rx="12"/><text class="t" x="502" y="106">Beam lookahead</text><text class="s" x="492" y="134">depth 1, 2, 4, 8, 16</text><text class="s" x="492" y="158">macro rerank if present</text>
+  <rect class="b" x="710" y="75" width="220" height="110" rx="12"/><text class="t" x="747" y="105">Execute first edit</text><text class="s" x="735" y="133">Observe updated buffer</text><text class="s" x="751" y="157">Then plan again</text>
+  <line class="a" x1="185" y1="105" x2="230" y2="72"/><line class="a" x1="185" y1="155" x2="230" y2="198"/><line class="a" x1="420" y1="70" x2="470" y2="110"/><line class="a" x1="420" y1="200" x2="470" y2="150"/><line class="a" x1="660" y1="130" x2="710" y2="130"/><path class="a" d="M820 185 C820 275,105 275,105 185" fill="none"/>
+  <text class="s" x="395" y="273">receding horizon: feedback after every literal token replacement</text>
+</svg>
+

@@ -42,3 +42,5 @@ Current entry points:
 - [`token-aligned LDAD screen report`](../../research/reports/sequence_edit/2026-07-17-structured-edit-ldad-screen/REPORT.md)
 - [`structured token-edit 12-hour synthesis`](../../research/reports/sequence_edit/2026-07-18-structured-edit-12h-synthesis/REPORT.md)
 - [`learning-rate sensitivity report`](../../research/reports/sequence_edit/2026-07-18-learning-rate-sensitivity/REPORT.md)
+- [`executable MPC generation report`](../../research/reports/sequence_edit/2026-07-20-executable-mpc-generation/REPORT.md)
+- [`executable MPC generation cycle`](../../research/cycles/sequence_edit/2026-07-20-multiscale-mpc-generation.md)
