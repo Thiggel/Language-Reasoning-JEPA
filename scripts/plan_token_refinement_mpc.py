@@ -25,6 +25,7 @@ class BeamNode:
     score: float
     actions: tuple[Edit, ...]
     root: Edit | None
+    root_gar: float | None
 
 
 @torch.no_grad()
@@ -109,10 +110,11 @@ def expand_node(
         outcome = copy_buffer(node.buffer)
         _apply(outcome, action)
         root = node.root if node.root is not None else action
+        root_gar = node.root_gar if node.root_gar is not None else float(value)
         children.append(BeamNode(
             outcome, next_states[index:index + 1], next_mask[index:index + 1],
             node.score + prior_weight * log_prior + gar_weight * float(value),
-            (*node.actions, action), root,
+            (*node.actions, action), root, root_gar,
         ))
     return children
 
@@ -123,12 +125,14 @@ def search_first_action(
     horizon: int, beam_width: int, top_positions: int, top_tokens: int,
     max_candidates: int, prior_weight: float, gar_weight: float,
     excluded_tokens: set[int],
-) -> tuple[Edit, dict[Edit, float]]:
+) -> tuple[Edit, dict[Edit, float], float]:
     """Plan H latent transitions without accepting a target/goal argument."""
     prompt = encode_prompt(model, prompt_tokens, pad_id, device)
     raw = _buffer_tensor(current, pad_id, device)
     states, mask = model.encode_token_buffers(raw, mode="online")
-    beam = [BeamNode(copy_buffer(current), states[:, 0], mask[:, 0], 0.0, (), None)]
+    beam = [BeamNode(
+        copy_buffer(current), states[:, 0], mask[:, 0], 0.0, (), None, None,
+    )]
     for _ in range(horizon):
         expanded = []
         for node in beam:
@@ -145,7 +149,9 @@ def search_first_action(
     root_scores: dict[Edit, float] = {}
     for node in beam:
         root_scores[node.root] = max(root_scores.get(node.root, -math.inf), node.score)
-    return beam[0].root, root_scores
+    if beam[0].root_gar is None:
+        raise RuntimeError("selected beam has no root GAR value")
+    return beam[0].root, root_scores, beam[0].root_gar
 
 
 def posterior_metrics(scores: dict[Edit, float], current: Buffer,
@@ -170,18 +176,27 @@ def run_episode(model, vocab, item: dict, device: str, **search) -> dict:
     current = copy_buffer(item["buffers"][0])
     target = copy_buffer(item["buffers"][-1])
     initial = buffer_distance(current, target)
+    max_steps = int(search.pop("max_steps"))
+    # Zero means a deployment-visible budget large enough to reveal every
+    # token once and repair every token once.  It depends only on the current
+    # buffer length, never on the hidden clean target or its distance.
+    if max_steps <= 0:
+        max_steps = 2 * sum(len(sentence) for sentence in current)
+    stop_threshold = float(search.pop("stop_threshold"))
     selected_advantages, positive_mass, expected, entropy = [], [], [], []
     excluded = {
         vocab.pad_id, vocab.token_to_id[vocab.UNK],
         vocab.token_to_id[MASK_TOKEN],
     }
-    for _ in range(search.pop("max_steps")):
-        if current == target:
-            break
-        action, root_scores = search_first_action(
+    stopped_by_value = False
+    for _ in range(max_steps):
+        action, root_scores, selected_gar = search_first_action(
             model, item["prompt"], current, vocab.pad_id, device,
             excluded_tokens=excluded, **search,
         )
+        if selected_gar <= stop_threshold:
+            stopped_by_value = True
+            break
         mass, exp_adv, ent = posterior_metrics(root_scores, current, target)
         before = buffer_distance(current, target)
         _apply(current, action)
@@ -197,6 +212,7 @@ def run_episode(model, vocab, item: dict, device: str, **search) -> dict:
         "normalized_improvement": (initial - final) / max(initial, 1),
         "exact_recovery": current == target,
         "steps": len(selected_advantages),
+        "stopped_by_value": stopped_by_value,
         "selected_advantage": mean(selected_advantages),
         "posterior_positive_mass": mean(positive_mass),
         "posterior_expected_true_advantage": mean(expected),
@@ -214,7 +230,14 @@ def main() -> None:
     parser.add_argument("--top-positions", type=int, default=4)
     parser.add_argument("--top-tokens", type=int, default=4)
     parser.add_argument("--max-candidates", type=int, default=16)
-    parser.add_argument("--max-steps", type=int, default=32)
+    parser.add_argument(
+        "--max-steps", type=int, default=0,
+        help="replacement budget; <=0 uses twice the observable token count",
+    )
+    parser.add_argument(
+        "--stop-threshold", type=float, default=0.0,
+        help="stop before execution when selected one-step GAR is not larger",
+    )
     parser.add_argument("--prior-weight", type=float, default=0.05)
     parser.add_argument("--gar-weight", type=float, default=1.0)
     parser.add_argument("--out", type=Path, required=True)
@@ -238,6 +261,7 @@ def main() -> None:
         "settings": settings,
         "normalized_edit_distance_improvement": mean("normalized_improvement"),
         "exact_recovery_rate": mean("exact_recovery"),
+        "value_stop_rate": mean("stopped_by_value"),
         "mean_selected_true_advantage": mean("selected_advantage"),
         "mean_posterior_positive_mass": mean("posterior_positive_mass"),
         "mean_posterior_expected_true_advantage": mean(

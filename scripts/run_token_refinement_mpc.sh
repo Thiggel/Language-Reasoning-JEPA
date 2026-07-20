@@ -8,7 +8,7 @@ beam_width=${4:-8}
 prior_weight=${5:-0.05}
 gar_weight=${6:-1.0}
 examples=${7:-32}
-max_steps=${8:-32}
+max_steps=${8:-0}
 if [[ -z "${RUN_DIR:-}" ]]; then
   echo "RUN_DIR must be supplied by researchctl" >&2
   exit 2

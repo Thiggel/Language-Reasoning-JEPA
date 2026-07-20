@@ -23,7 +23,7 @@ def test_refinement_beam_is_target_free_and_returns_replacement():
         max_buffer_len=16, d_action=8, macro_k=0, token_aligned=True,
         token_predictor_layers=1, dropout=0.0, refinement_prior=True,
     ).eval()
-    action, scores = search_first_action(
+    action, scores, selected_gar = search_first_action(
         model, item["prompt"], item["buffers"][0], vocab.pad_id, "cpu",
         horizon=2, beam_width=2, top_positions=2, top_tokens=2,
         max_candidates=4, prior_weight=0.05, gar_weight=1.0,
@@ -34,3 +34,4 @@ def test_refinement_beam_is_target_free_and_returns_replacement():
     )
     assert action[0] == "replace"
     assert action in scores
+    assert isinstance(selected_gar, float)
