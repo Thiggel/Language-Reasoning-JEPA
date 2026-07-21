@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Optional
 
 import torch
 
@@ -18,7 +19,9 @@ from textjepa.data.faithful_token_edits import MASK_TOKEN, OPS, _apply
 
 
 Buffer = list[list[int]]
-Edit = tuple[str, int, int | None]
+# This assignment is evaluated at import time, unlike function annotations.
+# Keep it Python-3.9-compatible for Lise's validated shared environment.
+Edit = tuple[str, int, Optional[int]]
 
 
 def copy_buffer(buffer: Buffer) -> Buffer:

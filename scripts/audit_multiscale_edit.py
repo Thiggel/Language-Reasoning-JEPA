@@ -88,6 +88,41 @@ def main():
                 add("base_alt_action_value_sign_accuracy", (
                     alt_q[alt_valid].gt(0) == alt_target[alt_valid].gt(0)
                 ).float().mean().item())
+                predictions = torch.cat([q.unsqueeze(-1), alt_q], dim=-1)
+                targets = torch.cat([q_target.unsqueeze(-1), alt_target], dim=-1)
+                candidate_valid = torch.cat(
+                    [valid_step.unsqueeze(-1), alt_valid], dim=-1
+                )
+                target_delta = targets.unsqueeze(-1) - targets.unsqueeze(-2)
+                prediction_delta = (
+                    predictions.unsqueeze(-1) - predictions.unsqueeze(-2)
+                )
+                ordered = (
+                    candidate_valid.unsqueeze(-1)
+                    & candidate_valid.unsqueeze(-2)
+                    & target_delta.gt(0)
+                )
+                add("base_action_value_pairwise_accuracy", masked_mean(
+                    prediction_delta.gt(0).float(), ordered
+                ))
+                add("base_action_value_margin_accuracy", masked_mean(
+                    prediction_delta.gt(0.5).float(), ordered
+                ))
+                masked_targets = targets.masked_fill(~candidate_valid, -torch.inf)
+                masked_predictions = predictions.masked_fill(
+                    ~candidate_valid, -torch.inf
+                )
+                comparable = candidate_valid.sum(-1).gt(1) & valid_step
+                add("base_action_value_top1_accuracy", masked_mean(
+                    masked_predictions.argmax(-1).eq(
+                        masked_targets.argmax(-1)
+                    ).float(), comparable
+                ))
+                add("base_action_value_target_spread", masked_mean(
+                    masked_targets.amax(-1) - targets.masked_fill(
+                        ~candidate_valid, torch.inf
+                    ).amin(-1), comparable
+                ))
             state_value = out.extras.get("state_goal_distance_prediction")
             if state_value is not None:
                 state_valid = out.extras["state_goal_distance_mask"]

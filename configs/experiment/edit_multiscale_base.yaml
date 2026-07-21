@@ -53,6 +53,11 @@ objective:
     weight: 1.0
     expert_weight: 1.0
     alternative_weight: 1.0
+    regression_weight: 1.0
+    pairwise_weight: 0.0
+    regression_kind: smooth_l1
+    margin: 0.5
+    label_gap: 0.0
   state_goal_distance:
     _target_: textjepa.objectives.StateGoalDistance
     weight: 1.0

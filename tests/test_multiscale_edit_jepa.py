@@ -1,4 +1,5 @@
 import copy
+from types import SimpleNamespace
 
 import pytest
 import torch
@@ -8,12 +9,54 @@ from textjepa.models.multiscale_edit_jepa import (
     MultiscaleEditJEPA,
 )
 from textjepa.objectives.prediction import (
+    BaseActionValue,
     MacroOptionReconstruction,
     MacroPriorDistillation,
     MacroSentencePrediction,
     SentenceLevelPrediction,
 )
 from textjepa.objectives.vicreg import MultiscaleVICReg
+
+
+def test_base_action_value_uses_mse_and_same_state_pairwise_ranking():
+    target = torch.tensor([[1.0]])
+    alternatives = torch.tensor([[[0.0, -1.0]]])
+    valid = torch.ones(1, 1, 2, dtype=torch.bool)
+    common = {
+        "base_action_value_target": target,
+        "base_alt_action_target": alternatives,
+        "base_alt_action_valid": valid,
+    }
+    correct = SimpleNamespace(
+        preds=torch.zeros(1),
+        step_mask=torch.ones(1, 1, dtype=torch.bool),
+        extras={
+            **common,
+            "base_action_value": torch.tensor([[1.0]]),
+            "base_alt_action_value": torch.tensor([[[0.0, -1.0]]]),
+        },
+    )
+    reversed_order = SimpleNamespace(
+        preds=torch.zeros(1),
+        step_mask=correct.step_mask,
+        extras={
+            **common,
+            "base_action_value": torch.tensor([[-1.0]]),
+            "base_alt_action_value": torch.tensor([[[0.0, 1.0]]]),
+        },
+    )
+    rank_only = BaseActionValue(
+        regression_weight=0.0, pairwise_weight=1.0,
+        regression_kind="mse", margin=0.5,
+    )
+    assert rank_only(correct, {}) < rank_only(reversed_order, {})
+
+    mse_only = BaseActionValue(
+        regression_weight=0.25, pairwise_weight=0.0,
+        regression_kind="mse",
+    )
+    assert mse_only(correct, {}) == 0
+    assert mse_only(reversed_order, {}) > 0
 
 
 def _batch():

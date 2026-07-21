@@ -183,11 +183,33 @@ class BaseActionValue(Objective):
     regression.
     """
 
-    def __init__(self, expert_weight: float = 1.0,
-                 alternative_weight: float = 1.0):
+    def __init__(
+        self,
+        expert_weight: float = 1.0,
+        alternative_weight: float = 1.0,
+        regression_weight: float = 1.0,
+        pairwise_weight: float = 0.0,
+        regression_kind: str = "smooth_l1",
+        margin: float = 0.5,
+        label_gap: float = 0.0,
+    ):
         super().__init__()
         self.expert_weight = float(expert_weight)
         self.alternative_weight = float(alternative_weight)
+        self.regression_weight = float(regression_weight)
+        self.pairwise_weight = float(pairwise_weight)
+        self.regression_kind = str(regression_kind)
+        self.margin = float(margin)
+        self.label_gap = float(label_gap)
+        if self.regression_kind not in {"mse", "smooth_l1"}:
+            raise ValueError(
+                f"unknown base-action regression kind: {self.regression_kind}"
+            )
+
+    def _regression(self, prediction, target):
+        if self.regression_kind == "mse":
+            return F.mse_loss(prediction, target, reduction="none")
+        return F.smooth_l1_loss(prediction, target, reduction="none")
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         prediction = out.extras.get("base_action_value")
@@ -195,21 +217,43 @@ class BaseActionValue(Objective):
         if prediction is None or target is None:
             return out.preds.sum() * 0.0
         valid = out.step_mask[:, :prediction.shape[1]]
-        expert = masked_mean(
-            F.smooth_l1_loss(prediction, target, reduction="none"),
-            valid.float(),
-        )
+        expert = masked_mean(self._regression(prediction, target), valid.float())
         alt_prediction = out.extras.get("base_alt_action_value")
         if alt_prediction is None:
-            return self.expert_weight * expert
+            return self.regression_weight * self.expert_weight * expert
+        alt_target = out.extras["base_alt_action_target"]
+        alt_valid = out.extras["base_alt_action_valid"]
         alt = masked_mean(
-            F.smooth_l1_loss(
-                alt_prediction, out.extras["base_alt_action_target"],
-                reduction="none",
-            ),
-            out.extras["base_alt_action_valid"].float(),
+            self._regression(alt_prediction, alt_target), alt_valid.float(),
         )
-        return self.expert_weight * expert + self.alternative_weight * alt
+        regression = (
+            self.expert_weight * expert + self.alternative_weight * alt
+        )
+        if self.pairwise_weight == 0.0:
+            return self.regression_weight * regression
+
+        # Rank the expert and every target-independent counterfactual from the
+        # same state.  Exact goal-relative advantages are labels only; neither
+        # the clean goal nor these labels enter the V(s,a) head.
+        predictions = torch.cat(
+            [prediction.unsqueeze(-1), alt_prediction], dim=-1
+        )
+        targets = torch.cat([target.unsqueeze(-1), alt_target], dim=-1)
+        candidate_valid = torch.cat([valid.unsqueeze(-1), alt_valid], dim=-1)
+        target_delta = targets.unsqueeze(-1) - targets.unsqueeze(-2)
+        prediction_delta = predictions.unsqueeze(-1) - predictions.unsqueeze(-2)
+        better = (
+            candidate_valid.unsqueeze(-1)
+            & candidate_valid.unsqueeze(-2)
+            & target_delta.gt(self.label_gap)
+        )
+        pairwise = masked_mean(
+            F.relu(self.margin - prediction_delta), better.float()
+        )
+        return (
+            self.regression_weight * regression
+            + self.pairwise_weight * pairwise
+        )
 
 
 class StateGoalDistance(Objective):
