@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-21-pooled-sentence-dense-checkpoint-recovery",
+  "decision": "Can activation-checkpointed N=4 and N=8 all-anchor rollout training fit at the matched batch size of eight, and do fast pilots show enough drift or generation improvement to justify the full confirmation runs?",
+  "git_commit": "2361fe190e6b41e5049bc4f46b120b8932610312",
+  "jobs": [
+    {
+      "id": "pooled-dense-n4-pilot-checkpoint-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 360,
+      "purpose": "Fast 2,000-step N=4 directional pilot with the complete drift, generation, planning, and representation diagnostics.",
+      "env": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-dense-n4-pilot-checkpoint-seed0", "4", "pilot", "model.dense_checkpoint=true"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json"]
+    },
+    {
+      "id": "pooled-dense-n8-pilot-checkpoint-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 360,
+      "purpose": "Fast 2,000-step N=8 directional pilot with the complete drift, generation, planning, and representation diagnostics.",
+      "env": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-dense-n8-pilot-checkpoint-seed0", "8", "pilot", "model.dense_checkpoint=true"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json"]
+    },
+    {
+      "id": "pooled-dense-n4-full-checkpoint-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 1440,
+      "purpose": "Full matched N=4 recovery using recomputation rather than a scientifically mismatched smaller batch.",
+      "env": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-dense-n4-full-checkpoint-seed0", "4", "full", "model.dense_checkpoint=true"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/last.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json", "model/selected_prior_weight.json"]
+    },
+    {
+      "id": "pooled-dense-n8-full-checkpoint-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 1440,
+      "purpose": "Full matched N=8 recovery using recomputation rather than a scientifically mismatched smaller batch.",
+      "env": {"PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-dense-n8-full-checkpoint-seed0", "8", "full", "model.dense_checkpoint=true"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/last.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json", "model/selected_prior_weight.json"]
+    }
+  ]
+}
