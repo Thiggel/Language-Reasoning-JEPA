@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-21-generative-lm-10m-pilots",
+  "decision": "At approximately 10M parameters and matched data, does ordinary token-level autoregression or CE-only next-sentence decoding learn valid unconstrained iGSM generation, and which learning rate should be used for full confirmation?",
+  "git_commit": "388d5b0280499a622af98c37ace2ac7971b51efb",
+  "jobs": [
+    {
+      "id": "token-lm-10m-lr3e4-pilot-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 240,
+      "purpose": "Train the 10.14M decoder-only token LM with ordinary next-token CE at the conventional learning rate.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-10m-lr3e4-pilot-seed0", "pilot", "3e-4"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "token-lm-10m-lr1e3-pilot-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 240,
+      "purpose": "Learning-rate cross-check for the 10.14M decoder-only token LM.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-10m-lr1e3-pilot-seed0", "pilot", "1e-3"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-10m-lr3e4-pilot-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 240,
+      "purpose": "Train the 10.16M sentence LM using only autoregressive next-sentence decoder CE and no latent prediction.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-10m-lr3e4-pilot-seed0", "pilot", "3e-4"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-10m-lr1e3-pilot-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 22000,
+      "walltime_minutes": 240,
+      "purpose": "Learning-rate cross-check for the 10.16M CE-only next-sentence model.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-10m-lr1e3-pilot-seed0", "pilot", "1e-3"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    }
+  ]
+}
