@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-21-geometry-paper-campaign",
+  "project": "intent_phrase",
+  "title": "A gated four-domain test of reasoning through predicted geometry",
+  "created_at": "2026-07-21T16:00:00+02:00",
+  "status": "implementation_complete",
+  "decision": "Run four cross-cluster process gates before admitting the frozen learning-rate campaign.",
+  "plain_summary": "The four-domain, five-seed experiment contract and its core model, data, and non-oracle planning paths are implemented; paper-scale training remains conditional on process and dataset validity gates.",
+  "report": "REPORT.md",
+  "review_required": true
+}

@@ -391,6 +391,45 @@ def test_multistep_geometric_rollout_ranking(setup):
     assert any(p.grad is not None for p in model.core.value_head.parameters())
 
 
+def test_geometric_advantage_mse_uses_same_state_pair_differences(setup):
+    from textjepa.objectives import GeoAdvantageRegression
+
+    vocab, batch, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        value_detach=False,
+    )
+    out = model(batch)
+    # Isolate the objective contract from data generation: action values are
+    # costs, hence e_j-e_i must match d_j-d_i for every candidate pair.
+    out.extras["ga_energy"] = torch.tensor(
+        [[1.0, 3.0, 2.0]], requires_grad=True
+    )
+    out.extras["ga_label"] = torch.tensor([[2.0, 4.0, 3.0]])
+    out.extras["ga_valid"] = torch.tensor([[True, True, True]])
+    loss = GeoAdvantageRegression()(out, batch)
+    assert loss.item() == pytest.approx(0.0, abs=1e-8)
+
+
+def test_geometric_advantage_mse_masks_invalid_candidates(setup):
+    from textjepa.objectives import GeoAdvantageRegression
+
+    _, batch, model = setup
+    out = model(batch)
+    energy = torch.tensor([[1.0, 2.0, 1000.0]], requires_grad=True)
+    out.extras.update(
+        ga_energy=energy,
+        ga_label=torch.tensor([[1.0, 2.0, float("inf")]]),
+        ga_valid=torch.tensor([[True, True, False]]),
+    )
+    loss = GeoAdvantageRegression()(out, batch)
+    assert loss.item() == pytest.approx(0.0, abs=1e-8)
+    loss.backward()
+    assert energy.grad[0, 2].item() == 0.0
+
+
 def test_geometry_greedy_rollout_ranking(setup):
     from textjepa.objectives import GeoAdvantageRank
 

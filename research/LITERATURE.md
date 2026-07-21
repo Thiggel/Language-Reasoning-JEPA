@@ -8,6 +8,64 @@ Existing conceptual anchors are I-JEPA, HWM, Delta-JEPA, variational JEPA,
 VICReg, and SIGReg. Before using a method as a baseline or making a novelty
 claim, verify the primary source and current publication status.
 
+## 2026-07-21 — recurrent-depth baselines and a three-domain reasoning suite
+
+- Query: which recurrent-depth training protocol fairly tests latent
+  test-time-compute scaling, and which non-iGSM datasets preserve explicit
+  natural-language actions, executable transitions, goals, and controllable
+  reasoning depth?
+- Primary sources:
+  - Scaling up Test-Time Compute with Latent Reasoning:
+    <https://arxiv.org/abs/2502.05171>
+  - ProofWriter: <https://arxiv.org/abs/2012.13048>
+  - PlanBench: <https://arxiv.org/abs/2206.10498>
+  - ALFWorld: <https://arxiv.org/abs/2010.03768>
+  - ScienceWorld: <https://arxiv.org/abs/2203.07540>
+- Applicable claims:
+  - Recurrent-depth Transformers can increase test-time computation without
+    increasing parameters by repeatedly applying a shared block. The cited
+    large-scale recipe samples recurrence counts from a log-normal--Poisson
+    mixture during training and evaluates performance as recurrence increases.
+    A plain fixed-depth Transformer is therefore insufficient as the only
+    test-time-compute baseline.
+  - ProofWriter exposes natural-language rules, iterated one-step implications,
+    explicit proofs, and held-out proof depths. Rule applications can be
+    rendered as observed actions and derived facts as outcomes, closely
+    matching the intent-JEPA state--action--consequence interface while
+    changing the reasoning algebra from arithmetic to deduction.
+  - PlanBench supplies deterministic initial states, goals, grounded actions,
+    executable validation, and optimal-plan questions in Blocksworld and
+    Logistics. It is a cleaner third core domain than an embodied text world
+    because action legality, state transitions, and solution depth remain exact.
+  - ALFWorld and ScienceWorld add stronger interactive and linguistic external
+    validity, but also introduce partial observability, exploration, navigation,
+    large action spaces, and heterogeneous rewards that can obscure a geometry
+    attribution experiment.
+- Limitations:
+  - ProofWriter and PlanBench require new trajectory adapters. Their symbolic
+    engines may generate training targets and evaluation labels, but symbolic
+    legality, optimal actions, and solved states must be labeled as environment
+    interfaces or privileged teachers rather than hidden inside the proposed
+    model.
+  - iGSM, ProofWriter, and PlanBench are templated/synthetic. Three datasets do
+    not by themselves establish broad natural-language generality; ALFWorld is
+    a useful later transfer gate if the controlled result is strong.
+  - Recurrence iterations and JEPA rollout steps do not have identical FLOP
+    cost. Test-time scaling comparisons must report network evaluations,
+    measured FLOPs or latency, parameters, and accuracy--compute area rather
+    than matching only an integer depth.
+- Design change:
+  - Use iGSM, ProofWriter, and PlanBench as the minimum three-domain core;
+    reserve ALFWorld as the preferred fourth-domain transfer rather than
+    substituting another arithmetic toy such as Game of 24.
+  - Pair every learned baseline with a recurrent-depth version trained using a
+    validated log-normal--Poisson recurrence distribution. Report both
+    in-distribution loop budgets and extrapolation beyond the common training
+    range.
+  - Compare JEPA simulation depth and LM recurrence on accuracy versus measured
+    inference compute. Predeclare curve area/slope and the best common-budget
+    point; do not compare independently cherry-picked maxima.
+
 ## 2026-07-17 — faithful LDAD for structured text edits
 
 - Query: which representation enters Delta-JEPA's action decoder, whether its

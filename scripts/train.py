@@ -13,12 +13,15 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
-from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.sampling import FreshEpochSampler, GroupedTrajectoryBatchSampler
 from textjepa.objectives import CompositeObjective
 from textjepa.training import Trainer
 from textjepa.utils import seed_everything
-from textjepa.utils.checkpoint import build_dataset, collate_for
+from textjepa.utils.checkpoint import (
+    build_dataset,
+    build_vocab_for_config,
+    collate_for,
+)
 
 
 def build_objective(cfg: DictConfig) -> CompositeObjective:
@@ -54,16 +57,7 @@ def main(cfg: DictConfig) -> None:
     out_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
     print(OmegaConf.to_yaml(cfg))
 
-    if cfg.data.get("name", "igsm") == "igsm_real_token_edit":
-        from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
-
-        vocab = faithful_token_edit_vocab()
-    elif cfg.data.get("name", "igsm") == "igsm_real":
-        from textjepa.data.faithful import cached_faithful_vocab
-
-        vocab = cached_faithful_vocab()
-    else:
-        vocab = build_vocab(cfg.data.modulus)
+    vocab = build_vocab_for_config(cfg)
     train_ds = build_dataset(cfg, vocab, split="train")
     val_ds = build_dataset(cfg, vocab, split="val")
     coll = partial(collate_for(cfg), pad_id=vocab.pad_id)

@@ -14,7 +14,6 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
-from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.lm import (
     IntentSentencePolicyDataset,
     collate_intent_sentence_policy,
@@ -25,7 +24,11 @@ from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.training.trainer import to_device
 from textjepa.utils import seed_everything
-from textjepa.utils.checkpoint import build_dataset, collate_for
+from textjepa.utils.checkpoint import (
+    build_dataset,
+    build_vocab_for_config,
+    collate_for,
+)
 
 
 @hydra.main(config_path="../configs", config_name="sentlm", version_base="1.3")
@@ -34,12 +37,7 @@ def main(cfg: DictConfig) -> None:
     out_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
     print(OmegaConf.to_yaml(cfg))
     device = torch.device(cfg.device)
-    if cfg.data.get("name", "igsm") == "igsm_real":
-        from textjepa.data.faithful import cached_faithful_vocab
-
-        vocab = cached_faithful_vocab()
-    else:
-        vocab = build_vocab(cfg.data.modulus)
+    vocab = build_vocab_for_config(cfg)
     target_kind = cfg.train.get("target_kind", "outcome")
     if target_kind == "intent":
         coll = partial(collate_intent_sentence_policy, pad_id=vocab.pad_id)

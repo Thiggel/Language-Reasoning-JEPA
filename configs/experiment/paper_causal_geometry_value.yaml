@@ -1,0 +1,20 @@
+# @package _global_
+# Geometry-derived action value: both terms supervise the same
+# Q(s,a)=V(F(s,a),g) energies; there is no direct action classifier.
+defaults: [paper_causal_j3, _self_]
+run_name: paper_causal_geometry_value
+model:
+  value_detach: false
+objective:
+  geo_rank: {weight: 1.0, margin: 0.5, label_gap: 0.02}
+  geo_advantage_mse: {weight: 0.25, target_scale: 1.0}
+  action_feasibility: {weight: 1.0, positive_weight: 2.0}
+data:
+  # ``shuffle_actions`` permutes intents away from their outcomes; it is a
+  # grounding falsifier, not candidate-order randomization.
+  shuffle_actions: false
+  all_action_supervision: true
+  geo_rank_k: 4
+  geo_rank_horizon: 2
+  geo_rank_policy: greedy
+  geo_rank_beam_width: 4

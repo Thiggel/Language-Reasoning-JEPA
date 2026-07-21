@@ -119,6 +119,10 @@ geo_rank:
   weight: 0.0  # preference-label-free geometric ranking (disc_georank*)
   margin: 0.5
   label_gap: 0.02
+geo_advantage_mse:
+  _target_: textjepa.objectives.GeoAdvantageRegression
+  weight: 0.0
+  target_scale: 1.0
 counterfactual_outcome:
   _target_: textjepa.objectives.CounterfactualOutcomePrediction
   weight: 0.0  # data-only control: observed alternatives, no preference labels

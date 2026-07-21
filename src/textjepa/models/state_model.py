@@ -5,7 +5,11 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import build_causal_attention_mask, encoder_stack
+from textjepa.models.layers import (
+    LoopedTransformerEncoder,
+    build_causal_attention_mask,
+    encoder_stack,
+)
 
 
 class DiscourseStateModel(nn.Module):
@@ -23,6 +27,11 @@ class DiscourseStateModel(nn.Module):
         ff_mult: int = 4,
         max_chunks: int = 64,
         dropout: float = 0.0,
+        recurrent: bool = False,
+        train_loop_mean: float = 4.0,
+        train_loop_min: int = 1,
+        train_loop_max: int = 8,
+        eval_loops: int = 4,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -30,7 +39,20 @@ class DiscourseStateModel(nn.Module):
         self.segment = nn.Parameter(torch.zeros(2, d_model))
         nn.init.normal_(self.pos, std=0.02)
         nn.init.normal_(self.segment, std=0.02)
-        self.encoder = encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
+        self.encoder = (
+            LoopedTransformerEncoder(
+                d_model,
+                n_heads,
+                ff_mult,
+                dropout,
+                train_loop_mean,
+                train_loop_min,
+                train_loop_max,
+                eval_loops,
+            )
+            if recurrent
+            else encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
+        )
         self.norm = nn.LayerNorm(d_model)
 
     def forward(

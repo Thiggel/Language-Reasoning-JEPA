@@ -10,6 +10,31 @@ from textjepa.data.edits.dataset import EditDataset, collate_edits
 from textjepa.data.igsm.dataset import IGSMDataset, build_vocab, collate
 
 
+def build_vocab_for_config(cfg):
+    """Build a vocabulary without inspecting validation or test text."""
+    name = cfg.data.get("name", "igsm")
+    if name == "observed_action":
+        from textjepa.data.observed_action import (
+            build_observed_action_vocab,
+            load_observed_action_jsonl,
+        )
+
+        episodes = load_observed_action_jsonl(
+            cfg.data.train_path,
+            expected_domain=cfg.data.get("domain"),
+        )
+        return build_observed_action_vocab(episodes)
+    if name == "igsm_real_token_edit":
+        from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
+
+        return faithful_token_edit_vocab()
+    if name == "igsm_real":
+        from textjepa.data.faithful import cached_faithful_vocab
+
+        return cached_faithful_vocab()
+    return build_vocab(cfg.data.modulus)
+
+
 def _migrate_legacy_state_dict(state: dict[str, torch.Tensor]):
     """Adapt checkpoints created before ``MacroActionModel`` wrapped its encoder.
 
@@ -37,16 +62,7 @@ def load_run(ckpt_path: str, device: str = "cuda:0", random_init: bool = False):
     """Returns (model, vocab, cfg) from a training checkpoint."""
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(ckpt["cfg"])
-    if cfg.data.get("name", "igsm") == "igsm_real_token_edit":
-        from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
-
-        vocab = faithful_token_edit_vocab()
-    elif cfg.data.get("name", "igsm") == "igsm_real":
-        from textjepa.data.faithful import cached_faithful_vocab
-
-        vocab = cached_faithful_vocab()
-    else:
-        vocab = build_vocab(cfg.data.modulus)
+    vocab = build_vocab_for_config(cfg)
     model = instantiate(cfg.model, vocab_size=len(vocab), pad_id=vocab.pad_id)
     if not random_init:
         state = _migrate_legacy_state_dict(ckpt["model"])
@@ -60,6 +76,27 @@ def load_run(ckpt_path: str, device: str = "cuda:0", random_init: bool = False):
 
 def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
     d = cfg.data
+    if d.get("name", "igsm") == "observed_action":
+        from textjepa.data.observed_action import (
+            ObservedActionDataset,
+            load_observed_action_jsonl,
+        )
+
+        path = d.get(f"{split}_path")
+        if path is None:
+            raise ValueError(f"missing observed-action {split}_path")
+        episodes = load_observed_action_jsonl(
+            path, expected_domain=d.get("domain")
+        )
+        if size is not None:
+            episodes = episodes[:size]
+        return ObservedActionDataset(
+            episodes,
+            vocab,
+            geo_rank_k=d.get("geo_rank_k", 0),
+            geo_rank_horizon=d.get("geo_rank_horizon", 1),
+            seed=d.get(f"{split}_seed", 0),
+        )
     igsm_kwargs = dict(
         modulus=d.modulus,
         n_vars_range=tuple(d.n_vars_range),

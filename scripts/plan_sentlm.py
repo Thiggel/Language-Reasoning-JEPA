@@ -47,6 +47,13 @@ def main(cfg: DictConfig) -> None:
     ).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
+    if cfg.get("eval_loops") is not None:
+        encoder = model.state_model.encoder
+        if not hasattr(encoder, "eval_loops"):
+            raise ValueError(
+                "eval_loops requires a recurrent sentence-LM checkpoint"
+            )
+        encoder.eval_loops = int(cfg.eval_loops)
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
     score = cfg.get("score", "decoder")

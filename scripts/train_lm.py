@@ -14,7 +14,6 @@ import torch.nn.functional as F
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
-from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.lm import (
     FlattenedDiscourseLMDataset,
     IntentPolicyLMDataset,
@@ -26,7 +25,7 @@ from textjepa.models.lm_baseline import DecoderLM
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.utils import seed_everything
-from textjepa.utils.checkpoint import build_dataset
+from textjepa.utils.checkpoint import build_dataset, build_vocab_for_config
 
 
 def rank_loss(model, batch, device, margin=1.0):
@@ -70,12 +69,7 @@ def main(cfg: DictConfig) -> None:
     out_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
     print(OmegaConf.to_yaml(cfg))
     device = torch.device(cfg.device)
-    if cfg.data.get("name", "igsm") == "igsm_real":
-        from textjepa.data.faithful import cached_faithful_vocab
-
-        vocab = cached_faithful_vocab()
-    else:
-        vocab = build_vocab(cfg.data.modulus)
+    vocab = build_vocab_for_config(cfg)
 
     def make(split):
         d = cfg.data
@@ -86,9 +80,11 @@ def main(cfg: DictConfig) -> None:
             return IntentPolicyLMDataset(build_dataset(cfg, vocab, split=split))
         if target_kind != "outcome":
             raise ValueError(f"unknown LM target_kind: {target_kind}")
-        if d.get("name", "igsm") == "igsm_real":
+        if d.get("name", "igsm") in {"igsm_real", "observed_action"}:
             if cfg.train.get("rank_weight", 0):
-                raise ValueError("faithful token-LM ranking is not implemented")
+                raise ValueError(
+                    "token-LM ranking is not implemented for this dataset"
+                )
             return FlattenedDiscourseLMDataset(
                 build_dataset(cfg, vocab, split=split)
             )
@@ -116,9 +112,7 @@ def main(cfg: DictConfig) -> None:
     )
 
     model = DecoderLM(
-        vocab_size=len(vocab), pad_id=vocab.pad_id, d_model=cfg.model.d_model,
-        n_layers=cfg.model.n_layers, n_heads=cfg.model.n_heads,
-        ff_mult=cfg.model.ff_mult, max_len=cfg.model.max_len,
+        vocab_size=len(vocab), pad_id=vocab.pad_id, **cfg.model
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"LM parameters: {n_params / 1e6:.2f}M")

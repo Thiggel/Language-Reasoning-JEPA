@@ -1,0 +1,11 @@
+name: observed_action
+domain: alfworld-textworld
+train_path: data/intent_phrase/alfworld/train.jsonl
+val_path: data/intent_phrase/alfworld/val.jsonl
+test_path: data/intent_phrase/alfworld/test.jsonl
+train_seed: 31
+val_seed: 32
+test_seed: 33
+geo_rank_k: 4
+geo_rank_horizon: 2
+fresh_per_epoch: false

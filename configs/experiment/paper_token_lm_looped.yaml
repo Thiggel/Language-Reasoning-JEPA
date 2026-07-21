@@ -1,0 +1,9 @@
+# @package _global_
+defaults: [paper_token_lm, _self_]
+run_name: paper_token_lm_looped
+model:
+  recurrent: true
+  train_loop_mean: 4.0
+  train_loop_min: 1
+  train_loop_max: 8
+  eval_loops: 4

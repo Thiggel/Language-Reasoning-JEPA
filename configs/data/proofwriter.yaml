@@ -1,0 +1,11 @@
+name: observed_action
+domain: proofwriter
+train_path: data/intent_phrase/proofwriter/train.jsonl
+val_path: data/intent_phrase/proofwriter/val.jsonl
+test_path: data/intent_phrase/proofwriter/test.jsonl
+train_seed: 11
+val_seed: 12
+test_seed: 13
+geo_rank_k: 4
+geo_rank_horizon: 2
+fresh_per_epoch: false

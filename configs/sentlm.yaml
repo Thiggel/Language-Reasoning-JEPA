@@ -18,6 +18,11 @@ model:
   max_chunk_len: 48
   max_chunks: 64
   latent_target: false
+  recurrent: false
+  train_loop_mean: 4.0
+  train_loop_min: 1
+  train_loop_max: 8
+  eval_loops: 4
 
 train:
   target_kind: outcome  # outcome | intent

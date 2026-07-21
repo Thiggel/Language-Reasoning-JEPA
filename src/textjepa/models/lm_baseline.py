@@ -11,7 +11,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import build_causal_attention_mask
+from textjepa.models.layers import (
+    LoopedTransformerEncoder,
+    build_causal_attention_mask,
+)
 
 
 class DecoderLM(nn.Module):
@@ -25,6 +28,11 @@ class DecoderLM(nn.Module):
         ff_mult: int = 4,
         max_len: int = 512,
         dropout: float = 0.0,
+        recurrent: bool = False,
+        train_loop_mean: float = 4.0,
+        train_loop_min: int = 1,
+        train_loop_max: int = 8,
+        eval_loops: int = 4,
     ):
         super().__init__()
         self.pad_id = pad_id
@@ -32,23 +40,48 @@ class DecoderLM(nn.Module):
         self.pos = nn.Parameter(torch.zeros(1, max_len, d_model))
         nn.init.normal_(self.pos, std=0.02)
         self.n_heads = n_heads
-        layer = nn.TransformerEncoderLayer(
-            d_model, n_heads, d_model * ff_mult, dropout,
-            activation="gelu", batch_first=True, norm_first=True,
-        )
-        self.blocks = nn.TransformerEncoder(layer, n_layers)
+        if recurrent:
+            self.blocks = LoopedTransformerEncoder(
+                d_model,
+                n_heads,
+                ff_mult,
+                dropout,
+                train_loop_mean,
+                train_loop_min,
+                train_loop_max,
+                eval_loops,
+            )
+        else:
+            layer = nn.TransformerEncoderLayer(
+                d_model, n_heads, d_model * ff_mult, dropout,
+                activation="gelu", batch_first=True, norm_first=True,
+            )
+            self.blocks = nn.TransformerEncoder(layer, n_layers)
         self.norm = nn.LayerNorm(d_model)
         self.head = nn.Linear(d_model, vocab_size, bias=False)
         self.head.weight = self.tok.weight  # tied
 
-    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        """[B, L] -> [B, L, V] next-token logits."""
+    def hidden(
+        self, tokens: torch.Tensor, num_loops: int | None = None
+    ) -> torch.Tensor:
+        """Return normalized causal token states for frozen-feature analysis."""
         B, L = tokens.shape
         x = self.tok(tokens) + self.pos[:, :L]
         valid = tokens != self.pad_id
         mask = build_causal_attention_mask(valid, self.n_heads)
-        x = self.blocks(x, mask=mask)
-        return self.head(self.norm(x))
+        if isinstance(self.blocks, LoopedTransformerEncoder):
+            x = self.blocks(x, mask=mask, num_loops=num_loops)
+        else:
+            if num_loops is not None:
+                raise ValueError("num_loops is only valid for recurrent models")
+            x = self.blocks(x, mask=mask)
+        return self.norm(x)
+
+    def forward(
+        self, tokens: torch.Tensor, num_loops: int | None = None
+    ) -> torch.Tensor:
+        """[B, L] -> [B, L, V] next-token logits."""
+        return self.head(self.hidden(tokens, num_loops=num_loops))
 
     @torch.no_grad()
     def sequence_logprob(

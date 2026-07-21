@@ -96,3 +96,46 @@ class GeoAdvantageRank(Objective):
         loss = better.float() * F.relu(self.margin + ei)
         n = better.float().sum().clamp(min=1.0)
         return loss.sum() / n
+
+
+class GeoAdvantageRegression(Objective):
+    """Calibrate geometric action advantages without an action-only head.
+
+    ``ga_energy[i]`` is always computed as ``V(F(s, a_i), g)``.  For each
+    same-state candidate pair, the predicted advantage of action ``i`` over
+    ``j`` is therefore ``energy[j] - energy[i]``.  Its target is the matching
+    difference between true EMA-geometry distances.  Pair differences remove
+    arbitrary state-specific offsets while retaining the magnitude that a
+    ranking loss discards.
+    """
+
+    def __init__(self, target_scale: float = 1.0):
+        super().__init__()
+        if target_scale <= 0:
+            raise ValueError("target_scale must be positive")
+        self.target_scale = float(target_scale)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "ga_energy" not in out.extras:
+            return out.step_states.sum() * 0.0
+        energy = out.extras["ga_energy"]
+        valid = out.extras["ga_valid"]
+        # Padded or failed rollout candidates deliberately carry +inf
+        # distances.  Zero them *before* constructing pair differences;
+        # multiplying an inf/nan error by a false mask afterwards is not
+        # numerically safe.
+        distance = out.extras["ga_label"].detach().masked_fill(~valid, 0.0)
+        count = energy.shape[1]
+        upper = torch.triu(
+            torch.ones(count, count, dtype=torch.bool, device=energy.device),
+            diagonal=1,
+        )
+        pair_valid = (
+            valid.unsqueeze(2) & valid.unsqueeze(1) & upper.unsqueeze(0)
+        )
+        predicted_advantage = energy.unsqueeze(1) - energy.unsqueeze(2)
+        target_advantage = self.target_scale * (
+            distance.unsqueeze(1) - distance.unsqueeze(2)
+        )
+        squared_error = (predicted_advantage - target_advantage).square()
+        return squared_error[pair_valid].sum() / pair_valid.sum().clamp(min=1)

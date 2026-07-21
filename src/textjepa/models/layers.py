@@ -29,6 +29,78 @@ def encoder_stack(
     return nn.TransformerEncoder(layer, n_layers, enable_nested_tensor=False)
 
 
+class LoopedTransformerEncoder(nn.Module):
+    """A weight-shared Transformer block with a controlled loop schedule.
+
+    During training, one loop count is sampled for the whole batch from a
+    clipped shifted-Poisson distribution.  Evaluation is deterministic and
+    uses ``eval_loops`` unless the caller explicitly supplies ``num_loops``.
+    Sharing one block makes additional evaluation loops genuine test-time
+    compute rather than additional trained parameters.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        n_heads: int,
+        ff_mult: int,
+        dropout: float = 0.0,
+        train_loop_mean: float = 4.0,
+        train_loop_min: int = 1,
+        train_loop_max: int = 8,
+        eval_loops: int = 4,
+    ):
+        super().__init__()
+        if dropout != 0.0:
+            raise ValueError("looped reasoning baselines require dropout=0")
+        if train_loop_min < 1 or train_loop_max < train_loop_min:
+            raise ValueError("invalid loop-count bounds")
+        if train_loop_mean < 1:
+            raise ValueError("train_loop_mean must be at least one")
+        if not train_loop_min <= eval_loops <= train_loop_max:
+            raise ValueError("eval_loops must lie inside the training bounds")
+        self.train_loop_mean = float(train_loop_mean)
+        self.train_loop_min = int(train_loop_min)
+        self.train_loop_max = int(train_loop_max)
+        self.eval_loops = int(eval_loops)
+        self.last_num_loops = self.eval_loops
+        self.block = nn.TransformerEncoderLayer(
+            d_model,
+            n_heads,
+            dim_feedforward=d_model * ff_mult,
+            dropout=0.0,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+
+    def sample_num_loops(self) -> int:
+        rate = max(self.train_loop_mean - 1.0, 0.0)
+        sampled = 1 + int(torch.poisson(torch.tensor(rate)).item())
+        return min(max(sampled, self.train_loop_min), self.train_loop_max)
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        mask: torch.Tensor | None = None,
+        src_key_padding_mask: torch.Tensor | None = None,
+        num_loops: int | None = None,
+    ) -> torch.Tensor:
+        loops = (
+            self.sample_num_loops() if self.training else self.eval_loops
+        ) if num_loops is None else int(num_loops)
+        if loops < 1:
+            raise ValueError("num_loops must be positive")
+        self.last_num_loops = loops
+        for _ in range(loops):
+            x = self.block(
+                x,
+                src_mask=mask,
+                src_key_padding_mask=src_key_padding_mask,
+            )
+        return x
+
+
 class TokenTransformer(nn.Module):
     """Tokens [N, L] -> pooled chunk embedding [N, D] (masked mean)."""
 

@@ -26,7 +26,12 @@ from textjepa.objectives.value import (
 )
 from textjepa.objectives.chunk_pred import ChunkPrediction, SlotAnchor
 from textjepa.objectives.geometry import GoalMonotonicity, TemporalStraightening
-from textjepa.objectives.ranking import ActionRanking, CostRanking, GeoAdvantageRank
+from textjepa.objectives.ranking import (
+    ActionRanking,
+    CostRanking,
+    GeoAdvantageRank,
+    GeoAdvantageRegression,
+)
 from textjepa.objectives.counterfactual import (
     CounterfactualOutcomePrediction,
     CounterfactualSlotPrediction,
@@ -63,6 +68,7 @@ __all__ = [
     "ActionRanking",
     "CostRanking",
     "GeoAdvantageRank",
+    "GeoAdvantageRegression",
     "CounterfactualOutcomePrediction",
     "CounterfactualSlotPrediction",
     "MacroCounterfactualDynamics",

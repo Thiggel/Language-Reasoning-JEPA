@@ -46,13 +46,14 @@ def main(cfg: DictConfig) -> None:
     else:
         vocab = build_vocab(run_cfg.data.modulus)
     model = DecoderLM(
-        vocab_size=len(vocab), pad_id=vocab.pad_id,
-        d_model=run_cfg.model.d_model, n_layers=run_cfg.model.n_layers,
-        n_heads=run_cfg.model.n_heads, ff_mult=run_cfg.model.ff_mult,
-        max_len=run_cfg.model.max_len,
+        vocab_size=len(vocab), pad_id=vocab.pad_id, **run_cfg.model
     ).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
+    if cfg.get("eval_loops") is not None:
+        if not hasattr(model.blocks, "eval_loops"):
+            raise ValueError("eval_loops requires a recurrent LM checkpoint")
+        model.blocks.eval_loops = int(cfg.eval_loops)
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
 

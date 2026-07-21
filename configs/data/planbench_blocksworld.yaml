@@ -1,0 +1,11 @@
+name: observed_action
+domain: planbench-blocksworld
+train_path: data/intent_phrase/planbench_blocksworld/train.jsonl
+val_path: data/intent_phrase/planbench_blocksworld/val.jsonl
+test_path: data/intent_phrase/planbench_blocksworld/test.jsonl
+train_seed: 21
+val_seed: 22
+test_seed: 23
+geo_rank_k: 4
+geo_rank_horizon: 2
+fresh_per_epoch: false

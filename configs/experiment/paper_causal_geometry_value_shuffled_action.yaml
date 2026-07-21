@@ -1,0 +1,6 @@
+# @package _global_
+# Negative control: destroy observed action/outcome correspondence.
+defaults: [paper_causal_geometry_value, _self_]
+run_name: paper_causal_geometry_value_shuffled_action
+data:
+  shuffle_actions: true

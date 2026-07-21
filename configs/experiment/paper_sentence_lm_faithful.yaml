@@ -1,5 +1,4 @@
 # @package _global_
 defaults: [sentlm_intent_faithful, _self_]
 run_name: paper_sentence_lm_faithful
-data: {shuffle_actions: true}
-
+data: {shuffle_actions: false}

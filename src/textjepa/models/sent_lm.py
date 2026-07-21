@@ -43,6 +43,11 @@ class SentenceLM(nn.Module):
         max_chunk_len: int = 48,
         max_chunks: int = 64,
         latent_target: bool = False,
+        recurrent: bool = False,
+        train_loop_mean: float = 4.0,
+        train_loop_min: int = 1,
+        train_loop_max: int = 8,
+        eval_loops: int = 4,
     ):
         super().__init__()
         self.pad_id = pad_id
@@ -52,7 +57,17 @@ class SentenceLM(nn.Module):
             ff_mult, max_chunk_len, 0.0,
         )
         self.state_model = DiscourseStateModel(
-            d_model, state_layers, state_heads, ff_mult, max_chunks, 0.0
+            d_model,
+            state_layers,
+            state_heads,
+            ff_mult,
+            max_chunks,
+            0.0,
+            recurrent,
+            train_loop_mean,
+            train_loop_min,
+            train_loop_max,
+            eval_loops,
         )
         self.dec_tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         nn.init.normal_(self.dec_tok.weight, std=0.02)
