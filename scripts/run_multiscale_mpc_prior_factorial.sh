@@ -49,6 +49,7 @@ for mode in no_prior detached_prior attached_prior; do
     data.proposal_pool_k=32 data.proposal_token_pool=prompt_plus_current \
     data.gar_teacher=token_edit_distance \
     train.epochs=1 train.batch_size=8 train.microbatch_size=8 \
+    train.num_workers=4 \
     train.lr=0.0003 train.warmup_steps=100 train.eval_batches=8 \
     train.log_every=10
 
