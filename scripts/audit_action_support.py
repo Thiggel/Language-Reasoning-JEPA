@@ -44,12 +44,18 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--examples", type=int, default=2000)
+    parser.add_argument("--length", type=int)
     args = parser.parse_args()
     model, vocab, cfg = load_run(args.ckpt, args.device)
     cfg.data.all_action_supervision = True
+    if args.length is not None:
+        cfg.data.steps_range = [args.length, args.length]
+        cfg.data.n_vars_range = [6, 12]
+        cfg.data.strict_steps_range = True
+        cfg.data.problem_max_tries = 10000
     dataset = build_dataset(cfg, vocab, split="val", size=args.examples)
     loader = DataLoader(
-        dataset, batch_size=128, shuffle=False, num_workers=4,
+        dataset, batch_size=128, shuffle=False, num_workers=0,
         collate_fn=partial(collate, pad_id=vocab.pad_id),
     )
     collected = {name: [] for name in ("true", "one_step", "open_loop")}
@@ -58,25 +64,14 @@ def main() -> None:
         for batch in loader:
             batch = to_device(batch, torch.device(args.device))
             out = model(batch)
-            actions = model.encode_actions(batch["action_candidate_tokens"])
-            B, T, d_state = out.prev_states.shape
-            V = actions.shape[1]
-            states = {
-                "true": out.prev_states,
-                "one_step": torch.cat(
-                    [out.s0.unsqueeze(1), out.preds[:, :-1]], dim=1
-                ),
-                "open_loop": torch.cat(
-                    [out.s0.unsqueeze(1), out.rollout[:, :-1]], dim=1
-                ),
-            }
-            expanded_actions = actions.unsqueeze(1).expand(B, T, V, -1)
-            for name, state in states.items():
-                logits = model.core.action_support_head(
-                    state.unsqueeze(2).expand(B, T, V, d_state),
-                    expanded_actions,
-                )
-                collected[name].append(logits.cpu())
+            logits = out.extras["action_support_logits"]
+            if logits.dim() == 3:
+                logits = logits.unsqueeze(1)
+            if logits.shape[1] not in {1, 3}:
+                raise RuntimeError("unexpected action-support state axis")
+            for index, name in enumerate(("true", "one_step", "open_loop")):
+                if index < logits.shape[1]:
+                    collected[name].append(logits[:, index].cpu())
             targets.append(batch["action_feasible"].cpu())
             masks.append((
                 out.step_mask.unsqueeze(-1)
@@ -99,9 +94,10 @@ def main() -> None:
     result = {
         "checkpoint": args.ckpt,
         "examples": args.examples,
+        "exact_length": args.length,
         "metrics": {
             name: metrics(padded(parts), target, valid)
-            for name, parts in collected.items()
+            for name, parts in collected.items() if parts
         },
     }
     destination = Path(args.out)

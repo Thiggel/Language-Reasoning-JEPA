@@ -17,6 +17,7 @@ from textjepa.models.delta_decoder import DeltaActionDecoder
 from textjepa.models.heads import (
     ActionSupportHead,
     HistoryActionSupportHead,
+    TokenHistoryActionSupportHead,
     ControllerOutcomeHead,
     SubgoalActionHead,
     MacroSupportHead,
@@ -145,6 +146,13 @@ class LatentDynamicsCore(nn.Module):
             self.action_support_head = ActionSupportHead(d_model, d_action)
         elif action_support_kind == "history_attention":
             self.action_support_head = HistoryActionSupportHead(
+                d_model,
+                d_model,
+                n_heads=action_support_heads,
+                use_history=action_support_history_mode == "aligned",
+            )
+        elif action_support_kind == "token_history_attention":
+            self.action_support_head = TokenHistoryActionSupportHead(
                 d_model,
                 d_model,
                 n_heads=action_support_heads,

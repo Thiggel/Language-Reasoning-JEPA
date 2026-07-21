@@ -303,7 +303,7 @@ class LatentPlanner:
             action_history if support_history is None else support_history
         )
         if history_source is not None:
-            history = history_source.expand(n, -1, -1)
+            history = history_source.expand(n, *history_source.shape[1:])
             history_mask = torch.ones(
                 history.shape[:2], dtype=torch.bool, device=history.device
             )
@@ -568,16 +568,22 @@ class LatentPlanner:
         return self.model.encode_actions(tokens).squeeze(1)
 
     def _support_codes(self, problem: Problem, idxs: list[int]) -> torch.Tensor:
-        if getattr(self.model, "action_support_kind", "pairwise") != "history_attention":
+        support_kind = getattr(self.model, "action_support_kind", "pairwise")
+        if support_kind not in {"history_attention", "token_history_attention"}:
             return self._action_codes(problem, idxs)
         from textjepa.data.igsm.render import action_phrase
 
         if not idxs:
             width = self.model.chunk_encoder.norm.normalized_shape[0]
+            if support_kind == "token_history_attention":
+                return torch.empty(0, 1, width, device=self.device)
             return torch.empty(0, width, device=self.device)
         texts = [action_phrase(problem, i) for i in idxs]
-        tokens = self._tokens(texts).squeeze(0).unsqueeze(1)
-        return self.model.encode_chunks(tokens).squeeze(1)
+        tokens = self._tokens(texts).squeeze(0)
+        if support_kind == "history_attention":
+            return self.model.encode_chunks(tokens.unsqueeze(1)).squeeze(1)
+        embeddings = self.model.chunk_encoder.tok(tokens)
+        return embeddings * tokens.ne(self.model.chunk_encoder.pad_id).unsqueeze(-1)
 
     def _flat_costs(
         self,

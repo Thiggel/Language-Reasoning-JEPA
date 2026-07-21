@@ -1,6 +1,6 @@
 # Cycle: calibrated proposal and JEPA reranking
 
-Status: implementation validated; three-seed inference screen planned
+Status: completed; proposal-only endpoint selected, validity gate failed
 
 ## Decision
 
@@ -50,3 +50,15 @@ JEPA scoring and rejects prior-only mixing. Unit tests cover exact weight-zero
 behavior, scale invariance, proposal-dominant ordering, and invalid protocol
 combinations. The evaluator records the hybrid weight in every artifact.
 
+## Result
+
+All three evaluation jobs completed with all 63 declared artifacts. Pure JEPA
+obtained .011 mean length-nine plus-two success. The best interior hybrid cell
+obtained .278, while the proposal-only depth-one endpoint obtained .350 with
+.506 strict invalid-action rate. No interior mixture beat proposal-only on the
+primary metric, and no cell reached the .25 invalid-rate gate. Depth four
+improved some weak mixtures but did not reverse the endpoint ordering.
+
+The predeclared decision is therefore to stop mixture-weight tuning. The next
+test preserves individual candidate/history tokens to determine whether pooled
+phrase embeddings erased prerequisite-name matching.

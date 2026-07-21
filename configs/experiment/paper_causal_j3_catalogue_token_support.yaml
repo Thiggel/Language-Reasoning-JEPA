@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - paper_causal_j3_catalogue_history_support
+  - _self_
+
+# Preserve individual lexical tokens while a candidate intent cross-attends to
+# the causal executed/imagined intent prefix.  JEPA encoders and dynamics stay
+# frozen; only the token support head and existing behavioral prior train.
+run_name: paper_causal_j3_catalogue_token_support
+model:
+  action_support_kind: token_history_attention
+  action_support_history_mode: aligned
+  action_support_heads: 4
+train:
+  reset_action_support_head: true
+  batch_size: 64
+

@@ -227,6 +227,27 @@ def test_learned_catalogue_passes_imagined_action_history_to_support_head():
     assert all(length == 2 for length in recorder.history_lengths[1:])
 
 
+def test_token_history_catalogue_runs_nonoracle_depth_two():
+    vocab = build_vocab(23)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        macro_k=2, action_prior=True,
+        action_support_kind="token_history_attention",
+        action_support_heads=4,
+    ).eval()
+    planner = LatentPlanner(
+        model, vocab, torch.device("cpu"), lookahead=2,
+        proposal_source="learned_catalogue", proposal_top_m=2,
+        proposal_beam_width=2, prior_only=True,
+    )
+    problem, _ = IGSMDataset(vocab, size=1, seed=31).problem(0)
+    result = planner.plan_episode(problem, slack=1, seed=9)
+    assert result.steps >= 1
+    assert result.n_invalid in {0, 1}
+
+
 def test_learned_catalogue_invalid_execution_is_reported_as_failure():
     vocab = build_vocab(23)
     ds = IGSMDataset(vocab, size=1, seed=29)

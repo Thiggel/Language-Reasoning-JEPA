@@ -61,3 +61,5 @@ information-matched planning protocols.
 - [Staged historical backlog](../../research/intent_phrase/BACKLOG.md)
 - [Current causal matrix](../../research/intent_phrase/waves/12_causal_paper_matrix.md)
 - [Current calibrated proposal/JEPA reranking cycle](../../research/cycles/intent_phrase/2026-07-20-hybrid-proposal-jepa-reranking.md)
+- [Current token-level prerequisite-support cycle](../../research/cycles/intent_phrase/2026-07-21-token-prerequisite-support.md)
+- [Hybrid result and token-support report](../../research/reports/intent_phrase/2026-07-21-hybrid-reranking-and-token-support/REPORT.md)

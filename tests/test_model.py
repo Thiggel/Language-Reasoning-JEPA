@@ -662,6 +662,77 @@ def test_history_attention_support_accepts_empty_initial_history(setup):
     assert torch.isfinite(scores).all()
 
 
+def test_token_history_support_is_causal_finite_and_trainable(setup):
+    from textjepa.objectives import ActionFeasibility
+
+    vocab, _, _ = setup
+    ds = IGSMDataset(
+        vocab, size=4, seed=149, all_action_supervision=True
+    )
+    batch = collate([ds[i] for i in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        macro_k=2, action_support_kind="token_history_attention",
+        action_support_history_mode="aligned", action_support_heads=4,
+        action_support_states="all", action_support_detach_inputs=True,
+    )
+    out = model(batch)
+    logits = out.extras["action_support_logits"]
+    assert logits.shape[:2] == (4, 3)
+    assert torch.isfinite(logits).all()
+    history_mask = out.extras["action_support_history_mask"]
+    for step in range(history_mask.shape[1]):
+        assert not bool(history_mask[:, step, step:].any())
+    ActionFeasibility()(out, batch).backward()
+    head = model.core.action_support_head
+    assert head.query.weight.grad is not None
+    assert head.candidate_encoder.layers[0].self_attn.in_proj_weight.grad is not None
+    assert all(parameter.grad is None for parameter in model.chunk_encoder.parameters())
+    assert all(parameter.grad is None for parameter in model.core.predictor.parameters())
+
+
+def test_token_history_negative_control_is_history_invariant(setup):
+    vocab, _, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        macro_k=2, action_support_kind="token_history_attention",
+        action_support_history_mode="none", action_support_heads=4,
+    ).eval()
+    head = model.core.action_support_head
+    state = torch.randn(2, 3, 64)
+    candidate = torch.randn(2, 3, 5, 64)
+    history_a = torch.randn(2, 4, 5, 64)
+    history_b = torch.randn(2, 4, 5, 64)
+    mask = torch.ones(2, 4, dtype=torch.bool)
+    first = head.score_candidate_set(state, candidate, history_a, mask)
+    second = head.score_candidate_set(state, candidate, history_b, mask)
+    torch.testing.assert_close(first, second)
+
+
+def test_token_history_support_accepts_empty_prefix(setup):
+    vocab, _, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        macro_k=2, action_support_kind="token_history_attention",
+        action_support_heads=4,
+    ).eval()
+    state = torch.randn(3, 64)
+    candidate = torch.randn(3, 6, 64)
+    history = torch.empty(3, 0, 1, 64)
+    mask = torch.empty(3, 0, dtype=torch.bool)
+    scores = model.core.action_support_head(
+        state, candidate, history, mask
+    )
+    assert scores.shape == (3,)
+    assert torch.isfinite(scores).all()
+
+
 def test_action_prior_all_states_trains_on_predicted_latents(setup):
     from textjepa.objectives import ActionPrior
 

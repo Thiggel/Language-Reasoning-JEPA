@@ -100,6 +100,10 @@ class DiscourseJEPA(nn.Module):
                 f"unknown action-support state mode: {action_support_states}"
             )
         self.action_support_states = action_support_states
+        if action_support_kind not in {
+            "pairwise", "history_attention", "token_history_attention"
+        }:
+            raise ValueError(f"unknown action-support kind: {action_support_kind}")
         self.action_support_kind = action_support_kind
         if action_support_history_mode not in {"aligned", "none"}:
             raise ValueError(
@@ -470,11 +474,16 @@ class DiscourseJEPA(nn.Module):
     def _action_support(self, batch: dict, out) -> None:
         """Score every problem action at every observed prefix state."""
         actions = self.encode_actions(batch["action_candidate_tokens"])
-        support_actions = (
-            self.encode_chunks(batch["action_candidate_tokens"])
-            if self.action_support_kind == "history_attention"
-            else actions
-        )
+        if self.action_support_kind == "history_attention":
+            support_actions = self.encode_chunks(batch["action_candidate_tokens"])
+        elif self.action_support_kind == "token_history_attention":
+            candidate_tokens = batch["action_candidate_tokens"]
+            support_actions = self.chunk_encoder.tok(candidate_tokens)
+            support_actions = support_actions * candidate_tokens.ne(
+                self.chunk_encoder.pad_id
+            ).unsqueeze(-1)
+        else:
+            support_actions = actions
         B, T, d_state = out.prev_states.shape
         V = actions.shape[1]
         states = [out.prev_states]
@@ -492,9 +501,11 @@ class DiscourseJEPA(nn.Module):
         )
         trace = batch["var_idx"]
         safe_trace = trace.clamp(min=0, max=max(V - 1, 0))
-        executed_actions = action_features.gather(
-            1, safe_trace.unsqueeze(-1).expand(-1, -1, action_features.shape[-1])
-        )
+        gather_shape = (*safe_trace.shape, *action_features.shape[2:])
+        gather_index = safe_trace.reshape(
+            *safe_trace.shape, *([1] * (action_features.dim() - 2))
+        ).expand(gather_shape)
+        executed_actions = action_features.gather(1, gather_index)
         positions = torch.arange(T, device=trace.device)
         history_mask = (
             (out.step_mask & trace.ge(0)).unsqueeze(1)
@@ -502,18 +513,42 @@ class DiscourseJEPA(nn.Module):
         )
         if self.action_support_history_mode == "none":
             history_mask = torch.zeros_like(history_mask)
-        history = executed_actions.unsqueeze(1).expand(B, T, T, -1)
-        M = states.shape[1]
-        logits = self.core.action_support_head(
-            states.unsqueeze(3).expand(B, M, T, V, d_state),
-            action_features.unsqueeze(1).unsqueeze(1).expand(
-                B, M, T, V, -1
-            ),
-            history.unsqueeze(1).unsqueeze(3).expand(
-                B, M, T, V, T, -1
-            ),
-            history_mask.unsqueeze(1).unsqueeze(3).expand(B, M, T, V, T),
+        history = executed_actions.unsqueeze(1).expand(
+            B, T, T, *executed_actions.shape[2:]
         )
+        M = states.shape[1]
+        if self.action_support_kind == "token_history_attention":
+            encoded_candidates = (
+                self.core.action_support_head.encode_candidate_set(action_features)
+            )
+            mode_logits = []
+            for mode in range(M):
+                step_logits = []
+                for step in range(T):
+                    step_logits.append(
+                        self.core.action_support_head.score_candidate_set(
+                            states[:, mode, step].unsqueeze(1).expand(
+                                B, V, d_state
+                            ),
+                            action_features,
+                            executed_actions,
+                            history_mask[:, step],
+                            encoded_candidate=encoded_candidates,
+                        )
+                    )
+                mode_logits.append(torch.stack(step_logits, dim=1))
+            logits = torch.stack(mode_logits, dim=1)
+        else:
+            logits = self.core.action_support_head(
+                states.unsqueeze(3).expand(B, M, T, V, d_state),
+                action_features.unsqueeze(1).unsqueeze(1).expand(
+                    B, M, T, V, *action_features.shape[2:]
+                ),
+                history.unsqueeze(1).unsqueeze(3).expand(
+                    B, M, T, V, T, *history.shape[3:]
+                ),
+                history_mask.unsqueeze(1).unsqueeze(3).expand(B, M, T, V, T),
+            )
         valid = (
             out.step_mask.unsqueeze(-1)
             & batch["action_candidate_mask"].unsqueeze(1)
