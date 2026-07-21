@@ -11,6 +11,9 @@ from textjepa.models.pooled_sentence_jepa import (
 from scripts.eval_pooled_sentence_planning import (
     beam_plan, summarize_drift, summarize_examples, validate_generated_trace,
 )
+from scripts.train_pooled_sentence_jepa import (
+    accumulation_group_size, optimizer_step_count,
+)
 
 
 def _batch(size=2):
@@ -131,6 +134,25 @@ def test_dense_rollout_depth_one_is_exactly_the_teacher_forced_prediction():
     assert torch.equal(out["dense_masks"][0], out["valid"])
 
 
+def test_checkpointed_dense_rollout_backpropagates_through_predictor():
+    batch, vocab = _batch(1)
+    model = _model(vocab, decoder=False).train()
+    model.dense_depth = 4
+    model.dense_checkpoint = True
+    out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
+    loss = sum(
+        prediction[mask].square().mean()
+        for prediction, mask in zip(
+            out["dense_predictions"], out["dense_masks"]
+        ) if mask.any()
+    )
+    loss.backward()
+    assert any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.predictor.parameters()
+    )
+
+
 def test_prefix_decoder_is_causal_conditioned_and_reaches_pooler():
     batch, vocab = _batch()
     model = _model(vocab, decoder=True).train()
@@ -247,3 +269,12 @@ def test_posthoc_generation_validator_accepts_valid_alternative_trace_only():
     invalid = validate_generated_trace(corrupted, problem, vocab)
     assert not invalid["solved"]
     assert invalid["first_invalid_sentence"] == 0
+
+
+def test_gradient_accumulation_preserves_optimizer_step_count_and_tail_scale():
+    assert optimizer_step_count(2500, 2) == 1250
+    assert optimizer_step_count(5000, 4) == 1250
+    assert optimizer_step_count(10, 4) == 3
+    assert [accumulation_group_size(i, 10, 4) for i in range(10)] == [
+        4, 4, 4, 4, 4, 4, 4, 4, 2, 2,
+    ]

@@ -29,6 +29,20 @@ from textjepa.utils import seed_everything
 from textjepa.utils.metrics import effective_rank, feature_std
 
 
+def optimizer_step_count(micro_batches: int, accumulation: int) -> int:
+    accumulation = max(1, int(accumulation))
+    return (int(micro_batches) + accumulation - 1) // accumulation
+
+
+def accumulation_group_size(
+    micro_batch_index: int, micro_batches: int, accumulation: int
+) -> int:
+    """Actual divisor, including a possibly shorter final group."""
+    accumulation = max(1, int(accumulation))
+    group_start = (int(micro_batch_index) // accumulation) * accumulation
+    return min(accumulation, int(micro_batches) - group_start)
+
+
 def forward(model, batch, device):
     return model(
         batch["tokens"].to(device), batch["prompt_len"].to(device),
@@ -168,7 +182,7 @@ def main(cfg: DictConfig):
         num_workers=cfg.train.num_workers, collate_fn=collate, drop_last=True,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=cfg.train.batch_size,
+        val_ds, batch_size=int(cfg.train.get("eval_batch_size", cfg.train.batch_size)),
         num_workers=cfg.train.num_workers, collate_fn=collate,
     )
     model = PooledSentenceJEPA(
@@ -180,23 +194,43 @@ def main(cfg: DictConfig):
         "ema_target_parameters": sum(p.numel() for p in model.teacher.parameters()),
     }, flush=True)
     optimizer = build_optimizer(model, cfg.train.lr, cfg.train.weight_decay)
-    total_steps = cfg.train.epochs * len(train_loader)
+    accumulation = max(1, int(cfg.train.get("gradient_accumulation_steps", 1)))
+    total_steps = cfg.train.epochs * optimizer_step_count(
+        len(train_loader), accumulation
+    )
+    print({
+        "micro_batch_size": int(cfg.train.batch_size),
+        "gradient_accumulation_steps": accumulation,
+        "effective_batch_size": int(cfg.train.batch_size) * accumulation,
+        "optimizer_steps": total_steps,
+    }, flush=True)
     logger = MetricLogger(out_dir)
     step, best = 0, float("inf")
     for epoch in range(cfg.train.epochs):
         sampler.set_epoch(epoch)
         model.train()
-        for batch in train_loader:
-            for group in optimizer.param_groups:
-                group["lr"] = cfg.train.lr * cosine_warmup(
-                    step, total_steps, cfg.train.warmup_steps
-                )
+        optimizer.zero_grad(set_to_none=True)
+        for micro_index, batch in enumerate(train_loader):
+            if micro_index % accumulation == 0:
+                for group in optimizer.param_groups:
+                    group["lr"] = cfg.train.lr * cosine_warmup(
+                        step, total_steps, cfg.train.warmup_steps
+                    )
             out = forward(model, batch, cfg.device)
             loss, items = compute_losses(out, cfg, model, batch)
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
+            divisor = accumulation_group_size(
+                micro_index, len(train_loader), accumulation
+            )
+            (loss / divisor).backward()
+            should_step = (
+                (micro_index + 1) % accumulation == 0
+                or micro_index + 1 == len(train_loader)
+            )
+            if not should_step:
+                continue
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.grad_clip)
             optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
             model.update_teacher(ema_momentum(
                 step, total_steps, cfg.train.ema_start, cfg.train.ema_end
             ))

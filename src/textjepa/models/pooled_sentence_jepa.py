@@ -7,6 +7,7 @@ import math
 import torch
 from torch import nn
 from torch.nn.utils.rnn import pad_sequence
+from torch.utils.checkpoint import checkpoint
 
 from textjepa.models.ema import EMATeacher
 from textjepa.models.heads import MacroValueHead
@@ -135,6 +136,7 @@ class PooledSentenceJEPA(nn.Module):
         d_state: int = 512, encoder_layers: int = 8, pool_heads: int = 8,
         predictor_layers: int = 4, n_heads: int = 8, ff_mult: int = 4,
         max_len: int = 768, d_action: int = 128, dense_depth: int = 4,
+        dense_checkpoint: bool = False,
         pooling_scope: str = "sentence", use_token_prior: bool = True,
         token_prior_hidden: int = 0, token_prior_detach_state: bool = False,
         use_prefix_decoder: bool = False, decoder_dim: int = 256,
@@ -146,6 +148,7 @@ class PooledSentenceJEPA(nn.Module):
         self.question_id = int(question_id)
         self.vocab_size, self.d_state, self.d_action = int(vocab_size), int(d_state), int(d_action)
         self.dense_depth = max(1, int(dense_depth))
+        self.dense_checkpoint = bool(dense_checkpoint)
         self.token_prior_detach_state = bool(token_prior_detach_state)
         self.decoder_prefixes_per_sequence = int(decoder_prefixes_per_sequence)
         self.state_encoder = PooledCausalStateEncoder(
@@ -207,7 +210,10 @@ class PooledSentenceJEPA(nn.Module):
         }
 
     @staticmethod
-    def _dense_all_starts(predictor, first, targets, prev, actions, valid, depth):
+    def _dense_all_starts(
+        predictor, first, targets, prev, actions, valid, depth,
+        checkpoint_predictor=False,
+    ):
         """Open-loop endpoints from every sequence position.
 
         For anchor ``t`` and horizon ``h``, retain the observed causal history
@@ -242,9 +248,15 @@ class PooledSentenceJEPA(nn.Module):
             sequence_valid = torch.arange(
                 padded_states.shape[1], device=prev.device
             )[None] < torch.tensor(lengths, device=prev.device)[:, None]
-            all_predictions = predictor(
-                padded_states, padded_actions, sequence_valid
-            )
+            if checkpoint_predictor and torch.is_grad_enabled():
+                all_predictions = checkpoint(
+                    predictor, padded_states, padded_actions, sequence_valid,
+                    use_reentrant=False,
+                )
+            else:
+                all_predictions = predictor(
+                    padded_states, padded_actions, sequence_valid
+                )
             gather = torch.tensor(lengths, device=prev.device) - 1
             endpoint = all_predictions[
                 torch.arange(len(lengths), device=prev.device), gather
@@ -270,7 +282,7 @@ class PooledSentenceJEPA(nn.Module):
         pred = self.predictor(seq["prev"], actions, seq["valid"])
         dense = self._dense_all_starts(
             self.predictor, pred, seq["target"], seq["prev"], actions,
-            seq["valid"], self.dense_depth,
+            seq["valid"], self.dense_depth, self.dense_checkpoint,
         )
         prior_state = seq["prev"].detach() if self.token_prior_detach_state else seq["prev"]
         logits = self.token_prior(prior_state) if self.token_prior else None

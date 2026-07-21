@@ -17,6 +17,7 @@ model:
   max_len: 768
   d_action: 128
   dense_depth: 4
+  dense_checkpoint: false
   pooling_scope: sentence
   use_token_prior: true
   token_prior_hidden: 0
@@ -49,6 +50,8 @@ objective:
 
 train:
   batch_size: 8
+  eval_batch_size: 8
+  gradient_accumulation_steps: 1
   num_workers: 0
   epochs: 6
   lr: 3.0e-4
