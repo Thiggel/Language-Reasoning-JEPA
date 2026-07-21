@@ -1,3 +1,5 @@
+from types import MethodType
+
 import torch
 
 from textjepa.models.masked_diffusion_lm import (
@@ -61,6 +63,42 @@ def test_subs_sampler_never_modifies_prompt_and_resolves_all_masks():
     assert sampled[0, :2].tolist() == [2, 3]
     assert not sampled[response].eq(model.mask_id).any()
     assert sampled[valid].ne(model.pad_id).all()
+
+
+def test_confidence_sampler_reveals_exactly_highest_confidence_position():
+    model = _model().eval()
+
+    def controlled_logits(self, tokens, valid, response):
+        logits = torch.zeros(*tokens.shape, self.vocab_size)
+        logits[:, 2, 7] = 8.0
+        logits[:, 3, 9] = 4.0
+        return logits, torch.zeros(*tokens.shape, 16)
+
+    model.logits = MethodType(controlled_logits, model)
+    sampled, _, response = model.sample(
+        torch.tensor([[[2, 3, 0]]]),
+        torch.tensor([[[4, 5, 0]]]),
+        steps=1,
+        schedule="confidence",
+    )
+    assert sampled[0, :2].tolist() == [2, 3]
+    assert sampled[0, 2].item() == 7
+    assert sampled[0, 3].item() == model.mask_id
+    assert sampled[response].ne(model.mask_id).sum().item() == 1
+
+
+def test_sampler_rejects_unknown_schedule():
+    model = _model().eval()
+    try:
+        model.sample(
+            torch.tensor([[[2, 3, 0]]]),
+            torch.tensor([[[4, 5, 0]]]),
+            schedule="not-a-schedule",
+        )
+    except ValueError as error:
+        assert "unknown unmasking schedule" in str(error)
+    else:
+        raise AssertionError("unknown schedules must be rejected")
 
 
 def test_dropout_is_rejected_for_matched_comparison():

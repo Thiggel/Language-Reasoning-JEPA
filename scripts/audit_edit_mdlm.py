@@ -69,26 +69,29 @@ def main():
                 sums[key] = sums.get(key, 0.0) + pred[masked].eq(
                     clean[masked]
                 ).float().mean().item()
-            for steps in (4, 8, 16):
-                torch.manual_seed(30_000 + batch_index)
-                sampled, _, sample_response = model.sample(
-                    prompt, initial_buffer, steps=steps
-                )
-                correct = sampled.eq(clean)
-                token = correct[sample_response].float().mean().item()
-                exact = (correct | ~sample_response).all(-1).float().mean().item()
-                sums[f"subs_{steps}_token_accuracy"] = (
-                    sums.get(f"subs_{steps}_token_accuracy", 0.0) + token
-                )
-                sums[f"subs_{steps}_sequence_exact"] = (
-                    sums.get(f"subs_{steps}_sequence_exact", 0.0) + exact
-                )
+            sampled, _, sample_response = model.sample(
+                prompt, initial_buffer, schedule="confidence"
+            )
+            correct = sampled.eq(clean)
+            token = correct[sample_response].float().mean().item()
+            exact = (correct | ~sample_response).all(-1).float().mean().item()
+            sums["confidence_token_accuracy"] = (
+                sums.get("confidence_token_accuracy", 0.0) + token
+            )
+            sums["confidence_sequence_exact"] = (
+                sums.get("confidence_sequence_exact", 0.0) + exact
+            )
+            sums["confidence_network_evaluations"] = (
+                sums.get("confidence_network_evaluations", 0.0)
+                + sample_response.sum(-1).float().mean().item()
+            )
             count += 1
     metrics = {key: value / max(count, 1) for key, value in sums.items()}
     metrics.update({
         "method": "reference_mdlm_absorbing_subs",
         "examples": min(args.examples, len(dataset)),
-        "network_evaluation_depths": [4, 8, 16],
+        "generation_schedule": "one_token_highest_confidence",
+        "one_token_per_network_evaluation": True,
         "information_regime": payload["information_regime"],
         "trainable_parameters": sum(p.numel() for p in model.parameters()),
     })

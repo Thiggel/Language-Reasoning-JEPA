@@ -78,6 +78,7 @@ class Trainer:
         if hasattr(self.train_loader.batch_sampler, "set_epoch"):
             self.train_loader.batch_sampler.set_epoch(epoch)
         t0 = time.time()
+        updates_since_log = 0
         self.opt.zero_grad(set_to_none=True)
         for micro_step, batch in enumerate(self.train_loader):
             batch = to_device(batch, self.device)
@@ -113,14 +114,18 @@ class Trainer:
             self.model.update_teachers(
                 ema_momentum(self.step, self.total_steps, *self.ema_range)
             )
+            updates_since_log += 1
             if self.step % self.log_every == 0:
                 items.update(
                     loss=loss.item(),
                     lr=self.opt.param_groups[0]["lr"],
                     grad_norm=gnorm.item(),
-                    steps_per_s=self.log_every / max(time.time() - t0, 1e-6),
+                    steps_per_s=updates_since_log / max(
+                        time.time() - t0, 1e-6
+                    ),
                 )
                 t0 = time.time()
+                updates_since_log = 0
                 self.logger.log(self.step, items, prefix="train/")
             self.step += 1
 

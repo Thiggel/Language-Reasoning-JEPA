@@ -119,12 +119,28 @@ class MaskedDiffusionLM(nn.Module):
 
     @torch.no_grad()
     def sample(self, prompt: torch.Tensor, shape_buffer: torch.Tensor,
-               steps: int = 16, temperature: float = 1.0,
-               stochastic: bool = False):
-        """SUBS sampling: reveal response tokens and never remask them."""
+               steps: int | None = None, temperature: float = 1.0,
+               stochastic: bool = False, schedule: str = "confidence"):
+        """Reveal response tokens without remasking.
+
+        ``confidence`` performs MaskGIT-style coordinate selection: every
+        network evaluation commits exactly one token per unfinished example,
+        choosing the unresolved position whose argmax token has the highest
+        softmax probability.  ``random`` retains the historical SUBS schedule
+        for explicit backward-compatible diagnostics.
+        """
         clean_shape, valid, response = self.pack_clean(prompt, shape_buffer)
         tokens = clean_shape.masked_fill(response, self.mask_id)
+        if schedule not in {"confidence", "random"}:
+            raise ValueError(f"unknown unmasking schedule: {schedule}")
+        if steps is None:
+            steps = int(response.sum(-1).max().item())
+        if steps < 1:
+            raise ValueError("sampling steps must be positive")
         for step in range(steps, 0, -1):
+            unresolved = response & tokens.eq(self.mask_id)
+            if not unresolved.any():
+                break
             logits, _ = self.logits(tokens, valid, response)
             logits[..., self.mask_id] = -torch.inf
             logits[..., self.pad_id] = -torch.inf
@@ -134,9 +150,19 @@ class MaskedDiffusionLM(nn.Module):
                 ).sample()
             else:
                 proposal = logits.argmax(-1)
-            unresolved = response & tokens.eq(self.mask_id)
-            reveal = unresolved & torch.rand_like(tokens.float()).lt(1.0 / step)
-            if step == 1:
-                reveal = unresolved
+            if schedule == "confidence":
+                confidence = logits.softmax(-1).amax(-1)
+                confidence = confidence.masked_fill(~unresolved, -torch.inf)
+                position = confidence.argmax(-1)
+                active = unresolved.any(-1)
+                reveal = torch.zeros_like(unresolved)
+                row = torch.arange(len(tokens), device=tokens.device)[active]
+                reveal[row, position[active]] = True
+            else:
+                reveal = unresolved & torch.rand_like(tokens.float()).lt(
+                    1.0 / step
+                )
+                if step == 1:
+                    reveal = unresolved
             tokens = torch.where(reveal, proposal, tokens)
         return tokens, valid, response

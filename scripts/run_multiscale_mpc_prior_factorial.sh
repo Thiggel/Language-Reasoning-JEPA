@@ -48,8 +48,9 @@ for mode in no_prior detached_prior attached_prior; do
     data.train_size=2000 data.val_size=256 data.trajectory_variants=4 \
     data.proposal_pool_k=32 data.proposal_token_pool=prompt_plus_current \
     data.gar_teacher=token_edit_distance \
-    train.epochs=1 train.batch_size=8 train.microbatch_size=1 \
-    train.lr=0.0003 train.warmup_steps=100 train.eval_batches=8
+    train.epochs=1 train.batch_size=8 train.microbatch_size=8 \
+    train.lr=0.0003 train.warmup_steps=100 train.eval_batches=8 \
+    train.log_every=10
 
   "$python_bin" "$TEXTJEPA_ROOT/scripts/audit_multiscale_edit.py" \
     --ckpt "$model_dir/best.pt" --device "${DEVICE:-cuda:0}" \
@@ -65,4 +66,3 @@ for mode in no_prior detached_prior attached_prior; do
     --top-positions 4 --top-tokens 4 --max-candidates 16 \
     --out "$RUN_DIR/$mode/mpc_h1_smoke.json" "${eval_args[@]}"
 done
-
