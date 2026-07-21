@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-21-generative-lm-capacity-matched-pilots",
+  "decision": "At the pooled JEPA's 42.6M trainable-parameter budget, which ordinary generative baseline and learning rate best models unconstrained iGSM traces?",
+  "git_commit": "f3320694414278fe853392b5500b7af9037e6704",
+  "jobs": [
+    {
+      "id": "token-lm-42m-lr3e4-pilot-seed0",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "42.72M token-LM capacity match at learning rate 3e-4.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-42m-lr3e4-pilot-seed0", "pilot", "3e-4", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "token-lm-42m-lr1e3-pilot-seed0",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "42.72M token-LM capacity match at learning rate 1e-3.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-42m-lr1e3-pilot-seed0", "pilot", "1e-3", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-42m-lr3e4-pilot-seed0",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "42.64M CE-only next-sentence LM capacity match at learning rate 3e-4.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-42m-lr3e4-pilot-seed0", "pilot", "3e-4", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-42m-lr1e3-pilot-seed0",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "42.64M CE-only next-sentence LM capacity match at learning rate 1e-3.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-42m-lr1e3-pilot-seed0", "pilot", "1e-3", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    }
+  ]
+}
