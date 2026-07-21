@@ -8,7 +8,9 @@ from textjepa.data.semantic_lm import SemanticBoundaryLMDataset, collate_semanti
 from textjepa.models.pooled_sentence_jepa import (
     CausalAttentionPooler, PooledSentenceJEPA,
 )
-from scripts.eval_pooled_sentence_planning import summarize_examples
+from scripts.eval_pooled_sentence_planning import (
+    beam_plan, summarize_drift, summarize_examples, validate_generated_trace,
+)
 
 
 def _batch(size=2):
@@ -83,6 +85,52 @@ def test_next_token_action_predicts_next_pooled_prefix_state():
     assert model.predictor.residual
 
 
+def test_dense_rollout_supervises_every_valid_anchor_with_observed_history():
+    batch, vocab = _batch()
+    model = _model(vocab, decoder=False).eval()
+    model.dense_depth = 4
+    with torch.no_grad():
+        out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
+    assert len(out["dense_predictions"]) == 4
+    for horizon, (predictions, targets, mask) in enumerate(zip(
+        out["dense_predictions"], out["dense_targets"],
+        out["dense_masks"],
+    ), start=1):
+        expected_width = out["prev"].shape[1] - horizon + 1
+        assert predictions.shape[:2] == (len(batch["tokens"]), expected_width)
+        assert torch.equal(targets, out["target"][:, horizon - 1:])
+        expected_mask = torch.stack([
+            out["valid"][:, start:start + horizon].all(1)
+            for start in range(expected_width)
+        ], 1)
+        assert torch.equal(mask, expected_mask)
+        # Each cell must equal a literal open-loop rollout from that anchor,
+        # retaining the complete observed causal history before the anchor.
+        for start in range(expected_width):
+            explicit = model.predictor.rollout(
+                out["prev"][:, start],
+                out["actions"][:, start:start + horizon],
+                state_history=out["prev"][:, :start + 1],
+                action_history=out["actions"][:, :start],
+            )[:, -1]
+            rows = mask[:, start]
+            assert torch.allclose(
+                predictions[rows, start], explicit[rows], atol=1e-5, rtol=1e-4
+            )
+
+
+def test_dense_rollout_depth_one_is_exactly_the_teacher_forced_prediction():
+    batch, vocab = _batch()
+    model = _model(vocab, decoder=False).eval()
+    model.dense_depth = 1
+    with torch.no_grad():
+        out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
+    assert len(out["dense_predictions"]) == 1
+    assert torch.equal(out["dense_predictions"][0], out["pred"])
+    assert torch.equal(out["dense_targets"][0], out["target"])
+    assert torch.equal(out["dense_masks"][0], out["valid"])
+
+
 def test_prefix_decoder_is_causal_conditioned_and_reaches_pooler():
     batch, vocab = _batch()
     model = _model(vocab, decoder=True).train()
@@ -152,3 +200,50 @@ def test_planning_summary_reports_uncertainty_and_error_position():
     assert result["mean_first_error_fraction"] == 0.625
     assert result["token_accuracy_ci95"][0] <= 0.875 <= result["token_accuracy_ci95"][1]
     assert len(result["position_quartile_accuracy"]) == 4
+
+
+def test_beam_plan_returns_each_selected_predicted_state_for_drift_audit():
+    batch, vocab = _batch(1)
+    model = _model(vocab, decoder=False).eval()
+    prompt_len = int(batch["prompt_len"][0])
+    prefix = batch["tokens"][0, :prompt_len].tolist()
+    full_len = int(batch["tokens"][0].ne(vocab.pad_id).sum())
+    with torch.no_grad():
+        goal = model.teacher(batch["tokens"][:, :full_len])[:, -1]
+        plan = beam_plan(
+            model, prefix, goal, depth=2, width=2, score_mode="value",
+            proposal_mode="prior", proposal_topk=3, prompt_length=prompt_len,
+        )
+    assert len(plan["tokens"]) == 2
+    assert plan["predicted_states"].shape == (2, model.d_state)
+    summary = summarize_drift([
+        {"offset": 1, "normalized_mse": 1.0, "raw_mse": 2.0,
+         "cosine_distance": 0.5},
+        {"offset": 1, "normalized_mse": 3.0, "raw_mse": 4.0,
+         "cosine_distance": 1.5},
+    ])
+    assert summary["1"] == {
+        "normalized_mse": 2.0, "raw_mse": 3.0,
+        "cosine_distance": 1.0,
+    }
+
+
+def test_posthoc_generation_validator_accepts_valid_alternative_trace_only():
+    batch, vocab = _batch(1)
+    # Reconstruct the deterministic raw item used by _batch.
+    ds = SemanticBoundaryLMDataset(
+        vocab, size=1, seed=71, boundary_mode="semantic", modulus=23,
+        n_vars_range=(8, 10), leaf_prob=0.35, steps_range=(4, 6),
+        distractor_prob=0.0, max_distractors=0,
+    )
+    item = ds[0]
+    problem, _ = ds.igsm.problem(0)
+    reasoning = item["tokens"][item["prompt_len"]:]
+    valid = validate_generated_trace(reasoning, problem, vocab)
+    assert valid["solved"]
+    assert valid["valid_prefix_sentences"] > 0
+    corrupted = list(reasoning)
+    corrupted[0] = vocab.token_to_id["answer"]
+    invalid = validate_generated_trace(corrupted, problem, vocab)
+    assert not invalid["solved"]
+    assert invalid["first_invalid_sentence"] == 0

@@ -12,6 +12,8 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 
 from textjepa.data.igsm.dataset import build_vocab
+from textjepa.data.igsm.env import SymbolicEnv
+from textjepa.data.igsm.render import step_sentence
 from textjepa.data.semantic_lm import SemanticBoundaryLMDataset
 from textjepa.models.pooled_sentence_jepa import PooledSentenceJEPA
 
@@ -56,6 +58,59 @@ def summarize_examples(generated, references, boundary_ids, bootstrap_seed=0):
             for correct, total in zip(quartile_correct, quartile_total)
         ],
         "per_trace_token_accuracy": per_trace,
+    }
+
+
+def validate_generated_trace(generated, problem, vocab):
+    """Post-hoc validation; never supplies candidates or feedback to search."""
+    period = vocab.token_to_id["."]
+    env = SymbolicEnv(problem)
+    sentences, current = [], []
+    for token in generated:
+        current.append(int(token))
+        if token == period:
+            sentences.append(current)
+            current = []
+    valid_sentences = 0
+    first_invalid = None
+    solved_at_sentence = None
+    for index, sentence in enumerate(sentences):
+        matches = [
+            action for action in env.feasible_actions()
+            if vocab.encode(step_sentence(problem, action)) == sentence
+        ]
+        if len(matches) != 1:
+            first_invalid = index
+            break
+        env.step(matches[0])
+        valid_sentences += 1
+        if env.solved:
+            solved_at_sentence = index + 1
+            break
+    return {
+        "solved": env.solved,
+        "solved_at_sentence": solved_at_sentence,
+        "complete_sentences": len(sentences),
+        "valid_prefix_sentences": valid_sentences,
+        "valid_prefix_fraction": valid_sentences / max(len(sentences), 1),
+        "first_invalid_sentence": first_invalid,
+        "trailing_incomplete_tokens": len(current),
+    }
+
+
+def summarize_generation_validity(rows):
+    return {
+        "problem_solve_rate": sum(row["solved"] for row in rows) / len(rows),
+        "mean_valid_prefix_fraction": sum(
+            row["valid_prefix_fraction"] for row in rows
+        ) / len(rows),
+        "mean_valid_prefix_sentences": sum(
+            row["valid_prefix_sentences"] for row in rows
+        ) / len(rows),
+        "mean_complete_sentences": sum(
+            row["complete_sentences"] for row in rows
+        ) / len(rows),
+        "per_problem_validation": rows,
     }
 
 
@@ -163,12 +218,17 @@ def beam_plan(
                 float(updated[flat]), float(updated_prior[flat]), float(rank_score[flat]),
             ))
         beams = next_beams
-    return {"tokens": beams[0][0], "score": beams[0][5], "expanded": expanded}
+    initial_length = context["states"].shape[1]
+    return {
+        "tokens": beams[0][0], "score": beams[0][5], "expanded": expanded,
+        "predicted_states": beams[0][1][0, initial_length:],
+    }
 
 
 @torch.no_grad()
 def generate(model, prompt, goal, length, args):
     generated, expanded = list(prompt), 0
+    drift = []
     if args.depth == 0:
         if model.token_prior is None:
             raise ValueError("depth zero is the token-prior control and requires a prior")
@@ -177,7 +237,7 @@ def generate(model, prompt, goal, length, args):
             logits = model.token_prior(context["state"])
             logits[:, model.pad_id] = -torch.inf
             generated.append(int(logits.argmax(-1)))
-        return generated[len(prompt):], expanded
+        return generated[len(prompt):], expanded, drift
     while len(generated) - len(prompt) < length:
         remaining = length - (len(generated) - len(prompt))
         planning_depth = min(args.depth, remaining)
@@ -188,9 +248,42 @@ def generate(model, prompt, goal, length, args):
             prior_score_weight=args.prior_score_weight,
         )
         take = 1 if args.planner == "mpc" else planning_depth
-        generated.extend(plan["tokens"][:take])
+        chosen = plan["tokens"][:take]
+        before = len(generated)
+        generated.extend(chosen)
+        exact = model.state_encoder(torch.tensor(
+            generated, device=next(model.parameters()).device
+        ).unsqueeze(0))[0, before:before + take]
+        predicted = plan["predicted_states"][:take]
+        for offset in range(take):
+            drift.append({
+                "offset": offset + 1,
+                "normalized_mse": float(normalized_distance(
+                    predicted[offset:offset + 1], exact[offset:offset + 1]
+                )[0]),
+                "raw_mse": float(F.mse_loss(predicted[offset], exact[offset])),
+                "cosine_distance": float(1.0 - F.cosine_similarity(
+                    predicted[offset], exact[offset], dim=0
+                )),
+            })
         expanded += plan["expanded"]
-    return generated[len(prompt):], expanded
+    return generated[len(prompt):], expanded, drift
+
+
+def summarize_drift(records):
+    grouped = {}
+    for record in records:
+        bucket = grouped.setdefault(record["offset"], {
+            "normalized_mse": [], "raw_mse": [], "cosine_distance": [],
+        })
+        for key in bucket:
+            bucket[key].append(record[key])
+    return {
+        str(offset): {
+            key: sum(values) / len(values) for key, values in metrics.items()
+        }
+        for offset, metrics in sorted(grouped.items())
+    }
 
 
 def main():
@@ -199,6 +292,11 @@ def main():
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--examples", type=int, default=4)
     parser.add_argument("--max-tokens", type=int, default=64)
+    parser.add_argument(
+        "--length-mode", choices=("oracle", "fixed_budget"), default="oracle",
+        help="oracle reproduces legacy token matching; fixed_budget measures "
+             "unconstrained solve rate without revealing trace length",
+    )
     parser.add_argument("--depth", type=int, choices=(0, 1, 2, 4, 8, 16), required=True)
     parser.add_argument("--width", type=int, default=8)
     parser.add_argument("--planner", choices=("mpc", "beam"), required=True)
@@ -228,29 +326,48 @@ def main():
         distractor_prob=cfg.data.distractor_prob,
         max_distractors=cfg.data.max_distractors,
     )
-    generated_traces, reference_traces, expanded = [], [], 0
+    generated_traces, reference_traces, expanded, drift = [], [], 0, []
+    validation = []
     for index in range(args.examples):
         item = dataset[index]
         prompt = item["tokens"][:item["prompt_len"]]
         reference = item["tokens"][item["prompt_len"]:][:args.max_tokens]
         full = torch.tensor(item["tokens"], device=args.device).unsqueeze(0)
-        goal = model.teacher(full)[:, len(item["tokens"]) - 1]
-        generated, work = generate(model, prompt, goal, len(reference), args)
+        if args.score == "oracle":
+            goal = model.teacher(full)[:, len(item["tokens"]) - 1]
+        else:
+            # GAR-value and prior search do not receive the terminal state.
+            goal = torch.zeros(1, model.d_state, device=args.device)
+        generation_length = (
+            len(reference) if args.length_mode == "oracle" else args.max_tokens
+        )
+        generated, work, trace_drift = generate(
+            model, prompt, goal, generation_length, args
+        )
         generated_traces.append(generated)
         reference_traces.append(reference)
+        problem, _ = dataset.igsm.problem(index)
+        validation.append(validate_generated_trace(generated, problem, vocab))
         expanded += work
+        drift.extend(trace_drift)
     result = {
-        **summarize_examples(
-            generated_traces, reference_traces,
-            {vocab.token_to_id["."], vocab.token_to_id["?"]}, eval_seed,
+        **(
+            summarize_examples(
+                generated_traces, reference_traces,
+                {vocab.token_to_id["."], vocab.token_to_id["?"]}, eval_seed,
+            ) if args.length_mode == "oracle" else {}
         ),
+        **summarize_generation_validity(validation),
         "examples": args.examples, "eval_seed": eval_seed,
         "planner": args.planner, "depth": args.depth, "width": args.width,
         "score": args.score, "proposals": args.proposals,
         "proposal_topk": args.proposal_topk,
         "prior_score_weight": args.prior_score_weight,
+        "length_mode": args.length_mode,
         "mean_expanded_candidates": expanded / args.examples,
-        "uses_oracle_goal": args.score == "oracle", "uses_oracle_length": True,
+        "executed_latent_drift_by_plan_offset": summarize_drift(drift),
+        "uses_oracle_goal": args.score == "oracle",
+        "uses_oracle_length": args.length_mode == "oracle",
         "uses_symbolic_feasibility": False, "uses_auxiliary_lm": False,
     }
     output_dir = Path(args.output_dir) if args.output_dir else Path(args.ckpt).parent
@@ -258,7 +375,7 @@ def main():
     tag = f"_{args.output_tag}" if args.output_tag else ""
     destination = output_dir / (
         f"pooled{tag}_{args.planner}_{args.proposals}_{args.score}_d{args.depth}_w{args.width}"
-        f"_pw{args.prior_score_weight:g}.json"
+        f"_pw{args.prior_score_weight:g}_lm{args.length_mode}.json"
     )
     destination.write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

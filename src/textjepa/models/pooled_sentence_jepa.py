@@ -6,13 +6,13 @@ import math
 
 import torch
 from torch import nn
+from torch.nn.utils.rnn import pad_sequence
 
 from textjepa.models.ema import EMATeacher
 from textjepa.models.heads import MacroValueHead
 from textjepa.models.layers import mlp
 from textjepa.models.predictor import CausalHistoryPredictor
 from textjepa.models.token_hierarchy import CausalTokenStateEncoder
-from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
 
 
 class CausalAttentionPooler(nn.Module):
@@ -206,6 +206,61 @@ class PooledSentenceJEPA(nn.Module):
             "final_target": torch.stack(final_target),
         }
 
+    @staticmethod
+    def _dense_all_starts(predictor, first, targets, prev, actions, valid, depth):
+        """Open-loop endpoints from every sequence position.
+
+        For anchor ``t`` and horizon ``h``, retain the observed causal history
+        through ``s_t`` and recursively insert predictions for actions
+        ``a_t ... a_{t+h-1}``.  This differs from shifting a matrix of
+        independent one-step predictions, which incorrectly treats predictions
+        made from other anchors as one coherent trajectory.
+        """
+        batch, width, dim = prev.shape
+        limit = min(max(1, int(depth)), width)
+        predictions = [first]
+        shifted_targets = [targets]
+        masks = [valid]
+        # paths[b, t] stores the recursively predicted states after anchor t.
+        paths = first.unsqueeze(2)
+        for horizon in range(2, limit + 1):
+            anchors = width - horizon + 1
+            state_sequences, action_sequences = [], []
+            lengths = []
+            for row in range(batch):
+                for start in range(anchors):
+                    state_sequence = torch.cat([
+                        prev[row, :start + 1],
+                        paths[row, start, :horizon - 1],
+                    ], 0)
+                    action_sequence = actions[row, :start + horizon]
+                    state_sequences.append(state_sequence)
+                    action_sequences.append(action_sequence)
+                    lengths.append(len(state_sequence))
+            padded_states = pad_sequence(state_sequences, batch_first=True)
+            padded_actions = pad_sequence(action_sequences, batch_first=True)
+            sequence_valid = torch.arange(
+                padded_states.shape[1], device=prev.device
+            )[None] < torch.tensor(lengths, device=prev.device)[:, None]
+            all_predictions = predictor(
+                padded_states, padded_actions, sequence_valid
+            )
+            gather = torch.tensor(lengths, device=prev.device) - 1
+            endpoint = all_predictions[
+                torch.arange(len(lengths), device=prev.device), gather
+            ].reshape(batch, anchors, dim)
+            anchor_mask = torch.stack([
+                valid[:, start:start + horizon].all(1)
+                for start in range(anchors)
+            ], 1)
+            predictions.append(endpoint)
+            shifted_targets.append(targets[:, horizon - 1:])
+            masks.append(anchor_mask)
+            paths = torch.cat([
+                paths[:, :anchors], endpoint.unsqueeze(2)
+            ], 2)
+        return tuple(predictions), tuple(shifted_targets), tuple(masks)
+
     def forward(self, tokens, prompt_len, sentence_ends=None):
         states = self.state_encoder(tokens)
         with torch.no_grad():
@@ -213,9 +268,9 @@ class PooledSentenceJEPA(nn.Module):
         seq = self._sequences(states, targets, tokens, prompt_len)
         actions = self.token_action(seq["action_ids"])
         pred = self.predictor(seq["prev"], actions, seq["valid"])
-        dense = MultilevelTokenHierarchyJEPA._dense_shifted(
-            self.predictor, pred, seq["target"], actions, seq["valid"],
-            self.dense_depth,
+        dense = self._dense_all_starts(
+            self.predictor, pred, seq["target"], seq["prev"], actions,
+            seq["valid"], self.dense_depth,
         )
         prior_state = seq["prev"].detach() if self.token_prior_detach_state else seq["prev"]
         logits = self.token_prior(prior_state) if self.token_prior else None

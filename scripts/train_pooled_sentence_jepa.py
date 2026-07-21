@@ -105,7 +105,7 @@ def compute_losses(out, cfg, model, batch):
         + obj.prefix_decoder * decoder_ce
         + obj.decoder_state_use * decoder_state_use
     )
-    return total, {
+    items = {
         "prediction": prediction, "dense": dense, "token_prior": prior,
         "token_prior_accuracy": prior_accuracy, "goal": goal,
         "vicreg": regularizer, "gar_regression": gar_regression,
@@ -121,6 +121,23 @@ def compute_losses(out, cfg, model, batch):
             + obj.token_prior * prior + obj.gar * gar_total
         ).detach(),
     }
+    for horizon, (rollout, target, mask) in enumerate(zip(
+        out["dense_predictions"], out["dense_targets"], out["dense_masks"]
+    ), start=1):
+        weight = mask.float()
+        denominator = weight.sum().clamp_min(1)
+        raw = (rollout - target).square().mean(-1)
+        cosine = 1.0 - F.cosine_similarity(rollout, target, dim=-1)
+        items[f"rollout_normalized_mse_h{horizon}"] = normalized_mse(
+            rollout, target, mask
+        ).detach()
+        items[f"rollout_raw_mse_h{horizon}"] = (
+            raw * weight
+        ).sum().div(denominator).detach()
+        items[f"rollout_cosine_distance_h{horizon}"] = (
+            cosine * weight
+        ).sum().div(denominator).detach()
+    return total, items
 
 
 @torch.no_grad()
