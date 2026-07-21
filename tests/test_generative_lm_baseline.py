@@ -18,6 +18,18 @@ def test_requested_lm_baselines_are_ten_million_parameters():
         assert 9_500_000 <= count <= 10_500_000
 
 
+def test_capacity_matched_baselines_match_jepa_parameter_budget():
+    vocab = build_vocab(23)
+    target = 42_605_921
+    token = DecoderLM(len(vocab), vocab.pad_id, 520, 13, 8, 4, 768)
+    sentence = SentenceLM(
+        len(vocab), vocab.pad_id, 496, 2, 4, 8, 8, 3, 4, 4, 96, 64, False
+    )
+    for model in (token, sentence):
+        count = sum(parameter.numel() for parameter in model.parameters())
+        assert abs(count - target) / target < 0.005
+
+
 def test_sentence_baseline_has_only_decoder_ce_loss():
     vocab = build_vocab(23)
     model = SentenceLM(
