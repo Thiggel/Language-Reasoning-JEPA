@@ -5,6 +5,8 @@ python_bin=${1:?python executable}
 detach=${2:?true or false}
 decoder_weight=${3:?decoder loss weight}
 seed=${4:?seed}
+train_size=${5:-512}
+proposal_pool_k=${6:-1}
 if [[ -z "${RUN_DIR:-}" ]]; then
   echo "RUN_DIR must be supplied by researchctl" >&2
   exit 2
@@ -29,8 +31,9 @@ model_dir="$RUN_DIR/model"
   objective.macro_option_reconstruction.weight="$decoder_weight" \
   objective.observed_action_ldad.weight=1 \
   objective.multiscale_vicreg.weight=0 \
-  data.train_size=2000 data.val_size=256 data.trajectory_variants=4 \
-  data.proposal_pool_k=32 data.proposal_token_pool=prompt_plus_current \
+  data.train_size="$train_size" data.val_size=256 data.trajectory_variants=4 \
+  data.proposal_pool_k="$proposal_pool_k" \
+  data.proposal_token_pool=prompt_plus_current \
   data.gar_teacher=token_edit_distance \
   train.epochs=1 train.batch_size=8 train.microbatch_size=8 \
   train.num_workers=4 \
