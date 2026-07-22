@@ -111,7 +111,8 @@ def main(cfg: DictConfig) -> None:
         persistent_workers=cfg.train.num_workers > 0,
     )
     val_loader = DataLoader(
-        make("val"), batch_size=cfg.train.batch_size, num_workers=2,
+        make("val"), batch_size=cfg.train.batch_size,
+        num_workers=int(cfg.train.get("val_num_workers", cfg.train.num_workers)),
         collate_fn=coll,
     )
 

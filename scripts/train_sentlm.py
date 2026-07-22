@@ -59,7 +59,8 @@ def main(cfg: DictConfig) -> None:
     val_loader = DataLoader(
         wrap(build_dataset(cfg, vocab, split="val")),
         batch_size=cfg.train.batch_size,
-        num_workers=2, collate_fn=coll,
+        num_workers=int(cfg.train.get("val_num_workers", cfg.train.num_workers)),
+        collate_fn=coll,
     )
     model = SentenceLM(
         vocab_size=len(vocab), pad_id=vocab.pad_id, **cfg.model
