@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-generative-lm-validation-recovery",
+  "decision": "After removing the validation-loader socket failure, how do 10M efficiency controls and 42.6M capacity-matched token and CE-only sentence LMs perform under unconstrained generation?",
+  "git_commit": "9a1430cbb97113e8772d7fb9878d903b15c27bec",
+  "jobs": [
+    {
+      "id": "token-lm-10m-lr3e4-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 240,
+      "purpose": "Recover the 10.14M token LM at 3e-4 with single-process validation.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-10m-lr3e4-recovery-seed0", "pilot", "3e-4", "10m"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "token-lm-10m-lr1e3-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 240,
+      "purpose": "Recover the 10.14M token LM at 1e-3 with single-process validation.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-10m-lr1e3-recovery-seed0", "pilot", "1e-3", "10m"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-10m-lr3e4-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 240,
+      "purpose": "Recover the 10.16M CE-only sentence LM at 3e-4 with single-process validation.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-10m-lr3e4-recovery-seed0", "pilot", "3e-4", "10m"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-10m-lr1e3-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 22000, "walltime_minutes": 240,
+      "purpose": "Recover the 10.16M CE-only sentence LM at 1e-3 with single-process validation.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-10m-lr1e3-recovery-seed0", "pilot", "1e-3", "10m"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "token-lm-42m-lr3e4-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Recover the 42.72M capacity-matched token LM at 3e-4.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-42m-lr3e4-recovery-seed0", "pilot", "3e-4", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "token-lm-42m-lr1e3-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Recover the 42.72M capacity-matched token LM at 1e-3.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "token", "token-lm-42m-lr1e3-recovery-seed0", "pilot", "1e-3", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-42m-lr3e4-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Recover the 42.64M capacity-matched CE-only sentence LM at 3e-4.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-42m-lr3e4-recovery-seed0", "pilot", "3e-4", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-42m-lr1e3-recovery-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Recover the 42.64M capacity-matched CE-only sentence LM at 1e-3.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-42m-lr1e3-recovery-seed0", "pilot", "1e-3", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    }
+  ]
+}
