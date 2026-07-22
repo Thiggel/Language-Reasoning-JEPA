@@ -10,6 +10,7 @@ family=${2:?geometry_jepa or a token/sentence LM family}
 seed=${3:?seed}
 learning_rate=${4:?learning rate}
 epochs=${5:?epochs}
+simulation_depth=${6:-1}
 device=${DEVICE:-cuda:0}
 shared_root=${TEXTJEPA_SHARED_ROOT:-/vol/home-vol2/ml/laitenbf/TextJEPA}
 pilot_root=${ALFWORLD_PILOT_ROOT:-$shared_root/data/intent_phrase/alfworld/pilot_v2}
@@ -102,17 +103,12 @@ if [[ "$family" == geometry_jepa ]]; then
   "$eval_python" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
     --kind "$eval_kind" --checkpoint "$checkpoint" --device "$device" \
     --split train --episodes 8 --excess-actions 0 4 \
-    --simulation-depth 1 "${eval_extra[@]}" \
-    --out "$RUN_DIR/train_depth1_metrics.json"
-  "$eval_python" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
-    --kind "$eval_kind" --checkpoint "$checkpoint" --device "$device" \
-    --split train --episodes 8 --excess-actions 0 4 \
-    --simulation-depth 2 "${eval_extra[@]}" \
+    --simulation-depth "$simulation_depth" "${eval_extra[@]}" \
     --out "$RUN_DIR/train_metrics.json"
   "$eval_python" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
     --kind "$eval_kind" --checkpoint "$checkpoint" --device "$device" \
     --split val --episodes 4 --excess-actions 0 4 \
-    --simulation-depth 2 "${eval_extra[@]}" \
+    --simulation-depth "$simulation_depth" "${eval_extra[@]}" \
     --out "$RUN_DIR/metrics.json"
 else
   "$eval_python" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
