@@ -2,11 +2,11 @@
   "schema_version": 1,
   "id": "2026-07-22-alfworld-admission",
   "project": "intent_phrase",
-  "title": "ALFWorld passed data admission; model learnability is the next gate",
+  "title": "ALFWorld passed environment admission; prior-free learnability is the next gate",
   "created_at": "2026-07-22T12:16:07+02:00",
   "status": "decision_complete",
-  "decision": "Admit the disjoint 16-episode ALFWorld fixture for a bounded random-oracle and tiny-set overfit gate; do not admit a full model sweep yet.",
-  "plain_summary": "All four model pathways pass their process gates, and 16 official ALFWorld episodes pass split-disjointness, exact replay, goal-success, and non-oracle catalogue checks. Full collection and model selection remain blocked on tiny-set learnability.",
+  "decision": "Retain the disjoint 16-episode ALFWorld fixture as an environment/replay admission result, discard its feasibility-supervised model protocol, and require a transition-only prior-free tiny-set gate before any full sweep.",
+  "plain_summary": "Sixteen official ALFWorld episodes pass split-disjointness, exact replay, goal-success, and non-oracle catalogue checks. The paper protocol now removes action and feasibility priors, so its training split must be rebuilt with invalid actions represented only as observed transitions before matched JEPA and LM learnability tests.",
   "report": "REPORT.md",
   "review_required": false
 }

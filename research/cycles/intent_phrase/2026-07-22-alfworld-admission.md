@@ -34,14 +34,20 @@ was recorded and skipped rather than silently hanging the dataset build.
 All four model process pathways also completed on Grünau. External queued
 duplicates are obsolete and do not affect this decision.
 
+**Protocol correction:** the original compiled pilot exposed privileged
+feasibility labels to a learned support head. That hybrid is discarded and
+cannot support the paper claim. Environment collection/replay remains valid,
+but model evidence must be regenerated with a full catalogue, no action or
+feasibility prior, and rejected actions stored only as observed transitions.
+
 ## Falsifiable next gate
 
-On this fixed admission-only pilot, compare the real-engine random and
-privileged expert-replay bounds and train the small geometry JEPA at three
-log-spaced learning rates. The model must substantially overfit train strict
-success before any full ALFWorld collection or paper-scale sweep is admitted.
-If it cannot, diagnose optimization and action-support supervision rather than
-spending compute on scale.
+Rebuild the training split with one admissible and one rejected-action
+transition at every state, then compare prior-free JEPA+GAR, token LM,
+sentence LM, and sentence-latent LM on exactly the same full catalogue. Each
+family must substantially overfit train strict success before any full
+ALFWorld collection or paper-scale sweep is admitted. If it cannot, diagnose
+its objective, optimization, and planner without reinstating support heads.
 
 ## Human steering incorporated
 

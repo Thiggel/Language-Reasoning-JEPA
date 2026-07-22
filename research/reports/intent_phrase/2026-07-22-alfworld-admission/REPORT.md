@@ -1,8 +1,8 @@
-# ALFWorld passed data admission; model learnability is the next gate
+# ALFWorld passed environment admission; prior-free learnability is the next gate
 
 ## The one-sentence answer
 
-The real ALFWorld engine now collects and exactly replays a disjoint 16-episode non-oracle pilot, and all four model process pathways have passed; the next question is whether a small geometry JEPA can deliberately overfit it.
+The real ALFWorld engine collects and exactly replays a disjoint 16-episode non-oracle pilot, but the original training set and process runs used a now-discarded feasibility-supervision design; the next valid question is whether prior-free JEPA+GAR and matched LM baselines can overfit a corrected transition-only pilot.
 
 ## First, the idea in everyday language
 
@@ -20,7 +20,7 @@ Separately, the four model process gates asked only whether each implementation 
 
 ## What a fair comparison means here
 
-At evaluation, the model sees natural-language history, the goal, and a fixed-grammar catalogue grounded in observed entity names. It never receives ALFWorld’s current legal-action menu, expert plan, future availability, or teacher continuation. The generated catalogue intentionally contains invalid cross-products, so feasibility must be learned. Candidate ordering is a stable hash that also covers objects discovered later. Training may use privileged feasibility and continuation labels only in explicitly labelled objectives. All paper methods must receive the same catalogue and evaluation budgets.
+At evaluation, every model sees natural-language history, the goal, and the same fixed-grammar catalogue grounded in observed entity names. It never receives ALFWorld’s current legal-action menu, an action prior, a feasibility prior, expert plan, future availability, or teacher continuation. The generated catalogue intentionally contains invalid cross-products. Those actions are learned only through recorded action-outcome transitions: there is no feasibility classification target. Candidate ordering is a stable hash that also covers objects discovered later, and all paper methods receive identical catalogues and evaluation budgets.
 
 ## What happened
 
@@ -49,13 +49,13 @@ The figure separates deployment information from privileged collection labels. T
 
 ## The technical details
 
-The catalogue generator parses numbered entities only after phrases such as “you see,” treats reset-time entities as navigable receptacles, and grounds a fixed grammar for navigation, opening, taking, moving, heating, cooling, cleaning, slicing, examining, inventory, and lamp use. It deliberately emits invalid object–receptacle cross-products. Collection runs the official hand-coded expert, checks that every expert action occurs in both the generated catalogue and privileged admissible set, branches from the exact factual prefix, and follows the expert after each alternative to retain only recoverable counterfactuals.
+The catalogue generator parses numbered entities only after phrases such as “you see,” treats reset-time entities as navigable receptacles, and grounds a fixed grammar for navigation, opening, taking, moving, heating, cooling, cleaning, slicing, examining, inventory, and lamp use. It deliberately emits invalid object–receptacle cross-products. Collection runs the official hand-coded expert, checks that every expert action occurs in both the generated catalogue and privileged admissible set, branches from the exact factual prefix, and records both recoverable admissible alternatives and rejected catalogue actions as ordinary observed consequences. Privileged availability is used only to construct and audit the offline data; it is not a model target or inference input.
 
 Fast Downward maps a private planner library for each engine and does not release the deleted mapping until process exit. Repeated environments therefore exhausted temporary storage despite normal close calls. Collection now resets one engine for all branches in an episode and executes each episode in a disposable worker. Interactive evaluation likewise owns each engine in a spawned subprocess and explicitly closes it. This was directly verified: five in-process engines accumulated fifteen deleted planner mappings before the repair, whereas the process-isolated validator completed exact replay without retaining them in the model process. The padded episode-level action axis also carries a per-step observed-candidate mask, so actions grounded from later-discovered objects receive no earlier support loss. Fifteen focused tests pass, including this future-entity regression, the zero-counterfactual regression, schema validation, non-oracle catalogue construction, and closed-loop planning.
 
 ## What we can conclude
 
-We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. The retained 16-episode pilot has disjoint identities, 291 factual transitions, 291 recoverable counterfactuals, exact replay, 100% goal completion, and 100% expert recall in the non-oracle catalogue. We also observe that all four core model pathways passed their process gates. The first four-game unseen gate exposed and then passed a domain-neutral schema repair: the full privileged legal menu stays raw, while compiled feasibility is defined only over candidates the model actually receives.
+We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. The retained 16-episode pilot has disjoint identities, 291 factual transitions, 291 recoverable admissible counterfactuals, exact replay, 100% goal completion, and 100% expert recall in the non-oracle catalogue. We also observe that all four core model pathways can execute. These observations validate the environment interface, but not the discarded feasibility-supervised models. The paper-facing protocol instead scores the complete non-oracle catalogue and trains invalid-action effects as transitions.
 
 ## What we cannot conclude
 
@@ -63,7 +63,7 @@ We cannot yet claim model learnability or paper-level ALFWorld performance. Tiny
 
 ## What happens next
 
-Run real-engine random and privileged expert-replay bounds plus a small geometry-JEPA overfit check at learning rates 3e-4, 1e-3, and 3e-3. The primary gate is substantial train strict success; seen-validation is diagnostic and must not select the learning rate. Passing admits the action-shuffle control and a larger collection design. Failure redirects work to optimization, rank, and action-support diagnostics rather than a broad sweep.
+First rebuild the eight-episode training fixture with, at every factual state, one recoverable admissible alternative and one rejected catalogue action represented solely by its observed textual consequence. Then run a matched tiny-set gate for prior-free JEPA+GAR, token LM, sentence LM, and sentence LM with latent MSE. The primary gate is substantial train strict success; validation is diagnostic and must not select the learning rate. Failure redirects work to objective, optimization, and planner diagnostics rather than to action-support or feasibility heads.
 
 ## Words used in this report
 
