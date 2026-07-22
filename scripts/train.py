@@ -61,9 +61,14 @@ def main(cfg: DictConfig) -> None:
     train_ds = build_dataset(cfg, vocab, split="train")
     val_ds = build_dataset(cfg, vocab, split="val")
     coll = partial(collate_for(cfg), pad_id=vocab.pad_id)
+    # Fixed recorded datasets have no meaningful indices beyond their stored
+    # episodes. Procedural datasets opt into epoch-offset indices to generate
+    # fresh examples; default recorded observed-action datasets to repetition.
+    fresh_per_epoch = cfg.data.get(
+        "fresh_per_epoch", cfg.data.get("name") != "observed_action"
+    )
     fresh_sampler = (
-        FreshEpochSampler(train_ds, seed=cfg.seed)
-        if cfg.data.get("fresh_per_epoch", True) else None
+        FreshEpochSampler(train_ds, seed=cfg.seed) if fresh_per_epoch else None
     )
     trajectory_variants = int(cfg.data.get("trajectory_variants", 1))
     effective_batch_size = int(cfg.train.batch_size)

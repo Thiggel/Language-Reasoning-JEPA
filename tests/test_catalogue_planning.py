@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from textjepa.data.planbench import compile_blocksworld_episode, parse_blocksworld_pddl
 from textjepa.data.proofwriter import compile_proofwriter_episode
 from textjepa.data.observed_action import build_observed_action_vocab
@@ -8,6 +10,7 @@ from textjepa.planning.catalogue import (
     environment_from_faithful_problem,
 )
 import torch
+from omegaconf import OmegaConf
 
 from tests.test_planbench_adapter import PDDL
 from tests.test_proofwriter_adapter import _record
@@ -38,6 +41,13 @@ def test_oracle_reference_replays_expert_without_oracle_menu():
     assert result.solved
     assert result.steps == result.optimal_length
     assert result.invalid_actions == 0
+
+
+def test_alfworld_pilot_repeats_fixed_episodes_across_epochs():
+    root = Path(__file__).resolve().parents[1]
+    cfg = OmegaConf.load(root / "configs/data/alfworld_pilot.yaml")
+    assert cfg.name == "observed_action"
+    assert cfg.fresh_per_epoch is False
 
 
 def test_proofwriter_environment_supports_alternative_valid_derivations():

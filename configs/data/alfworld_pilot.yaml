@@ -6,5 +6,6 @@ test_path: ${oc.env:ALFWORLD_PILOT_ROOT}/compiled/test.jsonl
 train_seed: 31
 val_seed: 32
 test_seed: 33
+fresh_per_epoch: false
 geo_rank_k: 1
 geo_rank_horizon: 4
