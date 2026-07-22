@@ -58,6 +58,25 @@ class RandomPolicy:
         )
 
 
+class OracleReplayPolicy:
+    """Privileged upper bound that replays the stored expert trajectory."""
+
+    def run_episode(self, environment, excess_actions=0):
+        steps = 0
+        budget = environment.optimal_length + excess_actions
+        for action in environment.expert_actions:
+            if environment.solved or steps >= budget:
+                break
+            if action not in environment.catalogue:
+                raise RuntimeError("expert action absent from non-oracle catalogue")
+            environment.step(action)
+            steps += 1
+        return CatalogueEpisodeResult(
+            environment.solved, steps, environment.optimal_length,
+            environment.invalid_actions,
+        )
+
+
 class TokenLMPolicy:
     def __init__(self, model, vocab, device):
         self.model, self.vocab, self.device = model, vocab, device
@@ -171,12 +190,16 @@ class SentenceLMPolicy:
 
 def _load_policy(args):
     device = torch.device(args.device)
-    if args.kind == "random":
+    if args.kind in {"random", "oracle"}:
         if not args.data_config:
-            raise ValueError("random evaluation requires --data-config")
+            raise ValueError("reference evaluation requires --data-config")
         cfg = OmegaConf.load(args.data_config)
         vocab = build_vocab_for_config(OmegaConf.create({"data": cfg}))
-        return RandomPolicy(args.seed), vocab, OmegaConf.create({"data": cfg})
+        policy = (
+            RandomPolicy(args.seed) if args.kind == "random"
+            else OracleReplayPolicy()
+        )
+        return policy, vocab, OmegaConf.create({"data": cfg})
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     cfg = OmegaConf.create(checkpoint["cfg"])
     vocab = build_vocab_for_config(cfg)
@@ -240,11 +263,16 @@ def _aggregate(results):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--kind", required=True,
-                        choices=("random", "jepa", "token_lm", "sentence_lm"))
+                        choices=(
+                            "random", "oracle", "jepa", "token_lm",
+                            "sentence_lm",
+                        ))
     parser.add_argument("--checkpoint")
     parser.add_argument("--data-config")
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--split", default="val", choices=("val", "test"))
+    parser.add_argument(
+        "--split", default="val", choices=("train", "val", "test")
+    )
     parser.add_argument("--episodes", type=int, default=500)
     parser.add_argument("--excess-actions", type=int, nargs="+", default=(0, 1, 2, 4))
     parser.add_argument("--seed", type=int, default=7321)
@@ -258,7 +286,7 @@ def main():
     parser.add_argument("--eval-loops", type=int)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
-    if args.kind != "random" and not args.checkpoint:
+    if args.kind not in {"random", "oracle"} and not args.checkpoint:
         parser.error("learned policies require --checkpoint")
     seed_everything(args.seed)
     policy, vocab, cfg = _load_policy(args)
@@ -280,7 +308,10 @@ def main():
         "kind": args.kind,
         "split": args.split,
         "checkpoint": args.checkpoint,
-        "candidate_interface": "non_oracle_full_catalogue",
+        "candidate_interface": (
+            "privileged_expert_replay_over_non_oracle_catalogue"
+            if args.kind == "oracle" else "non_oracle_full_catalogue"
+        ),
         "candidate_order_seed": args.seed,
         "metrics_by_excess_actions": {},
     }

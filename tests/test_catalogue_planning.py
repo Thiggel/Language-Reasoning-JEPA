@@ -11,6 +11,7 @@ import torch
 
 from tests.test_planbench_adapter import PDDL
 from tests.test_proofwriter_adapter import _record
+from scripts.eval_observed_action import OracleReplayPolicy
 
 
 def test_blocksworld_environment_executes_catalogue_actions_and_counts_invalid():
@@ -25,6 +26,18 @@ def test_blocksworld_environment_executes_catalogue_actions_and_counts_invalid()
     for transition in episode.transitions:
         environment.step(transition.action)
     assert environment.solved
+
+
+def test_oracle_reference_replays_expert_without_oracle_menu():
+    episode = compile_blocksworld_episode(
+        parse_blocksworld_pddl(PDDL), "test"
+    )
+    result = OracleReplayPolicy().run_episode(
+        environment_from_episode(episode), excess_actions=0
+    )
+    assert result.solved
+    assert result.steps == result.optimal_length
+    assert result.invalid_actions == 0
 
 
 def test_proofwriter_environment_supports_alternative_valid_derivations():

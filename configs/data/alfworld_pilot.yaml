@@ -1,0 +1,10 @@
+name: observed_action
+domain: alfworld-textworld
+train_path: ${oc.env:ALFWORLD_PILOT_ROOT}/compiled/train.jsonl
+val_path: ${oc.env:ALFWORLD_PILOT_ROOT}/compiled/val.jsonl
+test_path: ${oc.env:ALFWORLD_PILOT_ROOT}/compiled/test.jsonl
+train_seed: 31
+val_seed: 32
+test_seed: 33
+geo_rank_k: 1
+geo_rank_horizon: 4

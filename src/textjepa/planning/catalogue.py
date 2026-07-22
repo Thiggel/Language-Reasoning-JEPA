@@ -45,6 +45,9 @@ class BlocksworldEnvironment:
             action for value in episode.transitions for action in value.catalogue
         ))
         self.optimal_length = int(episode.metadata["optimal_plan_length"])
+        self.expert_actions = tuple(
+            value.action for value in episode.transitions
+        )
         self.invalid_actions = 0
         self.state = frozenset(tuple(atom) for atom in spec["initial"])
         self.goal_state = frozenset(tuple(atom) for atom in spec["goal"])
@@ -73,6 +76,9 @@ class ProofWriterEnvironment:
             action for value in episode.transitions for action in value.catalogue
         ))
         self.optimal_length = int(episode.metadata["optimal_derivation_length"])
+        self.expert_actions = tuple(
+            value.action for value in episode.transitions
+        )
         self.invalid_actions = 0
         self.state = frozenset(tuple(fact) for fact in spec["initial"])
         self.target = tuple(spec["target"])
@@ -131,6 +137,9 @@ class AlfworldEnvironment:
         self.initial_observation = initial
         self.observations = [initial]
         self.optimal_length = int(episode.metadata["expert_length"])
+        self.expert_actions = tuple(
+            value.action for value in episode.transitions
+        )
         self.invalid_actions = 0
         self._solved = False
         self._catalogue_builder = observed_action_catalogue
