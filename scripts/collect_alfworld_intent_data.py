@@ -74,13 +74,14 @@ def _collect_and_replay(payload: tuple) -> dict:
     """
     (
         gamefile, data_root, split, seed, counterfactual_k,
-        teacher_horizon, max_steps,
+        teacher_horizon, max_steps, counterfactual_attempts,
     ) = payload
     record = collect_alfworld_record(
         gamefile, data_root, split, seed,
         counterfactual_k=counterfactual_k,
         teacher_horizon=teacher_horizon,
         max_steps=max_steps,
+        counterfactual_attempts_per_step=counterfactual_attempts,
     )
     replay_alfworld_record(record, data_root)
     return record
@@ -92,15 +93,25 @@ def collect_split(args, split: str, limit: int) -> dict:
     random.Random(f"{args.seed}:{split}").shuffle(games)
     records, failures = [], []
     context = multiprocessing.get_context("spawn")
-    with context.Pool(processes=1, maxtasksperchild=1) as pool:
-        for gamefile in games:
+    for gamefile in games:
+        with context.Pool(processes=1, maxtasksperchild=1) as pool:
             payload = (
                 gamefile, args.data_root, split, args.seed,
                 args.counterfactual_k, args.teacher_horizon, args.max_steps,
+                args.counterfactual_attempts,
             )
             try:
-                record = pool.apply(_collect_and_replay, (payload,))
+                pending = pool.apply_async(_collect_and_replay, (payload,))
+                record = pending.get(timeout=args.episode_timeout_seconds)
                 records.append(record)
+            except multiprocessing.TimeoutError:
+                failures.append({
+                    "gamefile": str(gamefile),
+                    "error": (
+                        "episode timeout after "
+                        f"{args.episode_timeout_seconds} seconds"
+                    ),
+                })
             except Exception as error:
                 failure = {"gamefile": str(gamefile), "error": repr(error)}
                 failures.append(failure)
@@ -111,8 +122,8 @@ def collect_split(args, split: str, limit: int) -> dict:
                     raise RuntimeError(
                         "non-oracle catalogue recall is below 100%; dataset blocked"
                     ) from error
-            if len(records) >= limit:
-                break
+        if len(records) >= limit:
+            break
     if len(records) < limit:
         _write_jsonl(args.output / "failures" / f"{split}.jsonl", failures)
         raise RuntimeError(
@@ -145,6 +156,8 @@ def main() -> None:
     parser.add_argument("--counterfactual-k", type=int, default=2)
     parser.add_argument("--teacher-horizon", type=int, default=8)
     parser.add_argument("--max-steps", type=int, default=200)
+    parser.add_argument("--counterfactual-attempts", type=int, default=4)
+    parser.add_argument("--episode-timeout-seconds", type=int, default=300)
     parser.add_argument("--seed", type=int, default=1741)
     parser.add_argument(
         "--split", choices=("all", "train", "val", "test"), default="all"
@@ -160,6 +173,8 @@ def main() -> None:
         "seed": args.seed,
         "counterfactual_k": args.counterfactual_k,
         "teacher_horizon": args.teacher_horizon,
+        "counterfactual_attempts": args.counterfactual_attempts,
+        "episode_timeout_seconds": args.episode_timeout_seconds,
         "runtime": _runtime_provenance(),
         "splits": {},
     }

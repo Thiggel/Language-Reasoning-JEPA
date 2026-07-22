@@ -310,6 +310,7 @@ def collect_alfworld_record(
     counterfactual_k: int = 0,
     teacher_horizon: int = 8,
     max_steps: int = 200,
+    counterfactual_attempts_per_step: int | None = None,
 ) -> dict:
     """Execute the official hand-coded expert and capture replayable labels."""
     gamefile, data_root = Path(gamefile).resolve(), Path(data_root).resolve()
@@ -335,6 +336,10 @@ def collect_alfworld_record(
             ]
             rng = random.Random(f"{seed}:{gamefile}:{step_index}")
             rng.shuffle(alternatives)
+            attempt_budget = counterfactual_attempts_per_step
+            if attempt_budget is None:
+                attempt_budget = max(counterfactual_k, 4 * counterfactual_k)
+            alternatives = alternatives[:max(0, int(attempt_budget))]
             counterfactuals = []
             for alternative in alternatives:
                 if len(counterfactuals) >= counterfactual_k:

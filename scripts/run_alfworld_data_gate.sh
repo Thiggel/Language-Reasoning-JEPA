@@ -34,7 +34,8 @@ output=$RUN_DIR/data
 "$alfworld_python" "$TEXTJEPA_ROOT/scripts/collect_alfworld_intent_data.py" \
   --data-root "$alfworld_data" --output "$output" --split "$split" \
   "$size_argument" "$size" --counterfactual-k "$counterfactual_k" \
-  --teacher-horizon "$teacher_horizon"
+  --teacher-horizon "$teacher_horizon" --counterfactual-attempts 4 \
+  --episode-timeout-seconds 300
 
 "$alfworld_python" "$TEXTJEPA_ROOT/scripts/validate_alfworld_intent_data.py" \
   --dataset "$split=$output/compiled/$split.jsonl" \
