@@ -185,3 +185,27 @@ def test_packing_keeps_parameter_names_and_checkpoint_values_unchanged():
     assert dense.state_dict().keys() == packed.state_dict().keys()
     for name, value in dense.state_dict().items():
         assert torch.equal(value, packed.state_dict()[name]), name
+
+
+def test_randomized_masks_and_shapes_match_dense_reference():
+    # Deterministic property-style coverage of many padding patterns, including
+    # interior holes that production does not normally generate.
+    for seed in range(20):
+        generator = torch.Generator().manual_seed(2000 + seed)
+        batch = 1 + seed % 6
+        width = 1 + (seed * 7) % 19
+        dimension = (16, 24, 32, 40)[seed % 4]
+        heads = 4
+        encoder = encoder_stack(
+            dimension, 1 + seed % 3, heads, 1.5, 0.0,
+            attention_backend="auto",
+        )
+        value = torch.randn(batch, width, dimension, generator=generator)
+        valid = torch.rand(batch, width, generator=generator).gt(0.35)
+        valid[:, 0] = True
+        dense = encoder(value, src_key_padding_mask=~valid)
+        packed = packed_encoder_forward(encoder, value, valid)
+        assert torch.allclose(
+            packed[valid], dense[valid], atol=1e-5, rtol=1e-4
+        ), seed
+        assert packed[~valid].eq(0).all(), seed
