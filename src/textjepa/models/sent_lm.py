@@ -68,6 +68,12 @@ class SentenceLM(nn.Module):
         self.dec_head = nn.Linear(d_model, vocab_size, bias=False)
         self.dec_head.weight = self.dec_tok.weight
         self.latent_head = mlp([d_model, d_model * 2], d_model)
+        # The CE-only baseline intentionally never evaluates latent_head.
+        # Excluding it from autograd keeps native DDP from waiting for
+        # gradients that cannot exist, without paying find_unused_parameters
+        # traversal overhead on every update.
+        if not latent_target:
+            self.latent_head.requires_grad_(False)
 
     def encode_chunks(self, tokens: torch.Tensor) -> torch.Tensor:
         B, C, L = tokens.shape

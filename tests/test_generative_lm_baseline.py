@@ -42,6 +42,15 @@ def test_sentence_baseline_has_only_decoder_ce_loss():
         "step_mask": torch.tensor([[True, True]]),
     }
     assert set(model(batch)) == {"ce"}
+    assert not any(parameter.requires_grad for parameter in model.latent_head.parameters())
+
+
+def test_sentence_semi_jepa_trains_latent_head():
+    vocab = build_vocab(23)
+    model = SentenceLM(
+        len(vocab), vocab.pad_id, 32, 1, 4, 1, 4, 1, 4, 2, 16, 8, True
+    )
+    assert all(parameter.requires_grad for parameter in model.latent_head.parameters())
 
 
 def test_sentence_next_logits_depend_only_on_supplied_prefix():
