@@ -194,7 +194,17 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
                 raise ValueError("packed torch attention requires a block mask")
             from torch.nn.attention.flex_attention import flex_attention
             q, k, v = (part.transpose(0, 1).unsqueeze(0) for part in qkv.unbind(1))
-            attended = flex_attention(q, k, v, block_mask=block_mask)
+            # PyTorch 2.5 FlexAttention requires a power-of-two head width.
+            # Padding projected features is algebraically neutral provided we
+            # retain the original attention scale and slice the values back.
+            kernel_dim = 1 << (self.head_dim - 1).bit_length()
+            if kernel_dim != self.head_dim:
+                amount = kernel_dim - self.head_dim
+                q, k, v = (F.pad(part, (0, amount)) for part in (q, k, v))
+            attended = flex_attention(
+                q, k, v, block_mask=block_mask,
+                scale=self.head_dim ** -0.5,
+            )[..., :self.head_dim]
             attended = attended.squeeze(0).transpose(0, 1)
             self.last_backend = "torch_flex_packed"
         else:
