@@ -373,7 +373,9 @@ class TokenAlignedEditPredictor(nn.Module):
             # site; the full-width token embedding cannot bypass it.
             routed = torch.zeros_like(h)
             row = torch.arange(len(h), device=h.device)
-            routed[row, positions.clamp(0, h.shape[1] - 1)] = condition
+            routed[row, positions.clamp(0, h.shape[1] - 1)] = condition.to(
+                routed.dtype
+            )
             h = h + routed
         h = h + self.prompt_condition(prompt).unsqueeze(1)
         key_pad = ~next_mask

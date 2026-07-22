@@ -279,7 +279,7 @@ class SentencePatternActionEncoder(nn.Module):
         valid = torch.zeros(len(rows), width, dtype=torch.bool, device=mask.device)
         for row, members in enumerate(rows):
             valid[row, :len(members)] = True
-            pattern[row, selected_offsets[row]] = content[row]
+            pattern[row, selected_offsets[row]] = content[row].to(pattern.dtype)
         pattern = pattern + self.relative[:, :width]
         h = self.blocks(pattern, src_key_padding_mask=~valid)
         logits = self.score(h).squeeze(-1).masked_fill(~valid, -torch.inf)
