@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -111,8 +112,13 @@ def one_case(seed: int, lengths: list[int], dimension: int, layers: int) -> dict
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--out", type=Path,
+        default=Path(os.environ["RUN_DIR"]) if "RUN_DIR" in os.environ else None,
+    )
     args = parser.parse_args()
+    if args.out is None:
+        parser.error("--out is required when RUN_DIR is not set")
     args.out.mkdir(parents=True, exist_ok=True)
     cases = [
         one_case(1701, [129, 67, 11, 1], 832, 2),
