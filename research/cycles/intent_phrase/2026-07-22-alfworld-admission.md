@@ -22,14 +22,26 @@ Keep this data decision separate from model quality.
 - Fast Downward mappings leak for the lifetime of a Python process. Per-episode
   process isolation is therefore a validity and storage requirement.
 
+## Result
+
+The bounded pilot contains 8 train, 4 seen-validation, and 4 unseen-validation
+episodes (291 factual transitions and 291 recoverable counterfactuals). The
+split identities are disjoint. Every retained episode exactly replays, reaches
+its goal, and retains every expert action in the non-oracle catalogue. One
+pathological seen-validation game exceeded the five-minute per-game bound and
+was recorded and skipped rather than silently hanging the dataset build.
+
+All four model process pathways also completed on Grünau. External queued
+duplicates are obsolete and do not affect this decision.
+
 ## Falsifiable next gate
 
-Submit one bounded collection/replay job per ALFWorld split plus Grünau
-recoveries for the two external pending process gates. Any expert catalogue
-miss, replay drift, nonterminal expert trace, scratch-space accumulation,
-missing checkpoint, non-finite metric, or evaluator oracle-menu dependency
-blocks scale-up. Passing permits the remaining ALFWorld admission controls,
-not the full learning-rate sweep.
+On this fixed admission-only pilot, compare the real-engine random and
+privileged expert-replay bounds and train the small geometry JEPA at three
+log-spaced learning rates. The model must substantially overfit train strict
+success before any full ALFWorld collection or paper-scale sweep is admitted.
+If it cannot, diagnose optimization and action-support supervision rather than
+spending compute on scale.
 
 ## Human steering incorporated
 

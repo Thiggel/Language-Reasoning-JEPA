@@ -1,8 +1,8 @@
-# ALFWorld is executable, but paper training still awaits admission gates
+# ALFWorld passed data admission; model learnability is the next gate
 
 ## The one-sentence answer
 
-The real ALFWorld engine now collects and exactly replays non-oracle intent trajectories, and all four model process pathways have passed after two queue-delayed paths were recovered on Grünau.
+The real ALFWorld engine now collects and exactly replays a disjoint 16-episode non-oracle pilot, and all four model process pathways have passed; the next question is whether a small geometry JEPA can deliberately overfit it.
 
 ## First, the idea in everyday language
 
@@ -10,7 +10,7 @@ Imagine teaching someone to cook by letting them read a room description, choose
 
 ## Why this question matters
 
-ALFWorld is the paper campaign’s interactive, non-arithmetic domain. It tests whether consequence geometry transfers beyond synthetic equations. A broken collector, oracle action menu, or drifting replay would invalidate an entire learning-rate sweep. This report supports a narrow decision: run bounded data-admission gates and recover the two scheduler-delayed model gates, but do not start ALFWorld model selection yet.
+ALFWorld is the paper campaign’s interactive, non-arithmetic domain. It tests whether consequence geometry transfers beyond synthetic equations. A broken collector, oracle action menu, or drifting replay would invalidate an entire learning-rate sweep. This report supports a narrow decision: run random/oracle real-engine bounds and a three-learning-rate tiny-set overfit gate, but do not start full ALFWorld model selection yet.
 
 ## What we tested
 
@@ -34,6 +34,10 @@ At evaluation, the model sees natural-language history, the goal, and a fixed-gr
 | Recurrent sentence model process gate | 1 run | completed | Training, checkpoint reload, and metrics path work |
 | Recurrent token / sentence-latent gates | 2 recovery runs | completed | Training, checkpoint reload, and finite metrics paths work |
 | Unseen ALFWorld schema recovery | 4 episodes, 67 steps | completed | Raw oracle menus compile to feasibility only within the non-oracle catalogue; exact replay remains 100% |
+| Train admission set | 8 episodes, 150 steps | completed | Exact replay, goal success, and expert catalogue recall are all 100% |
+| Seen-validation admission set | 4 episodes, 74 steps | completed | One bounded pathological game was recorded and skipped; retained episodes pass all validity checks |
+| Split identity audit | 16 episodes | disjoint | No episode identity crosses train, seen-validation, or unseen-validation |
+| Local seen-validation bounds | 4 episodes | oracle 100%, random 0% strict success | The environment is solvable and random action selection is not a viable shortcut |
 
 These are engineering-validity observations, not estimates of model quality. The completed two-epoch models solved zero validation episodes, which is unsurprising at this scale and is not used to rank methods.
 
@@ -51,15 +55,15 @@ Fast Downward maps a private planner library for each engine and does not releas
 
 ## What we can conclude
 
-We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. We also observe that all four core model pathways have passed their process gates. The first four-game unseen gate exposed and then passed a domain-neutral schema repair: the full privileged legal menu stays raw, while compiled feasibility is defined only over candidates the model actually receives.
+We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. The retained 16-episode pilot has disjoint identities, 291 factual transitions, 291 recoverable counterfactuals, exact replay, 100% goal completion, and 100% expert recall in the non-oracle catalogue. We also observe that all four core model pathways passed their process gates. The first four-game unseen gate exposed and then passed a domain-neutral schema repair: the full privileged legal menu stays raw, while compiled feasibility is defined only over candidates the model actually receives.
 
 ## What we cannot conclude
 
-We cannot yet claim ALFWorld dataset admission, because split-scale identity checks, tiny-set overfitting, random and oracle bounds, action-shuffle degradation, and model closed-loop success remain untested. We cannot compare model quality from two-epoch zero-success process runs. The smoke and four-game unseen samples are too small to estimate recovery coverage. The external Alex and Grete duplicates remain scheduler-pending, but they are no longer needed for the process decision.
+We cannot yet claim model learnability or paper-level ALFWorld performance. Tiny-set overfitting, action-shuffle degradation, and learned-policy closed-loop success remain untested. The pilot is an admission fixture, not a headline benchmark sample, and is too small to estimate recovery coverage. The external Alex and Grete duplicates remain scheduler-pending, but they are obsolete for the process decision.
 
 ## What happens next
 
-Run independent train, seen-validation, and unseen-test collection gates with exact interactive replay. In parallel, repeat only the two pending model pathways on currently free Grünau GPUs. If all five jobs complete, merge a larger deterministic dataset, verify disjoint identities, run tiny-set overfit and random/oracle/action-shuffle controls, and only then admit the first 27-run learning-rate cell. Any catalogue miss, replay drift, temporary-storage growth, or missing artifact blocks ALFWorld scaling.
+Run real-engine random and privileged expert-replay bounds plus a small geometry-JEPA overfit check at learning rates 3e-4, 1e-3, and 3e-3. The primary gate is substantial train strict success; seen-validation is diagnostic and must not select the learning rate. Passing admits the action-shuffle control and a larger collection design. Failure redirects work to optimization, rank, and action-support diagnostics rather than a broad sweep.
 
 ## Words used in this report
 
