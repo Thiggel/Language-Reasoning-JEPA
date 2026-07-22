@@ -11,6 +11,10 @@ fi
 
 world=${WORLD_GPUS:-${SLURM_GPUS_ON_NODE:-1}}
 world=${world%%(*}
+if (( 512 % world != 0 )); then
+  echo "global batch 512 is not divisible by world size $world" >&2
+  exit 2
+fi
 model_dir="$RUN_DIR/model"
 mkdir -p "$model_dir"
 
@@ -29,22 +33,28 @@ launcher=("$python_bin" -m torch.distributed.run --standalone "--nproc_per_node=
 
 case "$kind" in
   token_lm)
+    micro_batch=16
+    accumulation=$((512 / (micro_batch * world)))
     "${launcher[@]}" "${TEXTJEPA_ROOT}/scripts/train_lm.py" "${common[@]}" \
-      train.target_kind=outcome train.rank_weight=0 train.batch_size=16 \
-      train.gradient_accumulation_steps=8 \
+      train.target_kind=outcome train.rank_weight=0 "train.batch_size=$micro_batch" \
+      "train.gradient_accumulation_steps=$accumulation" \
       model.d_model=888 model.n_layers=13 model.n_heads=12 \
       model.ff_mult=4 model.max_len=768
     ;;
   sentence_lm)
+    micro_batch=4
+    accumulation=$((512 / (micro_batch * world)))
     "${launcher[@]}" "${TEXTJEPA_ROOT}/scripts/train_sentlm.py" "${common[@]}" \
-      train.target_kind=outcome train.batch_size=4 \
-      train.gradient_accumulation_steps=32 \
+      train.target_kind=outcome "train.batch_size=$micro_batch" \
+      "train.gradient_accumulation_steps=$accumulation" \
       model.d_model=768 model.chunk_layers=2 model.chunk_heads=12 \
       model.state_layers=11 model.state_heads=12 \
       model.dec_layers=3 model.dec_heads=12 model.ff_mult=4 \
       model.max_chunk_len=96 model.max_chunks=64 model.latent_target=false
     ;;
   jepa_prior|jepa_no_prior)
+    micro_batch=2
+    accumulation=$((512 / (micro_batch * world)))
     use_prior=true
     prior_weight=1
     if [[ "$kind" == jepa_no_prior ]]; then
@@ -52,8 +62,8 @@ case "$kind" in
       prior_weight=0
     fi
     "${launcher[@]}" "${TEXTJEPA_ROOT}/scripts/train_pooled_sentence_jepa.py" \
-      "${common[@]}" train.batch_size=2 train.eval_batch_size=2 \
-      train.gradient_accumulation_steps=64 model.d_state=768 \
+      "${common[@]}" "train.batch_size=$micro_batch" train.eval_batch_size=2 \
+      "train.gradient_accumulation_steps=$accumulation" model.d_state=768 \
       model.encoder_layers=10 model.pool_heads=12 model.predictor_layers=6 \
       model.n_heads=12 model.ff_mult=4 model.max_len=768 model.d_action=128 \
       model.dense_depth=2 model.dense_checkpoint=true \
