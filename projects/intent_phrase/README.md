@@ -48,6 +48,7 @@ information-matched protocol.
 - [Current status](STATUS.md)
 - [Latest token prerequisite-support report](../../research/reports/intent_phrase/2026-07-21-token-prerequisite-support/REPORT.md)
 - [ALFWorld implementation and admission status](../../research/reports/intent_phrase/2026-07-22-alfworld-admission/REPORT.md)
+- [ALFWorld tiny-set learnability result](../../research/reports/intent_phrase/2026-07-22-alfworld-overfit-failure/REPORT.md)
 - [Code/config/run ownership](ARTIFACTS.md)
 - [ICLR paper roadmap](PAPER_ROADMAP.md)
 - [Geometry-first paper experiment contract](PAPER_EXPERIMENTS.md)

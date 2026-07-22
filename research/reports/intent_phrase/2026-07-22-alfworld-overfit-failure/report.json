@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-22-alfworld-overfit-failure",
+  "project": "intent_phrase",
+  "title": "ALFWorld feasibility is learned, but goal-directed action choice fails",
+  "created_at": "2026-07-22T16:38:00+02:00",
+  "status": "decision_complete",
+  "decision": "Localize proposal recall versus JEPA value ordering before collecting more ALFWorld data.",
+  "plain_summary": "A small JEPA cannot solve even its eight training episodes after 300 epochs. Higher learning rates learn which commands are legal but not which legal command advances the goal.",
+  "report": "REPORT.md",
+  "review_required": false
+}
