@@ -107,10 +107,16 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
         qkv = F.linear(query, self.in_proj_weight, self.in_proj_bias).view(
             batch, length, 3, self.num_heads, self.head_dim
         )
-        valid = (
-            torch.ones(batch, length, dtype=torch.bool, device=query.device)
-            if key_padding_mask is None else ~key_padding_mask
-        )
+        if key_padding_mask is None:
+            valid = torch.ones(
+                batch, length, dtype=torch.bool, device=query.device
+            )
+        elif key_padding_mask.dtype == torch.bool:
+            valid = ~key_padding_mask
+        else:
+            # TransformerEncoder canonicalizes bool padding masks to additive
+            # float masks (0 for valid, -inf for padding) before this call.
+            valid = key_padding_mask.eq(0)
         backend = self._select_backend(query)
         if backend in {"flash_attn_4", "flash_attn_2"}:
             attended = self._external_attention(qkv, valid, backend)

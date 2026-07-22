@@ -31,3 +31,19 @@ def test_torch_sdpa_attention_matches_multihead_attention_with_padding():
     actual[valid].square().sum().backward()
     assert torch.allclose(other.grad[valid], value.grad[valid], atol=2e-6, rtol=2e-5)
 
+
+def test_fused_attention_accepts_transformer_canonical_float_padding_mask():
+    attention = FlashMultiheadAttention(
+        32, 4, batch_first=True, dropout=0, attention_backend="torch"
+    )
+    value = torch.randn(2, 5, 32)
+    padding = torch.tensor([
+        [0.0, 0.0, 0.0, float("-inf"), float("-inf")],
+        [0.0, 0.0, 0.0, 0.0, float("-inf")],
+    ])
+    output = attention(
+        value, value, value, key_padding_mask=padding, need_weights=False
+    )[0]
+    assert torch.isfinite(output).all()
+    assert output[0, 3:].eq(0).all()
+    assert output[1, 4:].eq(0).all()
