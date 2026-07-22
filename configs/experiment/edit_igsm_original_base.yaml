@@ -78,6 +78,10 @@ objective:
     num_slices: 256
     n_points: 17
     integration_limit: 5.0
+  visreg:
+    _target_: textjepa.objectives.VISReg
+    weight: 0.0
+    num_projections: 256
 train:
   batch_size: 512
   microbatch_size: 16

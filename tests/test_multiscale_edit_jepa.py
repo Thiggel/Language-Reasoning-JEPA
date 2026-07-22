@@ -15,7 +15,7 @@ from textjepa.objectives.prediction import (
     MacroSentencePrediction,
     SentenceLevelPrediction,
 )
-from textjepa.objectives.vicreg import MultiscaleVICReg
+from textjepa.objectives.vicreg import MultiscaleVICReg, VISReg
 
 
 def test_base_action_value_uses_mse_and_same_state_pairwise_ranking():
@@ -213,6 +213,51 @@ def test_efficient_pair_encoding_halves_state_encodes_without_changing_transitio
     assert torch.allclose(
         efficient_out.step_states_tgt, full_out.step_states_tgt, atol=1e-6,
     )
+
+
+@pytest.mark.parametrize(
+    "mode,target_requires_grad,has_teacher",
+    [
+        ("ema", False, True),
+        ("shared_stopgrad", False, False),
+        ("shared_symmetric", True, False),
+    ],
+)
+def test_target_encoder_modes_have_explicit_gradient_and_teacher_semantics(
+    mode, target_requires_grad, has_teacher
+):
+    model = _model(
+        "token", efficient_pair_encoding=True, target_encoder_mode=mode
+    )
+    batch = copy.deepcopy(_batch())
+    batch["buffer_tokens"] = batch["buffer_tokens"][:, :2]
+    batch["buffer_mask"] = batch["buffer_mask"][:, :2]
+    for key in (
+        "op", "edit_position", "edit_content_token", "step_mask",
+        "action_tokens",
+    ):
+        batch[key] = batch[key][:, :1]
+    out = model(batch)
+    assert (model.teacher is not None) is has_teacher
+    assert out.step_states_tgt.requires_grad is target_requires_grad
+    assert out.extras["token_targets"].requires_grad is target_requires_grad
+    assert out.extras["target_encoder_mode"] == mode
+    model.update_teachers(0.99)  # all modes expose the trainer protocol
+
+
+def test_visreg_is_finite_and_pushes_an_exactly_collapsed_batch_apart():
+    states = torch.zeros(32, 1, 16, requires_grad=True)
+    out = SimpleNamespace(
+        extras={
+            "sigreg_states": states,
+            "sigreg_state_mask": torch.ones(32, 1, dtype=torch.bool),
+        },
+    )
+    loss = VISReg(num_projections=32)(out, {})
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert states.grad is not None
+    assert states.grad.abs().sum() > 0
 
 
 def test_macro_code_uses_all_actions_and_preserves_order():

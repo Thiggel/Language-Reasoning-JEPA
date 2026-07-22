@@ -430,7 +430,8 @@ class MultiscaleEditJEPA(nn.Module):
                  direct_content_scaffold: bool = True,
                  base_prior_predict_position: bool = True,
                  attention_backend: str = "torch",
-                 efficient_pair_encoding: bool = False):
+                 efficient_pair_encoding: bool = False,
+                 target_encoder_mode: str = "ema"):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
@@ -438,6 +439,12 @@ class MultiscaleEditJEPA(nn.Module):
             raise ValueError("multiscale edit JEPA requires dropout=0")
         if sentence_action_kind not in {"context", "blank_pattern"}:
             raise ValueError(f"unknown sentence_action_kind: {sentence_action_kind}")
+        if target_encoder_mode not in {
+            "ema", "shared_stopgrad", "shared_symmetric"
+        }:
+            raise ValueError(
+                f"unknown target_encoder_mode: {target_encoder_mode}"
+            )
         self.variant = variant
         self.use_token_loss = variant not in {"sentence", "sentence_macro"}
         self.use_sentence = variant != "token"
@@ -448,12 +455,16 @@ class MultiscaleEditJEPA(nn.Module):
             0, int(max_transitions_per_forward)
         )
         self.efficient_pair_encoding = bool(efficient_pair_encoding)
+        self.target_encoder_mode = target_encoder_mode
+        self.detach_targets = target_encoder_mode != "shared_symmetric"
         self.encoder = HierarchicalBufferEncoder(
             vocab_size, pad_id, d_model, token_layers, sentence_layers,
             n_heads, ff_mult, max_sequence_len, max_sentences, dropout,
             sentence_pooling, attention_backend,
         )
-        self.teacher = EMATeacher(self.encoder)
+        self.teacher = (
+            EMATeacher(self.encoder) if target_encoder_mode == "ema" else None
+        )
         self.token_pred = None if variant in {"sentence", "sentence_macro"} else TokenAlignedEditPredictor(
             d_model, d_action, predictor_layers, n_heads,
             relative_radius=token_relative_radius,
@@ -528,7 +539,8 @@ class MultiscaleEditJEPA(nn.Module):
 
     @torch.no_grad()
     def update_teachers(self, momentum: float):
-        self.teacher.update(self.encoder, momentum)
+        if self.teacher is not None:
+            self.teacher.update(self.encoder, momentum)
 
     @staticmethod
     def affected_sentences(ids: torch.Tensor, mask: torch.Tensor,
@@ -582,6 +594,8 @@ class MultiscaleEditJEPA(nn.Module):
         prompt = batch["prompt_tokens"].unsqueeze(1).expand(
             b, states, *batch["prompt_tokens"].shape[1:]
         )
+        if teacher and self.teacher is None:
+            raise RuntimeError("teacher encoding requested without an EMA teacher")
         module = self.teacher if teacher else self.encoder
         result = module(
             prompt.reshape(b * states, *prompt.shape[2:]),
@@ -601,11 +615,21 @@ class MultiscaleEditJEPA(nn.Module):
         return self._encode_buffers(batch, batch["buffer_tokens"], teacher)
 
     def _encode_transition_pair(self, batch: dict):
-        """Encode only online current and EMA next for one replacement step."""
+        """Encode one current/next pair according to the target policy.
+
+        EMA and shared-stop-gradient modes avoid storing target activations but
+        still require a second forward encoding of the next state.  Symmetric
+        mode batches both states into one encoder call and lets prediction loss
+        gradients reach both sides, as required by heuristic-free regularizers.
+        """
+        if self.target_encoder_mode == "shared_symmetric":
+            online = self._encode_buffers(batch, batch["buffer_tokens"][:, :2])
+            return online, online
         current = self._encode_buffers(batch, batch["buffer_tokens"][:, :1])
         with torch.no_grad():
             target = self._encode_buffers(
-                batch, batch["buffer_tokens"][:, 1:2], teacher=True
+                batch, batch["buffer_tokens"][:, 1:2],
+                teacher=self.target_encoder_mode == "ema",
             )
         # Preserve the long-standing [current, next] output contract. The
         # second online slot is the detached EMA state because no enabled
@@ -614,7 +638,7 @@ class MultiscaleEditJEPA(nn.Module):
             torch.cat([left, right.detach()], dim=1)
             for left, right in zip(current, target)
         )
-        # Target index one must remain the EMA next state. Index zero is unused.
+        # Target index one is the next-state target. Index zero is unused.
         teacher = tuple(
             torch.cat([left.detach(), right], dim=1)
             for left, right in zip(current, target)
@@ -676,11 +700,18 @@ class MultiscaleEditJEPA(nn.Module):
             tokens, token_mask, ids, sentences, sentence_mask, attention = (
                 self._encode_trajectory(batch)
             )
-            with torch.no_grad():
-                (tgt_tokens, tgt_token_mask, _, tgt_sentences,
-                 tgt_sentence_mask, _) = self._encode_trajectory(
-                    batch, teacher=True
-                )
+            if self.target_encoder_mode == "ema":
+                with torch.no_grad():
+                    (tgt_tokens, tgt_token_mask, _, tgt_sentences,
+                     tgt_sentence_mask, _) = self._encode_trajectory(
+                        batch, teacher=True
+                    )
+            else:
+                # Every trajectory state is already online-encoded above.
+                # Reuse it rather than performing an identical shared-encoder
+                # pass. Detachment is applied at the output boundary below.
+                tgt_tokens, tgt_token_mask = tokens, token_mask
+                tgt_sentences, tgt_sentence_mask = sentences, sentence_mask
         b, states, width, dim = tokens.shape
         steps = states - 1
         op = batch["op"][:, :steps]
@@ -768,10 +799,14 @@ class MultiscaleEditJEPA(nn.Module):
         rollout = global_pred  # one-step placeholder; explicit token rollout is separate
         value = self.value_head(global_states.detach()).squeeze(-1)
         zeros_ops = global_pred.new_zeros(b, steps, 3)
+        maybe_detach = (
+            (lambda value: value.detach())
+            if self.detach_targets else (lambda value: value)
+        )
         out = JEPAOutputs(
             s0=global_states[:, 0], step_states=global_states[:, 1:],
             prev_states=global_states[:, :-1],
-            step_states_tgt=global_targets[:, 1:].detach(), actions=action,
+            step_states_tgt=maybe_detach(global_targets[:, 1:]), actions=action,
             action_emb_tgt=global_pred.detach(), preds=global_pred,
             rollout=rollout, op_logits=zeros_ops,
             emb_pred=global_pred.new_zeros(global_pred.shape), value_pred=value,
@@ -781,20 +816,21 @@ class MultiscaleEditJEPA(nn.Module):
             "multiscale_variant": self.variant,
             "token_predictions": token_pred if self.use_token_loss else None,
             "token_prediction_mask": predicted_mask,
-            "token_targets": tgt_tokens[:, 1:].detach(),
+            "token_targets": maybe_detach(tgt_tokens[:, 1:]),
             "token_target_mask": tgt_token_mask[:, 1:],
             "sentence_predictions": sentence_pred,
-            "sentence_targets": tgt_sentences[:, 1:].detach(),
+            "sentence_targets": maybe_detach(tgt_sentences[:, 1:]),
             "sentence_target_mask": tgt_sentence_mask[:, 1:],
             "affected_sentence": affected,
             "sentence_attention": attention,
             "token_states": tokens,
-            "token_states_tgt": tgt_tokens.detach(),
+            "token_states_tgt": maybe_detach(tgt_tokens),
             "token_state_mask": token_mask,
             "sentence_states": sentences,
-            "sentence_states_tgt": tgt_sentences.detach(),
+            "sentence_states_tgt": maybe_detach(tgt_sentences),
             "transition_slice_start": transition_start,
             "efficient_pair_encoding": use_pair_encoding,
+            "target_encoder_mode": self.target_encoder_mode,
             "sigreg_states": global_states[:, :-1],
             "sigreg_state_mask": step_mask,
             "observed_action_targets": batch["action_tokens"][:, :steps],

@@ -12,9 +12,9 @@ class JEPAOutputs:
     s0: torch.Tensor  # [B, D] state before any step/edit
     step_states: torch.Tensor  # [B, T, D] encoded state after step t
     prev_states: torch.Tensor  # [B, T, D] state before step t
-    step_states_tgt: torch.Tensor  # [B, T, D] EMA targets, detached
+    step_states_tgt: torch.Tensor  # [B, T, D] next-state encoder targets
     actions: torch.Tensor  # [B, T, d_a] bottlenecked action codes
-    action_emb_tgt: torch.Tensor  # [B, T, D] EMA phrase embeddings, detached
+    action_emb_tgt: torch.Tensor  # [B, T, D] phrase/action embedding targets
     preds: torch.Tensor  # [B, T, D] teacher-forced F(s_t, a_t)
     rollout: torch.Tensor  # [B, T, D] open-loop rollout from s0
     op_logits: torch.Tensor  # [B, T, n_ops] LDAD op decoding from delta

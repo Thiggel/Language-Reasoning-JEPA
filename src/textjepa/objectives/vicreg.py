@@ -1,6 +1,8 @@
-"""VICReg-style variance/covariance stabilization on online latents."""
+"""VICReg, SIGReg, and VISReg stabilization on online latents."""
 
 from __future__ import annotations
+
+import math
 
 import torch
 
@@ -34,10 +36,18 @@ class VICReg(Objective):
         self.action_weight = action_weight
 
     def forward(self, out, batch: dict) -> torch.Tensor:
-        mask = out.step_mask.reshape(-1)
-        states = torch.cat(
-            [out.s0, out.step_states.reshape(-1, out.step_states.shape[-1])[mask]]
-        )
+        if "sigreg_states" in out.extras:
+            source = out.extras["sigreg_states"]
+            source_mask = out.extras["sigreg_state_mask"]
+            states = source.reshape(-1, source.shape[-1])[
+                source_mask.reshape(-1)
+            ]
+        else:
+            mask = out.step_mask.reshape(-1)
+            states = torch.cat([
+                out.s0,
+                out.step_states.reshape(-1, out.step_states.shape[-1])[mask],
+            ])
         var_s, cov_s = variance_covariance(states, self.std_target)
         loss = var_s + self.cov_weight * cov_s
         if self.action_weight > 0:
@@ -127,3 +137,69 @@ class SIGReg(Objective):
         err = (ecf - normal_cf).abs().square() * normal_cf
         statistic = torch.trapz(err, t, dim=-1) * x.shape[0]
         return statistic.mean()
+
+
+class VISReg(Objective):
+    """Faithful variance-invariance-sketching regularizer.
+
+    This follows the authors' official implementation for arXiv:2606.02572:
+    centering, squared unit-scale matching, and sliced-Wasserstein matching of
+    scale-normalized random projections to standard-normal quantiles.  The
+    standard deviation is detached only in the shape term so scale and shape
+    gradients remain decoupled; target encodings themselves are not detached.
+    """
+
+    def __init__(self, num_projections: int = 256):
+        super().__init__()
+        self.num_projections = int(num_projections)
+        self._cached_batch = -1
+        self._cached_target: torch.Tensor | None = None
+
+    def _target(self, batch_size: int, device, dtype) -> torch.Tensor:
+        if self._cached_batch != batch_size or self._cached_target is None:
+            quantiles = torch.linspace(
+                1, batch_size, batch_size, device=device, dtype=torch.float32
+            ) / (batch_size + 1)
+            self._cached_target = torch.erfinv(2 * quantiles - 1).mul_(
+                math.sqrt(2)
+            )
+            self._cached_batch = batch_size
+        return self._cached_target.to(device=device, dtype=dtype)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        del batch
+        if "sigreg_states" in out.extras:
+            source = out.extras["sigreg_states"]
+            source_mask = out.extras["sigreg_state_mask"]
+            z = source.reshape(-1, source.shape[-1])[
+                source_mask.reshape(-1)
+            ].float()
+        else:
+            mask = out.step_mask.reshape(-1)
+            z = torch.cat([
+                out.s0,
+                out.step_states.reshape(-1, out.step_states.shape[-1])[mask],
+            ], dim=0).float()
+        # Official code accepts [views, batch, dimensions]. Our independent
+        # transition batch is one view of each current state.
+        z = z.unsqueeze(0)
+        _, batch_size, dimensions = z.shape
+        mean = z.mean(dim=1, keepdim=True)
+        center_loss = mean.square().mean()
+        centered = z - mean
+        std = centered.norm(dim=1).div(math.sqrt(batch_size)) + 1e-6
+        scale_loss = (std - 1.0).square().mean()
+        normalized = centered / std.detach().unsqueeze(1)
+        directions = torch.randn(
+            dimensions, self.num_projections,
+            device=z.device, dtype=z.dtype,
+        )
+        directions = directions / directions.norm(
+            dim=0, keepdim=True
+        ).clamp_min(1e-12)
+        projected = (normalized @ directions).sort(dim=1).values
+        target = self._target(
+            batch_size, z.device, z.dtype
+        ).view(1, batch_size, 1)
+        shape_loss = (projected - target).square().mean()
+        return scale_loss + shape_loss + center_loss

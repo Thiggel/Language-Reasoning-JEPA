@@ -243,6 +243,39 @@ claim, verify the primary source and current publication status.
     remasking or deliberately corrupted revealed-token training. Do not treat a
     sampling-only diversity gain as a repaired training distribution.
 
+## 2026-07-22 — VISReg as an EMA-free sequence-edit stabilizer
+
+- Decision: whether the edit JEPA can remove its EMA target encoder and use a
+  symmetric online encoder stabilized by VICReg, SIGReg, or VISReg.
+- Primary sources:
+  - VISReg paper: <https://arxiv.org/abs/2606.02572>
+  - Official implementation: <https://github.com/HaiyuWu/visreg>
+- Applicable claims:
+  - VISReg explicitly targets heuristic-free JEPA training without an EMA
+    teacher or target stop-gradient. It decouples scale and distribution shape:
+    a squared unit-standard-deviation term controls scale, while a detached
+    standard deviation is used only inside a sliced-Wasserstein shape term.
+  - The official shape term sorts random one-dimensional projections and
+    matches them to standard-normal quantiles. Its cost is linear in batch
+    size, representation width, and projection count; the published default is
+    256 projections.
+  - The official ImageNet configuration uses regularization mixture
+    `lambda=0.9`, but that coefficient is not directly transferable to the
+    differently scaled token-transition and action-prior losses here.
+- Limitations:
+  - Published evidence is visual self-supervision with multiple augmented
+    views, not action-conditioned text dynamics. The local transition batch is
+    treated as one view of many independent current states.
+  - Removing EMA eliminates the frozen encoder copy and its update, but does
+    not eliminate the next-state encoding. With symmetric gradients it can
+    increase activation/backward memory even though parameter memory falls.
+- Design change:
+  - Expose three explicit target modes: EMA, shared online encoder with stopped
+    targets, and fully symmetric shared online encoding.
+  - Compare VICReg, SIGReg, and faithful VISReg only after matched throughput
+    and collapse-gradient gates. Tune their coefficients separately and add an
+    LR cross-check when the total gradient scale changes.
+
 ## 2026-07-22 — iGSM training scale and implications for edit models
 
 - Decision: whether a 50M-parameter model and roughly 50,000 synthetic

@@ -1,0 +1,15 @@
+# @package _global_
+# Heuristic-free VISReg transfer: shared encoder, symmetric gradients, no EMA.
+# The 0.1 coefficient is a transfer pilot; method-appropriate tuning remains
+# necessary because image-JEPA's published lambda=0.9 is not loss-scale matched
+# to token-transition prediction.
+defaults: [edit_igsm_original_token, _self_]
+run_name: edit_igsm_original_token_noema_visreg
+model:
+  target_encoder_mode: shared_symmetric
+objective:
+  multiscale_vicreg: {weight: 0.0}
+  sigreg: {weight: 0.0}
+  visreg:
+    weight: 0.1
+    num_projections: 256

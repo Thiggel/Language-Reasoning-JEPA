@@ -1,0 +1,15 @@
+# @package _global_
+# Symmetric online current/next encodings: no EMA teacher and no target stopgrad.
+defaults: [edit_igsm_original_token, _self_]
+run_name: edit_igsm_original_token_noema_vicreg
+model:
+  target_encoder_mode: shared_symmetric
+objective:
+  sigreg: {weight: 0.0}
+  multiscale_vicreg:
+    _target_: textjepa.objectives.VICReg
+    weight: 0.1
+    std_target: 1.0
+    cov_weight: 0.04
+    action_weight: 0.0
+  visreg: {weight: 0.0}

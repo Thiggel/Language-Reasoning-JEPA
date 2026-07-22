@@ -1,0 +1,14 @@
+# @package _global_
+# Existing LeJEPA SIGReg coefficient with symmetric online targets.
+defaults: [edit_igsm_original_token, _self_]
+run_name: edit_igsm_original_token_noema_sigreg
+model:
+  target_encoder_mode: shared_symmetric
+objective:
+  multiscale_vicreg: {weight: 0.0}
+  sigreg:
+    weight: 0.01
+    num_slices: 256
+    n_points: 17
+    integration_limit: 5.0
+  visreg: {weight: 0.0}
