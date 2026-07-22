@@ -6,6 +6,24 @@ if [[ -z "${RUN_DIR:-}" ]]; then
   exit 2
 fi
 
+# Python multiprocessing appends roughly 40 characters of socket names below
+# TMPDIR.  Controller run directories are intentionally descriptive and can
+# exceed AF_UNIX's platform limit before that suffix is added.  Keep worker
+# sockets in a short job-private directory instead.  Prefer scheduler-local
+# storage when its path is already short; otherwise use the compute node's
+# /tmp with a Slurm job id (or the direct-process pid on Gruenau).
+job_token=${SLURM_JOB_ID:-$$}
+worker_tmp=${SLURM_TMPDIR:-/tmp/tj-$job_token}
+if (( ${#worker_tmp} > 60 )); then
+  worker_tmp=/tmp/tj-$job_token
+fi
+mkdir -p "$worker_tmp"
+chmod 700 "$worker_tmp"
+export TMPDIR=$worker_tmp
+export TMP=$worker_tmp
+export TEMP=$worker_tmp
+echo "multiprocessing_tmp=$worker_tmp"
+
 python_bin=${1:?python executable}
 family=${2:?model family}
 seed=${3:?seed}
