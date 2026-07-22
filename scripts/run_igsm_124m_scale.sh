@@ -9,6 +9,13 @@ if [[ -z "${RUN_DIR:-}" ]]; then
   exit 2
 fi
 
+# Python multiprocessing creates Unix-domain sockets below TMPDIR.  Controller
+# run paths are intentionally descriptive and can exceed Linux's 108-byte
+# socket-path limit, so use a job-unique short local path.
+short_tmp="/tmp/tj-${UID}-${SLURM_JOB_ID:-$$}"
+mkdir -p "$short_tmp"
+export TMPDIR="$short_tmp"
+
 world=${WORLD_GPUS:-${SLURM_GPUS_ON_NODE:-1}}
 world=${world%%(*}
 if (( 512 % world != 0 )); then
