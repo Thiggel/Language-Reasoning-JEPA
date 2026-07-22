@@ -137,6 +137,47 @@ def test_sparse_mdlm_loss_handles_zero_sampled_masks():
     loss.backward()
 
 
+def test_packed_mdlm_matches_dense_states_loss_and_gradients():
+    torch.manual_seed(29)
+    dense = MaskedDiffusionLM(
+        32, 0, 1, d_model=16, n_layers=2, n_heads=4,
+        max_sequence_len=32, attention_backend="auto",
+        sequence_packing=False,
+    )
+    packed = MaskedDiffusionLM(
+        32, 0, 1, d_model=16, n_layers=2, n_heads=4,
+        max_sequence_len=32, attention_backend="auto",
+        sequence_packing=True,
+    )
+    packed.load_state_dict(dense.state_dict())
+    clean = torch.tensor([[2, 3, 4, 5], [7, 8, 9, 0]])
+    valid = clean.ne(0)
+    response = torch.tensor([
+        [False, False, True, True],
+        [False, True, True, False],
+    ])
+    noised = clean.masked_fill(response, 1)
+    dense_states = dense.states(noised, valid, response)
+    packed_states = packed.states(noised, valid, response)
+    assert torch.allclose(
+        packed_states[valid], dense_states[valid], atol=2e-6, rtol=2e-5
+    )
+
+    masked = response.clone()
+    dense.corrupt = lambda clean, response, noise: (noised, masked)
+    packed.corrupt = lambda clean, response, noise: (noised, masked)
+    noise = torch.tensor([1.0, 1.0])
+    dense_loss, _ = dense.mdlm_loss(clean, valid, response, noise)
+    packed_loss, _ = packed.mdlm_loss(clean, valid, response, noise)
+    assert torch.allclose(packed_loss, dense_loss, atol=2e-6, rtol=2e-5)
+    dense_loss.backward()
+    packed_loss.backward()
+    assert torch.allclose(
+        packed.token.weight.grad, dense.token.weight.grad,
+        atol=3e-6, rtol=3e-5,
+    )
+
+
 def test_subs_sampler_never_modifies_prompt_and_resolves_all_masks():
     torch.manual_seed(5)
     model = _model().eval()

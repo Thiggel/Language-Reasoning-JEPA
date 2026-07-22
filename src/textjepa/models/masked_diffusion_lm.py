@@ -91,16 +91,7 @@ class MaskedDiffusionLM(nn.Module):
 
     def logits(self, tokens: torch.Tensor, valid: torch.Tensor,
                response: torch.Tensor):
-        h = (self.token(tokens) + self.position[:, :tokens.shape[1]]
-             + self.segment[response.long()])
-        key_pad = ~valid
-        key_pad = key_pad.clone()
-        key_pad[key_pad.all(-1), 0] = False
-        h = self.norm(
-            packed_encoder_forward(self.encoder, h, valid)
-            if self.sequence_packing else
-            self.encoder(h, src_key_padding_mask=key_pad)
-        )
+        h = self.states(tokens, valid, response)
         return self.output(h), h
 
     def states(self, tokens: torch.Tensor, valid: torch.Tensor,
