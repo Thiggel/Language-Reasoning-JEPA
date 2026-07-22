@@ -15,6 +15,21 @@ fi
 export TMPDIR="/tmp/tj-${RUN_ID:-edit-throughput-$$}"
 mkdir -p "$TMPDIR"
 
+# Grünau's shared cache carries the isolated FA4/CUDA-13 stack. Activate it
+# only on Hopper; Ampere jobs intentionally stay on their FA2-capable runtime.
+fa4_root=${TEXTJEPA_FA4_ROOT:-/vol/home-vol2/ml/laitenbf/.cache/textjepa/flash-attn-4-b23-py311}
+gpu_major=$(
+  "$python_bin" -c 'import torch; print(torch.cuda.get_device_capability()[0])' \
+    2>/dev/null || true
+)
+if [[ "$gpu_major" =~ ^[0-9]+$ ]] && (( gpu_major >= 9 )) \
+    && [[ -d "$fa4_root/flash_attn/cute" ]]; then
+  export PYTHONPATH="$fa4_root:$fa4_root/nvidia_cutlass_dsl/python_packages:${PYTHONPATH:-}"
+  echo "ATTENTION_ENV flash-attn-4=4.0.0b23 torch=2.13.0+cu130"
+else
+  echo "ATTENTION_ENV shared-runtime"
+fi
+
 overall=0
 for microbatch in "${microbatches[@]}"; do
   cell="$RUN_DIR/mb${microbatch}"

@@ -58,8 +58,9 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             if fa4 is None:
                 raise RuntimeError("FlashAttention-4 was requested but is not installed")
             output = fa4(
-                flat[:, 0], flat[:, 1], flat[:, 2], cu, cu,
-                maximum, maximum, causal=False,
+                flat[:, 0], flat[:, 1], flat[:, 2],
+                cu_seqlens_q=cu, cu_seqlens_k=cu,
+                max_seqlen_q=maximum, max_seqlen_k=maximum, causal=False,
             )
         else:
             if fa2 is None:
