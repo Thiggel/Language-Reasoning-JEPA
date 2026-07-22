@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
+from importlib.metadata import distribution, version
 import json
 import multiprocessing
 from pathlib import Path
 import random
 
 from textjepa.data.alfworld import (
+    ALFWORLD_SOURCE_REVISION,
     CATALOGUE_POLICY_VERSION,
     collect_alfworld_record,
     compile_alfworld_trace,
@@ -44,6 +46,23 @@ def _write_jsonl(path: Path, values: list[dict]) -> None:
     with path.open("w") as handle:
         for value in values:
             handle.write(json.dumps(value, sort_keys=True) + "\n")
+
+
+def _runtime_provenance() -> dict:
+    direct_url = json.loads(
+        distribution("alfworld").read_text("direct_url.json") or "{}"
+    )
+    installed_revision = direct_url.get("vcs_info", {}).get("commit_id")
+    if installed_revision != ALFWORLD_SOURCE_REVISION:
+        raise RuntimeError(
+            "ALFWorld collector requires pinned revision "
+            f"{ALFWORLD_SOURCE_REVISION}, found {installed_revision!r}"
+        )
+    return {
+        "alfworld_version": version("alfworld"),
+        "alfworld_source_revision": installed_revision,
+        "textworld_version": version("textworld"),
+    }
 
 
 def _collect_and_replay(payload: tuple) -> dict:
@@ -141,6 +160,7 @@ def main() -> None:
         "seed": args.seed,
         "counterfactual_k": args.counterfactual_k,
         "teacher_horizon": args.teacher_horizon,
+        "runtime": _runtime_provenance(),
         "splits": {},
     }
     selected = sizes.items() if args.split == "all" else (

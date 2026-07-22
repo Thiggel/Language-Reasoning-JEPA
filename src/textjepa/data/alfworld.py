@@ -25,6 +25,7 @@ from textjepa.data.observed_action import (
 
 
 CATALOGUE_POLICY_VERSION = "observed-entities-v1"
+ALFWORLD_SOURCE_REVISION = "aaba6870f86c5be6a08a491f32a50b906227bc3e"
 
 
 def _clean_entity(value: str) -> str:
