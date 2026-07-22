@@ -67,6 +67,17 @@ def main() -> None:
         manifest["splits"][split] = {
             "episodes": len(episodes),
             "transitions": sum(len(ep.transitions) for ep in episodes),
+            "counterfactuals": sum(
+                len(transition.counterfactuals)
+                for episode in episodes
+                for transition in episode.transitions
+            ),
+            "invalid_counterfactuals": sum(
+                alternative.action not in transition.available
+                for episode in episodes
+                for transition in episode.transitions
+                for alternative in transition.counterfactuals
+            ),
             "compiled_source": str(compiled.resolve()),
             "compiled_sha256": _sha256(compiled_out),
             "raw_source": str(raw.resolve()),

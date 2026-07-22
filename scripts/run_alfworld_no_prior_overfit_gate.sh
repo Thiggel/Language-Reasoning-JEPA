@@ -21,6 +21,11 @@ mkdir -p "$worker_tmp" && chmod 700 "$worker_tmp"
 trap 'rm -rf "$worker_tmp"' EXIT
 export TMPDIR=$worker_tmp TMP=$worker_tmp TEMP=$worker_tmp
 export ALFWORLD_PILOT_ROOT=$pilot_root ALFWORLD_DATA=$alfworld_data
+if [[ ! -f "$pilot_root/manifest.json" ]]; then
+  echo "missing admitted pilot manifest: $pilot_root/manifest.json" >&2
+  exit 2
+fi
+cp "$pilot_root/manifest.json" "$RUN_DIR/data_manifest.json"
 
 model_dir=$RUN_DIR/model
 common=(
