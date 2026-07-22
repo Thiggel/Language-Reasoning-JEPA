@@ -90,8 +90,14 @@ def main(cfg: DictConfig) -> None:
         train_loader = DataLoader(
             train_ds,
             batch_size=microbatch_size,
-            shuffle=fresh_sampler is None,
-            sampler=fresh_sampler,
+            shuffle=(
+                fresh_sampler is None
+                and not cfg.data.get("sequential_sampling", False)
+            ),
+            sampler=(
+                None if cfg.data.get("sequential_sampling", False)
+                else fresh_sampler
+            ),
             num_workers=cfg.train.num_workers,
             collate_fn=coll,
             drop_last=True,
@@ -99,7 +105,7 @@ def main(cfg: DictConfig) -> None:
         )
     val_loader = DataLoader(
         val_ds,
-        batch_size=cfg.train.batch_size,
+        batch_size=cfg.train.get("eval_batch_size", microbatch_size),
         shuffle=False,
         num_workers=2,
         collate_fn=coll,

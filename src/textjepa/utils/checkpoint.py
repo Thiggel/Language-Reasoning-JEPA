@@ -25,9 +25,15 @@ def build_vocab_for_config(cfg):
         )
         return build_observed_action_vocab(episodes)
     if name == "igsm_real_token_edit":
-        from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
+        from textjepa.data.faithful_token_edits import (
+            faithful_replacement_vocab, faithful_token_edit_vocab,
+        )
 
-        return faithful_token_edit_vocab()
+        return (
+            faithful_replacement_vocab()
+            if cfg.data.get("replacement_only_vocab", False)
+            else faithful_token_edit_vocab()
+        )
     if name == "igsm_real":
         from textjepa.data.faithful import cached_faithful_vocab
 
@@ -154,6 +160,8 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
                 else d.get("eval_trajectory_variants", 1)
             ),
             refinement_probability=d.get("refinement_probability", 0.25),
+            sample_transition=d.get("sample_transition", False),
+            content_only_actions=d.get("content_only_actions", False),
         )
         replay_path = d.get("replay_path")
         replay_fraction = float(d.get("replay_fraction", 0.0))

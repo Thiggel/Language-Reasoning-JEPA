@@ -1,0 +1,93 @@
+# @package _global_
+# Original-iGSM-medium optimization scale with one independent denoising
+# transition per data item.  Derived files select one of the three JEPA views.
+defaults:
+  - override /data: igsm_real_token_edit
+  - override /model: multiscale_edit
+  - _self_
+run_name: edit_igsm_original_base
+data:
+  corruption_mode: iterative_refinement
+  refinement_probability: 0.25
+  trajectory_variants: 1
+  eval_trajectory_variants: 1
+  sample_transition: true
+  content_only_actions: true
+  replacement_only_vocab: true
+  sequential_sampling: true
+  fresh_per_epoch: false
+  train_size: 51200000
+  val_size: 4096
+  counterfactual_k: 0
+  proposal_pool_k: 0
+model:
+  d_action: 32
+  max_sequence_len: 768
+  dropout: 0.0
+  observed_action_ldad: false
+  sentence_action_kind: blank_pattern
+  direct_content_scaffold: false
+  base_prior: true
+  base_prior_detach_state: true
+  base_prior_predict_position: false
+  max_transitions_per_forward: 1
+objective:
+  latent_pred: {weight: 0.0}
+  rollout: {weight: 0.0}
+  hierarchy: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  delta_action: {weight: 0.0}
+  value: {weight: 0.0}
+  sentence_level:
+    _target_: textjepa.objectives.SentenceLevelPrediction
+    weight: 0.0
+    changed_weight: 1.0
+    unchanged_weight: 0.1
+  macro_sentence:
+    _target_: textjepa.objectives.MacroSentencePrediction
+    weight: 0.0
+  macro_prior_distill:
+    _target_: textjepa.objectives.MacroPriorDistillation
+    weight: 0.0
+    kind: gaussian_nll
+  refinement_prior:
+    _target_: textjepa.objectives.RefinementActionPrior
+    weight: 1.0
+    position_weight: 0.0
+    content_weight: 1.0
+  base_action_value:
+    _target_: textjepa.objectives.BaseActionValue
+    weight: 0.0
+  state_goal_distance:
+    _target_: textjepa.objectives.StateGoalDistance
+    weight: 0.0
+  macro_option_reconstruction:
+    _target_: textjepa.objectives.MacroOptionReconstruction
+    weight: 0.0
+  multiscale_vicreg:
+    _target_: textjepa.objectives.MultiscaleVICReg
+    weight: 0.0
+  sigreg:
+    _target_: textjepa.objectives.SIGReg
+    weight: 0.01
+    num_slices: 256
+    n_points: 17
+    integration_limit: 5.0
+train:
+  batch_size: 512
+  microbatch_size: 8
+  eval_batch_size: 8
+  num_workers: 8
+  epochs: 1
+  max_steps: 100000
+  lr: 0.002
+  betas: [0.9, 0.98]
+  weight_decay: 0.05
+  warmup_steps: 1000
+  lr_floor: 0.01
+  grad_clip: 1.0
+  ema_start: 0.999
+  ema_end: 0.9999
+  log_every: 50
+  eval_batches: 512
+

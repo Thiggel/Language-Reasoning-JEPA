@@ -53,21 +53,35 @@ def main():
             out = model(batch)
             shuffled = dict(batch)
             for key in ("op", "edit_position", "edit_content_token"):
-                shuffled[key] = batch[key].roll(1, dims=1)
+                # Transition-view batches have one step per independent
+                # problem, so temporal rolling is the identity.  Shuffle
+                # complete grounded actions across independent examples.
+                shuffled[key] = batch[key].roll(1, dims=0)
             shuffled_out = model(shuffled)
             valid_step = out.step_mask
 
             position_logits = out.extras.get("refinement_position_logits")
+            content_logits = out.extras.get("refinement_content_logits")
             if position_logits is not None:
                 prior_valid = valid_step & batch["op"][:, :valid_step.shape[1]].eq(2)
                 add("base_prior_position_accuracy", (
                     position_logits.argmax(-1)[prior_valid]
                     == batch["edit_position"][:, :valid_step.shape[1]][prior_valid]
                 ).float().mean().item())
-                content_logits = out.extras["refinement_content_logits"]
+            if content_logits is not None:
+                steps = content_logits.shape[1]
+                prior_valid = valid_step[:, :steps] & batch[
+                    "op"
+                ][:, :steps].eq(2)
+                if content_logits.ndim == 4:
+                    b, t, width, _ = content_logits.shape
+                    row = torch.arange(b, device=content_logits.device)[:, None]
+                    time = torch.arange(t, device=content_logits.device)[None, :]
+                    slot = batch["edit_position"][:, :steps].clamp(0, width - 1)
+                    content_logits = content_logits[row, time, slot]
                 add("base_prior_content_accuracy", (
                     content_logits.argmax(-1)[prior_valid]
-                    == batch["edit_content_token"][:, :valid_step.shape[1]][prior_valid]
+                    == batch["edit_content_token"][:, :steps][prior_valid]
                 ).float().mean().item())
 
             q = out.extras.get("base_action_value")
@@ -227,8 +241,12 @@ def main():
         "examples": min(args.examples, len(dataset)),
         "trainable_parameters": sum(p.numel() for p in model.parameters()
                                     if p.requires_grad),
-        "information_regime": "observed_action; no clean goal used by predictor",
-        "shuffle_control": "cyclic time-shuffle of complete primitive actions",
+        "information_regime": (
+            "content-only replacement action with structural slot routing; "
+            "shared response-length and official step-boundary scaffold; "
+            "no clean goal used by predictor"
+        ),
+        "shuffle_control": "cyclic batch-shuffle of complete grounded actions",
     })
     Path(args.out).write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n")
     print(json.dumps(metrics, indent=2, sort_keys=True))

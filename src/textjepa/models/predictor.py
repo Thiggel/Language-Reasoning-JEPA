@@ -272,10 +272,12 @@ class TokenAlignedEditPredictor(nn.Module):
 
     def __init__(self, d_state: int, d_action: int, n_layers: int = 2,
                  n_heads: int = 8, ff_mult: int = 4,
-                 relative_radius: int = 32):
+                 relative_radius: int = 32,
+                 direct_content_scaffold: bool = True):
         super().__init__()
         self.d_action = d_action
         self.relative_radius = int(relative_radius)
+        self.direct_content_scaffold = bool(direct_content_scaffold)
         self.op = nn.Embedding(3, d_state)
         self.relative = nn.Embedding(2 * self.relative_radius + 3, d_state)
         self.action_code = nn.Sequential(
@@ -339,7 +341,7 @@ class TokenAlignedEditPredictor(nn.Module):
                 ], dim=0)
             else:  # replace pointed token
                 edited = current.clone()
-                if length:
+                if length and self.direct_content_scaffold:
                     edited[pos] = content[row]
             out_len = min(int(edited.shape[0]), width)
             scaffold[row, :out_len] = edited[:out_len]
@@ -362,7 +364,17 @@ class TokenAlignedEditPredictor(nn.Module):
             -self.relative_radius - 1, self.relative_radius + 1
         ) + self.relative_radius + 1
         h = scaffold + self.relative(relative)
-        h = h + self.action_condition(action).unsqueeze(1)
+        condition = self.action_condition(action)
+        if self.direct_content_scaffold:
+            h = h + condition.unsqueeze(1)
+        else:
+            # The selected slot is a structural route, not a learned numeric
+            # coordinate.  Only the bottlenecked action reaches the edited
+            # site; the full-width token embedding cannot bypass it.
+            routed = torch.zeros_like(h)
+            row = torch.arange(len(h), device=h.device)
+            routed[row, positions.clamp(0, h.shape[1] - 1)] = condition
+            h = h + routed
         h = h + self.prompt_condition(prompt).unsqueeze(1)
         key_pad = ~next_mask
         key_pad = key_pad.clone()

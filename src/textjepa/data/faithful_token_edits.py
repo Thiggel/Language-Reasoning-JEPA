@@ -21,6 +21,7 @@ from textjepa.data.vocab import Vocab
 
 TOKEN_EDIT_WORDS = ["token", "position", "with"]
 MASK_TOKEN = "<mask>"
+STEP_BOUNDARY_TOKEN = "<step_boundary>"
 OPS = {"delete": 0, "insert": 1, "replace": 2}
 
 
@@ -32,6 +33,22 @@ def faithful_token_edit_vocab(max_position: int = 1024) -> Vocab:
     ]
     words.extend(TOKEN_EDIT_WORDS + [MASK_TOKEN])
     words.extend(str(index) for index in range(max_position + 1))
+    return Vocab(words)
+
+
+def faithful_replacement_vocab() -> Vocab:
+    """Clean iGSM response vocabulary plus the diffusion mask.
+
+    Pure replacement models route the selected slot structurally.  They must
+    never allocate language-model symbols for rendered edit commands or
+    absolute coordinates.
+    """
+    base = cached_faithful_vocab()
+    words = [
+        token for token in base.token_to_id
+        if token not in {base.PAD, base.UNK}
+    ]
+    words.extend([MASK_TOKEN, STEP_BOUNDARY_TOKEN])
     return Vocab(words)
 
 
@@ -217,6 +234,8 @@ class FaithfulTokenEditDataset(Dataset):
                  gar_teacher: str = "latent_distance",
                  trajectory_variants: int = 1,
                  refinement_probability: float = 0.25,
+                 sample_transition: bool = False,
+                 content_only_actions: bool = False,
                  **_):
         self.vocab = vocab
         self.seed = seed
@@ -236,6 +255,8 @@ class FaithfulTokenEditDataset(Dataset):
         self.gar_teacher = str(gar_teacher)
         self.trajectory_variants = max(1, int(trajectory_variants))
         self.refinement_probability = float(refinement_probability)
+        self.sample_transition = bool(sample_transition)
+        self.content_only_actions = bool(content_only_actions)
         self.epoch = 0
         if self.corruption_mode not in {
             "mixed", "mask", "replace", "remove", "curriculum",
@@ -292,6 +313,14 @@ class FaithfulTokenEditDataset(Dataset):
         if self.trajectory_variants > 1 or mode == "iterative_refinement":
             rng_key += f":variant-{trajectory_variant}"
         rng = random.Random(f"{rng_key}:{epoch_key}")
+        if self.sample_transition:
+            if mode != "iterative_refinement":
+                raise ValueError(
+                    "sample_transition currently requires iterative_refinement"
+                )
+            return self._sample_replacement_transition(
+                source_index, trajectory_variant, source, prompt, target, rng
+            )
         current = [list(sentence) for sentence in target]
         undo: list[tuple[str, int, int | None]] = []
         n_tokens = _flat_length(target)
@@ -480,7 +509,10 @@ class FaithfulTokenEditDataset(Dataset):
                 alt_positions.append(step_positions)
                 alt_content_tokens.append(step_content_tokens)
             kind, position, token = action
-            actions.append(_render_action(self.vocab, action))
+            actions.append(
+                [int(token)] if self.content_only_actions and token is not None
+                else _render_action(self.vocab, action)
+            )
             op.append(OPS[kind])
             positions.append(position)
             content_tokens.append(
@@ -553,8 +585,75 @@ class FaithfulTokenEditDataset(Dataset):
                 out["gar_proposal_token_edit_target"] = gar_proposal_targets
         return out
 
+    def _sample_replacement_transition(
+        self, source_index: int, trajectory_variant: int, source: dict,
+        prompt: list[list[int]], target: list[list[int]], rng: random.Random,
+    ) -> dict:
+        """Draw one independent denoising transition from one fresh problem.
+
+        A dataset item is one optimization signal, rather than an entire
+        highly correlated trajectory.  The route is retained as an integer
+        tensor for scatter/gather only; the learned action token sequence is
+        content-only.
+        """
+        n_tokens = _flat_length(target)
+        if n_tokens < 1:
+            raise ValueError("cannot sample an edit from an empty solution")
+        unresolved_count = rng.randint(1, n_tokens)
+        unresolved = rng.sample(range(n_tokens), unresolved_count)
+        unresolved_set = set(unresolved)
+        mask_id = self.vocab.token_to_id[MASK_TOKEN]
+        clean_pool = list(dict.fromkeys(
+            token for sentence in target for token in sentence
+        ))
+        current = [list(sentence) for sentence in target]
+        for position in unresolved:
+            sentence, offset = _position(target, position)
+            clean = target[sentence][offset]
+            if rng.random() < self.refinement_probability:
+                alternatives = [token for token in clean_pool if token != clean]
+                current[sentence][offset] = (
+                    rng.choice(alternatives) if alternatives else mask_id
+                )
+            else:
+                current[sentence][offset] = mask_id
+        position = rng.choice(unresolved)
+        sentence, offset = _position(target, position)
+        content = int(target[sentence][offset])
+        after = [list(value) for value in current]
+        _apply(after, ("replace", position, content))
+        # Every artificial corruption token comes from the clean response
+        # vocabulary; action-only coordinate symbols are impossible here.
+        assert all(
+            token == mask_id or token in clean_pool
+            for value in current for token in value
+        )
+        return {
+            "prompt": prompt,
+            "buffers": [current, after],
+            "actions": [[content]],
+            "op": [OPS["replace"]],
+            "edit_position": [position],
+            "edit_content_token": [content],
+            "value": [0],
+            "remaining": [unresolved_count - 1],
+            "resolved_n": [n_tokens],
+            "necessary": [1],
+            "answer": int(source["answer"]),
+            "n_necessary": 1,
+            "n_vars": 0,
+            "index": source_index,
+            "trajectory_variant": trajectory_variant,
+            "goal_distance": [unresolved_count, unresolved_count - 1],
+            "goal_buffer": [list(sentence) for sentence in target],
+            "edit_pos": [min(position, 15)],
+            "changed": [list(after[sentence])],
+            "defect_masks": [[]],
+        }
+
 
 __all__ = [
     "FaithfulTokenEditDataset", "collate_edits", "faithful_token_edit_vocab",
+    "faithful_replacement_vocab",
     "propose_deployable_edits",
 ]

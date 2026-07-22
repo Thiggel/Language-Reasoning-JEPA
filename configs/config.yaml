@@ -26,6 +26,8 @@ train:
   num_workers: 8
   epochs: 20
   lr: 3e-4
+  betas: [0.9, 0.95]
+  lr_floor: 0.05
   weight_decay: 0.05
   warmup_steps: 1000
   grad_clip: 5.0

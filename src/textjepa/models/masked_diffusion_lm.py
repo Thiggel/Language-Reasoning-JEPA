@@ -25,13 +25,14 @@ class MaskedDiffusionLM(nn.Module):
     def __init__(self, vocab_size: int, pad_id: int, mask_id: int,
                  d_model: int = 128, n_layers: int = 4, n_heads: int = 8,
                  ff_mult: int = 4, max_sequence_len: int = 2048,
-                 dropout: float = 0.0):
+                 dropout: float = 0.0, boundary_id: int | None = None):
         super().__init__()
         if dropout != 0:
             raise ValueError("diffusion comparison requires dropout=0")
         self.vocab_size = int(vocab_size)
         self.pad_id = int(pad_id)
         self.mask_id = int(mask_id)
+        self.boundary_id = None if boundary_id is None else int(boundary_id)
         self.max_sequence_len = int(max_sequence_len)
         self.token = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.position = nn.Parameter(torch.zeros(1, max_sequence_len, d_model))
@@ -51,12 +52,32 @@ class MaskedDiffusionLM(nn.Module):
         for row in range(len(prompt)):
             p = prompt[row].reshape(-1)
             p = p[p.ne(self.pad_id)]
-            r = buffer[row].reshape(-1)
-            r = r[r.ne(self.pad_id)]
+            sentences = [
+                sentence[sentence.ne(self.pad_id)] for sentence in buffer[row]
+                if bool(sentence.ne(self.pad_id).any())
+            ]
+            if self.boundary_id is None:
+                r = torch.cat(sentences) if sentences else p.new_empty(0)
+                r_flags = torch.ones_like(r, dtype=torch.bool)
+            else:
+                pieces, flags = [], []
+                for index, sentence in enumerate(sentences):
+                    if index:
+                        pieces.append(sentence.new_tensor([self.boundary_id]))
+                        # The target-derived step scaffold is visible and
+                        # immutable for every compared architecture.
+                        flags.append(torch.zeros(1, dtype=torch.bool,
+                                                 device=sentence.device))
+                    pieces.append(sentence)
+                    flags.append(torch.ones_like(sentence, dtype=torch.bool))
+                r = torch.cat(pieces) if pieces else p.new_empty(0)
+                r_flags = torch.cat(flags) if flags else p.new_empty(
+                    0, dtype=torch.bool
+                )
             rows.append(torch.cat([p, r]))
             response_flags.append(torch.cat([
                 torch.zeros_like(p, dtype=torch.bool),
-                torch.ones_like(r, dtype=torch.bool),
+                r_flags,
             ]))
         width = max(max(x.numel(), 1) for x in rows)
         if width > self.max_sequence_len:

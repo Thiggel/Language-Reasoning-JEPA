@@ -14,7 +14,9 @@ import torch
 from omegaconf import OmegaConf
 from torch.utils.data import DataLoader
 
-from textjepa.data.faithful_token_edits import MASK_TOKEN, faithful_token_edit_vocab
+from textjepa.data.faithful_token_edits import (
+    MASK_TOKEN, STEP_BOUNDARY_TOKEN, faithful_replacement_vocab,
+)
 from textjepa.models.masked_diffusion_lm import (
     MaskedDiffusionLM,
     select_terminal_buffers,
@@ -28,6 +30,9 @@ def make_cfg(args):
     data.refinement_probability = 0.0
     data.trajectory_variants = 1
     data.eval_trajectory_variants = 1
+    data.sample_transition = True
+    data.content_only_actions = True
+    data.replacement_only_vocab = True
     data.train_size = args.train_size
     data.val_size = args.val_size
     data.fresh_per_epoch = False
@@ -46,8 +51,10 @@ def loader(cfg, vocab, split, batch_size, shuffle):
 
 def clean_batch(model, batch, device):
     prompt = batch["prompt_tokens"].to(device)
-    target = select_terminal_buffers(
-        batch["buffer_tokens"], batch["step_mask"]
+    target = (
+        batch["goal_buffer_tokens"][:, 0]
+        if "goal_buffer_tokens" in batch else
+        select_terminal_buffers(batch["buffer_tokens"], batch["step_mask"])
     ).to(device)
     return model.pack_clean(prompt, target)
 
@@ -83,16 +90,21 @@ def main():
     parser.add_argument("--out", required=True)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--train-size", type=int, default=512)
-    parser.add_argument("--val-size", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=8)
-    parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=3e-5)
-    parser.add_argument("--weight-decay", type=float, default=0.01)
-    parser.add_argument("--warmup-steps", type=int, default=100)
-    parser.add_argument("--d-model", type=int, default=128)
-    parser.add_argument("--layers", type=int, default=4)
-    parser.add_argument("--heads", type=int, default=8)
+    parser.add_argument("--train-size", type=int, default=51_200_000)
+    parser.add_argument("--val-size", type=int, default=4096)
+    parser.add_argument("--epochs", type=int, default=1)
+    parser.add_argument("--max-steps", type=int, default=100_000)
+    parser.add_argument("--batch-size", type=int, default=512,
+                        help="effective number of independent problems")
+    parser.add_argument("--microbatch-size", type=int, default=8)
+    parser.add_argument("--lr", type=float, default=0.002)
+    parser.add_argument("--weight-decay", type=float, default=0.05)
+    parser.add_argument("--warmup-steps", type=int, default=1000)
+    parser.add_argument("--lr-floor", type=float, default=0.01)
+    parser.add_argument("--d-model", type=int, default=912)
+    parser.add_argument("--layers", type=int, default=12)
+    parser.add_argument("--heads", type=int, default=12)
+    parser.add_argument("--max-sequence-len", type=int, default=768)
     parser.add_argument("--eval-batches", type=int, default=16)
     args = parser.parse_args()
     random.seed(args.seed)
@@ -102,45 +114,63 @@ def main():
     device = torch.device(args.device)
     out = Path(args.out)
     (out / "model").mkdir(parents=True, exist_ok=True)
-    vocab = faithful_token_edit_vocab()
+    if args.batch_size % args.microbatch_size:
+        raise ValueError("microbatch-size must divide effective batch-size")
+    accumulation = args.batch_size // args.microbatch_size
+    vocab = faithful_replacement_vocab()
     cfg = make_cfg(args)
-    train_loader = loader(cfg, vocab, "train", args.batch_size, True)
-    val_loader = loader(cfg, vocab, "val", args.batch_size, False)
+    train_loader = loader(cfg, vocab, "train", args.microbatch_size, False)
+    val_loader = loader(cfg, vocab, "val", args.microbatch_size, False)
     model = MaskedDiffusionLM(
         len(vocab), vocab.pad_id, vocab.token_to_id[MASK_TOKEN],
         d_model=args.d_model, n_layers=args.layers, n_heads=args.heads,
+        max_sequence_len=args.max_sequence_len,
+        boundary_id=vocab.token_to_id[STEP_BOUNDARY_TOKEN],
     ).to(device)
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=args.lr, weight_decay=args.weight_decay
+        model.parameters(), lr=args.lr, weight_decay=args.weight_decay,
+        betas=(0.9, 0.98),
     )
-    total_steps = args.epochs * len(train_loader)
+    total_steps = args.max_steps
     best = math.inf
     history = []
     for epoch in range(args.epochs):
         model.train()
         running = 0.0
+        optimizer.zero_grad(set_to_none=True)
         for batch_index, batch in enumerate(train_loader):
+            step = batch_index // accumulation
+            if step >= total_steps:
+                break
             clean, valid, response = clean_batch(model, batch, device)
             loss, _ = model.mdlm_loss(clean, valid, response)
-            optimizer.zero_grad(set_to_none=True)
-            loss.backward()
+            (loss / accumulation).backward()
+            running += loss.item()
+            if (batch_index + 1) % accumulation:
+                continue
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            step = epoch * len(train_loader) + batch_index
             warm = min(1.0, (step + 1) / max(args.warmup_steps, 1))
             cosine = 0.5 * (1 + math.cos(math.pi * step / max(total_steps, 1)))
             for group in optimizer.param_groups:
-                group["lr"] = args.lr * warm * cosine
+                group["lr"] = args.lr * warm * (
+                    args.lr_floor + (1 - args.lr_floor) * cosine
+                )
             optimizer.step()
-            running += loss.item()
+            optimizer.zero_grad(set_to_none=True)
         metrics = evaluate(model, val_loader, device, args.eval_batches)
-        metrics.update(epoch=epoch, train_elbo=running / max(len(train_loader), 1))
+        metrics.update(
+            epoch=epoch,
+            train_elbo=running / max(min(len(train_loader), total_steps * accumulation), 1),
+            optimizer_steps=min(total_steps, len(train_loader) // accumulation),
+            independent_batch_size=args.batch_size,
+        )
         history.append(metrics)
         print(json.dumps(metrics, sort_keys=True), flush=True)
         payload = {
             "model": model.state_dict(), "args": vars(args),
             "vocab_size": len(vocab), "pad_id": vocab.pad_id,
             "mask_id": vocab.token_to_id[MASK_TOKEN],
-            "information_regime": "prompt conditioned; response length/shape observed; clean response used only as training target",
+            "information_regime": "prompt conditioned; response length and official step-boundary scaffold shared with sentence JEPA; clean response used only as training target",
         }
         torch.save(payload, out / "model/last.pt")
         if metrics["midtime_elbo"] < best:

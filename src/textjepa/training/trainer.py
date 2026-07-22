@@ -43,10 +43,15 @@ class Trainer:
         self.grad_accum_steps = effective_batch // microbatch
         if len(train_loader) % self.grad_accum_steps:
             raise ValueError("loader microbatches must form complete effective batches")
-        self.total_steps = tc.epochs * len(train_loader) // self.grad_accum_steps
-        self.opt = build_optimizer(model, tc.lr, tc.weight_decay)
+        inferred_steps = tc.epochs * len(train_loader) // self.grad_accum_steps
+        self.total_steps = int(tc.get("max_steps", inferred_steps))
+        self.opt = build_optimizer(
+            model, tc.lr, tc.weight_decay,
+            betas=tuple(tc.get("betas", (0.9, 0.95))),
+        )
         self.clip = tc.grad_clip
         self.warmup = tc.warmup_steps
+        self.lr_floor = float(tc.get("lr_floor", 0.05))
         self.ema_range = (tc.ema_start, tc.ema_end)
         self.log_every = tc.log_every
         self.eval_batches = tc.eval_batches
@@ -65,6 +70,8 @@ class Trainer:
                 self._checkpoint("best.pt", epoch, val_metrics)
             summary = "  ".join(f"{k}={v:.4f}" for k, v in sorted(val_metrics.items()))
             print(f"[epoch {epoch}] {summary}", flush=True)
+            if self.step >= self.total_steps:
+                break
         self.logger.close()
         return val_metrics
 
@@ -81,8 +88,12 @@ class Trainer:
         updates_since_log = 0
         self.opt.zero_grad(set_to_none=True)
         for micro_step, batch in enumerate(self.train_loader):
+            if self.step >= self.total_steps:
+                break
             batch = to_device(batch, self.device)
-            lr_scale = cosine_warmup(self.step, self.total_steps, self.warmup)
+            lr_scale = cosine_warmup(
+                self.step, self.total_steps, self.warmup, self.lr_floor
+            )
             for g in self.opt.param_groups:
                 g["lr"] = self.cfg.train.lr * lr_scale
             out = self.model(batch)
@@ -179,6 +190,7 @@ class Trainer:
                     sequence_correct[out.step_mask].float().mean().item()
                 )
             prior_position = out.extras.get("refinement_position_logits")
+            prior_content = out.extras.get("refinement_content_logits")
             if prior_position is not None:
                 steps = prior_position.shape[1]
                 valid = out.step_mask[:, :steps] & batch["op"][:, :steps].eq(2)
@@ -187,7 +199,15 @@ class Trainer:
                     .eq(batch["edit_position"][:, :steps][valid])
                     .float().mean().item()
                 )
-                prior_content = out.extras["refinement_content_logits"]
+            if prior_content is not None:
+                steps = prior_content.shape[1]
+                valid = out.step_mask[:, :steps] & batch["op"][:, :steps].eq(2)
+                if prior_content.ndim == 4:
+                    b, t, width, _ = prior_content.shape
+                    row = torch.arange(b, device=prior_content.device)[:, None]
+                    time = torch.arange(t, device=prior_content.device)[None, :]
+                    slot = batch["edit_position"][:, :steps].clamp(0, width - 1)
+                    prior_content = prior_content[row, time, slot]
                 items["refinement_content_accuracy"] = (
                     prior_content.argmax(-1)[valid]
                     .eq(batch["edit_content_token"][:, :steps][valid])

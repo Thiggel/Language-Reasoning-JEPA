@@ -41,6 +41,7 @@ class HierarchicalBufferEncoder(nn.Module):
         self.tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.token_pos = nn.Parameter(torch.zeros(1, max_sequence_len, d_model))
         self.segment = nn.Parameter(torch.zeros(2, d_model))
+        self.sentence_start = nn.Parameter(torch.zeros(d_model))
         self.token_encoder = encoder_stack(
             d_model, token_layers, n_heads, ff_mult, dropout
         )
@@ -58,6 +59,7 @@ class HierarchicalBufferEncoder(nn.Module):
         self.sentence_norm = nn.LayerNorm(d_model)
         nn.init.normal_(self.token_pos, std=0.02)
         nn.init.normal_(self.segment, std=0.02)
+        nn.init.normal_(self.sentence_start, std=0.02)
         nn.init.normal_(self.sentence_pos, std=0.02)
 
     @staticmethod
@@ -100,6 +102,11 @@ class HierarchicalBufferEncoder(nn.Module):
         segment = sentence_ids.ge(0).long().clamp(0, 1)
         h = self.tok(tokens) + self.token_pos[:, :tokens.shape[1]]
         h = h + self.segment[segment]
+        previous = torch.nn.functional.pad(
+            sentence_ids[:, :-1], (1, 0), value=-1
+        )
+        sentence_start = sentence_ids.ge(0) & sentence_ids.ne(previous)
+        h = h + sentence_start.unsqueeze(-1) * self.sentence_start
         key_pad = ~valid
         key_pad = key_pad.clone()
         key_pad[key_pad.all(-1), 0] = False
@@ -225,6 +232,61 @@ class PrimitiveEditActionEncoder(nn.Module):
         ], -1))
 
 
+class SentencePatternActionEncoder(nn.Module):
+    """Encode ``[blank ... replacement ... blank]`` without coordinates.
+
+    The action has the length of the affected sentence.  A learned blank is
+    placed at every unchanged slot and the replacement-token embedding at the
+    selected slot.  A small Transformer and learned attention pool compress
+    the complete structural pattern into ``d_action`` dimensions.
+    """
+
+    def __init__(self, d_model: int, d_action: int, n_heads: int = 8,
+                 max_sentence_len: int = 256):
+        super().__init__()
+        self.blank = nn.Parameter(torch.zeros(d_model))
+        self.relative = nn.Parameter(torch.zeros(1, max_sentence_len, d_model))
+        self.blocks = encoder_stack(d_model, 1, n_heads, 2, 0.0)
+        self.score = nn.Sequential(nn.LayerNorm(d_model), nn.Linear(d_model, 1))
+        self.out = nn.Sequential(
+            nn.LayerNorm(d_model), nn.Linear(d_model, d_action),
+        )
+        nn.init.normal_(self.blank, std=0.02)
+        nn.init.normal_(self.relative, std=0.02)
+
+    def forward(self, states: torch.Tensor, mask: torch.Tensor,
+                sentence_ids: torch.Tensor, operations: torch.Tensor,
+                positions: torch.Tensor, content: torch.Tensor):
+        del states, operations  # routing and content are the complete action
+        rows: list[torch.Tensor] = []
+        selected_offsets: list[int] = []
+        for row in range(len(mask)):
+            length = int(mask[row].sum().item())
+            position = min(max(int(positions[row].item()), 0), max(length - 1, 0))
+            sentence = int(sentence_ids[row, position].clamp_min(0).item())
+            members = sentence_ids[row, :length].eq(sentence).nonzero().flatten()
+            if not len(members):
+                members = positions.new_tensor([position])
+            selected = (members == position).nonzero().flatten()
+            selected_offsets.append(int(selected[0].item()) if len(selected) else 0)
+            rows.append(members)
+        width = max(len(row) for row in rows)
+        if width > self.relative.shape[1]:
+            raise ValueError(
+                f"sentence action length {width} exceeds {self.relative.shape[1]}"
+            )
+        pattern = self.blank.view(1, 1, -1).expand(len(rows), width, -1).clone()
+        valid = torch.zeros(len(rows), width, dtype=torch.bool, device=mask.device)
+        for row, members in enumerate(rows):
+            valid[row, :len(members)] = True
+            pattern[row, selected_offsets[row]] = content[row]
+        pattern = pattern + self.relative[:, :width]
+        h = self.blocks(pattern, src_key_padding_mask=~valid)
+        logits = self.score(h).squeeze(-1).masked_fill(~valid, -torch.inf)
+        pooled = (h * logits.softmax(-1).unsqueeze(-1)).sum(1)
+        return self.out(pooled)
+
+
 class TokenReplacementPrior(nn.Module):
     """Factorized deployment prior over ``position`` then ``token``.
 
@@ -234,13 +296,15 @@ class TokenReplacementPrior(nn.Module):
     head and a policy loss that is allowed to shape the representation.
     """
 
-    def __init__(self, d_model: int, vocab_size: int, detach_state: bool):
+    def __init__(self, d_model: int, vocab_size: int, detach_state: bool,
+                 predict_position: bool = True):
         super().__init__()
         self.detach_state = bool(detach_state)
+        self.predict_position = bool(predict_position)
         self.position = nn.Sequential(
             nn.LayerNorm(3 * d_model), nn.Linear(3 * d_model, d_model),
             nn.GELU(), nn.Linear(d_model, 1),
-        )
+        ) if self.predict_position else None
         self.content = nn.Sequential(
             nn.LayerNorm(3 * d_model), nn.Linear(3 * d_model, d_model),
             nn.GELU(), nn.Linear(d_model, vocab_size),
@@ -255,13 +319,21 @@ class TokenReplacementPrior(nn.Module):
             states, pooled.unsqueeze(1).expand_as(states),
             prompt.unsqueeze(1).expand_as(states),
         ], -1)
-        position_logits = self.position(shared).squeeze(-1)
-        position_logits = position_logits.masked_fill(~mask, -torch.inf)
-        row = torch.arange(len(states), device=states.device)
-        selected = states[
-            row, positions.clamp(0, states.shape[1] - 1)
-        ]
-        content_logits = self.content(torch.cat([selected, pooled, prompt], -1))
+        position_logits = None
+        if self.position is not None:
+            position_logits = self.position(shared).squeeze(-1)
+            position_logits = position_logits.masked_fill(~mask, -torch.inf)
+            row = torch.arange(len(states), device=states.device)
+            selected = states[
+                row, positions.clamp(0, states.shape[1] - 1)
+            ]
+            content_logits = self.content(
+                torch.cat([selected, pooled, prompt], -1)
+            )
+        else:
+            # One content distribution per structurally grounded token slot.
+            # Search enumerates slots; no arbitrary expert order is learned.
+            content_logits = self.content(shared)
         return position_logits, content_logits
 
 
@@ -342,12 +414,17 @@ class MultiscaleEditJEPA(nn.Module):
                  base_prior: bool = False,
                  base_prior_detach_state: bool = True,
                  macro_decoder: bool = False,
-                 macro_decoder_detach_inputs: bool = True):
+                 macro_decoder_detach_inputs: bool = True,
+                 sentence_action_kind: str = "context",
+                 direct_content_scaffold: bool = True,
+                 base_prior_predict_position: bool = True):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
         if dropout != 0:
             raise ValueError("multiscale edit JEPA requires dropout=0")
+        if sentence_action_kind not in {"context", "blank_pattern"}:
+            raise ValueError(f"unknown sentence_action_kind: {sentence_action_kind}")
         self.variant = variant
         self.use_token_loss = variant not in {"sentence", "sentence_macro"}
         self.use_sentence = variant != "token"
@@ -366,10 +443,15 @@ class MultiscaleEditJEPA(nn.Module):
         self.token_pred = None if variant in {"sentence", "sentence_macro"} else TokenAlignedEditPredictor(
             d_model, d_action, predictor_layers, n_heads,
             relative_radius=token_relative_radius,
+            direct_content_scaffold=direct_content_scaffold,
         )
-        self.sentence_action = PrimitiveEditActionEncoder(
-            d_model, d_action
-        ) if variant in {"sentence", "sentence_macro"} else None
+        self.sentence_action = None
+        if variant in {"sentence", "sentence_macro"}:
+            self.sentence_action = (
+                SentencePatternActionEncoder(d_model, d_action, n_heads)
+                if sentence_action_kind == "blank_pattern"
+                else PrimitiveEditActionEncoder(d_model, d_action)
+            )
         self.sentence_pred = None if not self.use_sentence else SentenceEditPredictor(
             d_model, d_action, predictor_layers, n_heads,
             correction=variant not in {"sentence", "sentence_macro"},
@@ -399,7 +481,8 @@ class MultiscaleEditJEPA(nn.Module):
             n_layers=predictor_layers, n_heads=n_heads,
         ) if observed_action_ldad and self.use_sentence else None
         self.base_prior = TokenReplacementPrior(
-            d_model, vocab_size, base_prior_detach_state
+            d_model, vocab_size, base_prior_detach_state,
+            base_prior_predict_position,
         ) if base_prior else None
         self.base_q_head = nn.Sequential(
             nn.LayerNorm(d_model + d_action),
@@ -552,12 +635,23 @@ class MultiscaleEditJEPA(nn.Module):
         )
         current = tokens[:, :-1].reshape(b * steps, width, dim)
         current_mask = token_mask[:, :-1].reshape(b * steps, width)
-        action_module = self.sentence_action if self.token_pred is None else self.token_pred
-        action_fn = action_module if self.token_pred is None else action_module.encode_action
-        action = action_fn(
-            current, current_mask, op.reshape(-1), pos.reshape(-1),
-            content.reshape(-1, dim),
-        ).reshape(b, steps, -1)
+        if self.token_pred is None:
+            if isinstance(self.sentence_action, SentencePatternActionEncoder):
+                action = self.sentence_action(
+                    current, current_mask, ids[:, :-1].reshape(b * steps, width),
+                    op.reshape(-1), pos.reshape(-1), content.reshape(-1, dim),
+                )
+            else:
+                action = self.sentence_action(
+                    current, current_mask, op.reshape(-1), pos.reshape(-1),
+                    content.reshape(-1, dim),
+                )
+        else:
+            action = self.token_pred.encode_action(
+                current, current_mask, op.reshape(-1), pos.reshape(-1),
+                content.reshape(-1, dim),
+            )
+        action = action.reshape(b, steps, -1)
         affected = self.affected_sentences(
             ids[:, :-1].reshape(b * steps, width), current_mask,
             op.reshape(-1), pos.reshape(-1),
@@ -664,14 +758,13 @@ class MultiscaleEditJEPA(nn.Module):
             position_logits, content_logits = self.replacement_prior(
                 current, current_mask, flat_prompt, pos.reshape(-1)
             )
-            out.extras.update({
-                "refinement_position_logits": position_logits.reshape(
-                    b, steps, -1
-                ),
-                "refinement_content_logits": content_logits.reshape(
-                    b, steps, -1
-                ),
-            })
+            out.extras["refinement_content_logits"] = content_logits.reshape(
+                b, steps, *content_logits.shape[1:]
+            )
+            if position_logits is not None:
+                out.extras["refinement_position_logits"] = (
+                    position_logits.reshape(b, steps, -1)
+                )
 
         proposal_ops = batch.get("proposal_op")
         if proposal_ops is not None:
@@ -686,17 +779,33 @@ class MultiscaleEditJEPA(nn.Module):
             p_content = self.encoder.tok(
                 batch["proposal_edit_content_token"][:, :proposal_steps]
             )
-            p_action_fn = (
-                self.sentence_action if self.token_pred is None
-                else self.token_pred.encode_action
-            )
-            p_actions = p_action_fn(
-                p_states.reshape(-1, width, dim),
-                p_masks.reshape(-1, width),
-                proposal_ops[:, :proposal_steps].reshape(-1),
-                batch["proposal_edit_position"][:, :proposal_steps].reshape(-1),
-                p_content.reshape(-1, dim),
-            ).reshape(b, proposal_steps, candidates, -1)
+            p_flat_states = p_states.reshape(-1, width, dim)
+            p_flat_masks = p_masks.reshape(-1, width)
+            p_flat_ops = proposal_ops[:, :proposal_steps].reshape(-1)
+            p_flat_pos = batch[
+                "proposal_edit_position"
+            ][:, :proposal_steps].reshape(-1)
+            p_flat_content = p_content.reshape(-1, dim)
+            if self.token_pred is None:
+                if isinstance(self.sentence_action, SentencePatternActionEncoder):
+                    p_ids = ids[:, :proposal_steps].unsqueeze(2).expand(
+                        -1, -1, candidates, -1
+                    ).reshape(-1, width)
+                    p_actions = self.sentence_action(
+                        p_flat_states, p_flat_masks, p_ids, p_flat_ops,
+                        p_flat_pos, p_flat_content,
+                    )
+                else:
+                    p_actions = self.sentence_action(
+                        p_flat_states, p_flat_masks, p_flat_ops, p_flat_pos,
+                        p_flat_content,
+                    )
+            else:
+                p_actions = self.token_pred.encode_action(
+                    p_flat_states, p_flat_masks, p_flat_ops, p_flat_pos,
+                    p_flat_content,
+                )
+            p_actions = p_actions.reshape(b, proposal_steps, candidates, -1)
             p_global = global_states[:, :proposal_steps].unsqueeze(2).expand(
                 -1, -1, candidates, -1
             )

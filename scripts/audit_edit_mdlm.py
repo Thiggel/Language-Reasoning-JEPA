@@ -12,7 +12,9 @@ import torch
 from torch.utils.data import DataLoader
 
 from train_edit_mdlm import make_cfg
-from textjepa.data.faithful_token_edits import faithful_token_edit_vocab
+from textjepa.data.faithful_token_edits import (
+    STEP_BOUNDARY_TOKEN, faithful_replacement_vocab,
+)
 from textjepa.models.masked_diffusion_lm import MaskedDiffusionLM
 from textjepa.models.masked_diffusion_lm import select_terminal_buffers
 from textjepa.utils.checkpoint import build_dataset, collate_for
@@ -30,16 +32,18 @@ def main():
     saved = argparse.Namespace(**payload["args"])
     saved.val_size = args.examples
     cfg = make_cfg(saved)
-    vocab = faithful_token_edit_vocab()
+    vocab = faithful_replacement_vocab()
     model = MaskedDiffusionLM(
         payload["vocab_size"], payload["pad_id"], payload["mask_id"],
         d_model=saved.d_model, n_layers=saved.layers, n_heads=saved.heads,
+        max_sequence_len=saved.max_sequence_len,
+        boundary_id=vocab.token_to_id[STEP_BOUNDARY_TOKEN],
     )
     model.load_state_dict(payload["model"])
     model.to(args.device).eval()
     dataset = build_dataset(cfg, vocab, "val", size=args.examples)
     loader = DataLoader(
-        dataset, batch_size=saved.batch_size, shuffle=False, num_workers=0,
+        dataset, batch_size=saved.microbatch_size, shuffle=False, num_workers=0,
         collate_fn=partial(collate_for(cfg), pad_id=vocab.pad_id),
     )
     sums, count = {}, 0
@@ -48,9 +52,7 @@ def main():
             if batch_index >= args.batches:
                 break
             prompt = batch["prompt_tokens"].to(args.device)
-            target_buffer = select_terminal_buffers(
-                batch["buffer_tokens"], batch["step_mask"]
-            ).to(args.device)
+            target_buffer = batch["goal_buffer_tokens"][:, 0].to(args.device)
             initial_buffer = batch["buffer_tokens"][:, 0].to(args.device)
             clean, valid, response = model.pack_clean(prompt, target_buffer)
             for fraction in (0.25, 0.5, 0.75, 1.0):

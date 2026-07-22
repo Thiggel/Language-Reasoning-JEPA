@@ -18,15 +18,24 @@ class RefinementActionPrior(Objective):
         self.content_weight = float(content_weight)
 
     def forward(self, out, batch: dict) -> torch.Tensor:
-        position_logits = out.extras["refinement_position_logits"]
+        position_logits = out.extras.get("refinement_position_logits")
         content_logits = out.extras["refinement_content_logits"]
-        steps = position_logits.shape[1]
+        steps = content_logits.shape[1]
         valid = out.step_mask[:, :steps] & batch["op"][:, :steps].eq(2)
         if not bool(valid.any()):
-            return position_logits.sum() * 0.0
-        position = F.cross_entropy(
-            position_logits[valid], batch["edit_position"][:, :steps][valid]
-        )
+            return content_logits.sum() * 0.0
+        position = content_logits.sum() * 0.0
+        if position_logits is not None:
+            position = F.cross_entropy(
+                position_logits[valid],
+                batch["edit_position"][:, :steps][valid],
+            )
+        if content_logits.ndim == 4:
+            b, t, width, vocab = content_logits.shape
+            row = torch.arange(b, device=content_logits.device)[:, None]
+            time = torch.arange(t, device=content_logits.device)[None, :]
+            slot = batch["edit_position"][:, :steps].clamp(0, width - 1)
+            content_logits = content_logits[row, time, slot]
         content = F.cross_entropy(
             content_logits[valid], batch["edit_content_token"][:, :steps][valid]
         )

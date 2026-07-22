@@ -15,12 +15,12 @@ def mlp(dims: list[int], out_dim: int) -> nn.Sequential:
 
 
 def encoder_stack(
-    d_model: int, n_layers: int, n_heads: int, ff_mult: int, dropout: float
+    d_model: int, n_layers: int, n_heads: int, ff_mult: float, dropout: float
 ) -> nn.TransformerEncoder:
     layer = nn.TransformerEncoderLayer(
         d_model,
         n_heads,
-        dim_feedforward=d_model * ff_mult,
+        dim_feedforward=int(round(d_model * ff_mult)),
         dropout=dropout,
         activation="gelu",
         batch_first=True,

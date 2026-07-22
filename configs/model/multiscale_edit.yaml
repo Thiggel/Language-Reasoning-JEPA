@@ -20,5 +20,8 @@ sentence_pooling: attention
 macro_prior_detach_state: true
 base_prior: false
 base_prior_detach_state: true
+base_prior_predict_position: true
 macro_decoder: false
 macro_decoder_detach_inputs: true
+sentence_action_kind: context
+direct_content_scaffold: true
