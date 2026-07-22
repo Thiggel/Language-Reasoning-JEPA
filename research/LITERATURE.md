@@ -79,3 +79,28 @@ claim, verify the primary source and current publication status.
   - Add a faithful online-gradient VISReg mode with 4,096 projections. Compare
     it against EMA+VICReg using matched full-objective steps, collapse/effective
     rank diagnostics, and a two-A100 timing smoke before any long replacement.
+
+## 2026-07-22 — faithful iGSM-medium exposure accounting
+
+- Query: does the original iGSM-medium schedule really mean batch 512 for
+  100,000 optimizer updates?
+- Primary sources:
+  - Part 2.1 project and official generator: <https://physics.allen-zhu.com/part-2-grade-school-math/part-2-1>
+    and <https://github.com/facebookresearch/iGSM>
+  - Part 2.2 full experimental appendix: <https://openreview.net/pdf?id=zpDGwcmMV4>
+- Applicable claim:
+  - Yes. The published medium schedule is GPT2-12-12, context 768, global batch
+    512, and 100,000 optimizer steps: 51.2 million packed context
+    presentations. The hard schedule is batch 256 for 200,000 steps, also 51.2
+    million presentations.
+- Limitation:
+  - Published pretraining concatenates freshly generated problems and truncates
+    packed streams to the context window. A local “sequence” containing one
+    shorter trace is not identical in token exposure or useful work.
+  - The paper reports a mixture of V100/A100 GPUs, not a one-A100 wall-clock
+    reproduction. Batch 512 is a global batch and may be distributed and/or
+    accumulated.
+- Design implication:
+  - Compare methods at 100,000 optimizer updates and global batch 512, but also
+    report tokens and non-padding tokens processed. Do not infer that the
+    published schedule should finish in hours on one A100.
