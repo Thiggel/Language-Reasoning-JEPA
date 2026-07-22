@@ -105,24 +105,31 @@ def compute_losses(out, cfg, model, batch, distributed_regularizer=False):
     else:
         regularizer = vicreg(regularizer_features, obj.covariance)
         regularizer_weight = float(obj.vicreg)
-    cf = model.token_counterfactuals(
-        out, batch["tokens"].to(out["states"].device),
-        batch["prompt_len"].to(out["states"].device), k=int(obj.gar_k),
-        max_anchors=int(obj.gar_max_anchors),
-    )
-    gar_regression = F.smooth_l1_loss(cf["value"], cf["advantage_target"])
-    gar_ranking = _pairwise_advantage_loss(
-        cf["value"], cf["advantage_target"], float(obj.gar_margin)
-    )
-    gar_dynamics = normalized_mse(
-        cf["predicted_outcome"], cf["exact_outcome"].detach(),
-        cf["candidate_valid"],
-    )
-    gar_total = (
-        obj.gar_regression * gar_regression
-        + obj.gar_ranking * gar_ranking
-        + obj.gar_counterfactual_mse * gar_dynamics
-    )
+    gar_regression = prediction.sum() * 0.0
+    gar_ranking = gar_regression
+    gar_dynamics = gar_regression
+    gar_advantage_std = gar_regression.detach()
+    gar_total = gar_regression
+    if float(obj.gar) != 0.0:
+        cf = model.token_counterfactuals(
+            out, batch["tokens"].to(out["states"].device),
+            batch["prompt_len"].to(out["states"].device), k=int(obj.gar_k),
+            max_anchors=int(obj.gar_max_anchors),
+        )
+        gar_regression = F.smooth_l1_loss(cf["value"], cf["advantage_target"])
+        gar_ranking = _pairwise_advantage_loss(
+            cf["value"], cf["advantage_target"], float(obj.gar_margin)
+        )
+        gar_dynamics = normalized_mse(
+            cf["predicted_outcome"], cf["exact_outcome"].detach(),
+            cf["candidate_valid"],
+        )
+        gar_total = (
+            obj.gar_regression * gar_regression
+            + obj.gar_ranking * gar_ranking
+            + obj.gar_counterfactual_mse * gar_dynamics
+        )
+        gar_advantage_std = cf["advantage_target"].std()
     decoder_ce = prediction.sum() * 0.0
     decoder_state_use = decoder_ce
     decoder_state_gap = decoder_ce.detach()
@@ -156,7 +163,7 @@ def compute_losses(out, cfg, model, batch, distributed_regularizer=False):
         "visreg" if model.visreg is not None else "vicreg": regularizer,
         "gar_regression": gar_regression,
         "gar_ranking": gar_ranking, "gar_counterfactual_mse": gar_dynamics,
-        "gar_advantage_std": cf["advantage_target"].std(),
+        "gar_advantage_std": gar_advantage_std,
         "prefix_decoder": decoder_ce, "decoder_state_use": decoder_state_use,
         "decoder_state_gap": decoder_state_gap,
         # Select the planning checkpoint using deployable dynamics, proposal,

@@ -170,6 +170,23 @@ def test_visreg_full_objective_is_finite_and_reaches_online_encoder():
     )
 
 
+def test_zero_gar_weight_skips_counterfactual_construction():
+    batch, vocab = _batch(1)
+    model = _visreg_model(vocab).train()
+    cfg = OmegaConf.load("configs/pooled_sentence_jepa.yaml")
+    cfg.objective.vicreg = 0.0
+    cfg.objective.visreg = 1.0
+    cfg.objective.gar = 0.0
+    model.token_counterfactuals = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("disabled GAR must not construct counterfactuals")
+    )
+    out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
+    loss, metrics = compute_losses(out, cfg, model, batch)
+    assert torch.isfinite(loss)
+    assert metrics["gar_regression"] == 0
+    loss.backward()
+
+
 def test_dense_rollout_supervises_every_valid_anchor_with_observed_history():
     batch, vocab = _batch()
     model = _model(vocab, decoder=False).eval()
