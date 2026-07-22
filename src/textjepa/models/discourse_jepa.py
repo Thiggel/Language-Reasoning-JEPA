@@ -363,9 +363,11 @@ class DiscourseJEPA(nn.Module):
                 B, M, T, V, -1
             ),
         )
+        candidate_observed = batch.get("action_candidate_observed")
+        if candidate_observed is None:
+            candidate_observed = batch["action_candidate_mask"].unsqueeze(1)
         valid = (
-            out.step_mask.unsqueeze(-1)
-            & batch["action_candidate_mask"].unsqueeze(1)
+            out.step_mask.unsqueeze(-1) & candidate_observed
         ).unsqueeze(1).expand(B, M, T, V)
         target = batch["action_feasible"].unsqueeze(1).expand(B, M, T, V)
         if M == 1:

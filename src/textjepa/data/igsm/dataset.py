@@ -487,6 +487,7 @@ def collate(batch: list[dict], pad_id: int) -> dict:
         candidate_tokens = torch.full((B, V, L), pad_id, dtype=torch.long)
         candidate_mask = torch.zeros(B, V, dtype=torch.bool)
         feasible = torch.zeros(B, T, V, dtype=torch.bool)
+        candidate_observed = torch.zeros(B, T, V, dtype=torch.bool)
         for b, item in enumerate(batch):
             for v, action in enumerate(item.get("action_candidate_tokens", [])):
                 candidate_tokens[b, v, :len(action)] = torch.tensor(action)
@@ -495,9 +496,20 @@ def collate(batch: list[dict], pad_id: int) -> dict:
             if labels:
                 tensor = torch.tensor(labels, dtype=torch.bool)
                 feasible[b, :tensor.shape[0], :tensor.shape[1]] = tensor
+            observed = item.get("action_candidate_observed")
+            if observed is None:
+                candidate_observed[
+                    b, :, :len(item.get("action_candidate_tokens", []))
+                ] = True
+            elif observed:
+                tensor = torch.tensor(observed, dtype=torch.bool)
+                candidate_observed[
+                    b, :tensor.shape[0], :tensor.shape[1]
+                ] = tensor
         extra.update(
             action_candidate_tokens=candidate_tokens,
             action_candidate_mask=candidate_mask,
+            action_candidate_observed=candidate_observed,
             action_feasible=feasible,
         )
     if any("ga_t" in b for b in batch):

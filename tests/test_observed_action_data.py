@@ -88,6 +88,30 @@ def test_compiled_episode_collates_and_isolates_teacher_rollouts():
     assert batch["ga_rollout_step_tokens"].shape[:3] == (1, 2, 1)
 
 
+def test_dynamic_catalogue_masks_future_discovered_actions():
+    episode = ObservedActionEpisode.from_dict({
+        "episode_id": "dynamic-1", "domain": "alfworld-textworld",
+        "split": "train", "prompt": ["a room"], "goal": "store apple",
+        "transitions": [{
+            "action": "open cabinet 1", "outcome": "you see apple 1",
+            "catalogue": ["open cabinet 1"],
+            "available": ["open cabinet 1"],
+        }, {
+            "action": "take apple 1 from cabinet 1", "outcome": "taken",
+            "catalogue": [
+                "open cabinet 1", "take apple 1 from cabinet 1",
+            ],
+            "available": ["take apple 1 from cabinet 1"],
+        }],
+    })
+    vocab = build_observed_action_vocab([episode])
+    batch = collate([ObservedActionDataset([episode], vocab)[0]], vocab.pad_id)
+    assert batch["action_candidate_observed"].shape == (1, 2, 2)
+    assert batch["action_candidate_observed"][0].tolist() == [
+        [True, False], [True, True],
+    ]
+
+
 def test_external_config_runs_geometry_value_end_to_end(tmp_path):
     episode = _episode()
     path = tmp_path / "train.jsonl"

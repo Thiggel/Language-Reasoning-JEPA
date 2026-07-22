@@ -224,6 +224,14 @@ class ObservedActionDataset(Dataset):
             "action_candidate_tokens": [
                 self.vocab.encode(action) for action in catalogue
             ],
+            # The padded candidate axis is an episode-level union. Preserve
+            # which grounded strings were observable at each prefix so a
+            # dynamic domain never trains on future-discovered entities.
+            "action_candidate_observed": [
+                [int(action in transition.catalogue)
+                 for action in catalogue]
+                for transition in transitions
+            ],
             "action_feasible": [
                 [int(action in transition.available)
                  for action in catalogue]
