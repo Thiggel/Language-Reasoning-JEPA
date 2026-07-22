@@ -147,6 +147,11 @@ class HierarchicalBufferEncoder(nn.Module):
         else:
             weight = members.to(raw_score.dtype)
         denominator = raw_score.new_zeros(n, n_sentences)
+        # CUDA autocast may promote ``exp`` to FP32 while the linear score and
+        # its denominator remain BF16. In-place scatter requires an exact dtype
+        # match; returning to the score dtype also keeps pooled activations on
+        # the model's intended precision path.
+        weight = weight.to(denominator.dtype)
         denominator.scatter_add_(1, groups, weight)
         attention = weight / denominator.gather(1, groups).clamp_min(1)
         attention = attention * members.to(attention.dtype)

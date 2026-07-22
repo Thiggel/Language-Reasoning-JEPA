@@ -110,6 +110,27 @@ def test_whole_sequence_encoder_has_cross_sentence_context_and_attention_pooling
     assert grad[4].abs().sum() > 0
 
 
+def test_attention_pooling_accepts_mixed_precision_exp_weights():
+    encoder = HierarchicalBufferEncoder(
+        32, 0, d_model=16, token_layers=1, sentence_layers=1,
+        n_heads=4, max_sequence_len=32, max_sentences=4,
+    )
+    token_states = torch.randn(2, 5, 16)
+    token_mask = torch.ones(2, 5, dtype=torch.bool)
+    sentence_ids = torch.tensor([[0, 0, 1, 1, 1], [0, 0, 0, 1, 1]])
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        pooled, sentence_mask, attention = encoder.pool_sentences(
+            token_states, token_mask, sentence_ids, 4
+        )
+    assert torch.isfinite(pooled).all()
+    assert sentence_mask[:, :2].all()
+    for sentence in range(2):
+        assert torch.allclose(
+            (attention * sentence_ids.eq(sentence)).sum(1),
+            attention.new_ones(2), atol=1e-2,
+        )
+
+
 def test_pointer_to_sentence_mapping_and_insert_boundary_are_mechanical():
     ids = torch.tensor([[0, 0, 1, 1]])
     mask = torch.ones_like(ids, dtype=torch.bool)
