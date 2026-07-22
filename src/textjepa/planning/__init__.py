@@ -4,6 +4,7 @@ from textjepa.planning.hierarchical_search import HierarchicalLatentPlanner
 from textjepa.planning.catalogue import (
     CatalogueEpisodeResult,
     CatalogueLatentPlanner,
+    FullCatalogueLatentPlanner,
     environment_from_episode,
     environment_from_faithful_problem,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "EpisodeResult",
     "CatalogueEpisodeResult",
     "CatalogueLatentPlanner",
+    "FullCatalogueLatentPlanner",
     "environment_from_episode",
     "environment_from_faithful_problem",
     "evaluate_planning",

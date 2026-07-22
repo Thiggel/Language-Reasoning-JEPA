@@ -80,7 +80,7 @@ class DiscourseJEPA(nn.Module):
         self.chunk_target = chunk_target
         self.freeze_encoders = freeze_encoders
         self.state_target = state_target
-        if action_support_states not in {"true", "all"}:
+        if action_support_states not in {"none", "true", "all"}:
             raise ValueError(
                 f"unknown action-support state mode: {action_support_states}"
             )
@@ -309,7 +309,10 @@ class DiscourseJEPA(nn.Module):
         out.extras.update(var_extras)
         if "macro_alt_action_tokens" in batch:
             self._macro_counterfactuals(batch, out)
-        if "action_candidate_tokens" in batch:
+        if (
+            self.action_support_states != "none"
+            and "action_candidate_tokens" in batch
+        ):
             self._action_support(batch, out)
         if self.observed_action_decoder is not None:
             if self.observed_action_ldad_horizon == 1:

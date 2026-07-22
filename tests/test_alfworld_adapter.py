@@ -117,3 +117,51 @@ def test_zero_counterfactual_budget_never_executes_an_alternative(
         gamefile, tmp_path, "train", seed=1, counterfactual_k=0
     )
     assert record["steps"][0]["counterfactuals"] == []
+
+
+def test_invalid_counterfactual_is_observed_as_transition_not_feasibility_label(
+    monkeypatch, tmp_path,
+):
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def reset(self):
+            return (
+                "You see a counter 1. Your task is to: inspect the counter",
+                {
+                    "won": False,
+                    "admissible_commands": ["go to counter 1"],
+                    "extra.expert_plan": ["go to counter 1"],
+                },
+            )
+
+        def step(self, action):
+            if action == "go to counter 1":
+                return "You arrive at counter 1.", 1, True, {"won": True}
+            return "Nothing happens.", 0, False, {
+                "won": False,
+                "admissible_commands": ["go to counter 1"],
+                "extra.expert_plan": ["go to counter 1"],
+            }
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "textjepa.data.alfworld.AlfworldTextSession", FakeSession
+    )
+    gamefile = tmp_path / "train" / "game.tw-pddl"
+    gamefile.parent.mkdir()
+    gamefile.write_text("{}")
+    record = collect_alfworld_record(
+        gamefile, tmp_path, "train", seed=1, counterfactual_k=0,
+        invalid_counterfactual_k=1,
+    )
+    step = record["steps"][0]
+    assert len(step["counterfactuals"]) == 1
+    alternative = step["counterfactuals"][0]
+    assert alternative["action"] not in step["admissible_commands"]
+    assert alternative["outcome"] == "Nothing happens."
+    episode = compile_alfworld_trace(record, "train")
+    assert episode.transitions[0].counterfactuals[0].action == alternative["action"]

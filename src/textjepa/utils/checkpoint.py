@@ -101,6 +101,9 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             vocab,
             geo_rank_k=d.get("geo_rank_k", 0),
             geo_rank_horizon=d.get("geo_rank_horizon", 1),
+            dense_geo_anchors=(
+                split == "train" and d.get("dense_geo_anchors", False)
+            ),
             seed=d.get(f"{split}_seed", 0),
         )
     igsm_kwargs = dict(

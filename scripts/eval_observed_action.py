@@ -16,6 +16,7 @@ from textjepa.models.sent_lm import SentenceLM
 from textjepa.planning.catalogue import (
     CatalogueEpisodeResult,
     CatalogueLatentPlanner,
+    FullCatalogueLatentPlanner,
     environment_from_episode,
     environment_from_faithful_problem,
 )
@@ -205,6 +206,12 @@ def _load_policy(args):
     vocab = build_vocab_for_config(cfg)
     if args.kind == "jepa":
         model, vocab, cfg = load_run(args.checkpoint, args.device)
+        if args.jepa_candidate_mode == "full":
+            return FullCatalogueLatentPlanner(
+                model, vocab, device,
+                simulation_depth=args.simulation_depth,
+                beam_width=args.beam_width,
+            ), vocab, cfg
         return CatalogueLatentPlanner(
             model, vocab, device,
             simulation_depth=args.simulation_depth,
@@ -279,6 +286,10 @@ def main():
     parser.add_argument("--simulation-depth", type=int, default=1)
     parser.add_argument("--proposal-top-m", type=int, default=4)
     parser.add_argument("--beam-width", type=int, default=4)
+    parser.add_argument(
+        "--jepa-candidate-mode", choices=("full", "support_top_m"),
+        default="full",
+    )
     parser.add_argument("--prior-only", action="store_true")
     parser.add_argument("--prior-weight", type=float, default=0.0)
     parser.add_argument("--sentence-score", choices=("decoder", "latent"),
@@ -288,6 +299,11 @@ def main():
     args = parser.parse_args()
     if args.kind not in {"random", "oracle"} and not args.checkpoint:
         parser.error("learned policies require --checkpoint")
+    if (
+        args.kind == "jepa" and args.jepa_candidate_mode == "full"
+        and (args.prior_only or args.prior_weight != 0.0)
+    ):
+        parser.error("full-catalogue JEPA forbids prior-only and prior-weight")
     seed_everything(args.seed)
     policy, vocab, cfg = _load_policy(args)
     dataset = build_dataset(cfg, vocab, args.split)
@@ -310,7 +326,12 @@ def main():
         "checkpoint": args.checkpoint,
         "candidate_interface": (
             "privileged_expert_replay_over_non_oracle_catalogue"
-            if args.kind == "oracle" else "non_oracle_full_catalogue"
+            if args.kind == "oracle" else (
+                "legacy_learned_support_top_m"
+                if args.kind == "jepa"
+                and args.jepa_candidate_mode == "support_top_m"
+                else "non_oracle_full_catalogue"
+            )
         ),
         "candidate_order_seed": args.seed,
         "metrics_by_excess_actions": {},

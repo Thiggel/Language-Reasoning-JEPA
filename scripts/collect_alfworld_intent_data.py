@@ -74,11 +74,13 @@ def _collect_and_replay(payload: tuple) -> dict:
     """
     (
         gamefile, data_root, split, seed, counterfactual_k,
+        invalid_counterfactual_k,
         teacher_horizon, max_steps, counterfactual_attempts,
     ) = payload
     record = collect_alfworld_record(
         gamefile, data_root, split, seed,
         counterfactual_k=counterfactual_k,
+        invalid_counterfactual_k=invalid_counterfactual_k,
         teacher_horizon=teacher_horizon,
         max_steps=max_steps,
         counterfactual_attempts_per_step=counterfactual_attempts,
@@ -97,7 +99,8 @@ def collect_split(args, split: str, limit: int) -> dict:
         with context.Pool(processes=1, maxtasksperchild=1) as pool:
             payload = (
                 gamefile, args.data_root, split, args.seed,
-                args.counterfactual_k, args.teacher_horizon, args.max_steps,
+                args.counterfactual_k, args.invalid_counterfactual_k,
+                args.teacher_horizon, args.max_steps,
                 args.counterfactual_attempts,
             )
             try:
@@ -139,9 +142,16 @@ def collect_split(args, split: str, limit: int) -> dict:
         len(step["counterfactuals"])
         for value in records for step in value["steps"]
     )
+    invalid_counterfactuals = sum(
+        value["action"] not in step["admissible_commands"]
+        for record in records for step in record["steps"]
+        for value in step["counterfactuals"]
+    )
     return {
         "episodes": len(records), "transitions": transitions,
-        "counterfactuals": counterfactuals, "failed_games": len(failures),
+        "counterfactuals": counterfactuals,
+        "invalid_counterfactuals": invalid_counterfactuals,
+        "failed_games": len(failures),
         "candidate_games": len(games),
     }
 
@@ -154,6 +164,7 @@ def main() -> None:
     parser.add_argument("--val-size", type=int, default=200)
     parser.add_argument("--test-size", type=int, default=500)
     parser.add_argument("--counterfactual-k", type=int, default=2)
+    parser.add_argument("--invalid-counterfactual-k", type=int, default=0)
     parser.add_argument("--teacher-horizon", type=int, default=8)
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--counterfactual-attempts", type=int, default=4)
@@ -172,6 +183,7 @@ def main() -> None:
         "catalogue_policy": CATALOGUE_POLICY_VERSION,
         "seed": args.seed,
         "counterfactual_k": args.counterfactual_k,
+        "invalid_counterfactual_k": args.invalid_counterfactual_k,
         "teacher_horizon": args.teacher_horizon,
         "counterfactual_attempts": args.counterfactual_attempts,
         "episode_timeout_seconds": args.episode_timeout_seconds,

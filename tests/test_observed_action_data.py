@@ -59,6 +59,22 @@ def test_schema_rejects_oracle_action_missing_from_catalogue():
         })
 
 
+def test_schema_allows_observed_invalid_counterfactual_without_feasibility_label():
+    episode = ObservedActionEpisode.from_dict({
+        "episode_id": "invalid-cf", "domain": "x", "split": "train",
+        "prompt": ["room"], "goal": "goal",
+        "transitions": [{
+            "action": "open door", "outcome": "opened",
+            "catalogue": ["open door", "take wall"],
+            "available": ["open door"],
+            "counterfactuals": [{
+                "action": "take wall", "outcome": "nothing happens"
+            }],
+        }],
+    })
+    assert episode.transitions[0].counterfactuals[0].action == "take wall"
+
+
 def test_jsonl_loader_rejects_duplicate_ids_and_wrong_domain(tmp_path):
     raw = {
         "episode_id": "same", "domain": "proofwriter", "split": "train",
@@ -86,6 +102,31 @@ def test_compiled_episode_collates_and_isolates_teacher_rollouts():
     batch = collate([item], vocab.pad_id)
     assert batch["ga_alt_action_tokens"].shape[:2] == (1, 1)
     assert batch["ga_rollout_step_tokens"].shape[:3] == (1, 2, 1)
+
+
+def test_dense_geometry_dataset_exposes_every_counterfactual_anchor():
+    base = asdict(_episode())
+    base["transitions"] = list(base["transitions"])
+    base["transitions"].append({
+        "action": "apply kind implies round to Bob",
+        "outcome": "Bob is round .",
+        "catalogue": [
+            "apply blue implies kind to Bob",
+            "apply kind implies round to Bob",
+        ],
+        "available": ["apply kind implies round to Bob"],
+        "counterfactuals": [{
+            "action": "apply blue implies kind to Bob",
+            "outcome": "Bob is kind .",
+        }],
+    })
+    episode = ObservedActionEpisode.from_dict(base)
+    vocab = build_observed_action_vocab([episode])
+    dataset = ObservedActionDataset(
+        [episode], vocab, geo_rank_k=1, dense_geo_anchors=True
+    )
+    assert len(dataset) == 2
+    assert {dataset[index]["ga_t"] for index in range(2)} == {0, 1}
 
 
 def test_dynamic_catalogue_masks_future_discovered_actions():
@@ -140,3 +181,20 @@ def test_external_config_runs_geometry_value_end_to_end(tmp_path):
         parameter.grad is not None
         for parameter in model.core.value_head.parameters()
     )
+
+
+def test_no_prior_model_skips_action_support_computation():
+    episode = _episode()
+    vocab = build_observed_action_vocab([episode])
+    batch = collate(
+        [ObservedActionDataset([episode], vocab, geo_rank_k=1)[0]],
+        vocab.pad_id,
+    )
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id, d_model=32,
+        chunk_layers=1, chunk_heads=2, state_layers=1, state_heads=2,
+        predictor_layers=1, predictor_heads=2, d_action=8, macro_k=0,
+        action_support_states="none",
+    )
+    out = model(batch)
+    assert "action_support_logits" not in out.extras

@@ -83,8 +83,8 @@ class ObservedTransition:
             raise ValueError("executed action duplicated as a counterfactual")
         if len(set(alternatives)) != len(alternatives):
             raise ValueError("counterfactual actions contain duplicates")
-        if any(action not in self.available for action in alternatives):
-            raise ValueError("counterfactual action is not currently available")
+        if any(action not in self.catalogue for action in alternatives):
+            raise ValueError("counterfactual action is absent from catalogue")
 
 
 @dataclass(frozen=True)
@@ -180,6 +180,7 @@ class ObservedActionDataset(Dataset):
         vocab: Vocab,
         geo_rank_k: int = 0,
         geo_rank_horizon: int = 1,
+        dense_geo_anchors: bool = False,
         seed: int = 0,
     ):
         if not episodes:
@@ -188,13 +189,28 @@ class ObservedActionDataset(Dataset):
         self.vocab = vocab
         self.geo_rank_k = max(0, int(geo_rank_k))
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
+        self.dense_geo_anchors = bool(dense_geo_anchors)
         self.seed = int(seed)
+        self.examples: list[tuple[int, int | None]] = []
+        for episode_index, episode in enumerate(self.episodes):
+            anchors = [
+                position for position, transition in enumerate(
+                    episode.transitions
+                ) if transition.counterfactuals
+            ]
+            if self.dense_geo_anchors and self.geo_rank_k and anchors:
+                self.examples.extend(
+                    (episode_index, anchor) for anchor in anchors
+                )
+            else:
+                self.examples.append((episode_index, None))
 
     def __len__(self) -> int:
-        return len(self.episodes)
+        return len(self.examples)
 
     def __getitem__(self, index: int) -> dict:
-        episode = self.episodes[index]
+        episode_index, fixed_anchor = self.examples[index]
+        episode = self.episodes[episode_index]
         transitions = episode.transitions
         length = len(transitions)
         catalogue = tuple(dict.fromkeys(
@@ -217,7 +233,7 @@ class ObservedActionDataset(Dataset):
             "answer": 0,
             "n_necessary": length,
             "n_vars": len(catalogue),
-            "index": index,
+            "index": episode_index,
             "var_idx": list(range(length)),
             "query_idx": length - 1,
             "ancestors": list(range(length)),
@@ -245,7 +261,10 @@ class ObservedActionDataset(Dataset):
             ]
             if eligible:
                 rng = random.Random(f"{self.seed}:{episode.episode_id}:geo")
-                anchor = eligible[rng.randrange(len(eligible))]
+                anchor = (
+                    fixed_anchor if fixed_anchor is not None
+                    else eligible[rng.randrange(len(eligible))]
+                )
                 transition = transitions[anchor]
                 alternatives = list(transition.counterfactuals)
                 rng.shuffle(alternatives)

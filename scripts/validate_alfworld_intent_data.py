@@ -47,6 +47,11 @@ def main() -> None:
             len(transition.counterfactuals)
             for episode in episodes for transition in episode.transitions
         )
+        invalid_counterfactuals = sum(
+            value.action not in transition.available
+            for episode in episodes for transition in episode.transitions
+            for value in transition.counterfactuals
+        )
         for episode in episodes:
             other = seen_ids.setdefault(episode.episode_id, split)
             if other != split:
@@ -83,6 +88,7 @@ def main() -> None:
             "episodes": len(episodes),
             "transitions": transitions,
             "counterfactuals": counterfactuals,
+            "invalid_counterfactuals": invalid_counterfactuals,
             "replayed_episodes": len(replayed),
             "expert_catalogue_recall": 1.0,
             "exact_replay_rate": 1.0,

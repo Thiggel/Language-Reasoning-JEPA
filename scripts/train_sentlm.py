@@ -48,10 +48,17 @@ def main(cfg: DictConfig) -> None:
     else:
         raise ValueError(f"unknown sentence LM target_kind: {target_kind}")
     train_ds = wrap(build_dataset(cfg, vocab, split="train"))
-    train_sampler = FreshEpochSampler(train_ds, seed=cfg.seed)
+    fresh_per_epoch = cfg.data.get(
+        "fresh_per_epoch", cfg.data.get("name") != "observed_action"
+    )
+    train_sampler = (
+        FreshEpochSampler(train_ds, seed=cfg.seed)
+        if fresh_per_epoch else None
+    )
     train_loader = DataLoader(
         train_ds, batch_size=cfg.train.batch_size,
-        sampler=train_sampler, num_workers=cfg.train.num_workers, collate_fn=coll,
+        sampler=train_sampler, shuffle=train_sampler is None,
+        num_workers=cfg.train.num_workers, collate_fn=coll,
         drop_last=True, persistent_workers=cfg.train.num_workers > 0,
     )
     val_loader = DataLoader(
@@ -70,7 +77,8 @@ def main(cfg: DictConfig) -> None:
     logger = MetricLogger(out_dir)
     step, best = 0, float("inf")
     for epoch in range(cfg.train.epochs):
-        train_sampler.set_epoch(epoch)
+        if train_sampler is not None:
+            train_sampler.set_epoch(epoch)
         model.train()
         for batch in train_loader:
             for g in opt.param_groups:

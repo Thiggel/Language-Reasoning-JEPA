@@ -401,3 +401,54 @@ class CatalogueLatentPlanner:
             environment.optimal_length,
             environment.invalid_actions,
         )
+
+
+class FullCatalogueLatentPlanner(CatalogueLatentPlanner):
+    """Pure JEPA beam search that scores every non-oracle catalogue action.
+
+    No proposal, feasibility, policy, or oracle head is consulted.  At each
+    search depth the JEPA predicts every action consequence, ranks resulting
+    states with its geometry-derived value, and retains only the best latent
+    beams for the next simulation step.
+    """
+
+    def __init__(self, model, vocab, device: torch.device,
+                 simulation_depth: int = 1, beam_width: int = 4):
+        if simulation_depth < 1 or beam_width < 1:
+            raise ValueError("depth and beam width must be positive")
+        # Parent utilities encode histories, actions, and latent rollouts.
+        super().__init__(
+            model, vocab, device, simulation_depth=simulation_depth,
+            proposal_top_m=1, beam_width=beam_width,
+        )
+
+    @torch.no_grad()
+    def choose(self, prompt, outcomes, actions, catalogue) -> str:
+        if not catalogue:
+            raise ValueError("full-catalogue planning needs at least one action")
+        s0, state_history, action_history = self._observed_history(
+            prompt, outcomes, actions
+        )
+        codes = self._action_codes(catalogue)
+        sequences: list[tuple[int, ...]] = [()]
+        for depth in range(self.simulation_depth):
+            expanded = [
+                sequence + (index,)
+                for sequence in sequences
+                for index in range(len(catalogue))
+            ]
+            future = torch.stack([
+                codes[list(sequence)] for sequence in expanded
+            ])
+            leaf = self._rollout(state_history, action_history, future)
+            energy = self.model.value_head(
+                leaf, s0.expand(len(expanded), -1)
+            )
+            if depth + 1 == self.simulation_depth:
+                selected = int(energy.argmin().item())
+                return catalogue[expanded[selected][0]]
+            keep = energy.topk(
+                min(self.beam_width, len(expanded)), largest=False
+            ).indices.tolist()
+            sequences = [expanded[index] for index in keep]
+        raise AssertionError("positive simulation depth must select an action")

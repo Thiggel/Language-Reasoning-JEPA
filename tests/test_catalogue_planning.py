@@ -6,6 +6,7 @@ from textjepa.data.observed_action import build_observed_action_vocab
 from textjepa.models import DiscourseJEPA
 from textjepa.planning.catalogue import (
     CatalogueLatentPlanner,
+    FullCatalogueLatentPlanner,
     environment_from_episode,
     environment_from_faithful_problem,
 )
@@ -50,6 +51,17 @@ def test_alfworld_pilot_repeats_fixed_episodes_across_epochs():
     assert cfg.fresh_per_epoch is False
 
 
+def test_paper_geometry_gar_configuration_has_no_learned_candidate_prior():
+    root = Path(__file__).resolve().parents[1]
+    cfg = OmegaConf.load(
+        root / "configs/experiment/paper_causal_geometry_gar_no_prior.yaml"
+    )
+    assert cfg.objective.action_feasibility.weight == 0.0
+    assert cfg.model.action_support_states == "none"
+    assert cfg.data.all_action_supervision is False
+    assert cfg.data.dense_geo_anchors is True
+
+
 def test_proofwriter_environment_supports_alternative_valid_derivations():
     episode = compile_proofwriter_episode(_record(), "Q1", "test")
     environment = environment_from_episode(episode)
@@ -77,6 +89,31 @@ def test_catalogue_planner_runs_depth_two_without_querying_oracle_menu():
     result = planner.run_episode(environment_from_episode(episode), 0)
     assert result.steps <= result.optimal_length
     assert result.invalid_actions >= 0
+
+
+def test_full_catalogue_planner_reranks_every_action_without_support_head():
+    class ForbiddenSupport:
+        def __call__(self, *args, **kwargs):
+            raise AssertionError("full-catalogue JEPA consulted support head")
+
+    class Value:
+        def __call__(self, leaf, goal):
+            return leaf[:, 0]
+
+    class Model:
+        value_head = Value()
+        core = type("Core", (), {"action_support_head": ForbiddenSupport()})()
+
+    planner = FullCatalogueLatentPlanner(
+        Model(), None, torch.device("cpu"), simulation_depth=1,
+        beam_width=1,
+    )
+    planner._observed_history = lambda *args: (
+        torch.zeros(1, 1), torch.zeros(1, 1, 1), torch.zeros(1, 0, 1)
+    )
+    planner._action_codes = lambda catalogue: torch.tensor([[2.0], [0.0]])
+    planner._rollout = lambda state, action, future: future[:, -1]
+    assert planner.choose((), [], [], ("worse", "better")) == "better"
 
 
 def test_faithful_igsm_wrapper_exposes_full_catalogue_not_feasible_menu():

@@ -1,5 +1,10 @@
 # ALFWorld feasibility is learned, but goal-directed action choice fails
 
+> **Protocol correction:** this report analyzes a discarded hybrid that used
+> a learned feasibility proposal before JEPA reranking. It is retained as a
+> negative engineering result, not as evidence about the final no-prior
+> JEPA+GAR method or its matched language-model comparison.
+
 ## The one-sentence answer
 
 A small geometry JEPA learns to avoid illegal ALFWorld commands but solves none of the eight episodes it trained on, so larger data and paper-scale sweeps are premature.
@@ -50,11 +55,11 @@ The validated pilot is solvable, random action choice fails, and the present tra
 
 ## What we cannot conclude
 
-We cannot yet say whether JEPA geometry itself is insufficient. The expert action may be pruned before simulation, or sparse ranking anchors may leave the value ordering untrained. Nor can this tiny single-seed gate estimate generalization, compare against language-model baselines, or support a paper headline.
+We cannot say whether JEPA geometry itself is insufficient because this is not the intended paper architecture. The learned proposal pruned actions before simulation, and sparse ranking anchors left the value ordering undertrained. This tiny single-seed gate cannot estimate generalization, compare against language-model baselines, or support a paper headline.
 
 ## What happens next
 
-Audit every factual train state. If the expert rarely enters top-M, improve proposal supervision or widen the candidate set. If the expert is proposed but JEPA reranking loses it, cycle or densify geometry-ranking anchors and test one-step before deeper rollout. Only a model that reaches at least 75% strict train success may admit action-shuffle controls and larger ALFWorld collection.
+Retire the proposal pathway. Score the identical full non-oracle catalogue with JEPA+GAR, token LM, sentence LM, and sentence LM plus latent MSE. Densify GAR anchors, collect invalid-action outcomes as ordinary transitions rather than feasibility labels, and test one-step before deeper full-catalogue beam search. Only a model that reaches at least 75% strict train success may admit action-shuffle controls and larger ALFWorld collection.
 
 ## Words used in this report
 

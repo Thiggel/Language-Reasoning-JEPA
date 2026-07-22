@@ -1,0 +1,16 @@
+# @package _global_
+# Paper-facing geometry JEPA: every non-oracle catalogue action is simulated
+# and ranked by Q(s,a)=V(F(s,a),g). No action, proposal, or feasibility prior.
+defaults: [paper_causal_geometry_value, _self_]
+run_name: paper_causal_geometry_gar_no_prior
+model:
+  action_support_states: none
+objective:
+  geo_rank: {weight: 1.0, margin: 0.5, label_gap: 0.02}
+  geo_advantage_mse: {weight: 0.25, target_scale: 1.0}
+  action_feasibility: {weight: 0.0, positive_weight: 2.0}
+data:
+  all_action_supervision: false
+  dense_geo_anchors: true
+  geo_rank_k: 2
+  geo_rank_horizon: 4

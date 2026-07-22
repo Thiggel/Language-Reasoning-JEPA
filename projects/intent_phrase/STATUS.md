@@ -1,6 +1,6 @@
 # Intent-phrase project status
 
-_Updated 2026-07-21._
+_Updated 2026-07-22._
 
 ## Defensible observations
 
@@ -14,6 +14,7 @@ _Updated 2026-07-21._
 | LDAD and monotonicity improve strict success separately. | provisional until combined/matched confirmation |
 | Hierarchical planning improves this project. | contradicted by corrected confirmations |
 | Token-level executed-intent history repairs most learned-catalogue feasibility failures. | supported one-seed pilot; prior-only, not a JEPA simulation claim |
+| The paper-facing JEPA uses a learned action or feasibility prior. | false; the final protocol scores the same full non-oracle catalogue as the LM baselines |
 
 ## Current causal validation matrix
 
@@ -44,5 +45,5 @@ causal reference is not yet strong enough to support the desired headline.
    final test?
 5. Which representation properties causally predict robust action selection,
    rather than merely being linearly decodable?
-6. Once token-level proposal support removes most invalid actions, does JEPA
-   reranking improve over the learned prior, and at what simulation depth?
+6. Can full-catalogue JEPA+GAR learn invalid-action consequences and improve
+   with deeper prior-free latent simulation under the matched LM interface?

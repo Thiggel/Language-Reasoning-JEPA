@@ -1,6 +1,6 @@
 # Geometry-first intent-phrase paper experiment contract
 
-_Frozen 2026-07-21 before paper-scale selection runs._
+_Corrected 2026-07-22 by human steering before paper-scale selection runs._
 
 ## Central claim
 
@@ -8,9 +8,9 @@ An action-conditioned JEPA can reason by predicting the latent consequence of
 an observed language action and comparing that predicted state with a goal.
 Its action value is constrained to be
 `Q(s,a,g) = V(F(s,a), g)`: the value loss and ranking loss operate on the same
-predicted-consequence energy. There is no direct action-only policy head in
-the JEPA reranker. A separately reported proposal prior maps the current
-history to a distribution over an outcome-free action catalogue.
+predicted-consequence energy. There is no direct action-only policy head,
+action prior, proposal prior, or feasibility prior. JEPA and all language-model
+baselines score the identical full non-oracle action catalogue.
 
 ## Datasets and information boundary
 
@@ -24,6 +24,9 @@ development and mechanism environment, not a fifth headline dataset.
 - ALFWorld's `admissible_commands` and expert plan are privileged collection
   labels. Deployment uses a separately generated grounded catalogue; the
   adapter fails if that catalogue omits the expert action.
+- Invalid catalogue actions may be executed during training-data collection
+  so JEPA observes their textual consequence (normally an unchanged/error
+  state). Their privileged feasibility bit is never a model target.
 - Candidate order is shuffled at evaluation. `data.shuffle_actions` is not
   candidate-order shuffling; it destroys intent/outcome alignment and is used
   only as a named negative control.
@@ -74,11 +77,12 @@ changes; such changes receive a local LR cross-check.
 3. Counterfactual breadth: `K={1,2,4,8}` with matched loss normalization.
 4. Dense recursive dynamics: rollout depth `{0,1,2,4,8}` and discount
    `{0.5,0.7,1}` only around viable nonzero depths.
-5. Proposal/planning compute: proposal top-M `{1,2,4,8,16}`, beam width
-   `{1,4,8}`, and simulation depth `{1,2,4,8,16}`.
+5. Prior-free planning compute: full-catalogue beam width `{1,4,8}` and
+   simulation depth `{1,2,4,8,16}`.
 6. Causal falsifiers: shuffled action/outcome alignment, history masking,
-   goal permutation, no transition loss, no proposal prior, and true-state
-   versus recursively predicted-state scoring.
+   goal permutation, no transition loss, candidate-privileged feasible-only
+   catalogue diagnostics, and true-state versus recursively predicted-state
+   scoring.
 7. Scaling: width `{128,256,512}` in the main table and a representative
    depth curve `{2,4,8}` layers at width 256. Parameters, tokens, optimizer
    updates, FLOPs, peak memory, and wall time are reported.

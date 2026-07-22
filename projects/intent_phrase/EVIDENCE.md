@@ -6,4 +6,6 @@ The learned full-catalogue proposal interface now has a supported one-seed
 pilot: token-level causal matching to executed intent history reaches `.175`
 strict and `.717` slack-two success at length nine, versus best observed
 phrase-pooled values `.083/.358`; its gain is prior-only and is not evidence
-for JEPA reranking.
+for JEPA reranking. Human steering subsequently removed both the action prior
+and feasibility prior from the paper-facing method; retain this result only as
+historical evidence about a discarded hybrid.

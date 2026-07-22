@@ -7,6 +7,10 @@ ALFWorld pilot before collecting or sweeping a larger dataset.
 
 ## Result
 
+**Protocol correction:** these runs used the now-discarded learned feasibility
+proposal before JEPA reranking. They are not evaluations of the paper-facing
+full-catalogue JEPA+GAR method and cannot be compared to the final LM baselines.
+
 The oracle solves every train and seen-validation episode and random solves
 none. Three matched JEPA runs at learning rates 3e-4, 1e-3, and 3e-3 solve
 zero of eight train episodes at both strict and +4 budgets. The two higher
@@ -19,11 +23,10 @@ repaired runs repeat fixed examples and complete all 300 epochs.
 
 ## Falsifiable next gate
 
-Run a candidate-privileged, teacher-forced localization audit on all 150 train
-states. Measure expert-action recall in support top-M, prior-only choice, and
-one- and two-step JEPA reranking. If expert recall is low, repair proposal
-training; if recall is high but reranking is wrong, densify geometry/value
-supervision. Do not collect more ALFWorld data until this distinction is made.
+Replace the hybrid with an information-matched full-catalogue protocol. Every
+method receives the same non-oracle catalogue; JEPA+GAR must rank actions only
+through predicted latent consequences and goal geometry. Invalid actions enter
+JEPA training as observed state transitions, never as feasibility labels.
 
 ## Report
 

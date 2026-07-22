@@ -308,6 +308,7 @@ def collect_alfworld_record(
     split: str,
     seed: int,
     counterfactual_k: int = 0,
+    invalid_counterfactual_k: int = 0,
     teacher_horizon: int = 8,
     max_steps: int = 200,
     counterfactual_attempts_per_step: int | None = None,
@@ -349,9 +350,28 @@ def collect_alfworld_record(
                 )
                 if branch is not None:
                     counterfactuals.append(branch)
+            invalid_alternatives = [
+                value for value in catalogue if value not in available
+            ]
+            random.Random(
+                f"{seed}:{gamefile}:{step_index}:invalid"
+            ).shuffle(invalid_alternatives)
+            invalid_counterfactuals = []
+            for alternative in invalid_alternatives[
+                :max(0, int(invalid_counterfactual_k))
+            ]:
+                branch = _branch_counterfactual(
+                    session, actions, alternative, teacher_horizon, max_steps
+                )
+                if branch is not None:
+                    invalid_counterfactuals.append(branch)
+            counterfactuals.extend(invalid_counterfactuals)
             # Counterfactual branches reset and mutate the shared engine.
             # Restore the factual prefix before taking the expert action.
-            if alternatives and counterfactual_k > 0:
+            if (
+                (alternatives and counterfactual_k > 0)
+                or (invalid_alternatives and invalid_counterfactual_k > 0)
+            ):
                 _, info = session.reset()
                 for previous_action in actions:
                     _, _, done, info = session.step(previous_action)

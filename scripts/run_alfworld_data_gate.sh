@@ -10,6 +10,7 @@ split=${1:?train, val, or test}
 size=${2:?number of episodes}
 counterfactual_k=${3:-1}
 teacher_horizon=${4:-4}
+invalid_counterfactual_k=${5:-0}
 case "$split" in train|val|test) ;; *) echo "invalid split: $split" >&2; exit 2;; esac
 
 job_token=${SLURM_JOB_ID:-$$}
@@ -34,6 +35,7 @@ output=$RUN_DIR/data
 "$alfworld_python" "$TEXTJEPA_ROOT/scripts/collect_alfworld_intent_data.py" \
   --data-root "$alfworld_data" --output "$output" --split "$split" \
   "$size_argument" "$size" --counterfactual-k "$counterfactual_k" \
+  --invalid-counterfactual-k "$invalid_counterfactual_k" \
   --teacher-horizon "$teacher_horizon" --counterfactual-attempts 4 \
   --episode-timeout-seconds 300
 
