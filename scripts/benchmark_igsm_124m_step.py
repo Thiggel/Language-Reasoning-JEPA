@@ -39,6 +39,7 @@ def arguments():
         "token_lm", "sentence_lm", "jepa_prior", "jepa_no_prior",
         "jepa_visreg", "jepa_visreg_d2_nogar",
         "jepa_visreg_d1_gar", "jepa_visreg_d1_nogar",
+        "jepa_visreg_packed",
     ))
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--warmup", type=int, default=2)
@@ -105,9 +106,12 @@ def build(kind, batch_size, device):
             use_token_prior=kind in {
                 "jepa_prior", "jepa_visreg", "jepa_visreg_d2_nogar",
                 "jepa_visreg_d1_gar", "jepa_visreg_d1_nogar",
+                "jepa_visreg_packed",
             },
             target_mode=("visreg" if kind.startswith("jepa_visreg") else "ema"),
             visreg_projections=4096,
+            attention_backend="auto",
+            sequence_packing=kind == "jepa_visreg_packed",
         ).to(device)
         cfg = OmegaConf.load(Path(__file__).parents[1] / "configs/pooled_sentence_jepa.yaml")
         cfg.objective.dense_discount = 1.0

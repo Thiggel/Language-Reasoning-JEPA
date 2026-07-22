@@ -30,6 +30,8 @@ model:
   decoder_prefixes_per_sequence: 8
   target_mode: ema  # ema | visreg
   visreg_projections: 4096
+  attention_backend: auto
+  sequence_packing: false
 
 objective:
   prediction: 1.0

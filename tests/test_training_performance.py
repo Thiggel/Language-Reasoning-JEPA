@@ -2,6 +2,7 @@ import torch
 
 from textjepa.models.lm_baseline import DecoderLM
 from textjepa.models.predictor import CausalHistoryPredictor
+from textjepa.models.token_hierarchy import CausalTokenStateEncoder
 from textjepa.training.loading import performance_loader_kwargs
 from textjepa.training.optim import build_optimizer
 
@@ -37,6 +38,64 @@ def test_right_padding_does_not_change_valid_predictor_outputs():
             torch.tensor([[True, True, True, False, False]]),
         )[:, :3]
     assert torch.allclose(actual, expected, atol=1e-6, rtol=1e-5)
+
+
+def test_packed_predictor_matches_dense_causal_attention_on_valid_tokens():
+    torch.manual_seed(17)
+    dense = CausalHistoryPredictor(
+        d_state=16, d_action=4, n_layers=2, n_heads=4,
+        ff_mult=2, max_steps=8, sequence_packing=False,
+    ).eval()
+    packed = CausalHistoryPredictor(
+        d_state=16, d_action=4, n_layers=2, n_heads=4,
+        ff_mult=2, max_steps=8, sequence_packing=True,
+    ).eval()
+    packed.load_state_dict(dense.state_dict())
+    states = torch.randn(3, 7, 16)
+    actions = torch.randn(3, 7, 4)
+    valid = torch.arange(7)[None] < torch.tensor([7, 4, 2])[:, None]
+    with torch.no_grad():
+        expected = dense(states, actions, valid)
+        actual = packed(states, actions, valid)
+    assert torch.allclose(actual[valid], expected[valid], atol=2e-6, rtol=2e-5)
+    assert torch.count_nonzero(actual[~valid]) == 0
+
+
+def test_packed_token_encoder_matches_dense_causal_attention_on_valid_tokens():
+    torch.manual_seed(19)
+    kwargs = dict(
+        vocab_size=31, pad_id=0, d_model=16, n_layers=2, n_heads=4,
+        ff_mult=2, max_len=8,
+    )
+    dense = CausalTokenStateEncoder(**kwargs, sequence_packing=False).eval()
+    packed = CausalTokenStateEncoder(**kwargs, sequence_packing=True).eval()
+    packed.load_state_dict(dense.state_dict())
+    tokens = torch.tensor([
+        [2, 3, 4, 5, 6, 7, 8],
+        [9, 10, 11, 12, 0, 0, 0],
+        [13, 14, 0, 0, 0, 0, 0],
+    ])
+    valid = tokens.ne(0)
+    with torch.no_grad():
+        expected = dense(tokens)
+        actual = packed(tokens)
+    assert torch.allclose(actual[valid], expected[valid], atol=2e-6, rtol=2e-5)
+
+
+def test_packed_predictor_backward_is_finite():
+    torch.manual_seed(23)
+    model = CausalHistoryPredictor(
+        d_state=16, d_action=4, n_layers=2, n_heads=4,
+        ff_mult=2, max_steps=8, sequence_packing=True,
+    )
+    states = torch.randn(2, 6, 16, requires_grad=True)
+    actions = torch.randn(2, 6, 4, requires_grad=True)
+    valid = torch.arange(6)[None] < torch.tensor([6, 3])[:, None]
+    loss = model(states, actions, valid)[valid].square().mean()
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert torch.isfinite(states.grad).all()
+    assert torch.isfinite(actions.grad).all()
 
 
 def test_loader_performance_kwargs_are_valid_with_and_without_workers():

@@ -5,7 +5,10 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import causal_attention_mask, mlp
+from textjepa.models.layers import (
+    PackedMultiheadAttention, causal_attention_mask, mlp,
+    packed_encoder_forward,
+)
 
 
 class ActionConditionedPredictor(nn.Module):
@@ -50,9 +53,12 @@ class CausalHistoryPredictor(nn.Module):
         ff_mult: int = 4,
         max_steps: int = 64,
         residual: bool = False,
+        attention_backend: str = "auto",
+        sequence_packing: bool = False,
     ):
         super().__init__()
         self.residual = residual
+        self.sequence_packing = bool(sequence_packing)
         self.inp = nn.Linear(d_state + d_action, d_state)
         self.pos = nn.Parameter(torch.zeros(1, max_steps, d_state))
         nn.init.normal_(self.pos, std=0.02)
@@ -66,6 +72,12 @@ class CausalHistoryPredictor(nn.Module):
             activation="gelu",
         )
         self.blocks = nn.TransformerEncoder(layer, n_layers)
+        if self.sequence_packing:
+            for block in self.blocks.layers:
+                block.self_attn = PackedMultiheadAttention(
+                    d_state, n_heads, dropout=0.0, batch_first=True,
+                    attention_backend=attention_backend,
+                )
         self.norm = nn.LayerNorm(d_state)
         self.out = nn.Linear(d_state, d_state)
 
@@ -91,6 +103,18 @@ class CausalHistoryPredictor(nn.Module):
         length = states.shape[1]
         causal = causal_attention_mask(length, states.device)
         h = self.inp(torch.cat([states, actions], -1)) + self._positions(length)
+        if self.sequence_packing:
+            if valid is None:
+                valid = torch.ones(
+                    states.shape[:2], dtype=torch.bool, device=states.device
+                )
+            pred = self.out(self.norm(packed_encoder_forward(
+                self.blocks, h, valid, causal=True,
+            )))
+            if self.residual:
+                pred = states + pred
+            pred = pred.masked_fill(~valid[..., None], 0.0)
+            return pred[:, 0] if squeeze else pred
         # Every caller supplies a contiguous valid prefix. Under causal
         # attention, padding after that prefix cannot influence valid outputs.
         pred = self.out(self.norm(self.blocks(

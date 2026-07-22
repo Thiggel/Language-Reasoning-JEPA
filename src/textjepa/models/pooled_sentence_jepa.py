@@ -78,12 +78,13 @@ class PooledCausalStateEncoder(nn.Module):
     def __init__(
         self, vocab_size, pad_id, period_id, question_id, d_state,
         encoder_layers, n_heads, ff_mult, max_len, pool_heads, pooling_scope,
+        attention_backend="auto", sequence_packing=False,
     ):
         super().__init__()
         self.pad_id = int(pad_id)
         self.backbone = CausalTokenStateEncoder(
             vocab_size, pad_id, d_state, encoder_layers, n_heads, ff_mult,
-            max_len,
+            max_len, attention_backend, sequence_packing,
         )
         self.pooler = CausalAttentionPooler(
             d_state, pool_heads, pooling_scope, (period_id, question_id)
@@ -145,6 +146,7 @@ class PooledSentenceJEPA(nn.Module):
         decoder_layers: int = 2, decoder_heads: int = 8,
         decoder_max_len: int = 96, decoder_prefixes_per_sequence: int = 8,
         target_mode: str = "ema", visreg_projections: int = 4096,
+        attention_backend: str = "auto", sequence_packing: bool = False,
     ):
         super().__init__()
         if target_mode not in {"ema", "visreg"}:
@@ -160,7 +162,7 @@ class PooledSentenceJEPA(nn.Module):
         self.state_encoder = PooledCausalStateEncoder(
             vocab_size, pad_id, period_id, question_id, d_state,
             encoder_layers, n_heads, ff_mult, max_len, pool_heads,
-            pooling_scope,
+            pooling_scope, attention_backend, sequence_packing,
         )
         self.teacher = (
             EMATeacher(self.state_encoder) if target_mode == "ema" else None
@@ -170,6 +172,8 @@ class PooledSentenceJEPA(nn.Module):
         self.predictor = CausalHistoryPredictor(
             d_state, d_action, predictor_layers, n_heads, ff_mult,
             max_steps=max_len, residual=True,
+            attention_backend=attention_backend,
+            sequence_packing=sequence_packing,
         )
         self.goal_head = mlp([d_state, 2 * d_state], d_state)
         self.token_value = MacroValueHead(d_state, d_action)
