@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import random
+import time
 from functools import partial
 from pathlib import Path
 
@@ -110,6 +111,7 @@ def main():
     parser.add_argument("--max-sequence-len", type=int, default=768)
     parser.add_argument("--precision", choices=("fp32", "bf16"), default="bf16")
     parser.add_argument("--eval-batches", type=int, default=16)
+    parser.add_argument("--log-every", type=int, default=50)
     args = parser.parse_args()
     random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -141,6 +143,8 @@ def main():
     for epoch in range(args.epochs):
         model.train()
         running = 0.0
+        interval_start = time.perf_counter()
+        interval_updates = 0
         optimizer.zero_grad(set_to_none=True)
         for batch_index, batch in enumerate(train_loader):
             step = batch_index // accumulation
@@ -167,6 +171,17 @@ def main():
                 )
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
+            interval_updates += 1
+            if step % args.log_every == 0:
+                elapsed = max(time.perf_counter() - interval_start, 1e-9)
+                print(json.dumps({
+                    "optimizer_step": step,
+                    "loss": loss.item(),
+                    "lr": optimizer.param_groups[0]["lr"],
+                    "updates_per_second": interval_updates / elapsed,
+                }, sort_keys=True), flush=True)
+                interval_start = time.perf_counter()
+                interval_updates = 0
         metrics = evaluate(model, val_loader, device, args.eval_batches)
         metrics.update(
             epoch=epoch,
