@@ -39,7 +39,7 @@ def arguments():
         "token_lm", "sentence_lm", "jepa_prior", "jepa_no_prior",
         "jepa_visreg", "jepa_visreg_d2_nogar",
         "jepa_visreg_d1_gar", "jepa_visreg_d1_nogar",
-        "jepa_visreg_packed",
+        "jepa_visreg_packed", "jepa_visreg_packed_d1_gar",
     ))
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--warmup", type=int, default=2)
@@ -98,7 +98,10 @@ def build(kind, batch_size, device):
             encoder_layers=10, pool_heads=12, predictor_layers=6,
             n_heads=12, ff_mult=4, max_len=768, d_action=128,
             dense_depth=(
-                1 if kind in {"jepa_visreg_d1_gar", "jepa_visreg_d1_nogar"}
+                1 if kind in {
+                    "jepa_visreg_d1_gar", "jepa_visreg_d1_nogar",
+                    "jepa_visreg_packed_d1_gar",
+                }
                 else 2
             ),
             dense_checkpoint=True, pooling_scope="sentence",
@@ -111,7 +114,9 @@ def build(kind, batch_size, device):
             target_mode=("visreg" if kind.startswith("jepa_visreg") else "ema"),
             visreg_projections=4096,
             attention_backend="auto",
-            sequence_packing=kind == "jepa_visreg_packed",
+            sequence_packing=kind in {
+                "jepa_visreg_packed", "jepa_visreg_packed_d1_gar",
+            },
         ).to(device)
         cfg = OmegaConf.load(Path(__file__).parents[1] / "configs/pooled_sentence_jepa.yaml")
         cfg.objective.dense_discount = 1.0
