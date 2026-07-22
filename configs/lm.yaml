@@ -16,6 +16,7 @@ model:
 train:
   target_kind: outcome  # outcome | intent
   batch_size: 64
+  gradient_accumulation_steps: 1
   num_workers: 8
   epochs: 20
   lr: 3.0e-4
@@ -24,6 +25,11 @@ train:
   grad_clip: 5.0
   log_every: 50
   rank_weight: 0.0
+  betas: [0.9, 0.95]
+  precision: fp32
+  eval_batches: 40
+  checkpoint_examples: []
+  resume_from: null
 
 hydra:
   run:

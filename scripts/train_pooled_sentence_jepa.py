@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from functools import partial
 from pathlib import Path
 
@@ -20,11 +21,15 @@ except ModuleNotFoundError:
         _pairwise_advantage_loss, dense_loss, make_dataset, normalized_mse, vicreg,
     )
 from textjepa.data.igsm.dataset import build_vocab
-from textjepa.data.sampling import FreshEpochSampler
+from textjepa.data.sampling import DistributedFreshEpochSampler, FreshEpochSampler
 from textjepa.data.semantic_lm import collate_semantic_lm
 from textjepa.models.pooled_sentence_jepa import PooledSentenceJEPA
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup, ema_momentum
+from textjepa.training.distributed import barrier, close, initialize, wrap
+from textjepa.training.scale import (
+    crossed_milestones, exposure_milestones, save_checkpoint,
+)
 from textjepa.utils import seed_everything
 from textjepa.utils.metrics import effective_rank, feature_std
 
@@ -55,7 +60,23 @@ def _masked_sequence_ce(logits, targets, valid):
     return (losses * valid).sum(1) / valid.sum(1).clamp_min(1)
 
 
-def compute_losses(out, cfg, model, batch):
+def _global_valid_features(features):
+    """Autograd-safe variable-length gather for cross-rank VICReg."""
+    if not torch.distributed.is_initialized():
+        return features
+    import torch.distributed.nn.functional as dist_f
+    count = torch.tensor([len(features)], device=features.device, dtype=torch.long)
+    counts = [torch.zeros_like(count) for _ in range(torch.distributed.get_world_size())]
+    torch.distributed.all_gather(counts, count)
+    maximum = max(int(item.item()) for item in counts)
+    padded = F.pad(features, (0, 0, 0, maximum - len(features)))
+    gathered = dist_f.all_gather(padded)
+    return torch.cat([
+        tensor[:int(size.item())] for tensor, size in zip(gathered, counts)
+    ])
+
+
+def compute_losses(out, cfg, model, batch, distributed_regularizer=False):
     obj = cfg.objective
     prediction = normalized_mse(out["pred"], out["target"], out["valid"])
     dense = dense_loss(
@@ -73,7 +94,10 @@ def compute_losses(out, cfg, model, batch):
         labels = out["action_ids"][out["valid"]]
         prior = F.cross_entropy(logits, labels)
         prior_accuracy = logits.argmax(-1).eq(labels).float().mean()
-    regularizer = vicreg(out["prev"][out["valid"]], obj.covariance)
+    regularizer_features = out["prev"][out["valid"]]
+    if distributed_regularizer:
+        regularizer_features = _global_valid_features(regularizer_features)
+    regularizer = vicreg(regularizer_features, obj.covariance)
     cf = model.token_counterfactuals(
         out, batch["tokens"].to(out["states"].device),
         batch["prompt_len"].to(out["states"].device), k=int(obj.gar_k),
@@ -170,12 +194,18 @@ def dependence_diagnostics(model, out):
 @hydra.main(config_path="../configs", config_name="pooled_sentence_jepa", version_base="1.3")
 def main(cfg: DictConfig):
     seed_everything(cfg.seed)
+    distributed = initialize(cfg.device)
     out_dir = Path(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
-    print(OmegaConf.to_yaml(cfg))
+    if distributed.primary:
+        print(OmegaConf.to_yaml(cfg))
     vocab = build_vocab(cfg.data.modulus)
     train_ds = make_dataset(cfg, vocab, cfg.data.train_size, cfg.data.train_seed)
     val_ds = make_dataset(cfg, vocab, cfg.data.val_size, cfg.data.val_seed)
-    sampler = FreshEpochSampler(train_ds, seed=cfg.seed)
+    sampler = (
+        DistributedFreshEpochSampler(
+            train_ds, distributed.rank, distributed.world_size, seed=cfg.seed
+        ) if distributed.world_size > 1 else FreshEpochSampler(train_ds, seed=cfg.seed)
+    )
     collate = partial(collate_semantic_lm, pad_id=vocab.pad_id)
     train_loader = DataLoader(
         train_ds, batch_size=cfg.train.batch_size, sampler=sampler,
@@ -185,28 +215,47 @@ def main(cfg: DictConfig):
         val_ds, batch_size=int(cfg.train.get("eval_batch_size", cfg.train.batch_size)),
         num_workers=cfg.train.num_workers, collate_fn=collate,
     )
-    model = PooledSentenceJEPA(
+    raw_model = PooledSentenceJEPA(
         len(vocab), vocab.pad_id, period_id=vocab.token_to_id["."],
         question_id=vocab.token_to_id["?"], **cfg.model,
-    ).to(cfg.device)
-    print({
-        "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
-        "ema_target_parameters": sum(p.numel() for p in model.teacher.parameters()),
-    }, flush=True)
-    optimizer = build_optimizer(model, cfg.train.lr, cfg.train.weight_decay)
+    ).to(distributed.device)
+    if distributed.primary:
+        print({
+            "trainable_parameters": sum(p.numel() for p in raw_model.parameters() if p.requires_grad),
+            "ema_target_parameters": sum(p.numel() for p in raw_model.teacher.parameters()),
+        }, flush=True)
+    model = wrap(raw_model, distributed)
+    optimizer = build_optimizer(
+        raw_model, cfg.train.lr, cfg.train.weight_decay,
+        tuple(cfg.train.get("betas", (0.9, 0.95))),
+    )
     accumulation = max(1, int(cfg.train.get("gradient_accumulation_steps", 1)))
     total_steps = cfg.train.epochs * optimizer_step_count(
         len(train_loader), accumulation
     )
-    print({
-        "micro_batch_size": int(cfg.train.batch_size),
-        "gradient_accumulation_steps": accumulation,
-        "effective_batch_size": int(cfg.train.batch_size) * accumulation,
-        "optimizer_steps": total_steps,
-    }, flush=True)
-    logger = MetricLogger(out_dir)
-    step, best = 0, float("inf")
-    for epoch in range(cfg.train.epochs):
+    effective_batch = int(cfg.train.batch_size) * accumulation * distributed.world_size
+    milestones = exposure_milestones(cfg.train.get("checkpoint_examples", []))
+    logger = MetricLogger(out_dir) if distributed.primary else None
+    step, best, first_epoch = 0, float("inf"), 0
+    resume = cfg.train.get("resume_from")
+    if resume:
+        state = torch.load(str(resume), map_location=distributed.device, weights_only=False)
+        raw_model.load_state_dict(state["model"])
+        optimizer.load_state_dict(state["optimizer"])
+        step, best = int(state["step"]), float(state["best"])
+        first_epoch = int(state["epoch"]) + 1
+    if distributed.primary:
+        print({
+            "world_size": distributed.world_size,
+            "micro_batch_size_per_gpu": int(cfg.train.batch_size),
+            "gradient_accumulation_steps": accumulation,
+            "effective_batch_size": effective_batch,
+            "vicreg_batch_size": int(cfg.train.batch_size) * distributed.world_size,
+            "optimizer_steps": total_steps,
+            "sequence_presentations": int(cfg.data.train_size) * int(cfg.train.epochs),
+        }, flush=True)
+    use_bf16 = str(cfg.train.get("precision", "fp32")).lower() == "bf16"
+    for epoch in range(first_epoch, cfg.train.epochs):
         sampler.set_epoch(epoch)
         model.train()
         optimizer.zero_grad(set_to_none=True)
@@ -216,61 +265,78 @@ def main(cfg: DictConfig):
                     group["lr"] = cfg.train.lr * cosine_warmup(
                         step, total_steps, cfg.train.warmup_steps
                     )
-            out = forward(model, batch, cfg.device)
-            loss, items = compute_losses(out, cfg, model, batch)
-            divisor = accumulation_group_size(
-                micro_index, len(train_loader), accumulation
-            )
-            (loss / divisor).backward()
             should_step = (
                 (micro_index + 1) % accumulation == 0
                 or micro_index + 1 == len(train_loader)
             )
+            sync = nullcontext() if should_step or distributed.world_size == 1 else model.no_sync()
+            with sync:
+                with torch.autocast("cuda", torch.bfloat16, enabled=use_bf16):
+                    out = forward(model, batch, distributed.device)
+                    loss, items = compute_losses(
+                        out, cfg, raw_model, batch,
+                        distributed_regularizer=distributed.world_size > 1,
+                    )
+                divisor = accumulation_group_size(
+                    micro_index, len(train_loader), accumulation
+                )
+                (loss / divisor).backward()
             if not should_step:
                 continue
-            torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.grad_clip)
+            torch.nn.utils.clip_grad_norm_(raw_model.parameters(), cfg.train.grad_clip)
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-            model.update_teacher(ema_momentum(
+            raw_model.update_teacher(ema_momentum(
                 step, total_steps, cfg.train.ema_start, cfg.train.ema_end
             ))
-            if step % cfg.train.log_every == 0:
+            if distributed.primary and step % cfg.train.log_every == 0:
                 logger.log(step, {k: float(v.detach()) for k, v in items.items()}, prefix="train/")
             step += 1
-        model.eval()
-        sums, count, features = {}, 0, []
-        with torch.no_grad():
-            for index, batch in enumerate(val_loader):
-                if index >= cfg.train.eval_batches:
-                    break
-                out = forward(model, batch, cfg.device)
-                _, items = compute_losses(out, cfg, model, batch)
-                if index == 0:
-                    items.update(dependence_diagnostics(model, out))
-                for key, value in items.items():
-                    sums[key] = sums.get(key, 0.0) + float(value)
-                features.append(out["target"][out["valid"]])
-                count += 1
-        # Dependence diagnostics are intentionally computed on one fixed batch.
-        metrics = {
-            key: value / (1 if key.startswith("prediction_") and key != "prediction" else count)
-            for key, value in sums.items()
-        }
-        feature = torch.cat(features)
-        metrics.update(state_std=feature_std(feature), state_rank=effective_rank(feature[:4096]))
-        logger.log(step, metrics, prefix="val/")
-        payload = {
-            "model": model.state_dict(), "cfg": OmegaConf.to_container(cfg, resolve=True),
-            "epoch": epoch, "metrics": metrics,
-        }
-        torch.save(payload, out_dir / "last.pt")
-        if metrics["selection"] < best:
-            best = metrics["selection"]
-            torch.save(payload, out_dir / "best.pt")
-        print(f"[epoch {epoch}] " + "  ".join(
-            f"{key}={value:.4f}" for key, value in sorted(metrics.items())
-        ), flush=True)
-    logger.close()
+        barrier(distributed)
+        if distributed.primary:
+            raw_model.eval()
+            sums, count, features = {}, 0, []
+            with torch.no_grad():
+                for index, batch in enumerate(val_loader):
+                    if index >= cfg.train.eval_batches:
+                        break
+                    out = forward(raw_model, batch, distributed.device)
+                    _, items = compute_losses(out, cfg, raw_model, batch)
+                    if index == 0:
+                        items.update(dependence_diagnostics(raw_model, out))
+                    for key, value in items.items():
+                        sums[key] = sums.get(key, 0.0) + float(value)
+                    features.append(out["target"][out["valid"]])
+                    count += 1
+            metrics = {
+                key: value / (1 if key.startswith("prediction_") and key != "prediction" else count)
+                for key, value in sums.items()
+            }
+            feature = torch.cat(features)
+            metrics.update(state_std=feature_std(feature), state_rank=effective_rank(feature[:4096]))
+            logger.log(step, metrics, prefix="val/")
+            previous = epoch * int(cfg.data.train_size)
+            exposure = (epoch + 1) * int(cfg.data.train_size)
+            improved = metrics["selection"] < best
+            best = min(best, metrics["selection"])
+            payload = {
+                "model": raw_model.state_dict(), "optimizer": optimizer.state_dict(),
+                "cfg": OmegaConf.to_container(cfg, resolve=True),
+                "epoch": epoch, "step": step, "best": best,
+                "examples_seen": exposure, "metrics": metrics,
+            }
+            torch.save(payload, out_dir / "last.pt")
+            if improved:
+                torch.save(payload, out_dir / "best.pt")
+            for _ in crossed_milestones(previous, exposure, milestones):
+                save_checkpoint(payload, out_dir, exposure)
+            print(f"[epoch {epoch}] examples={exposure} " + "  ".join(
+                f"{key}={value:.4f}" for key, value in sorted(metrics.items())
+            ), flush=True)
+        barrier(distributed)
+    if logger is not None:
+        logger.close()
+    close(distributed)
 
 
 if __name__ == "__main__":
