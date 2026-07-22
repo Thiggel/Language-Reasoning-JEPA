@@ -34,6 +34,15 @@ def _compiled_flex_attention():
     return torch.compile(flex_attention, dynamic=True)
 
 
+def _pad_flex_qkv(q, k, v, head_dim: int):
+    """Pad only the kernel width; preserve the model's attention geometry."""
+    kernel_dim = 1 << (int(head_dim) - 1).bit_length()
+    if kernel_dim == head_dim:
+        return q, k, v
+    amount = kernel_dim - head_dim
+    return tuple(F.pad(part, (0, amount)) for part in (q, k, v))
+
+
 class FlashMultiheadAttention(nn.MultiheadAttention):
     """Self-attention dispatched to FA4, FA2, or PyTorch fused SDPA.
 
@@ -203,10 +212,7 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             # PyTorch 2.5 FlexAttention requires a power-of-two head width.
             # Padding projected features is algebraically neutral provided we
             # retain the original attention scale and slice the values back.
-            kernel_dim = 1 << (self.head_dim - 1).bit_length()
-            if kernel_dim != self.head_dim:
-                amount = kernel_dim - self.head_dim
-                q, k, v = (F.pad(part, (0, amount)) for part in (q, k, v))
+            q, k, v = _pad_flex_qkv(q, k, v, self.head_dim)
             attended = _compiled_flex_attention()(
                 q, k, v, block_mask=block_mask,
                 scale=self.head_dim ** -0.5,

@@ -153,9 +153,16 @@ def test_pointer_to_sentence_mapping_and_insert_boundary_are_mechanical():
     "token", "sentence", "sentence_macro", "token_sentence",
     "token_sentence_macro"
 ])
-def test_all_four_variants_have_explicit_non_leaking_paths(variant):
+@pytest.mark.parametrize("sequence_packing", [False, True])
+def test_all_four_variants_have_explicit_non_leaking_paths(
+    variant, sequence_packing,
+):
     torch.manual_seed(5)
-    model = _model(variant)
+    model = _model(
+        variant,
+        sequence_packing=sequence_packing,
+        attention_backend="auto" if sequence_packing else "torch",
+    )
     out = model(_batch())
     assert out.preds.shape == (1, 2, 16)
     assert out.step_states_tgt.requires_grad is False
@@ -271,11 +278,14 @@ def test_efficient_pair_encoding_halves_state_encodes_without_changing_transitio
         ("shared_symmetric", True, False),
     ],
 )
+@pytest.mark.parametrize("sequence_packing", [False, True])
 def test_target_encoder_modes_have_explicit_gradient_and_teacher_semantics(
-    mode, target_requires_grad, has_teacher
+    mode, target_requires_grad, has_teacher, sequence_packing
 ):
     model = _model(
-        "token", efficient_pair_encoding=True, target_encoder_mode=mode
+        "token", efficient_pair_encoding=True, target_encoder_mode=mode,
+        sequence_packing=sequence_packing,
+        attention_backend="auto" if sequence_packing else "torch",
     )
     batch = copy.deepcopy(_batch())
     batch["buffer_tokens"] = batch["buffer_tokens"][:, :2]

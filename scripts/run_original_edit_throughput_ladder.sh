@@ -31,6 +31,8 @@ else
 fi
 
 overall=0
+throughput_steps=${THROUGHPUT_STEPS:-8}
+train_size=$((512 * throughput_steps))
 for microbatch in "${microbatches[@]}"; do
   cell="$RUN_DIR/mb${microbatch}"
   mkdir -p "$cell"
@@ -38,7 +40,8 @@ for microbatch in "${microbatches[@]}"; do
   if [[ "$method" == "mdlm" ]]; then
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train_edit_mdlm.py" \
       --out "$cell" --device "${DEVICE:-cuda:0}" --seed 0 \
-      --train-size 4096 --val-size 64 --epochs 1 --max-steps 8 \
+      --train-size "$train_size" --val-size 64 --epochs 1 \
+      --max-steps "$throughput_steps" \
       --batch-size 512 --microbatch-size "$microbatch" \
       --eval-batches 1 --log-every 1 --num-workers 16 \
       --attention-backend auto >"$cell/stdout.log" 2>"$cell/stderr.log"
@@ -46,8 +49,8 @@ for microbatch in "${microbatches[@]}"; do
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train.py" \
       "+experiment=$method" "hydra.run.dir=$cell/model" \
       "run_name=${RUN_ID}-mb${microbatch}" seed=0 \
-      "device=${DEVICE:-cuda:0}" train.max_steps=8 \
-      data.train_size=4096 data.val_size=64 \
+      "device=${DEVICE:-cuda:0}" "train.max_steps=$throughput_steps" \
+      "data.train_size=$train_size" data.val_size=64 \
       "train.microbatch_size=$microbatch" \
       "train.eval_batch_size=$microbatch" train.num_workers=16 \
       train.eval_batches=1 train.log_every=1 \
