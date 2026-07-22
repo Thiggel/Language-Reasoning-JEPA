@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-igsm-124m-under24h-rtxpro-recovery",
+  "decision": "Replace the still-pending four-A100 token-LM and prior-JEPA requests with two RTX Pro 6000 Blackwell GPUs each after the no-prior JEPA demonstrated immediate RTX Pro admission. Measured per-device throughput projects both below 24 hours.",
+  "git_commit": "edc02a2dfdb38c5303b0c720c33a44a0d1eeb4e3",
+  "jobs": [
+    {
+      "id": "igsm-124m-token-lm-under24h-rtxpro-s0",
+      "cluster": "alex",
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "gpus": 2,
+      "cpus": 32,
+      "min_gpu_memory_mb": 90000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "2", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the matched token LM on two RTX Pro 6000 Blackwell GPUs; measured aggregate throughput projects about 18.7 hours before communication overhead.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "token_lm", "igsm-124m-token-lm-under24h-rtxpro-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-jepa-prior-under24h-rtxpro-s0",
+      "cluster": "alex",
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "gpus": 2,
+      "cpus": 32,
+      "min_gpu_memory_mb": 90000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "2", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the packed one-step EMA/VICReg/GAR JEPA with token prior on two RTX Pro 6000 Blackwell GPUs; measured aggregate throughput projects about 17.2 hours before communication overhead.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_prior", "igsm-124m-jepa-prior-under24h-rtxpro-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    }
+  ]
+}
