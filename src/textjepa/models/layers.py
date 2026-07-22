@@ -27,6 +27,13 @@ def _external_flash_functions():
     return fa4, fa2
 
 
+@lru_cache(maxsize=1)
+def _compiled_flex_attention():
+    """One dynamic fused FlexAttention graph shared by all packed layers."""
+    from torch.nn.attention.flex_attention import flex_attention
+    return torch.compile(flex_attention, dynamic=True)
+
+
 class FlashMultiheadAttention(nn.MultiheadAttention):
     """Self-attention dispatched to FA4, FA2, or PyTorch fused SDPA.
 
@@ -192,7 +199,6 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
                 raise ValueError("FlexAttention packed path requires dropout=0")
             if block_mask is None:
                 raise ValueError("packed torch attention requires a block mask")
-            from torch.nn.attention.flex_attention import flex_attention
             q, k, v = (part.transpose(0, 1).unsqueeze(0) for part in qkv.unbind(1))
             # PyTorch 2.5 FlexAttention requires a power-of-two head width.
             # Padding projected features is algebraically neutral provided we
@@ -201,7 +207,7 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             if kernel_dim != self.head_dim:
                 amount = kernel_dim - self.head_dim
                 q, k, v = (F.pad(part, (0, amount)) for part in (q, k, v))
-            attended = flex_attention(
+            attended = _compiled_flex_attention()(
                 q, k, v, block_mask=block_mask,
                 scale=self.head_dim ** -0.5,
             )[..., :self.head_dim]
