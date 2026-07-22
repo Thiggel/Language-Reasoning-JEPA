@@ -201,7 +201,7 @@ class SentenceEditPredictor(nn.Module):
             local = torch.zeros_like(h)
             row = torch.arange(len(h), device=h.device)
             index = affected.clamp(0, h.shape[1] - 1)
-            local[row, index] = cond
+            local[row, index] = cond.to(local.dtype)
             h = h + local
         key_pad = ~mask
         key_pad = key_pad.clone()
