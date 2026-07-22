@@ -29,7 +29,9 @@ def _external_flash_functions():
 class PackedMultiheadAttention(nn.MultiheadAttention):
     """Checkpoint-compatible attention with padding-free varlen execution."""
 
-    VALID_BACKENDS = {"auto", "flash_attn_4", "flash_attn_2", "torch_flex"}
+    VALID_BACKENDS = {
+        "auto", "flash_attn_4", "flash_attn_2", "torch_sdpa", "torch_flex",
+    }
 
     def __init__(self, *args, attention_backend="auto", **kwargs):
         super().__init__(*args, **kwargs)
@@ -50,7 +52,42 @@ class PackedMultiheadAttention(nn.MultiheadAttention):
                 return "flash_attn_4"
             if major >= 8 and fa2 is not None:
                 return "flash_attn_2"
-        return "torch_flex"
+        # Native scaled-dot-product attention dispatches to PyTorch's fused
+        # FlashAttention kernel.  Length bucketing below avoids a global
+        # quadratic FlexAttention block mask when flash-attn is not installed.
+        return "torch_sdpa"
+
+    def _sdpa_packed(self, qkv, cu_seqlens, causal):
+        """Execute compact right-padded length buckets with fused SDPA."""
+        lengths = cu_seqlens[1:] - cu_seqlens[:-1]
+        # A width of 16 bounds residual padding to 15 positions while keeping
+        # the number of GPU kernel launches modest for all-start rollouts.
+        buckets = ((lengths + 15) // 16) * 16
+        output = qkv.new_empty((qkv.shape[0], self.num_heads, self.head_dim))
+        for width_tensor in buckets.unique(sorted=True):
+            width = int(width_tensor)
+            rows = (buckets == width_tensor).nonzero(as_tuple=False).flatten()
+            row_lengths = lengths[rows]
+            offset = torch.arange(width, device=qkv.device)[None]
+            valid = offset < row_lengths[:, None]
+            indices = cu_seqlens[rows, None] + offset
+            safe_indices = indices.clamp_max(qkv.shape[0] - 1)
+            padded = qkv[safe_indices]
+            q, k, v = (
+                part.transpose(1, 2) for part in padded.unbind(2)
+            )
+            if causal:
+                mask = None
+            else:
+                # Non-causal valid queries must not attend right padding.
+                mask = valid[:, None, None, :]
+            attended = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=mask,
+                dropout_p=self.dropout if self.training else 0.0,
+                is_causal=causal,
+            ).transpose(1, 2)
+            output[indices[valid]] = attended[valid]
+        return output
 
     def forward_packed(self, query, cu_seqlens, max_seqlen, block_mask, causal):
         if query.ndim != 2:
@@ -77,6 +114,8 @@ class PackedMultiheadAttention(nn.MultiheadAttention):
                 dropout_p=self.dropout if self.training else 0.0,
                 causal=causal,
             )
+        elif backend == "torch_sdpa":
+            attended = self._sdpa_packed(qkv, cu_seqlens, causal)
         elif query.is_cuda:
             if self.dropout:
                 raise ValueError("FlexAttention packing requires dropout=0")
