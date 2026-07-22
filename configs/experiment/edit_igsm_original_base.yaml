@@ -7,6 +7,9 @@ defaults:
   - _self_
 run_name: edit_igsm_original_base
 data:
+  max_op: 15
+  max_edge: 20
+  op_range: [null, null]
   corruption_mode: iterative_refinement
   refinement_probability: 0.25
   trajectory_variants: 1
@@ -75,9 +78,9 @@ objective:
     integration_limit: 5.0
 train:
   batch_size: 512
-  microbatch_size: 8
-  eval_batch_size: 8
-  num_workers: 8
+  microbatch_size: 16
+  eval_batch_size: 16
+  num_workers: 16
   epochs: 1
   max_steps: 100000
   lr: 0.002
@@ -90,4 +93,4 @@ train:
   ema_end: 0.9999
   log_every: 50
   eval_batches: 512
-
+  precision: bf16

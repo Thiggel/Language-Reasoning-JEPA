@@ -4,6 +4,7 @@ and update_teachers(momentum), with a CompositeObjective."""
 from __future__ import annotations
 
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import torch
@@ -55,7 +56,15 @@ class Trainer:
         self.ema_range = (tc.ema_start, tc.ema_end)
         self.log_every = tc.log_every
         self.eval_batches = tc.eval_batches
+        self.precision = str(tc.get("precision", "fp32"))
+        if self.precision not in {"fp32", "bf16"}:
+            raise ValueError(f"unsupported training precision: {self.precision}")
         self.step = 0
+
+    def _autocast(self):
+        if self.precision == "bf16" and self.device.type == "cuda":
+            return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        return nullcontext()
 
     def fit(self) -> dict[str, float]:
         best = float("inf")
@@ -96,8 +105,9 @@ class Trainer:
             )
             for g in self.opt.param_groups:
                 g["lr"] = self.cfg.train.lr * lr_scale
-            out = self.model(batch)
-            loss, items = self.objective(out, batch)
+            with self._autocast():
+                out = self.model(batch)
+                loss, items = self.objective(out, batch)
             support_logits = out.extras.get("action_support_logits")
             if support_logits is not None:
                 support_valid = out.extras["action_support_valid"]
@@ -154,8 +164,9 @@ class Trainer:
             if i >= self.eval_batches:
                 break
             batch = to_device(batch, self.device)
-            out = self.model(batch)
-            loss, items = self.objective(out, batch)
+            with self._autocast():
+                out = self.model(batch)
+                loss, items = self.objective(out, batch)
             support_logits = out.extras.get("action_support_logits")
             if support_logits is not None:
                 support_valid = out.extras["action_support_valid"]

@@ -35,6 +35,7 @@ train:
   ema_end: 0.999
   log_every: 50
   eval_batches: 40
+  precision: fp32
 
 hydra:
   run:

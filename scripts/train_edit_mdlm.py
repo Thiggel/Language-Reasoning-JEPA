@@ -33,6 +33,9 @@ def make_cfg(args):
     data.sample_transition = True
     data.content_only_actions = True
     data.replacement_only_vocab = True
+    data.max_op = 15
+    data.max_edge = 20
+    data.op_range = [None, None]
     data.train_size = args.train_size
     data.val_size = args.val_size
     data.fresh_per_epoch = False
@@ -105,6 +108,7 @@ def main():
     parser.add_argument("--layers", type=int, default=12)
     parser.add_argument("--heads", type=int, default=12)
     parser.add_argument("--max-sequence-len", type=int, default=768)
+    parser.add_argument("--precision", choices=("fp32", "bf16"), default="bf16")
     parser.add_argument("--eval-batches", type=int, default=16)
     args = parser.parse_args()
     random.seed(args.seed)
@@ -143,7 +147,13 @@ def main():
             if step >= total_steps:
                 break
             clean, valid, response = clean_batch(model, batch, device)
-            loss, _ = model.mdlm_loss(clean, valid, response)
+            amp = (
+                torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+                if args.precision == "bf16" and device.type == "cuda"
+                else torch.autocast(device_type="cpu", enabled=False)
+            )
+            with amp:
+                loss, _ = model.mdlm_loss(clean, valid, response)
             (loss / accumulation).backward()
             running += loss.item()
             if (batch_index + 1) % accumulation:

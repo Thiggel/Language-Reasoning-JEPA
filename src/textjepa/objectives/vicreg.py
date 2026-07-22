@@ -105,7 +105,7 @@ class SIGReg(Objective):
         x = torch.cat([
             out.s0,
             out.step_states.reshape(-1, out.step_states.shape[-1])[mask],
-        ], dim=0)
+        ], dim=0).float()
         directions = torch.randn(
             x.shape[-1], self.num_slices, device=x.device, dtype=x.dtype
         )
