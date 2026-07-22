@@ -27,11 +27,14 @@ def _external_flash_functions():
     return fa4, fa2
 
 
-@lru_cache(maxsize=1)
-def _compiled_flex_attention():
-    """One dynamic fused FlexAttention graph shared by all packed layers."""
+@lru_cache(maxsize=16)
+def _compiled_flex_attention(capacity: int):
+    """One static fused FlexAttention graph per power-of-two token bucket."""
     from torch.nn.attention.flex_attention import flex_attention
-    return torch.compile(flex_attention, dynamic=True)
+    # PyTorch 2.5 cannot lower this FlexAttention kernel with a symbolic token
+    # dimension on Ada. Power-of-two token buckets bound slack below 2x while
+    # keeping the number of compiled kernels logarithmic.
+    return torch.compile(flex_attention, dynamic=False)
 
 
 def _pad_flex_qkv(q, k, v, head_dim: int):
@@ -213,7 +216,7 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             # Padding projected features is algebraically neutral provided we
             # retain the original attention scale and slice the values back.
             q, k, v = _pad_flex_qkv(q, k, v, self.head_dim)
-            attended = _compiled_flex_attention()(
+            attended = _compiled_flex_attention(query.shape[0])(
                 q, k, v, block_mask=block_mask,
                 scale=self.head_dim ** -0.5,
             )[..., :self.head_dim]
@@ -267,6 +270,7 @@ def packed_encoder_forward(
     if (lengths == 0).any():
         raise ValueError("packed encoder does not accept empty sequences")
     flat = src[valid]
+    actual_tokens = flat.shape[0]
     cu = F.pad(lengths.cumsum(0), (1, 0))
     maximum = int(lengths.max().item())
     block_mask = None
@@ -274,24 +278,31 @@ def packed_encoder_forward(
     if flat.is_cuda and isinstance(first_attention, FlashMultiheadAttention):
         if first_attention._select_backend(flat) in {"torch", "torch_flash"}:
             from torch.nn.attention.flex_attention import create_block_mask
-            total = flat.shape[0]
-            padded_total = ((total + 127) // 128) * 128
-            sequence_ids = torch.full(
-                (padded_total,), -1, dtype=torch.int32, device=flat.device
+            capacity = max(128, 1 << (actual_tokens - 1).bit_length())
+            sequence_ids = torch.empty(
+                (capacity,), dtype=torch.int32, device=flat.device
             )
-            sequence_ids[:total] = torch.repeat_interleave(
+            sequence_ids[:actual_tokens] = torch.repeat_interleave(
                 torch.arange(len(lengths), device=flat.device, dtype=torch.int32),
                 lengths.long(),
             )
+            if capacity > actual_tokens:
+                # Every slack token is its own isolated dummy sequence. It can
+                # neither read real examples nor become a key for them.
+                sequence_ids[actual_tokens:] = torch.arange(
+                    len(lengths), len(lengths) + capacity - actual_tokens,
+                    device=flat.device, dtype=torch.int32,
+                )
+                flat = torch.cat([
+                    flat,
+                    flat.new_zeros(capacity - actual_tokens, flat.shape[-1]),
+                ])
 
             def same_sequence(batch, head, query_index, key_index):
-                return (
-                    (query_index < total) & (key_index < total)
-                    & (sequence_ids[query_index] == sequence_ids[key_index])
-                )
+                return sequence_ids[query_index] == sequence_ids[key_index]
 
             block_mask = create_block_mask(
-                same_sequence, B=1, H=None, Q_LEN=total, KV_LEN=total,
+                same_sequence, B=1, H=None, Q_LEN=capacity, KV_LEN=capacity,
                 device=flat.device, _compile=False,
             )
     for layer in encoder.layers:
@@ -309,7 +320,7 @@ def packed_encoder_forward(
     if encoder.norm is not None:
         flat = encoder.norm(flat)
     output = src.new_zeros(src.shape)
-    output[valid] = flat
+    output[valid] = flat[:actual_tokens]
     return output
 
 
