@@ -12,6 +12,8 @@ if [[ -z "${RUN_DIR:-}" ]]; then
   echo "RUN_DIR must be supplied by researchctl" >&2
   exit 2
 fi
+export TMPDIR="/tmp/tj-${RUN_ID:-edit-throughput-$$}"
+mkdir -p "$TMPDIR"
 
 overall=0
 for microbatch in "${microbatches[@]}"; do
