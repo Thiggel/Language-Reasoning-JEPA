@@ -1,0 +1,103 @@
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage[scaled=0.95]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage[paperwidth=16cm,paperheight=9.8cm,margin=0cm]{geometry}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,positioning}
+\pagestyle{empty}
+
+\definecolor{ink}{HTML}{0F172A}
+\definecolor{muted}{HTML}{64748B}
+\definecolor{line}{HTML}{334155}
+\definecolor{border}{HTML}{CBD5E1}
+\definecolor{paper}{HTML}{F8FAFC}
+\definecolor{cyanwash}{HTML}{ECFEFF}
+\definecolor{cyan}{HTML}{0891B2}
+\definecolor{teal}{HTML}{0F766E}
+\definecolor{indigo}{HTML}{4F46E5}
+\definecolor{violet}{HTML}{7C3AED}
+\definecolor{green}{HTML}{16A34A}
+
+\begin{document}
+\begin{tikzpicture}[remember picture,overlay,x=1cm,y=1cm,>=Latex,
+  token/.style={draw=none,rounded corners=1.2mm,minimum width=1.05cm,minimum height=.44cm,inner sep=0pt},
+  hidden/.style={circle,draw=cyan,fill=white,line width=.55pt,minimum size=.68cm,inner sep=0pt},
+  sent/.style={draw=none,fill=violet,rounded corners=2mm,minimum width=1.30cm,minimum height=.66cm,inner sep=0pt}]
+  \coordinate (SW) at (current page.south west);
+  \fill[paper] (current page.south west) rectangle (current page.north east);
+  \fill[cyan!8] ($(SW)+(15.1,8.9)$) circle (1.9cm);
+  \fill[indigo!5] ($(SW)+(0.3,.2)$) circle (2.0cm);
+
+  \node[anchor=west,text=ink,font=\fontsize{15}{17}\selectfont\bfseries] at ($(SW)+(0.8,9.19)$) {Discourse / Token--JEPA};
+  \node[anchor=west,text=muted,font=\fontsize{9.2}{10}\selectfont] at ($(SW)+(0.8,8.78)$) {Token actions induce causal sentence-level state transitions};
+
+  \node[draw=border,fill=white,rounded corners=2.3mm,minimum width=14.4cm,minimum height=.90cm] at ($(SW)+(8,7.86)$) {};
+  \node[anchor=west,text=muted,font=\fontsize{5.5}{6}\selectfont\bfseries] at ($(SW)+(1.12,8.05)$) {TOKENS};
+  \foreach \x/\word in {2.98/$x$,4.18/is,5.38/8,6.58/.,8.58/$y$,9.78/is,10.98/4,12.18/.} {
+    \node[token,fill=cyan!12] at ($(SW)+(\x,7.86)$) {\fontsize{7.5}{8}\selectfont\word};
+  }
+  \foreach \x in {8.58,9.78,10.98,12.18} {
+    \node[token,fill=violet!12] at ($(SW)+(\x,7.86)$) {};
+  }
+  \node at ($(SW)+(8.58,7.86)$) {\fontsize{7.5}{8}\selectfont $y$};
+  \node at ($(SW)+(9.78,7.86)$) {\fontsize{7.5}{8}\selectfont is};
+  \node at ($(SW)+(10.98,7.86)$) {\fontsize{7.5}{8}\selectfont 4};
+  \node at ($(SW)+(12.18,7.86)$) {\fontsize{7.5}{8}\selectfont .};
+  \draw[muted,dashed,line width=.45pt] ($(SW)+(7.60,7.50)$) -- ($(SW)+(7.60,8.31)$);
+  \node[text=cyan,font=\fontsize{5.6}{6}\selectfont\bfseries] at ($(SW)+(6.45,7.27)$) {SENTENCE $t$};
+  \node[text=violet,font=\fontsize{5.6}{6}\selectfont\bfseries] at ($(SW)+(10.40,7.27)$) {SENTENCE $t+1$};
+  \node[text=muted,font=\fontsize{5.2}{5.5}\selectfont] at ($(SW)+(7.60,7.27)$) {boundary};
+
+  \draw[line,line width=.8pt,->] ($(SW)+(8.0,7.05)$) -- ($(SW)+(8.0,6.70)$);
+  \node[draw=cyan,fill=teal,rounded corners=2.2mm,minimum width=4.2cm,minimum height=.70cm] at ($(SW)+(8.0,6.37)$)
+    {\begin{tabular}{c}\color{white}\fontsize{8}{8.5}\selectfont\bfseries Causal token encoder\\[-1pt]\color{cyan!15}\fontsize{5.7}{6}\selectfont hidden state $h_k$ sees tokens $x_{\leq k}$ only\end{tabular}};
+
+  \node[anchor=east,text=muted,font=\fontsize{5.8}{6}\selectfont\bfseries] at ($(SW)+(2.28,5.28)$) {TOKEN STATES};
+  \foreach \x/\i in {3.00/1,4.70/2,6.40/3,8.10/4,9.90/5,11.60/6,13.30/7} {
+    \draw[cyan!55,line width=.45pt] ($(SW)+(\x,5.95)$) -- ($(SW)+(\x,5.62)$);
+    \node[hidden,text=teal,font=\fontsize{7}{7.5}\selectfont\bfseries] (h\i) at ($(SW)+(\x,5.28)$) {$h_{\i}$};
+  }
+  \node[anchor=east,text=muted,font=\fontsize{5.6}{6}\selectfont\bfseries] at ($(SW)+(4.28,4.37)$) {CAUSAL POOLING WITHIN EACH SENTENCE};
+
+  \foreach \x/\i/\sub in {3.00/1/{t,1},4.70/2/{t,2},6.40/3/{t,3},8.10/4/{t,4},9.90/5/{t+1,1},11.60/6/{t+1,2},13.30/7/{t+1,3}} {
+    \node[sent] (s\i) at ($(SW)+(\x,3.82)$) {};
+    \node[text=white,font=\fontsize{5.6}{6}\selectfont\bfseries] at ($(SW)+(\x,3.95)$) {$s_{\sub}$};
+  }
+  \node[text=white,font=\fontsize{4.8}{5}\selectfont] at ($(SW)+(3.00,3.69)$) {$\operatorname{pool}(h_1)$};
+  \node[text=white,font=\fontsize{4.8}{5}\selectfont] at ($(SW)+(4.70,3.69)$) {$\operatorname{pool}(h_1{:}h_2)$};
+  \node[text=white,font=\fontsize{4.8}{5}\selectfont] at ($(SW)+(6.40,3.69)$) {$\operatorname{pool}(h_1{:}h_3)$};
+  \node[text=white,font=\fontsize{4.8}{5}\selectfont] at ($(SW)+(8.10,3.69)$) {$\operatorname{pool}(h_1{:}h_4)$};
+  \node[text=white,font=\fontsize{4.8}{5}\selectfont] at ($(SW)+(9.90,3.69)$) {$\operatorname{pool}(h_5)$};
+  \node[text=white,font=\fontsize{4.8}{5}\selectfont] at ($(SW)+(11.60,3.69)$) {$\operatorname{pool}(h_5{:}h_6)$};
+  \node[text=white,font=\fontsize{4.8}{5}\selectfont] at ($(SW)+(13.30,3.69)$) {$\operatorname{pool}(h_5{:}h_7)$};
+
+  \foreach \a/\b in {h1/s1,h1/s2,h2/s2,h1/s3,h2/s3,h3/s3,h2/s4,h3/s4,h4/s4,h5/s5,h5/s6,h6/s6,h5/s7,h6/s7,h7/s7} {
+    \draw[violet!65,line width=.45pt] (\a.south) to[out=-90,in=90] (\b.north);
+  }
+  \draw[muted,dashed,line width=.45pt] ($(SW)+(9.00,3.35)$) -- ($(SW)+(9.00,4.78)$);
+  \node[anchor=west,text=muted,font=\fontsize{5}{5.5}\selectfont] at ($(SW)+(9.10,4.52)$) {pool resets at boundary};
+
+  \node[draw=border,fill=white,rounded corners=2.7mm,minimum width=12.4cm,minimum height=2.10cm] at ($(SW)+(8.0,1.83)$) {};
+  \node[anchor=west,text=muted,font=\fontsize{5.8}{6}\selectfont\bfseries] at ($(SW)+(2.20,2.62)$) {TOKEN-CONDITIONED JEPA TRANSITION};
+  \node[draw=violet,fill=violet!10,rounded corners=2mm,minimum width=2.1cm,minimum height=.78cm] (cur) at ($(SW)+(3.55,1.69)$)
+    {\begin{tabular}{c}\color{violet!80!black}\fontsize{5.6}{6}\selectfont current sentence state\\[-1pt]\fontsize{8}{8.5}\selectfont\bfseries $s_{t,4}$\end{tabular}};
+  \node[text=muted,font=\fontsize{10}{10}\selectfont\bfseries] at ($(SW)+(4.98,1.69)$) {$+$};
+  \node[draw=cyan,fill=cyan!12,rounded corners=2mm,minimum width=1.9cm,minimum height=.78cm] (tok) at ($(SW)+(6.25,1.69)$)
+    {\begin{tabular}{c}\color{teal}\fontsize{5.6}{6}\selectfont next token action\\[-1pt]\fontsize{8}{8.5}\selectfont\bfseries ``$y$''\end{tabular}};
+  \node[draw=ink,fill=ink,rounded corners=2.5mm,minimum width=2.2cm,minimum height=1.02cm] (pred) at ($(SW)+(9.35,1.69)$)
+    {\begin{tabular}{c}\color{white}\fontsize{8}{8.5}\selectfont\bfseries Predictor\\[-1pt]\color{border}\fontsize{5.5}{6}\selectfont $F(s_{t,4},\mathrm{token}_{\mathrm{next}})$\end{tabular}};
+  \node[draw=green,fill=green!10,rounded corners=2mm,minimum width=2.1cm,minimum height=.78cm] (next) at ($(SW)+(12.45,1.69)$)
+    {\begin{tabular}{c}\color{green!65!black}\fontsize{5.6}{6}\selectfont predicted next state\\[-1pt]\fontsize{8}{8.5}\selectfont\bfseries $\hat{s}_{t+1,1}$\end{tabular}};
+  \draw[line,line width=.9pt,->] (tok.east) -- (pred.west);
+  \draw[line,line width=.9pt,->] (pred.east) -- (next.west);
+  \draw[green,dashed,line width=.55pt,->] (next.north) to[out=90,in=-75] (s5.south);
+  \node[text=green!65!black,font=\fontsize{5}{5.5}\selectfont] at ($(SW)+(11.17,3.03)$) {match the encoded target};
+
+  \node[draw=cyan!35,fill=cyanwash,rounded corners=1.8mm,minimum width=14.4cm,minimum height=.34cm,
+        text=teal,font=\fontsize{5.8}{6}\selectfont] at ($(SW)+(8.0,.35)$)
+    {No future leakage: token encoding is causal, pooling uses only the within-sentence prefix, and pooling never crosses a sentence boundary.};
+\end{tikzpicture}
+\null
+\end{document}

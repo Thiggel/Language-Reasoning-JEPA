@@ -18,4 +18,7 @@ experiment.
 
 ## Figure
 
-- [Discourse / Token-JEPA causal sentence-embedding figure](figures/discourse_token_jepa.svg)
+- Discourse / Token-JEPA causal sentence-embedding figure:
+  [TikZ source](figures/discourse_token_jepa.tex),
+  [rendered PDF](figures/discourse_token_jepa.pdf),
+  [SVG](figures/discourse_token_jepa.svg)

@@ -41,7 +41,10 @@ information-matched protocol.
 
 ## Navigation
 
-- [Intent-JEPA reasoning-state figure](figures/intent_jepa_reasoning.svg)
+- Intent-JEPA reasoning-state figure:
+  [TikZ source](figures/intent_jepa_reasoning.tex),
+  [rendered PDF](figures/intent_jepa_reasoning.pdf),
+  [SVG](figures/intent_jepa_reasoning.svg)
 - [Current status](STATUS.md)
 - [Latest token prerequisite-support report](../../research/reports/intent_phrase/2026-07-21-token-prerequisite-support/REPORT.md)
 - [Code/config/run ownership](ARTIFACTS.md)
