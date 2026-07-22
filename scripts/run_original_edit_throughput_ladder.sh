@@ -32,8 +32,21 @@ fi
 
 overall=0
 throughput_steps=${THROUGHPUT_STEPS:-8}
-train_size=$((512 * throughput_steps))
+effective_batch=${EFFECTIVE_BATCH:-512}
+train_size=$((effective_batch * throughput_steps))
+extra_jepa=()
+if [[ "${EDIT_EMA_VICREG:-0}" == "1" ]]; then
+  extra_jepa+=(
+    model.sequence_packing=true
+    objective.sigreg.weight=0.0
+    objective.multiscale_vicreg.weight=0.02
+  )
+fi
 for microbatch in "${microbatches[@]}"; do
+  if (( effective_batch % microbatch != 0 )); then
+    echo "SKIP microbatch=$microbatch does not divide batch=$effective_batch"
+    continue
+  fi
   cell="$RUN_DIR/mb${microbatch}"
   mkdir -p "$cell"
   echo "THROUGHPUT_CELL method=$method microbatch=$microbatch"
@@ -42,7 +55,7 @@ for microbatch in "${microbatches[@]}"; do
       --out "$cell" --device "${DEVICE:-cuda:0}" --seed 0 \
       --train-size "$train_size" --val-size 64 --epochs 1 \
       --max-steps "$throughput_steps" \
-      --batch-size 512 --microbatch-size "$microbatch" \
+      --batch-size "$effective_batch" --microbatch-size "$microbatch" \
       --eval-batches 1 --log-every 1 --num-workers 16 \
       --attention-backend auto >"$cell/stdout.log" 2>"$cell/stderr.log"
   else
@@ -51,9 +64,11 @@ for microbatch in "${microbatches[@]}"; do
       "run_name=${RUN_ID}-mb${microbatch}" seed=0 \
       "device=${DEVICE:-cuda:0}" "train.max_steps=$throughput_steps" \
       "data.train_size=$train_size" data.val_size=64 \
+      "train.batch_size=$effective_batch" \
       "train.microbatch_size=$microbatch" \
       "train.eval_batch_size=$microbatch" train.num_workers=16 \
       train.eval_batches=1 train.log_every=1 \
+      "${extra_jepa[@]}" \
       >"$cell/stdout.log" 2>"$cell/stderr.log"
   fi
   rc=$?
@@ -70,18 +85,60 @@ done
 
 # A failed large-microbatch cell is an expected ladder outcome. The job itself
 # is successful when every cell left an explicit status for later selection.
-"$python_bin" - "$RUN_DIR" "$method" "${microbatches[@]}" <<'PY'
+"$python_bin" - "$RUN_DIR" "$method" "$effective_batch" \
+  "$throughput_steps" "${microbatches[@]}" <<'PY'
 import json
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
-payload = {"method": sys.argv[2], "cells": {}}
-for value in sys.argv[3:]:
+payload = {
+    "method": sys.argv[2],
+    "effective_batch": int(sys.argv[3]),
+    "optimizer_steps": int(sys.argv[4]),
+    "cells": {},
+}
+for value in sys.argv[5:]:
     cell = root / f"mb{value}"
+    if not cell.exists():
+        continue
+    throughput = memory = None
+    csv_path = cell / "model" / "metrics.csv"
+    if csv_path.exists():
+        import csv
+        rows = list(csv.DictReader(csv_path.open()))
+        measured = [
+            float(row["train/steps_per_s"])
+            for row in rows[1:]
+            if row.get("train/steps_per_s") not in {None, ""}
+        ]
+        memories = [
+            float(row["train/peak_memory_gib"])
+            for row in rows
+            if row.get("train/peak_memory_gib") not in {None, ""}
+        ]
+        if measured:
+            measured.sort()
+            throughput = measured[len(measured) // 2]
+        if memories:
+            memory = max(memories)
+    elif (cell / "stdout.log").exists():
+        for line in (cell / "stdout.log").read_text().splitlines():
+            try:
+                row = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if row.get("optimizer_step", 0) > 0:
+                throughput = row.get("updates_per_second", throughput)
+            memory = max(memory or 0.0, row.get("peak_memory_gib", 0.0))
     payload["cells"][value] = {
         "state": (cell / "state").read_text().strip(),
         "exit_code": int((cell / "exit_code").read_text()),
+        "updates_per_second": throughput,
+        "projected_50k_hours": (
+            50000 / throughput / 3600 if throughput else None
+        ),
+        "peak_memory_gib": memory,
     }
 (root / "metrics.json").write_text(json.dumps(payload, indent=2) + "\n")
 PY
