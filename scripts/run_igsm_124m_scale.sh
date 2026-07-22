@@ -22,6 +22,10 @@ if (( 512 % world != 0 )); then
   echo "global batch 512 is not divisible by world size $world" >&2
   exit 2
 fi
+if (( 64 % world != 0 )); then
+  echo "GAR anchor budget 64 is not divisible by world size $world" >&2
+  exit 2
+fi
 model_dir="$RUN_DIR/model"
 mkdir -p "$model_dir"
 
@@ -40,7 +44,8 @@ launcher=("$python_bin" -m torch.distributed.run --standalone "--nproc_per_node=
 
 case "$kind" in
   token_lm)
-    micro_batch=16
+    micro_batch=$((512 / world))
+    if (( micro_batch > 256 )); then micro_batch=256; fi
     accumulation=$((512 / (micro_batch * world)))
     "${launcher[@]}" "${TEXTJEPA_ROOT}/scripts/train_lm.py" "${common[@]}" \
       train.target_kind=outcome train.rank_weight=0 "train.batch_size=$micro_batch" \
@@ -49,7 +54,11 @@ case "$kind" in
       model.ff_mult=4 model.max_len=768
     ;;
   sentence_lm)
-    micro_batch=4
+    # The matched A100 capacity gate used 8.0 GiB at batch 128. Keep the
+    # physical batch at a conservative 256 per rank for both one- and
+    # two-GPU runs, and recover global batch 512 by accumulation when needed.
+    micro_batch=$((512 / world))
+    if (( micro_batch > 256 )); then micro_batch=256; fi
     accumulation=$((512 / (micro_batch * world)))
     "${launcher[@]}" "${TEXTJEPA_ROOT}/scripts/train_sentlm.py" "${common[@]}" \
       train.target_kind=outcome "train.batch_size=$micro_batch" \
@@ -60,8 +69,9 @@ case "$kind" in
       model.max_chunk_len=96 model.max_chunks=64 model.latent_target=false
     ;;
   jepa_prior|jepa_no_prior|jepa_visreg)
-    micro_batch=2
+    micro_batch=$((512 / world))
     accumulation=$((512 / (micro_batch * world)))
+    gar_anchors=$((64 / world))
     use_prior=true
     prior_weight=1
     target_mode=ema
@@ -86,7 +96,7 @@ case "$kind" in
       "model.use_token_prior=$use_prior" "objective.token_prior=$prior_weight" \
       "model.target_mode=$target_mode" model.visreg_projections=4096 \
       "objective.vicreg=$vicreg_weight" "objective.visreg=$visreg_weight" \
-      objective.dense_discount=1.0
+      "objective.gar_max_anchors=$gar_anchors" objective.dense_discount=1.0
     ;;
   *)
     echo "unknown scale model: $kind" >&2
