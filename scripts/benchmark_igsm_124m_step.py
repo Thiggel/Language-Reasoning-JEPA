@@ -42,6 +42,7 @@ def arguments():
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--steps", type=int, default=5)
+    parser.add_argument("--accumulation", type=int, default=1)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -120,6 +121,7 @@ def main():
     torch.set_float32_matmul_precision("high")
     result = {
         "kind": args.kind, "microbatch": args.batch_size,
+        "gradient_accumulation_steps": args.accumulation,
         "warmup_steps": args.warmup, "measured_steps": args.steps,
         "torch": torch.__version__, "cuda": torch.version.cuda,
         "gpu": torch.cuda.get_device_name(),
@@ -136,13 +138,16 @@ def main():
         model.train()
         durations = []
         torch.cuda.reset_peak_memory_stats()
+        if args.accumulation < 1:
+            raise ValueError("accumulation must be positive")
         for index in range(args.warmup + args.steps):
             optimizer.zero_grad(set_to_none=True)
             torch.cuda.synchronize()
             start = time.perf_counter()
-            with torch.autocast("cuda", torch.bfloat16):
-                loss = loss_fn(model)
-            loss.backward()
+            for _ in range(args.accumulation):
+                with torch.autocast("cuda", torch.bfloat16):
+                    loss = loss_fn(model)
+                (loss / args.accumulation).backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
             optimizer.step()
             if hasattr(model, "update_teacher"):
@@ -154,8 +159,14 @@ def main():
         seconds = sum(durations)
         result.update({
             "status": "ok", "loss": float(loss.detach()),
+            "mean_optimizer_step_seconds": seconds / len(durations),
+            "mean_microbatch_seconds": seconds / (
+                len(durations) * args.accumulation
+            ),
             "mean_step_seconds": seconds / len(durations),
-            "examples_per_second": args.batch_size * len(durations) / seconds,
+            "examples_per_second": (
+                args.batch_size * args.accumulation * len(durations) / seconds
+            ),
             "peak_allocated_gib": torch.cuda.max_memory_allocated() / 2**30,
             "peak_reserved_gib": torch.cuda.max_memory_reserved() / 2**30,
         })
