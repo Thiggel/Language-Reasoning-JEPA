@@ -40,6 +40,15 @@ cannot support the paper claim. Environment collection/replay remains valid,
 but model evidence must be regenerated with a full catalogue, no action or
 feasibility prior, and rejected actions stored only as observed transitions.
 
+The first transition-only rebuild completed with perfect replay and expert
+catalogue recall, but six candidate games timed out under the 300-second
+branch cap. The collector substituted later games, yielding 8 episodes and
+115 factual / 230 counterfactual / 115 rejected-action transitions instead of
+the predeclared 150 / 300 / 150. This is process-valid data but a failed
+scientific admission gate. The recovery pins the exact original eight game
+identities and raises only the per-episode cap; it may not substitute easier
+games.
+
 ## Falsifiable next gate
 
 Rebuild the training split with one admissible and one rejected-action

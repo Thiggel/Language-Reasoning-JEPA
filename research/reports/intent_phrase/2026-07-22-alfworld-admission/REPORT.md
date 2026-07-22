@@ -38,6 +38,7 @@ At evaluation, every model sees natural-language history, the goal, and the same
 | Seen-validation admission set | 4 episodes, 74 steps | completed | One bounded pathological game was recorded and skipped; retained episodes pass all validity checks |
 | Split identity audit | 16 episodes | disjoint | No episode identity crosses train, seen-validation, or unseen-validation |
 | Local seen-validation bounds | 4 episodes | oracle 100%, random 0% strict success | The environment is solvable and random action selection is not a viable shortcut |
+| Prior-free transition rebuild v1 | 8 episodes, 115 steps | process-valid but gate-invalid | Six hard games hit the 300-second branch cap; substitutions changed the predeclared 150-step fixture, so these data are not admitted |
 
 These are engineering-validity observations, not estimates of model quality. The completed two-epoch models solved zero validation episodes, which is unsurprising at this scale and is not used to rank methods.
 
@@ -59,11 +60,11 @@ We directly observe that the adapter can collect and replay official train, seen
 
 ## What we cannot conclude
 
-We cannot yet claim model learnability or paper-level ALFWorld performance. Tiny-set overfitting, action-shuffle degradation, and learned-policy closed-loop success remain untested. The pilot is an admission fixture, not a headline benchmark sample, and is too small to estimate recovery coverage. The external Alex and Grete duplicates remain scheduler-pending, but they are obsolete for the process decision.
+We cannot yet claim model learnability or paper-level ALFWorld performance. Tiny-set overfitting, action-shuffle degradation, and learned-policy closed-loop success remain untested. The first transition-only rebuild completed exact replay but did not pass admission: timeout substitutions reduced the intended 150 factual transitions to 115. The pilot is an admission fixture, not a headline benchmark sample, and is too small to estimate recovery coverage. The external Alex and Grete duplicates remain scheduler-pending, but they are obsolete for the process decision.
 
 ## What happens next
 
-First rebuild the eight-episode training fixture with, at every factual state, one recoverable admissible alternative and one rejected catalogue action represented solely by its observed textual consequence. Then run a matched tiny-set gate for prior-free JEPA+GAR, token LM, sentence LM, and sentence LM with latent MSE. The primary gate is substantial train strict success; validation is diagnostic and must not select the learning rate. Failure redirects work to objective, optimization, and planner diagnostics rather than to action-support or feasibility heads.
+Rebuild the exact original eight game identities with, at every factual state, one recoverable admissible alternative and one rejected catalogue action represented solely by its observed textual consequence. The 57-step hard episode receives a larger per-game cap; no substitute identity is acceptable. Then run a matched tiny-set gate for prior-free JEPA+GAR, token LM, sentence LM, and sentence LM with latent MSE. The primary gate is substantial train strict success; validation is diagnostic and must not select the learning rate. Failure redirects work to objective, optimization, and planner diagnostics rather than to action-support or feasibility heads.
 
 ## Words used in this report
 

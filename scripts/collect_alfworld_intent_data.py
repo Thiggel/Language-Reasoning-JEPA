@@ -41,6 +41,30 @@ def _solvable_games(root: Path) -> list[Path]:
     return sorted(games)
 
 
+def _template_games(template: Path, data_root: Path, split: str) -> list[Path]:
+    """Recover an exact, ordered game set from a compiled pilot fixture."""
+    games = []
+    with template.open() as handle:
+        for line in handle:
+            item = json.loads(line)
+            if item.get("split") != split:
+                raise ValueError(
+                    f"template {template} contains non-{split} episode"
+                )
+            relative = item.get("metadata", {}).get("gamefile_relative")
+            if not relative:
+                raise ValueError(
+                    f"template episode lacks gamefile_relative: {template}"
+                )
+            game = data_root / relative
+            if not game.is_file():
+                raise FileNotFoundError(game)
+            games.append(game)
+    if len(set(games)) != len(games):
+        raise ValueError(f"template {template} contains duplicate games")
+    return games
+
+
 def _write_jsonl(path: Path, values: list[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w") as handle:
@@ -91,8 +115,15 @@ def _collect_and_replay(payload: tuple) -> dict:
 
 def collect_split(args, split: str, limit: int) -> dict:
     source = args.data_root / "json_2.1.1" / SPLITS[split]
-    games = _solvable_games(source)
-    random.Random(f"{args.seed}:{split}").shuffle(games)
+    if args.episode_template is not None:
+        games = _template_games(args.episode_template, args.data_root, split)
+        if len(games) != limit:
+            raise ValueError(
+                f"template has {len(games)} games but requested {limit}"
+            )
+    else:
+        games = _solvable_games(source)
+        random.Random(f"{args.seed}:{split}").shuffle(games)
     records, failures = [], []
     context = multiprocessing.get_context("spawn")
     for gamefile in games:
@@ -169,6 +200,10 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--counterfactual-attempts", type=int, default=4)
     parser.add_argument("--episode-timeout-seconds", type=int, default=300)
+    parser.add_argument(
+        "--episode-template", type=Path,
+        help="compiled JSONL whose exact ordered game identities must be reused",
+    )
     parser.add_argument("--seed", type=int, default=1741)
     parser.add_argument(
         "--split", choices=("all", "train", "val", "test"), default="all"

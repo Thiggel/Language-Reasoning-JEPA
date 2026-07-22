@@ -11,6 +11,8 @@ size=${2:?number of episodes}
 counterfactual_k=${3:-1}
 teacher_horizon=${4:-4}
 invalid_counterfactual_k=${5:-0}
+episode_timeout_seconds=${6:-300}
+episode_template=${7:-}
 case "$split" in train|val|test) ;; *) echo "invalid split: $split" >&2; exit 2;; esac
 
 job_token=${SLURM_JOB_ID:-$$}
@@ -32,12 +34,18 @@ export PYTHONPATH=$TEXTJEPA_ROOT/src:$project_site
 
 size_argument=--${split}-size
 output=$RUN_DIR/data
+collect_args=(
+  --data-root "$alfworld_data" --output "$output" --split "$split"
+  "$size_argument" "$size" --counterfactual-k "$counterfactual_k"
+  --invalid-counterfactual-k "$invalid_counterfactual_k"
+  --teacher-horizon "$teacher_horizon" --counterfactual-attempts 4
+  --episode-timeout-seconds "$episode_timeout_seconds"
+)
+if [[ -n "$episode_template" ]]; then
+  collect_args+=(--episode-template "$episode_template")
+fi
 "$alfworld_python" "$TEXTJEPA_ROOT/scripts/collect_alfworld_intent_data.py" \
-  --data-root "$alfworld_data" --output "$output" --split "$split" \
-  "$size_argument" "$size" --counterfactual-k "$counterfactual_k" \
-  --invalid-counterfactual-k "$invalid_counterfactual_k" \
-  --teacher-horizon "$teacher_horizon" --counterfactual-attempts 4 \
-  --episode-timeout-seconds 300
+  "${collect_args[@]}"
 
 "$alfworld_python" "$TEXTJEPA_ROOT/scripts/validate_alfworld_intent_data.py" \
   --dataset "$split=$output/compiled/$split.jsonl" \
