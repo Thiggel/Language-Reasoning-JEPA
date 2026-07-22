@@ -58,28 +58,31 @@ def _bucketed_packed_attention(
         context = sdpa_kernel(allowed)
     with context:
         for bucket, members in groups.items():
-            shape = (len(members), heads, bucket, head_dim)
-            q_group = qkv.new_zeros(shape)
-            k_group = qkv.new_zeros(shape)
-            v_group = qkv.new_zeros(shape)
-            group_valid = torch.zeros(
-                len(members), bucket, dtype=torch.bool, device=qkv.device,
+            starts = torch.tensor(
+                [item[0] for item in members], device=qkv.device,
+                dtype=torch.long,
             )
-            for row, (start, length) in enumerate(members):
-                stop = start + length
-                q_group[row, :, :length] = qkv[start:stop, 0].transpose(0, 1)
-                k_group[row, :, :length] = qkv[start:stop, 1].transpose(0, 1)
-                v_group[row, :, :length] = qkv[start:stop, 2].transpose(0, 1)
-                group_valid[row, :length] = True
+            member_lengths = torch.tensor(
+                [item[1] for item in members], device=qkv.device,
+                dtype=torch.long,
+            )
+            offset = torch.arange(bucket, device=qkv.device)
+            gather_index = starts[:, None] + offset[None]
+            group_valid = offset[None] < member_lengths[:, None]
+            # Invalid bucket slots may point into the next sequence; mask them
+            # immediately after the gather so neither values nor gradients leak.
+            gathered = qkv[gather_index.clamp_max(qkv.shape[0] - 1)]
+            gathered = gathered * group_valid[:, :, None, None, None]
+            q_group, k_group, v_group = (
+                part.permute(0, 2, 1, 3) for part in gathered.unbind(2)
+            )
             result = F.scaled_dot_product_attention(
                 q_group, k_group, v_group,
                 attn_mask=group_valid[:, None, None, :],
                 dropout_p=dropout_p, is_causal=False,
             )
-            for row, (start, length) in enumerate(members):
-                attended[start:start + length] = result[
-                    row, :, :length
-                ].transpose(0, 1)
+            unpacked = result.permute(0, 2, 1, 3)
+            attended[gather_index[group_valid]] = unpacked[group_valid]
     return attended
 
 
