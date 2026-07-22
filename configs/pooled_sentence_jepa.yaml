@@ -31,7 +31,7 @@ model:
   target_mode: ema  # ema | visreg
   visreg_projections: 4096
   attention_backend: auto
-  sequence_packing: false
+  sequence_packing: true
 
 objective:
   prediction: 1.0
