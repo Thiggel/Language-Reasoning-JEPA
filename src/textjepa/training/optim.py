@@ -17,7 +17,17 @@ def build_optimizer(model, lr: float, weight_decay: float, betas=(0.9, 0.95)):
         {"params": decay, "weight_decay": weight_decay},
         {"params": no_decay, "weight_decay": 0.0},
     ]
-    return torch.optim.AdamW(groups, lr=lr, betas=betas)
+    # Fused AdamW removes many small elementwise CUDA launches. Keep the CPU
+    # path unchanged for tests and inference-only environments, and tolerate
+    # older cluster PyTorch builds that do not expose the fused argument.
+    kwargs = {"lr": lr, "betas": betas}
+    if any(parameter.is_cuda for group in groups for parameter in group["params"]):
+        kwargs["fused"] = True
+    try:
+        return torch.optim.AdamW(groups, **kwargs)
+    except TypeError:
+        kwargs.pop("fused", None)
+        return torch.optim.AdamW(groups, **kwargs)
 
 
 def cosine_warmup(step: int, total: int, warmup: int, floor: float = 0.05) -> float:

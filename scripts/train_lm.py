@@ -25,6 +25,7 @@ from textjepa.data.lm import (
 from textjepa.data.sampling import DistributedFreshEpochSampler, FreshEpochSampler
 from textjepa.models.lm_baseline import DecoderLM
 from textjepa.training.loggers import MetricLogger
+from textjepa.training.loading import performance_loader_kwargs
 from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.training.distributed import barrier, close, initialize, wrap
 from textjepa.training.scale import (
@@ -35,9 +36,9 @@ from textjepa.utils.checkpoint import build_dataset
 
 
 def rank_loss(model, batch, device, margin=1.0):
-    rt = batch["rank_tokens"].to(device)
-    rb = batch["rank_better"].to(device)
-    rf = batch["rank_from"].to(device)
+    rt = batch["rank_tokens"].to(device, non_blocking=True)
+    rb = batch["rank_better"].to(device, non_blocking=True)
+    rf = batch["rank_from"].to(device, non_blocking=True)
     B, K1, L = rt.shape
     lp = model.sequence_logprob(
         rt.reshape(B * K1, L), rf.repeat_interleave(K1)
@@ -53,15 +54,15 @@ def rank_loss(model, batch, device, margin=1.0):
 
 def lm_loss(model, batch, device):
     base_model = model.module if hasattr(model, "module") else model
-    tokens = batch["tokens"].to(device)
+    tokens = batch["tokens"].to(device, non_blocking=True)
     logits = model(tokens)[:, :-1]
     tgt = tokens[:, 1:]
     if "loss_mask" in batch:
         # loss_mask marks target tokens in the unshifted input sequence.
-        mask = batch["loss_mask"].to(device)[:, 1:] & (tgt != base_model.pad_id)
+        mask = batch["loss_mask"].to(device, non_blocking=True)[:, 1:] & (tgt != base_model.pad_id)
     else:
         pos = torch.arange(tgt.shape[1], device=device).unsqueeze(0)
-        mask = (pos >= (batch["prompt_len"].to(device).unsqueeze(1) - 1)) & (
+        mask = (pos >= (batch["prompt_len"].to(device, non_blocking=True).unsqueeze(1) - 1)) & (
             tgt != base_model.pad_id
         )
     ce = F.cross_entropy(
@@ -120,12 +121,16 @@ def main(cfg: DictConfig) -> None:
     train_loader = DataLoader(
         train_ds, batch_size=cfg.train.batch_size, sampler=train_sampler,
         num_workers=cfg.train.num_workers, collate_fn=coll, drop_last=True,
-        persistent_workers=cfg.train.num_workers > 0,
+        **performance_loader_kwargs(cfg.train.num_workers, device),
     )
     val_loader = DataLoader(
         make("val"), batch_size=cfg.train.batch_size,
         num_workers=int(cfg.train.get("val_num_workers", cfg.train.num_workers)),
         collate_fn=coll,
+        **performance_loader_kwargs(
+            int(cfg.train.get("val_num_workers", cfg.train.num_workers)),
+            device, persistent=False,
+        ),
     )
 
     raw_model = DecoderLM(

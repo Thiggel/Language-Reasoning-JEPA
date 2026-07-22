@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import math
-
 import torch
+import torch.nn.functional as F
 from torch import nn
-from torch.nn.utils.rnn import pad_sequence
 from torch.utils.checkpoint import checkpoint
 
 from textjepa.models.ema import EMATeacher
@@ -63,10 +61,13 @@ class CausalAttentionPooler(nn.Module):
             return value.reshape(batch, length, self.n_heads, self.head_dim).transpose(1, 2)
         query = heads(self.query(hidden + self.query_bias))
         key, value = heads(self.key(hidden)), heads(self.value(hidden))
-        score = torch.matmul(query, key.transpose(-1, -2)) / math.sqrt(self.head_dim)
         allowed = self._allowed(tokens, pad_id)[:, None]
-        score = score.masked_fill(~allowed, -torch.inf)
-        pooled = torch.matmul(score.softmax(-1), value)
+        # Let PyTorch dispatch to its fused scaled-dot-product-attention
+        # kernels.  The previous explicit QK^T/softmax implementation kept a
+        # full [B,H,L,L] score tensor alive and dominated memory at scale.
+        pooled = F.scaled_dot_product_attention(
+            query, key, value, attn_mask=allowed, dropout_p=0.0,
+        )
         pooled = pooled.transpose(1, 2).reshape(batch, length, dim)
         pooled = self.norm(self.output(pooled))
         return pooled.masked_fill(tokens.eq(pad_id).unsqueeze(-1), 0.0)
@@ -189,24 +190,24 @@ class PooledSentenceJEPA(nn.Module):
         batch, _, dim = states.shape
         lengths = (tokens.ne(self.pad_id).sum(1) - prompt_len).clamp_min(1)
         width = int(lengths.max())
-        prev = states.new_zeros(batch, width, dim)
-        target = targets.new_zeros(batch, width, dim)
-        ids = tokens.new_full((batch, width), self.pad_id)
-        valid = torch.zeros(batch, width, dtype=torch.bool, device=tokens.device)
-        prompt_state, final_target = [], []
-        for row in range(batch):
-            start, count = int(prompt_len[row]), int(lengths[row])
-            prev[row, :count] = states[row, start - 1:start - 1 + count]
-            target[row, :count] = targets[row, start:start + count]
-            ids[row, :count] = tokens[row, start:start + count]
-            valid[row, :count] = True
-            prompt_state.append(states[row, start - 1])
-            final_target.append(targets[row, start + count - 1])
+        offset = torch.arange(width, device=tokens.device)[None]
+        valid = offset < lengths[:, None]
+        target_index = prompt_len[:, None] + offset
+        safe_target_index = target_index.clamp_max(tokens.shape[1] - 1)
+        state_index = safe_target_index[..., None].expand(-1, -1, dim)
+        prev_index = (target_index - 1).clamp_max(tokens.shape[1] - 1)
+        prev_index = prev_index[..., None].expand(-1, -1, dim)
+        prev = states.gather(1, prev_index).masked_fill(~valid[..., None], 0.0)
+        target = targets.gather(1, state_index).masked_fill(~valid[..., None], 0.0)
+        ids = tokens.gather(1, safe_target_index).masked_fill(~valid, self.pad_id)
+        row = torch.arange(batch, device=tokens.device)
+        prompt_state = states[row, prompt_len - 1]
+        final_target = targets[row, prompt_len + lengths - 1]
         return {
             "prev": prev, "target": target, "action_ids": ids,
             "valid": valid, "lengths": lengths,
-            "prompt_state": torch.stack(prompt_state),
-            "final_target": torch.stack(final_target),
+            "prompt_state": prompt_state,
+            "final_target": final_target,
         }
 
     @staticmethod
@@ -231,23 +232,20 @@ class PooledSentenceJEPA(nn.Module):
         paths = first.unsqueeze(2)
         for horizon in range(2, limit + 1):
             anchors = width - horizon + 1
-            state_sequences, action_sequences = [], []
-            lengths = []
-            for row in range(batch):
-                for start in range(anchors):
-                    state_sequence = torch.cat([
-                        prev[row, :start + 1],
-                        paths[row, start, :horizon - 1],
-                    ], 0)
-                    action_sequence = actions[row, :start + horizon]
-                    state_sequences.append(state_sequence)
-                    action_sequences.append(action_sequence)
-                    lengths.append(len(state_sequence))
-            padded_states = pad_sequence(state_sequences, batch_first=True)
-            padded_actions = pad_sequence(action_sequences, batch_first=True)
-            sequence_valid = torch.arange(
-                padded_states.shape[1], device=prev.device
-            )[None] < torch.tensor(lengths, device=prev.device)[:, None]
+            starts = torch.arange(anchors, device=prev.device)
+            lengths = starts + horizon
+            # [B,A,W,D] is the same padded batch previously assembled by
+            # B*A Python loops, but constructed with vectorized views/writes.
+            padded_states = prev[:, None].expand(-1, anchors, -1, -1).clone()
+            for offset in range(horizon - 1):
+                padded_states[:, starts, starts + 1 + offset] = paths[:, :anchors, offset]
+            padded_states = padded_states.reshape(batch * anchors, width, dim)
+            padded_actions = actions[:, None].expand(
+                -1, anchors, -1, -1
+            ).reshape(batch * anchors, width, actions.shape[-1])
+            sequence_valid = torch.arange(width, device=prev.device)[None] < (
+                lengths.repeat(batch)[:, None]
+            )
             if checkpoint_predictor and torch.is_grad_enabled():
                 all_predictions = checkpoint(
                     predictor, padded_states, padded_actions, sequence_valid,
@@ -257,14 +255,11 @@ class PooledSentenceJEPA(nn.Module):
                 all_predictions = predictor(
                     padded_states, padded_actions, sequence_valid
                 )
-            gather = torch.tensor(lengths, device=prev.device) - 1
+            gather = lengths.repeat(batch) - 1
             endpoint = all_predictions[
-                torch.arange(len(lengths), device=prev.device), gather
+                torch.arange(batch * anchors, device=prev.device), gather
             ].reshape(batch, anchors, dim)
-            anchor_mask = torch.stack([
-                valid[:, start:start + horizon].all(1)
-                for start in range(anchors)
-            ], 1)
+            anchor_mask = valid.unfold(1, horizon, 1).all(-1)
             predictions.append(endpoint)
             shifted_targets.append(targets[:, horizon - 1:])
             masks.append(anchor_mask)

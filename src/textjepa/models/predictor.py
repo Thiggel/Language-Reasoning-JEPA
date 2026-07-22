@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import mlp
+from textjepa.models.layers import causal_attention_mask, mlp
 
 
 class ActionConditionedPredictor(nn.Module):
@@ -89,18 +89,12 @@ class CausalHistoryPredictor(nn.Module):
         if squeeze:
             states, actions = states.unsqueeze(1), actions.unsqueeze(1)
         length = states.shape[1]
-        causal = torch.triu(
-            torch.ones(length, length, dtype=torch.bool, device=states.device),
-            diagonal=1,
-        )
+        causal = causal_attention_mask(length, states.device)
         h = self.inp(torch.cat([states, actions], -1)) + self._positions(length)
-        key_padding = None
-        if valid is not None:
-            key_padding = ~valid
-            key_padding = key_padding.clone()
-            key_padding[key_padding.all(1), 0] = False
+        # Every caller supplies a contiguous valid prefix. Under causal
+        # attention, padding after that prefix cannot influence valid outputs.
         pred = self.out(self.norm(self.blocks(
-            h, mask=causal, src_key_padding_mask=key_padding
+            h, mask=causal, is_causal=True,
         )))
         if self.residual:
             pred = states + pred

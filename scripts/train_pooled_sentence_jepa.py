@@ -25,6 +25,7 @@ from textjepa.data.sampling import DistributedFreshEpochSampler, FreshEpochSampl
 from textjepa.data.semantic_lm import collate_semantic_lm
 from textjepa.models.pooled_sentence_jepa import PooledSentenceJEPA
 from textjepa.training.loggers import MetricLogger
+from textjepa.training.loading import performance_loader_kwargs
 from textjepa.training.optim import build_optimizer, cosine_warmup, ema_momentum
 from textjepa.training.distributed import barrier, close, initialize, wrap
 from textjepa.training.scale import (
@@ -50,8 +51,9 @@ def accumulation_group_size(
 
 def forward(model, batch, device):
     return model(
-        batch["tokens"].to(device), batch["prompt_len"].to(device),
-        batch["sentence_ends"].to(device),
+        batch["tokens"].to(device, non_blocking=True),
+        batch["prompt_len"].to(device, non_blocking=True),
+        batch["sentence_ends"].to(device, non_blocking=True),
     )
 
 
@@ -210,10 +212,14 @@ def main(cfg: DictConfig):
     train_loader = DataLoader(
         train_ds, batch_size=cfg.train.batch_size, sampler=sampler,
         num_workers=cfg.train.num_workers, collate_fn=collate, drop_last=True,
+        **performance_loader_kwargs(cfg.train.num_workers, distributed.device),
     )
     val_loader = DataLoader(
         val_ds, batch_size=int(cfg.train.get("eval_batch_size", cfg.train.batch_size)),
         num_workers=cfg.train.num_workers, collate_fn=collate,
+        **performance_loader_kwargs(
+            cfg.train.num_workers, distributed.device, persistent=False,
+        ),
     )
     raw_model = PooledSentenceJEPA(
         len(vocab), vocab.pad_id, period_id=vocab.token_to_id["."],

@@ -1,4 +1,5 @@
 from functools import partial
+import math
 
 import torch
 from torch.utils.data import DataLoader
@@ -56,6 +57,30 @@ def test_pooler_sentence_mask_excludes_previous_segment_but_global_does_not():
         global_b = global_pool(changed, tokens, pad_id=0)
     assert torch.allclose(local_a[:, 3:], local_b[:, 3:], atol=1e-5)
     assert not torch.allclose(global_a[:, 3:], global_b[:, 3:])
+
+
+def test_fused_pooler_matches_explicit_attention_reference():
+    torch.manual_seed(4)
+    hidden = torch.randn(2, 7, 16)
+    tokens = torch.tensor([
+        [2, 3, 10, 4, 5, 0, 0],
+        [7, 8, 9, 10, 4, 5, 6],
+    ])
+    pooler = CausalAttentionPooler(16, 4, "sentence", (10, 15)).eval()
+    with torch.no_grad():
+        actual = pooler(hidden, tokens, pad_id=0)
+        batch, length, dim = hidden.shape
+        reshape = lambda value: value.reshape(batch, length, 4, 4).transpose(1, 2)
+        query = reshape(pooler.query(hidden + pooler.query_bias))
+        key = reshape(pooler.key(hidden))
+        value = reshape(pooler.value(hidden))
+        score = query @ key.transpose(-1, -2) / math.sqrt(4)
+        allowed = pooler._allowed(tokens, 0)[:, None]
+        pooled = score.masked_fill(~allowed, -torch.inf).softmax(-1) @ value
+        pooled = pooled.transpose(1, 2).reshape(batch, length, dim)
+        expected = pooler.norm(pooler.output(pooled))
+        expected = expected.masked_fill(tokens.eq(0).unsqueeze(-1), 0.0)
+    assert torch.allclose(actual, expected, atol=1e-6, rtol=1e-5)
 
 
 def test_pooled_states_and_targets_are_strictly_causal():

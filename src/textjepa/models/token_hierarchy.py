@@ -8,7 +8,7 @@ from torch import nn
 from textjepa.models.action import MacroActionModel
 from textjepa.models.ema import EMATeacher
 from textjepa.models.heads import ValueHead
-from textjepa.models.layers import build_causal_attention_mask
+from textjepa.models.layers import build_causal_attention_mask, causal_attention_mask
 
 
 class CausalTokenStateEncoder(nn.Module):
@@ -52,10 +52,9 @@ class CausalTokenStateEncoder(nn.Module):
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         _, length = tokens.shape
-        valid = tokens.ne(self.pad_id)
         x = self.tok(tokens) + self._positions(length)
-        mask = build_causal_attention_mask(valid, self.n_heads)
-        return self.norm(self.blocks(x, mask=mask))
+        mask = causal_attention_mask(length, tokens.device)
+        return self.norm(self.blocks(x, mask=mask, is_causal=True))
 
 
 class CausalLatentPredictor(nn.Module):

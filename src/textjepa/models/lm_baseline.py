@@ -11,7 +11,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import build_causal_attention_mask
+from textjepa.models.layers import causal_attention_mask
 
 
 class DecoderLM(nn.Module):
@@ -45,9 +45,11 @@ class DecoderLM(nn.Module):
         """[B, L] -> [B, L, V] next-token logits."""
         B, L = tokens.shape
         x = self.tok(tokens) + self.pos[:, :L]
-        valid = tokens != self.pad_id
-        mask = build_causal_attention_mask(valid, self.n_heads)
-        x = self.blocks(x, mask=mask)
+        # Sequences are right-padded. Valid positions cannot attend to future
+        # padding under a causal mask, and padded outputs never enter the loss.
+        # A shared 2-D mask avoids allocating [B*H,L,L].
+        mask = causal_attention_mask(L, tokens.device)
+        x = self.blocks(x, mask=mask, is_causal=True)
         return self.head(self.norm(x))
 
     @torch.no_grad()

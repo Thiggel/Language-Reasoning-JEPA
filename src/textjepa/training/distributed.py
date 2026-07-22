@@ -24,6 +24,13 @@ class DistributedContext:
 
 def initialize(requested_device: str) -> DistributedContext:
     world = int(os.environ.get("WORLD_SIZE", "1"))
+    if str(requested_device).startswith("cuda") and torch.cuda.is_available():
+        # "high" permits TensorFloat-32 for float32 matrix multiplications on
+        # Ampere+ while BF16 training remains BF16. Override for strict audits
+        # with TEXTJEPA_MATMUL_PRECISION=highest.
+        torch.set_float32_matmul_precision(
+            os.environ.get("TEXTJEPA_MATMUL_PRECISION", "high")
+        )
     if world > 1:
         local_rank = int(os.environ["LOCAL_RANK"])
         use_cuda = str(requested_device).startswith("cuda") and torch.cuda.is_available()

@@ -78,3 +78,14 @@ def build_causal_attention_mask(
     dead = ~allowed.any(dim=-1)
     allowed[..., 0] |= dead
     return (~allowed).repeat_interleave(n_heads, dim=0)
+
+
+def causal_attention_mask(length: int, device: torch.device) -> torch.Tensor:
+    """Compact causal mask shared across a batch (True = blocked).
+
+    For right-padded token streams no key-padding mask is required: a valid
+    query can only see earlier valid tokens, while padded query outputs are
+    discarded.  Keeping this mask two-dimensional avoids the former
+    B*H-fold expansion and leaves attention eligible for fused SDPA kernels.
+    """
+    return torch.ones(length, length, dtype=torch.bool, device=device).triu(1)

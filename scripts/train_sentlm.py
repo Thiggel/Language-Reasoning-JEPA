@@ -23,6 +23,7 @@ from textjepa.data.lm import (
 from textjepa.data.sampling import DistributedFreshEpochSampler, FreshEpochSampler
 from textjepa.models.sent_lm import SentenceLM
 from textjepa.training.loggers import MetricLogger
+from textjepa.training.loading import performance_loader_kwargs
 from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.training.distributed import barrier, close, initialize, wrap as ddp_wrap
 from textjepa.training.scale import (
@@ -65,13 +66,18 @@ def main(cfg: DictConfig) -> None:
     train_loader = DataLoader(
         train_ds, batch_size=cfg.train.batch_size,
         sampler=train_sampler, num_workers=cfg.train.num_workers, collate_fn=coll,
-        drop_last=True, persistent_workers=cfg.train.num_workers > 0,
+        drop_last=True,
+        **performance_loader_kwargs(cfg.train.num_workers, device),
     )
     val_loader = DataLoader(
         dataset_wrap(build_dataset(cfg, vocab, split="val")),
         batch_size=cfg.train.batch_size,
         num_workers=int(cfg.train.get("val_num_workers", cfg.train.num_workers)),
         collate_fn=coll,
+        **performance_loader_kwargs(
+            int(cfg.train.get("val_num_workers", cfg.train.num_workers)),
+            device, persistent=False,
+        ),
     )
     raw_model = SentenceLM(
         vocab_size=len(vocab), pad_id=vocab.pad_id, **cfg.model
