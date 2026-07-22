@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-visreg-accumulated-step-smoke",
+  "decision": "Measure matched ten-microbatch optimizer updates at the largest fitting microbatch so the full-run ETA includes the actual gradient-accumulation schedule.",
+  "git_commit": "a450eaea7e4088937c26a725f75a4582210ba2f6",
+  "jobs": [
+    {
+      "id": "ema-vicreg-mb24-acc10",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Accumulation-aware EMA plus VICReg full-objective timing.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "24", "10"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "visreg-mb24-acc10",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Accumulation-aware VISReg full-objective timing.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg", "24", "10"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}

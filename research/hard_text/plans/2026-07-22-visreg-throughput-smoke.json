@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-visreg-throughput-smoke",
+  "decision": "Measure the full pooled-sentence JEPA step with GAR using matched EMA+VICReg and VISReg targets, and find the largest practical VISReg microbatch on an A100.",
+  "git_commit": "bef5a53bdd5e7c598ea7feedbf2ef312c006c1f2",
+  "jobs": [
+    {
+      "id": "visreg-control-ema-vicreg-mb2",
+      "cluster": "Lise",
+      "partition": "gpu-a100:test",
+      "gpus": 1,
+      "cpus": 8,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 60,
+      "purpose": "Matched optimized full-objective EMA plus VICReg timing control.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "2"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "visreg-online-mb2",
+      "cluster": "Lise",
+      "partition": "gpu-a100:test",
+      "gpus": 1,
+      "cpus": 8,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 60,
+      "purpose": "Matched-microbatch VISReg timing and memory comparison.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg", "2"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "visreg-online-mb4",
+      "cluster": "Lise",
+      "partition": "gpu-a100:test",
+      "gpus": 1,
+      "cpus": 8,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 60,
+      "purpose": "Test whether removing the target encoder permits a larger VISReg microbatch.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg", "4"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "visreg-online-mb8",
+      "cluster": "Lise",
+      "partition": "gpu-a100:test",
+      "gpus": 1,
+      "cpus": 8,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 60,
+      "purpose": "Upper microbatch/memory probe for VISReg on an 80 GB A100.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg", "8"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}

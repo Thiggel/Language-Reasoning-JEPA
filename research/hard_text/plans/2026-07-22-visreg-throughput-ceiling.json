@@ -1,0 +1,65 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-visreg-throughput-ceiling",
+  "decision": "Compare EMA+VICReg and VISReg at identical larger microbatches to establish their optimized A100 throughput and memory ceiling.",
+  "git_commit": "bef5a53bdd5e7c598ea7feedbf2ef312c006c1f2",
+  "jobs": [
+    {
+      "id": "ema-vicreg-mb8",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Matched larger-batch EMA plus VICReg control.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "8"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "ema-vicreg-mb16",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "EMA plus VICReg throughput and memory ceiling probe.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "16"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "ema-vicreg-mb24",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "EMA plus VICReg upper memory probe.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "24"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "ema-vicreg-mb32",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "EMA plus VICReg maximum A100 memory probe.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "32"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "visreg-mb16",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "VISReg throughput and memory ceiling probe.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg", "16"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "visreg-mb24",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "VISReg upper memory probe.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg", "24"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "visreg-mb32",
+      "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1,
+      "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "VISReg maximum A100 memory probe.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg", "32"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}
