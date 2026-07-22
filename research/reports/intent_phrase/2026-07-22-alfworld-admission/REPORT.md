@@ -2,7 +2,7 @@
 
 ## The one-sentence answer
 
-The real ALFWorld engine now collects and exactly replays non-oracle intent trajectories, while two of four model process gates have passed and two remain stuck in external queues.
+The real ALFWorld engine now collects and exactly replays non-oracle intent trajectories, and all four model process pathways have passed after two queue-delayed paths were recovered on Grünau.
 
 ## First, the idea in everyday language
 
@@ -16,7 +16,7 @@ ALFWorld is the paper campaign’s interactive, non-arithmetic domain. It tests 
 
 We installed the official text-only ALFWorld 0.5.0 engine from a pinned source revision and downloaded its official game files. One training, one seen-validation, and one unseen-test game were collected with the hand-coded expert. Every factual step received one recoverable alternative action with up to four teacher continuation observations. Collection used the privileged legal-action list only for labels. Interactive replay regenerated candidate actions from the initial room description and accumulated observation history.
 
-Separately, the four earlier model process gates asked only whether each implementation could train for two epochs, reload a checkpoint, and emit finite closed-loop metrics. Geometry JEPA and recurrent sentence prediction completed. Recurrent token prediction on Alex and recurrent sentence-latent prediction on Grete are still pending and have produced no result.
+Separately, the four model process gates asked only whether each implementation could train for two epochs, reload a checkpoint, and emit finite closed-loop metrics. Geometry JEPA and recurrent sentence prediction completed in the original recovery round. Recurrent token prediction and recurrent sentence-latent prediction remained pending externally, then completed in duplicate recovery jobs on free Grünau GPUs.
 
 ## What a fair comparison means here
 
@@ -32,7 +32,8 @@ At evaluation, the model sees natural-language history, the goal, and a fixed-gr
 | Dynamic catalogue replay | 1 unseen episode, 16 steps | 100% expert recall | No legal menu was used by the evaluator |
 | Geometry JEPA process gate | 1 run | completed | Training, checkpoint reload, and metrics path work |
 | Recurrent sentence model process gate | 1 run | completed | Training, checkpoint reload, and metrics path work |
-| Recurrent token / sentence-latent gates | 2 runs | pending | Scheduler delay; no scientific result exists |
+| Recurrent token / sentence-latent gates | 2 recovery runs | completed | Training, checkpoint reload, and finite metrics paths work |
+| Unseen ALFWorld schema recovery | 4 episodes, 67 steps | completed | Raw oracle menus compile to feasibility only within the non-oracle catalogue; exact replay remains 100% |
 
 These are engineering-validity observations, not estimates of model quality. The completed two-epoch models solved zero validation episodes, which is unsurprising at this scale and is not used to rank methods.
 
@@ -50,11 +51,11 @@ Fast Downward maps a private planner library for each engine and does not releas
 
 ## What we can conclude
 
-We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. We also observe that two core model pathways have passed their process gates. This supports bounded ALFWorld data gates and duplicate Grünau process recoveries.
+We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. We also observe that all four core model pathways have passed their process gates. The first four-game unseen gate exposed and then passed a domain-neutral schema repair: the full privileged legal menu stays raw, while compiled feasibility is defined only over candidates the model actually receives.
 
 ## What we cannot conclude
 
-We cannot yet claim ALFWorld dataset admission, because split-scale identity checks, tiny-set overfitting, random and oracle bounds, action-shuffle degradation, and model closed-loop success remain untested. We cannot compare model quality from two-epoch zero-success process runs. The 36-alternative smoke sample is too small to estimate recovery coverage. The two scheduler-pending gates are neither failures nor passes.
+We cannot yet claim ALFWorld dataset admission, because split-scale identity checks, tiny-set overfitting, random and oracle bounds, action-shuffle degradation, and model closed-loop success remain untested. We cannot compare model quality from two-epoch zero-success process runs. The smoke and four-game unseen samples are too small to estimate recovery coverage. The external Alex and Grete duplicates remain scheduler-pending, but they are no longer needed for the process decision.
 
 ## What happens next
 

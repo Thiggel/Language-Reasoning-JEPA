@@ -6,7 +6,7 @@
   "created_at": "2026-07-22T12:16:07+02:00",
   "status": "validation_pending",
   "decision": "Run three bounded ALFWorld collection-replay gates and recover only the two scheduler-pending model process gates on Gruenau.",
-  "plain_summary": "Official ALFWorld collection, counterfactual branching, and non-oracle interactive replay now pass smoke tests; full model sweeps remain blocked on data admission and two pending process gates.",
+  "plain_summary": "All four model pathways now pass their process gates; official ALFWorld collection, counterfactual branching, and non-oracle interactive replay pass smoke and unseen recovery checks, while full model sweeps remain blocked on dataset admission.",
   "report": "REPORT.md",
   "review_required": false
 }
