@@ -415,16 +415,24 @@ def compile_alfworld_trace(record: dict, split: str) -> ObservedActionEpisode:
     transitions = []
     for index, step in enumerate(record["steps"]):
         catalogue = tuple(str(value) for value in step["catalogue"])
-        available = tuple(str(value) for value in step["admissible_commands"])
+        oracle_available = tuple(
+            str(value) for value in step["admissible_commands"]
+        )
         action = str(step["expert_action"])
         if action not in catalogue:
             raise ValueError(
                 f"step {index}: non-oracle catalogue misses expert action"
             )
-        if action not in available:
+        if action not in oracle_available:
             raise ValueError(
                 f"step {index}: expert action is not ALFWorld-admissible"
             )
+        # The domain-neutral schema defines ``available`` over the supplied
+        # candidate catalogue. Preserve the complete privileged menu only in
+        # the raw replay record and compile its intersection for supervision.
+        available = tuple(
+            value for value in oracle_available if value in catalogue
+        )
         counterfactuals = tuple(
             Counterfactual.from_dict(value)
             for value in step.get("counterfactuals", [])

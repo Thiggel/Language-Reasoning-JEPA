@@ -31,9 +31,16 @@ def _trace():
 
 
 def test_alfworld_trace_keeps_nonoracle_catalogue_separate():
-    episode = compile_alfworld_trace(_trace(), "train")
+    record = _trace()
+    record["steps"][0]["admissible_commands"].append(
+        "oracle command outside observed catalogue"
+    )
+    episode = compile_alfworld_trace(record, "train")
     assert "look" in episode.transitions[1].catalogue
     assert "look" not in episode.transitions[1].available
+    assert "oracle command outside observed catalogue" not in (
+        episode.transitions[0].available
+    )
     assert episode.goal == "put the apple on the table"
 
 
