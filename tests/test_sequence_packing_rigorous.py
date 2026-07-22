@@ -2,13 +2,8 @@ import copy
 
 import pytest
 import torch
-import torch.nn.functional as F
 
-from textjepa.models.layers import (
-    _pad_flex_qkv,
-    encoder_stack,
-    packed_encoder_forward,
-)
+from textjepa.models.layers import encoder_stack, packed_encoder_forward
 
 
 def _prefix_mask(lengths, width):
@@ -115,21 +110,6 @@ def test_packed_outputs_have_zero_cross_example_input_gradient():
     assert gradient[2].eq(0).all()
     assert gradient[1, 4:].eq(0).all()
     assert gradient[1, :4].abs().sum() > 0
-
-
-@pytest.mark.parametrize("head_dim", [1, 7, 10, 64, 104, 128])
-def test_flex_head_padding_preserves_attention_math(head_dim):
-    torch.manual_seed(139 + head_dim)
-    q = torch.randn(2, 3, 5, head_dim, dtype=torch.float64)
-    k = torch.randn(2, 3, 5, head_dim, dtype=torch.float64)
-    v = torch.randn(2, 3, 5, head_dim, dtype=torch.float64)
-    expected = F.scaled_dot_product_attention(q, k, v, scale=head_dim ** -0.5)
-    padded_q, padded_k, padded_v = _pad_flex_qkv(q, k, v, head_dim)
-    actual = F.scaled_dot_product_attention(
-        padded_q, padded_k, padded_v, scale=head_dim ** -0.5
-    )[..., :head_dim]
-    assert actual.shape == expected.shape
-    assert torch.allclose(actual, expected, atol=2e-12, rtol=2e-12)
 
 
 def test_production_head_width_matches_dense_on_cpu_reference():

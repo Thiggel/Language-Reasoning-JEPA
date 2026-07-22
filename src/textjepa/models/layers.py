@@ -27,25 +27,6 @@ def _external_flash_functions():
     return fa4, fa2
 
 
-@lru_cache(maxsize=16)
-def _compiled_flex_attention(capacity: int):
-    """One static fused FlexAttention graph per power-of-two token bucket."""
-    from torch.nn.attention.flex_attention import flex_attention
-    # PyTorch 2.5 cannot lower this FlexAttention kernel with a symbolic token
-    # dimension on Ada. Power-of-two token buckets bound slack below 2x while
-    # keeping the number of compiled kernels logarithmic.
-    return torch.compile(flex_attention, dynamic=False)
-
-
-def _pad_flex_qkv(q, k, v, head_dim: int):
-    """Pad only the kernel width; preserve the model's attention geometry."""
-    kernel_dim = 1 << (int(head_dim) - 1).bit_length()
-    if kernel_dim == head_dim:
-        return q, k, v
-    amount = kernel_dim - head_dim
-    return tuple(F.pad(part, (0, amount)) for part in (q, k, v))
-
-
 class FlashMultiheadAttention(nn.MultiheadAttention):
     """Self-attention dispatched to FA4, FA2, or PyTorch fused SDPA.
 
@@ -207,21 +188,55 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             )
             self.last_backend = "flash_attn_2_packed"
         elif query.is_cuda:
-            if self.dropout:
-                raise ValueError("FlexAttention packed path requires dropout=0")
-            if block_mask is None:
-                raise ValueError("packed torch attention requires a block mask")
-            q, k, v = (part.transpose(0, 1).unsqueeze(0) for part in qkv.unbind(1))
-            # PyTorch 2.5 FlexAttention requires a power-of-two head width.
-            # Padding projected features is algebraically neutral provided we
-            # retain the original attention scale and slice the values back.
-            q, k, v = _pad_flex_qkv(q, k, v, self.head_dim)
-            attended = _compiled_flex_attention(query.shape[0])(
-                q, k, v, block_mask=block_mask,
-                scale=self.head_dim ** -0.5,
-            )[..., :self.head_dim]
-            attended = attended.squeeze(0).transpose(0, 1)
-            self.last_backend = "torch_flex_packed"
+            # Portable training fallback: keep the residual/MLP stream flat,
+            # but batch attention by power-of-two sequence length. This uses
+            # native fused SDPA, bounds attention slack below 2x, and never
+            # constructs a cross-example score. External FA2/FA4 above remains
+            # the completely padding-free path when installed.
+            lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).tolist()
+            groups: dict[int, list[tuple[int, int]]] = {}
+            for start, length in zip(cu_seqlens[:-1].tolist(), lengths):
+                bucket = max(1, 1 << (int(length) - 1).bit_length())
+                groups.setdefault(bucket, []).append((int(start), int(length)))
+            attended = qkv.new_zeros(
+                query.shape[0], self.num_heads, self.head_dim
+            )
+            context = nullcontext()
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+            allowed = (
+                [SDPBackend.FLASH_ATTENTION]
+                if backend == "torch_flash" else
+                [SDPBackend.FLASH_ATTENTION,
+                 SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+            )
+            context = sdpa_kernel(allowed)
+            with context:
+                for bucket, members in groups.items():
+                    shape = (len(members), self.num_heads, bucket, self.head_dim)
+                    q_group = qkv.new_zeros(shape)
+                    k_group = qkv.new_zeros(shape)
+                    v_group = qkv.new_zeros(shape)
+                    group_valid = torch.zeros(
+                        len(members), bucket, dtype=torch.bool,
+                        device=query.device,
+                    )
+                    for row, (start, length) in enumerate(members):
+                        stop = start + length
+                        q_group[row, :, :length] = qkv[start:stop, 0].transpose(0, 1)
+                        k_group[row, :, :length] = qkv[start:stop, 1].transpose(0, 1)
+                        v_group[row, :, :length] = qkv[start:stop, 2].transpose(0, 1)
+                        group_valid[row, :length] = True
+                    result = F.scaled_dot_product_attention(
+                        q_group, k_group, v_group,
+                        attn_mask=group_valid[:, None, None, :],
+                        dropout_p=self.dropout if self.training else 0.0,
+                        is_causal=False,
+                    )
+                    for row, (start, length) in enumerate(members):
+                        attended[start:start + length] = result[
+                            row, :, :length
+                        ].transpose(0, 1)
+            self.last_backend = "torch_bucketed_packed"
         else:
             # Exact, deliberately simple CPU fallback for tests and debugging.
             pieces = []
@@ -273,38 +288,6 @@ def packed_encoder_forward(
     actual_tokens = flat.shape[0]
     cu = F.pad(lengths.cumsum(0), (1, 0))
     maximum = int(lengths.max().item())
-    block_mask = None
-    first_attention = encoder.layers[0].self_attn if encoder.layers else None
-    if flat.is_cuda and isinstance(first_attention, FlashMultiheadAttention):
-        if first_attention._select_backend(flat) in {"torch", "torch_flash"}:
-            from torch.nn.attention.flex_attention import create_block_mask
-            capacity = max(128, 1 << (actual_tokens - 1).bit_length())
-            sequence_ids = torch.empty(
-                (capacity,), dtype=torch.int32, device=flat.device
-            )
-            sequence_ids[:actual_tokens] = torch.repeat_interleave(
-                torch.arange(len(lengths), device=flat.device, dtype=torch.int32),
-                lengths.long(),
-            )
-            if capacity > actual_tokens:
-                # Every slack token is its own isolated dummy sequence. It can
-                # neither read real examples nor become a key for them.
-                sequence_ids[actual_tokens:] = torch.arange(
-                    len(lengths), len(lengths) + capacity - actual_tokens,
-                    device=flat.device, dtype=torch.int32,
-                )
-                flat = torch.cat([
-                    flat,
-                    flat.new_zeros(capacity - actual_tokens, flat.shape[-1]),
-                ])
-
-            def same_sequence(batch, head, query_index, key_index):
-                return sequence_ids[query_index] == sequence_ids[key_index]
-
-            block_mask = create_block_mask(
-                same_sequence, B=1, H=None, Q_LEN=capacity, KV_LEN=capacity,
-                device=flat.device, _compile=False,
-            )
     for layer in encoder.layers:
         if not layer.norm_first:
             raise ValueError("packed encoder currently requires norm_first=True")
@@ -313,7 +296,7 @@ def packed_encoder_forward(
                 "packed encoder requires a fused attention backend, not 'torch'"
             )
         attended = layer.self_attn.forward_packed(
-            layer.norm1(flat), cu, maximum, block_mask=block_mask
+            layer.norm1(flat), cu, maximum
         )
         flat = flat + layer.dropout1(attended)
         flat = flat + layer._ff_block(layer.norm2(flat))
