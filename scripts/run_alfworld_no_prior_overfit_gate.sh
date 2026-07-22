@@ -6,7 +6,7 @@ if [[ -z "${RUN_DIR:-}" || -z "${TEXTJEPA_ROOT:-}" ]]; then
   exit 2
 fi
 python_bin=${1:?training python}
-family=${2:?geometry_jepa, token_lm, sentence_lm, or sentence_latent_lm}
+family=${2:?geometry_jepa or a token/sentence LM family}
 seed=${3:?seed}
 learning_rate=${4:?learning rate}
 epochs=${5:?epochs}
@@ -42,20 +42,33 @@ case "$family" in
     eval_kind=jepa
     eval_extra=(--jepa-candidate-mode full --beam-width 4)
     ;;
-  token_lm)
+  token_lm|looped_token_lm)
+    experiment=paper_token_lm
+    eval_extra=()
+    if [[ "$family" == looped_token_lm ]]; then
+      experiment=paper_token_lm_looped
+      eval_extra=(--eval-loops 4)
+    fi
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train_lm.py" \
-      +experiment=paper_token_lm "${common[@]}" \
+      "+experiment=$experiment" "${common[@]}" \
       model.d_model=64 model.n_layers=2 model.n_heads=4 \
       model.ff_mult=2 model.max_len=1536
     eval_kind=token_lm
-    eval_extra=()
     ;;
-  sentence_lm|sentence_latent_lm)
+  sentence_lm|sentence_latent_lm|looped_sentence_lm|looped_sentence_latent_lm)
     experiment=paper_sentence_lm
     score=decoder
-    if [[ "$family" == sentence_latent_lm ]]; then
+    eval_extra=()
+    if [[ "$family" == sentence_latent_lm || "$family" == looped_sentence_latent_lm ]]; then
       experiment=paper_sentence_latent_lm
       score=latent
+    fi
+    if [[ "$family" == looped_sentence_lm ]]; then
+      experiment=paper_sentence_lm_looped
+      eval_extra=(--eval-loops 4)
+    elif [[ "$family" == looped_sentence_latent_lm ]]; then
+      experiment=paper_sentence_latent_lm_looped
+      eval_extra=(--eval-loops 4)
     fi
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train_sentlm.py" \
       "+experiment=$experiment" "${common[@]}" \
@@ -64,7 +77,7 @@ case "$family" in
       model.dec_heads=4 model.ff_mult=2 model.max_chunk_len=192 \
       model.max_chunks=128
     eval_kind=sentence_lm
-    eval_extra=(--sentence-score "$score")
+    eval_extra+=(--sentence-score "$score")
     ;;
   *)
     echo "unknown model family: $family" >&2
