@@ -80,7 +80,7 @@ case "$kind" in
       "train.gradient_accumulation_steps=$accumulation" model.d_state=768 \
       model.encoder_layers=10 model.pool_heads=12 model.predictor_layers=6 \
       model.n_heads=12 model.ff_mult=4 model.max_len=768 model.d_action=128 \
-      model.dense_depth=2 model.dense_checkpoint=true \
+      model.dense_depth=1 model.dense_checkpoint=false \
       model.pooling_scope=sentence model.use_prefix_decoder=false \
       model.sequence_packing=true model.attention_backend=auto \
       "model.use_token_prior=$use_prior" "objective.token_prior=$prior_weight" \

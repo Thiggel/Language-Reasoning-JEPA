@@ -16,7 +16,7 @@ model:
   ff_mult: 4
   max_len: 768
   d_action: 128
-  dense_depth: 4
+  dense_depth: 1
   dense_checkpoint: false
   pooling_scope: sentence
   use_token_prior: true
