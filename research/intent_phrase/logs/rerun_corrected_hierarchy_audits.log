@@ -1,0 +1,130 @@
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d8_base/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.5248509267043588,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.41540572574476675,
+  "relative_reduction": 0.09460032981606625,
+  "high_value_mae": 3.4815936692834946
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d8_cf/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.5220639577025601,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.4041978568025634,
+  "relative_reduction": 0.0994080203176071,
+  "high_value_mae": 3.4831772042038747
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d8_full/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.5220785368341424,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.4042269109632619,
+  "relative_reduction": 0.09938287043169747,
+  "high_value_mae": 2.1924908684667113
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d32_base/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.7347452529849791,
+  "recursive_low_l1": 0.579470343691492,
+  "high_to_low_rollout_l1": 0.703567090866108,
+  "relative_reduction": -0.26796006212210055,
+  "high_value_mae": 3.344403830495952
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d32_cf/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.5083523538510504,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.38564622656464426,
+  "relative_reduction": 0.12306136829357928,
+  "high_value_mae": 3.3591522063634627
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d32_cf_v/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.508348677957073,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.38564610810321726,
+  "relative_reduction": 0.12306770943355916,
+  "high_value_mae": 2.2167974397857932
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d32_cf_q/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.508348677957073,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.38564610810321726,
+  "relative_reduction": 0.12306770943355916,
+  "high_value_mae": 3.3591747595046364
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d32_cf_qrank/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.508348677957073,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.38564610810321726,
+  "relative_reduction": 0.12306770943355916,
+  "high_value_mae": 3.3591747595046364
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d32_cf_vqrank/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.508348677957073,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.38564610810321726,
+  "relative_reduction": 0.12306770943355916,
+  "high_value_mae": 2.2167974397857932
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+note: initializing modules added after this run: ['core.action_support_head.net.0.weight', 'core.action_support_head.net.0.bias', 'core.action_support_head.net.1.0.weight', 'core.action_support_head.net.1.0.bias', 'core.action_support_head.net.1.2.weight', 'core.action_support_head.net.1.2.bias']
+{
+  "checkpoint": "runs/intent_hfix_d32_full/best.pt",
+  "examples": 640,
+  "valid_windows": 797,
+  "direct_high_l1": 0.508348677957073,
+  "recursive_low_l1": 0.5796897701517103,
+  "high_to_low_rollout_l1": 0.38564610810321726,
+  "relative_reduction": 0.12306770943355916,
+  "high_value_mae": 2.2167974397857932
+}

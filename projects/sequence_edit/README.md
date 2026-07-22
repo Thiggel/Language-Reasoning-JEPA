@@ -35,6 +35,7 @@ action use.
 Current entry points:
 
 - [`STATUS.md`](STATUS.md)
+- [`replacement-only interface audit and original-scale design`](../../research/cycles/sequence_edit/2026-07-22-replacement-only-interface-audit.md)
 - [`structured-token restart`](../../research/cycles/sequence_edit/2026-07-17-structured-token-edit-restart.md)
 - [`faithful-token cycle`](../../research/cycles/sequence_edit/2026-07-16-faithful-token-hierarchy.md)
 - [`data and counterfactual pilot report`](../../research/reports/sequence_edit/2026-07-17-faithful-edit-data-counterfactual-pilot/REPORT.md)

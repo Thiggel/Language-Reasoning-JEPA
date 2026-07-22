@@ -1,3 +1,3 @@
 # Current cycle
 
-`research/cycles/intent_phrase/2026-07-16-gar-geometry-screen.md`
+`research/cycles/intent_phrase/2026-07-21-token-prerequisite-support.md`

@@ -33,5 +33,6 @@ token_relative_radius: 32
 # examples, predictions, loss weighting, or optimizer-step schedule.
 counterfactual_encode_chunk_states: 64
 gar_horizon: 1
+gar_teacher: latent_distance
 ldad_decoder_layers: 2
 ldad_max_len: 12

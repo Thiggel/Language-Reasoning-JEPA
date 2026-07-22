@@ -1,0 +1,64 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\title{Making a learned intent catalogue executable}
+\subtitle{Token-level prerequisite support, 21 July 2026}
+\author{TextJEPA research cycle}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{frame}{The everyday problem: do I have the prerequisite?}
+  \begin{itemize}
+    \item The controller sees a shuffled box of instruction cards called intent phrases.
+    \item An instruction is executable only after its prerequisite computations have run.
+    \item Compressing each earlier instruction into one vector can blur the exact entity names.
+    \item We therefore let candidate words attend directly to words in the executed intent history.
+    \item Success here means proposing executable actions without consulting a hidden feasible-action menu.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Token history repairs the proposal interface}
+  \centering
+  \begin{tabular}{lrrr}
+    \toprule
+    Controller & Strict & Plus two & Invalid\\
+    \midrule
+    Token head, history masked & .025 & .025 & .950\\
+    Phrase-pooled history & .083 & .358 & .483\\
+    Token-level history & \textbf{.175} & \textbf{.717} & \textbf{.158}\\
+    \bottomrule
+  \end{tabular}
+  \vspace{1em}
+
+  \begin{minipage}{0.9\linewidth}
+  \small What to notice: token history roughly doubles the best observed
+  phrase-pooled length-nine success and cuts invalid attempts by about two
+  thirds. Why it matters: JEPA simulation can now be tested behind a viable,
+  non-oracle proposal interface.
+  \end{minipage}
+\end{frame}
+
+\begin{frame}{The scientific boundary is essential}
+  \begin{itemize}
+    \item These are 120-episode, one-training-seed validation results.
+    \item Every controller sees the same complete, shuffled, outcome-free intent catalogue.
+    \item The negative control has equal token-head capacity but cannot see executed intent tokens.
+    \item Selection was prior-only: JEPA consequence reranking had weight zero.
+    \item The result supports lexical prerequisite tracking, not a claim that latent simulation improved planning.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Next decision: does simulation add value after support is fixed?}
+  \begin{itemize}
+    \item Freeze the learning-rate-$10^{-3}$ token-support checkpoint and the action catalogue.
+    \item Compare prior-only selection with one-step and deeper causal JEPA reranking.
+    \item Hold top-M, beam width, support weight, episodes, and problem order fixed.
+    \item Scale only if reranking raises success without restoring invalid actions.
+    \item If reranking hurts, separate value error from recursive world-model drift before retraining.
+  \end{itemize}
+\end{frame}
+
+\end{document}

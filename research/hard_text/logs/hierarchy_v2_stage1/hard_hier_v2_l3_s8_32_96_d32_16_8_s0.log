@@ -1,0 +1,156 @@
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+data:
+  name: igsm
+  modulus: 23
+  n_vars_range:
+  - 14
+  - 24
+  leaf_prob: 0.35
+  steps_range:
+  - 10
+  - 18
+  distractor_prob: 0.15
+  max_distractors: 3
+  train_size: 12000
+  val_size: 1000
+  test_size: 5000
+  train_seed: 1
+  val_seed: 2
+  test_seed: 3
+  shuffle_actions: false
+  n_alt: 0
+run_name: hard_hier_v2_l3_s8_32_96_d32_16_8_s0
+seed: 0
+device: cuda:0
+model:
+  d_model: 256
+  encoder_layers: 4
+  predictor_layers: 2
+  n_heads: 8
+  ff_mult: 4
+  max_len: 768
+  d_action: 64
+  level_spans:
+  - 8
+  - 32
+  - 96
+  level_dims:
+  - 32
+  - 16
+  - 8
+  variational_levels:
+  - false
+  - false
+  - false
+  concat_width: 8
+  low_dense_depth: 4
+  high_dense_depth: 4
+objective:
+  low_prediction: 1.0
+  low_dense: 1.0
+  low_value: 0.25
+  goal_prediction: 1.0
+  high_prediction: 1.0
+  high_dense: 1.0
+  reachability: 0.25
+  high_value: 1.0
+  macro_prior: 0.05
+  support: 0.1
+  vicreg: 1.0
+  covariance: 0.04
+  dense_discount: 0.7
+train:
+  batch_size: 24
+  num_workers: 8
+  epochs: 5
+  lr: 0.0003
+  weight_decay: 0.05
+  warmup_steps: 300
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 50
+  eval_batches: 30
+
+[epoch 0] goal_prediction=0.0009  level1_action_rank=13.5833  level1_action_std=0.7719  level1_dense=0.0203  level1_prediction=0.0210  level1_prior=0.1352  level1_reachability=0.0249  level1_support=0.8945  level1_value=0.0053  level2_action_rank=8.7871  level2_action_std=0.5419  level2_dense=0.0322  level2_prediction=0.0310  level2_prior=0.2779  level2_reachability=0.0318  level2_support=1.1522  level2_value=0.0052  level3_action_rank=2.1781  level3_action_std=0.8787  level3_dense=0.0571  level3_prediction=0.0498  level3_prior=1.2172  level3_reachability=0.0503  level3_support=1.2995  level3_value=0.0040  loss=1.2636  low_dense=0.0021  low_prediction=0.0020  low_value=0.0054  selection=0.2431  state_rank=48.0534  state_std=0.5239  vicreg=0.5885
+[epoch 1] goal_prediction=0.0019  level1_action_rank=13.3008  level1_action_std=0.8717  level1_dense=0.0141  level1_prediction=0.0150  level1_prior=-0.1122  level1_reachability=0.0519  level1_support=0.8434  level1_value=0.0043  level2_action_rank=8.8034  level2_action_std=0.6278  level2_dense=0.0169  level2_prediction=0.0166  level2_prior=0.2468  level2_reachability=0.0282  level2_support=1.0177  level2_value=0.0047  level3_action_rank=2.1083  level3_action_std=1.2523  level3_dense=0.0303  level3_prediction=0.0226  level3_prior=1.5384  level3_reachability=0.0236  level3_support=1.2510  level3_value=0.0046  loss=1.1706  low_dense=0.0022  low_prediction=0.0018  low_value=0.0048  selection=0.1474  state_rank=42.1582  state_std=0.6803  vicreg=0.6134
+[epoch 2] goal_prediction=0.0034  level1_action_rank=13.2038  level1_action_std=0.9167  level1_dense=0.0122  level1_prediction=0.0131  level1_prior=-0.1696  level1_reachability=0.0746  level1_support=0.8290  level1_value=0.0043  level2_action_rank=8.7358  level2_action_std=0.6875  level2_dense=0.0147  level2_prediction=0.0149  level2_prior=0.2765  level2_reachability=0.0243  level2_support=0.9780  level2_value=0.0041  level3_action_rank=2.1401  level3_action_std=1.4002  level3_dense=0.0178  level3_prediction=0.0178  level3_prior=1.6566  level3_reachability=0.0217  level3_support=1.2291  level3_value=0.0041  loss=1.1441  low_dense=0.0022  low_prediction=0.0017  low_value=0.0052  selection=0.1280  state_rank=43.0001  state_std=0.7093  vicreg=0.6105
+[epoch 3] goal_prediction=0.0043  level1_action_rank=13.2432  level1_action_std=0.9347  level1_dense=0.0120  level1_prediction=0.0127  level1_prior=-0.2093  level1_reachability=0.0792  level1_support=0.8184  level1_value=0.0047  level2_action_rank=8.7505  level2_action_std=0.7203  level2_dense=0.0142  level2_prediction=0.0150  level2_prior=0.2425  level2_reachability=0.0307  level2_support=0.9523  level2_value=0.0041  level3_action_rank=2.1720  level3_action_std=1.4423  level3_dense=0.0167  level3_prediction=0.0166  level3_prior=1.6505  level3_reachability=0.0217  level3_support=1.2101  level3_value=0.0037  loss=1.1427  low_dense=0.0016  low_prediction=0.0013  low_value=0.0048  selection=0.1272  state_rank=44.0071  state_std=0.7309  vicreg=0.6196
+[epoch 4] goal_prediction=0.0046  level1_action_rank=13.2590  level1_action_std=0.9414  level1_dense=0.0120  level1_prediction=0.0132  level1_prior=-0.2178  level1_reachability=0.0845  level1_support=0.8161  level1_value=0.0042  level2_action_rank=8.7606  level2_action_std=0.7282  level2_dense=0.0143  level2_prediction=0.0150  level2_prior=0.2353  level2_reachability=0.0310  level2_support=0.9462  level2_value=0.0040  level3_action_rank=2.1833  level3_action_std=1.4310  level3_dense=0.0168  level3_prediction=0.0169  level3_prior=1.6216  level3_reachability=0.0247  level3_support=1.2065  level3_value=0.0036  loss=1.1488  low_dense=0.0015  low_prediction=0.0013  low_value=0.0044  selection=0.1307  state_rank=44.4423  state_std=0.7418  vicreg=0.6264
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "goal_l1": 0.05189531669020653,
+  "token": {
+    "std": 0.7282113432884216,
+    "effective_rank": 44.006099700927734,
+    "token_identity_accuracy": 1.0,
+    "token_type_accuracy": 1.0,
+    "remaining_fraction_r2": 0.8872911930084229,
+    "final_answer_accuracy": 0.006795016987542469,
+    "sentence_position_r2": 0.9597675800323486,
+    "boundary_distance_r2": 0.7833624482154846,
+    "numeric_token_accuracy": 1.0
+  },
+  "level1": {
+    "std": 0.7340516448020935,
+    "effective_rank": 43.63943099975586,
+    "token_identity_accuracy": 1.0,
+    "token_type_accuracy": 1.0,
+    "remaining_fraction_r2": 0.8802207112312317,
+    "final_answer_accuracy": 0.04441453566621804,
+    "sentence_position_r2": 0.962031364440918,
+    "boundary_distance_r2": 0.83742755651474,
+    "numeric_token_accuracy": 1.0,
+    "macro_first_token_accuracy": 0.6523809523809524,
+    "macro_last_token_accuracy": 0.7010443864229765,
+    "macro_action_std": 0.9369467496871948,
+    "macro_action_rank": 13.232623100280762,
+    "direct_prediction_l1": 0.078621044754982,
+    "recursive_low_l1": 0.21711386740207672
+  },
+  "level2": {
+    "std": 0.7156772017478943,
+    "effective_rank": 40.686920166015625,
+    "token_identity_accuracy": 1.0,
+    "token_type_accuracy": 1.0,
+    "remaining_fraction_r2": 0.8313907384872437,
+    "final_answer_accuracy": 0.04216867469879518,
+    "sentence_position_r2": 0.9705958366394043,
+    "boundary_distance_r2": 0.7871419191360474,
+    "numeric_token_accuracy": 1.0,
+    "macro_first_token_accuracy": 0.6129032258064516,
+    "macro_last_token_accuracy": 0.4642857142857143,
+    "macro_action_std": 0.7181504368782043,
+    "macro_action_rank": 8.807578086853027,
+    "direct_prediction_l1": 0.08861992508172989,
+    "recursive_low_l1": 0.12080007791519165
+  },
+  "level3": {
+    "std": 0.555667519569397,
+    "effective_rank": 22.23748779296875,
+    "token_identity_accuracy": 0.9795918367346939,
+    "token_type_accuracy": 1.0,
+    "remaining_fraction_r2": -0.42262697219848633,
+    "final_answer_accuracy": 0.0,
+    "sentence_position_r2": 0.915462851524353,
+    "boundary_distance_r2": 0.9036846160888672,
+    "numeric_token_accuracy": 1.0,
+    "macro_first_token_accuracy": 0.9795918367346939,
+    "macro_last_token_accuracy": 0.32558139534883723,
+    "macro_action_std": 1.4228094816207886,
+    "macro_action_rank": 2.189216375350952,
+    "direct_prediction_l1": 0.09042646735906601,
+    "recursive_low_l1": 0.08051033318042755
+  },
+  "support_auc": 0.8585975495693273,
+  "abstraction_summary": {
+    "level1_answer_gain": 0.037619518678675565,
+    "level2_answer_gain": 0.03537365771125271,
+    "level3_answer_gain": -0.006795016987542469,
+    "level1_token_identity_drop": 0.0,
+    "level2_token_identity_drop": 0.0,
+    "level3_token_identity_drop": 0.020408163265306145
+  }
+}

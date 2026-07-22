@@ -1,0 +1,100 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usetheme{default}
+\setbeamertemplate{navigation symbols}{}
+\definecolor{TextJEPAGreen}{HTML}{1F6B4F}
+\setbeamercolor{structure}{fg=TextJEPAGreen}
+\setbeamercolor{frametitle}{fg=white,bg=TextJEPAGreen}
+
+% Use this only after REPORT.md passes validation. A slide is a teaching aid,
+% not a replacement for the self-contained report. Write complete sentences,
+% define every term, and use additional slides instead of shrinking content.
+
+\title{A descriptive result title}
+\subtitle{A beginner-first explanation of one TextJEPA decision}
+\author{TextJEPA research loop}
+\date{\today}
+
+\begin{document}
+\frame{\titlepage}
+
+\begin{frame}{The whole result in ordinary language}
+  \begin{itemize}
+    \item Explain the problem with a concrete everyday example.
+    \item State what was tested without unexplained abbreviations.
+    \item State what happened and how uncertain that answer is.
+    \item State why the result changes, or does not change, the direction.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{What is a language model, and what are we asking it to learn?}
+  \begin{itemize}
+    \item Define a neural network as a program that adjusts many numerical knobs from examples.
+    \item Define a language model before introducing JEPA or hidden representations.
+    \item Explain a small token step and a larger phrase or sentence step with one example.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{The idea as a picture}
+  \centering
+  % \includegraphics[width=.85\linewidth]{figures/main-idea.pdf}
+  \vspace{2cm}
+  \textbf{Place one intuitive mechanism figure here.}
+
+  \vspace{1em}
+  \small What to notice: state the visual pattern. Why it matters: connect it to the decision.
+\end{frame}
+
+\begin{frame}{What we compared, and why the comparison is fair}
+  \begin{itemize}
+    \item Explain what information every system receives.
+    \item Explain the matched control and negative control.
+    \item Explain tuning, seeds, compute, exclusions, and leakage checks.
+    \item Say which apparent success would be invalid and why.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{What happened}
+  \centering
+  \begin{tabular}{p{.30\linewidth}p{.22\linewidth}p{.38\linewidth}}
+    \textbf{System} & \textbf{Result} & \textbf{Meaning in ordinary language}\\\hline
+    Main idea & -- & Explain the number rather than only printing it.\\
+    Fair control & -- & Explain what difference remains.\\
+    Negative control & -- & Explain whether the measurement behaves sensibly.
+  \end{tabular}
+\end{frame}
+
+\begin{frame}{Technical details for reproducibility}
+  \begin{itemize}
+    \item Define the inputs, targets, architecture, and losses.
+    \item Give dataset identity, scale, seeds, optimizer, and stopping rule.
+    \item Define each primary metric in words before its mathematical form.
+    \item Link the exact commit, manifests, summaries, and full report.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{What we can conclude}
+  \begin{itemize}
+    \item Separate direct observations from interpretations.
+    \item State the scope: dataset, scale, model, and evaluation setting.
+    \item Explain exactly which decision the evidence supports.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{What we cannot conclude}
+  \begin{itemize}
+    \item List remaining alternative explanations and failed validity gates.
+    \item Say whether the evidence supports hierarchy, generation, or only a diagnostic.
+    \item State what would falsify the preferred interpretation.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{What happens next, and where you should steer}
+  \begin{itemize}
+    \item State the smallest next question and its expected result patterns.
+    \item State the compute cost and scale gate.
+    \item Ask two concrete questions through which the human can change priorities.
+  \end{itemize}
+\end{frame}
+
+\end{document}
+

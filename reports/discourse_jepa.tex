@@ -22,9 +22,10 @@
 \newcommand{\sg}{\mathrm{sg}}
 
 \title{Discourse-JEPA:\\ Latent World Models over Reasoning Steps}
-\subtitle{Method and five experimental cycles --- fully reproducible from these slides}
+\subtitle{Historical experiment chronology (archival)\\
+Paper-facing replacement: \texttt{discourse\_jepa\_neurips.pdf}}
 \author{TextJEPA project}
-\date{July 9, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/disc\_*})}
+\date{July 13, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/})}
 
 \begin{document}
 \frame{\titlepage}
@@ -42,38 +43,40 @@
         in latent space}.
   \item Generation = \textbf{search over actions}: roll candidate actions
         forward with $F$, score with an energy, execute the best in the
-        environment, re-encode, replan (closed-loop MPC). \textbf{No decoder,
-        no token loss anywhere} (JEPA-pure; the symbolic environment renders
-        chosen actions via templates).
+        environment, re-encode, replan (closed-loop MPC). The world model
+        predicts \textbf{latents, not outcome tokens}; an optional training-only
+        LDAD head reconstructs the observed action phrase and is discarded at
+        planning time.
   \item Synthetic reasoning world $\Rightarrow$ exact ground truth for
         \textbf{linear probes} and \textbf{objective planning success}.
 \end{itemize}
 \end{frame}
 
-\begin{frame}{The story in five acts (red thread)}
+\begin{frame}{Research questions and current answers}
 \begin{enumerate}\itemsep4pt
   \item \textbf{A latent world model over reasoning steps works} --- and we
         can \emph{audit} it: predicted futures of never-taken actions match
         symbolic execution (Results 1, 2, 9).
-  \item \textbf{What silently breaks}: EMA-target prediction deletes
-        computed content ("collusion", Result 3); the latent metric is not
+  \item \textbf{What silently breaks}: jointly learned encoders can discard
+        computed content to simplify prediction (Result 3); latent distance is not
         a progress metric (Result 5).
   \item \textbf{Reconstruction-free fixes}: frozen random-init embedding
         targets restore content (Result 4); trajectory-geometry losses fix
         the metric (Results 7, 8); counterfactual \emph{ranking} fixes the
         energy's discrimination (Result 10).
   \item \textbf{The energy can come from the geometry itself}: a value head
-        distilled from the latent goal distance, with zero numeric
-        supervision, beats the fully supervised one (Results 13, 16).
+        distilled from latent goal distance, without scalar distance-to-go
+        labels, matches the scalar-supervised alternative within seed variance
+        (Results 13, 16).
   \item \textbf{Baselines and limits}: likelihood selection (LMs at any
         tested scale/granularity) clusters far below (Result 15); failures
         are chain-depth-limited --- the scale-up frontier (Result 16).
 \end{enumerate}
 \end{frame}
 
-\begin{frame}{Glossary --- every term and run-name used in this deck}
-\small
-\begin{tabular}{p{0.27\textwidth}p{0.69\textwidth}}
+\begin{frame}{Notation and experimental terminology}
+\footnotesize
+\begin{tabular}{p{0.29\textwidth}p{0.67\textwidth}}
 \toprule
 \textbf{discourse state} $s_t$ & one vector summarizing prompt + steps
   $1..t$ (output of the causal state model)\\
@@ -83,34 +86,55 @@
   from Y times Z") --- states what to do, never the outcome\\
 \textbf{value head} $V(s, s_0)$ & scalar energy: estimated necessary steps
   remaining; the planner minimizes steps${}+V$\\
-\textbf{value-grad} & value-head gradients flow into the encoder
-  (\texttt{value\_detach=false}) so the energy shapes the representation\\
-\textbf{LDAD} & Latent Displacement Action Decoding (Delta-JEPA): decode
-  the executed action from $\Delta s = s_{t+1}{-}s_t$\\
-\textbf{anchor} & auxiliary target: predict the \emph{frozen random-init}
-  encoder's embedding of the next sentence (collusion fix)\\
-\textbf{ranking (K)} & margin loss ordering $V(F(s,a_i))$ over K
+\textbf{end-to-end value shaping} & value-head gradients enter the encoder
+  so the planning energy can shape the representation\\
+\textbf{observed-action displacement decoding} & reconstruct the complete
+  observed intent-token sequence from $\Delta s=s_{t+1}-s_t$; our historical
+  hybrid operation/embedding target is reported only as a distinct control\\
+\textbf{fixed outcome target} & predict a frozen random-feature embedding
+  of the next sentence; prevents loss-minimizing content deletion\\
+\textbf{counterfactual preference loss} & margin loss ordering $V(F(s,a_i))$ over $K$
   counterfactual actions per state by their symbolic outcomes\\
-\textbf{cost ranking} & same, over multi-step costs (depth${}+V$) ---
+\textbf{cross-horizon cost calibration} & order multi-step costs (depth${}+V$) ---
   calibrates search depth\\
-\textbf{hinge / monotonicity} & necessary steps must decrease the latent
+\textbf{goal-monotonicity constraint} & necessary steps must decrease the latent
   distance to the trace-terminal state by a margin\\
-\textbf{distilled $V$} & value head regressed on that latent goal
+\textbf{geometry-distilled value} & value head regressed on that latent goal
   distance (geometry target, no numeric labels)\\
 \bottomrule
 \end{tabular}
 
-\smallskip
-Run names (display names here drop the repository prefix \texttt{disc\string_}, short for \emph{discourse track} --- the track modeling reasoning traces, vs.\ the edit track):
-\texttt{combo} = anchor + value-grad; \texttt{mono\_hi} = + hinge;
-\texttt{rank\_k2} = + ranking; \texttt{champion} = ranking + hinge;
-\texttt{MDR} = hinge + distilled $V$ + ranking (no numeric labels);
-\texttt{core5} = \textbf{the sheared recipe} (latent pred + ranking + VICReg + anchor + LDAD); \texttt{*\_cal} = + cost ranking; \texttt{*\_s2/s3} = seed replicates.
 \end{frame}
 
-\begin{frame}{THE recipe (sheared) and headline results (mean $\pm$ std, 3 seeds)}
-\claim{Five losses suffice --- everything else adds $\le$1--3\% and is
-reported in the shear log.}
+\begin{frame}{Scientific labels and artifact identifiers}
+\small
+Artifact names are retained only for reproducibility; the report uses the
+scientific labels in the left column.
+\medskip
+\centering
+\begin{tabular}{p{0.47\textwidth}p{0.42\textwidth}}
+\toprule
+scientific label & repository artifact\\
+\midrule
+fixed-outcome prediction + end-to-end value shaping & \texttt{disc\_combo}\\
+goal-monotone value regression & \texttt{disc\_mono\_hi}\\
+counterfactual preference learning ($K=2$) & \texttt{disc\_rank\_k2}\\
+geometry-distilled counterfactual model & \texttt{disc\_mono\_distill\_rank}\\
+five-objective ranked JEPA & \texttt{disc\_core5}\\
+cross-horizon calibrated model & suffix \texttt{\_cal}\\
+independent seed replicates & suffixes \texttt{\_s2}, \texttt{\_s3}\\
+\bottomrule
+\end{tabular}
+
+\medskip
+The five-objective model uses one-step latent prediction, counterfactual
+preference learning, VICReg, fixed outcome targets, and displacement decoding.
+The ``full'' model additionally uses rollout, hierarchy, and goal-geometry terms.
+\end{frame}
+
+\begin{frame}{Headline comparison: fixed one-step planning protocol}
+\claim{Under identical one-step MPC, the five-objective ranked JEPA improves
+strict-budget success by 14.5 points over the largest token LM tested.}
 \centering\small
 \begin{tabular}{lcc}
 \toprule
@@ -119,24 +143,46 @@ reported in the shear log.}
 random feasible policy & 0.055 & 0.405\\
 token LM, parameter-matched (best lr) & 0.670 & 0.910\\
 token LM, $3\times$ larger & 0.735 & 0.940\\
-\textbf{core recipe (\texttt{core5})} & \textbf{0.880 $\pm$ 0.004}
+\textbf{five-objective ranked JEPA} & \textbf{0.880 $\pm$ 0.004}
  & \textbf{0.975 $\pm$ 0.004}\\
-\quad + depth option (full stack, look-2) & 0.945 & 1.00\\
+geometry-distilled ranked JEPA & 0.900 $\pm$ 0.027 & 0.980 $\pm$ 0.008\\
 symbolic oracle & 1.00 & 1.00\\
 \bottomrule
 \end{tabular}
 
 \medskip
-\textbf{core5} = latent prediction + counterfactual ranking + VICReg +
-frozen-anchor prediction + LDAD; the value head is trained by ranking
-margins alone --- \emph{no numeric value labels}. The depth option
-(cost ranking, look-2) needs the fuller stack (Results 12, 16); on the
-sheared recipe it does not pay (0.885 look-2 vs 0.900 look-1).
+All learned rows use greedy lookahead 1 and the same 200 validation episodes.
+The five-objective model's value head is trained by pairwise margins, without
+scalar remaining-step labels. Mean $\pm$ standard deviation uses three seeds.
+\end{frame}
+
+\begin{frame}{Search-depth interaction is a separate experiment}
+\claim{Cross-horizon calibration helps the full model, but not the
+five-objective model; it is not a generic ``depth option.''}
+\centering\small
+\begin{tabular}{lccc}
+\toprule
+training objective & lookahead 1 & lookahead 2 & slack-2, lookahead 2\\
+\midrule
+five-objective + cross-horizon calibration & 0.900 & 0.885 & 0.985\\
+full geometry-distilled + cross-horizon calibration & 0.925 & \textbf{0.945} & \textbf{1.000}\\
+\bottomrule
+\end{tabular}
+
+\medskip\footnotesize
+The five-objective model combines latent prediction, fixed outcome prediction,
+VICReg, displacement decoding, and pairwise preferences. The full
+geometry-distilled model additionally shapes goal-distance monotonicity and
+distills that distance into $V$. Single-seed interaction test.
+``Cross-horizon'' means that training compares
+$1+V(F(s,a))$ with $2+V(F(F(s,a),a'))$; ``lookahead'' is the matching
+planning-time rollout depth. This is not part of the three-seed headline table.
 \end{frame}
 
 \begin{frame}{Value-head supervision targets compared (symbolic vs geometric)}
-\claim{The geometric target (latent goal distance) with ranking beats
-numeric-label regression --- IF the metric is shaped first.}
+\claim{With matched pairwise preference supervision, geometry-distilled values
+match scalar-supervised values within seed variance, provided the geometry is
+goal-monotone.}
 \centering\small
 \begin{tabular}{llccc}
 \toprule
@@ -178,7 +224,10 @@ count labels contribute nothing beyond binary relevance + ordering
 \textbf{Training traces}: solve by repeatedly resolving a feasible variable
 (parents resolved); with $p{=}0.15$ (max 2) pick a feasible \emph{distractor}
 instead of a necessary one $\Rightarrow$ off-path states for the value head.
-Fresh problems every epoch (train seed 1, val seed 2; 100k/5k).
+\textbf{Important protocol correction.} Published artifacts in this deck reused
+the same deterministic index set each epoch. New runs (July 13 onward) use
+disjoint epoch-offset indices, preserving determinism while generating fresh
+problems; validation remains fixed.
 \end{frame}
 
 \begin{frame}[fragile]{A verbatim sample (val problem \#3)}
@@ -219,9 +268,10 @@ Note $15\times 8 = 120 \equiv 5 \pmod{23}$: outcomes are nontrivial to predict.
   \item \textbf{Hierarchy}: CLS-transformer over $K{=}3$ action codes
         $\to$ 8-d macro action $m_t$; $F_{\mathrm{hi}}(s_t,m_t)$ predicts
         $\bar s_{t+3}$ (same latent space, HWM-style).
-  \item \textbf{LDAD} (Delta-JEPA): MLP on
-        $\Delta s = s_{t+1}-s_t$ $\to$ op logits (4) + regression to the EMA
-        intent embedding.
+  \item \textbf{Observed-action displacement decoder}: position-query
+        transformer on $\Delta s=s_{t+1}-s_t$ reconstructs the complete intent
+        phrase. The historical hybrid head (operation class + EMA intent
+        embedding) is not a faithful Delta-JEPA target.
   \item \textbf{Value head} $V$: MLP on $[\mathrm{LN}([s_t;s_0])]$
         $\to$ scalar = predicted remaining necessary steps.
   \item \textbf{Teachers}: EMA copies of $E_c,E_s$ (momentum $0.99\to0.999$
@@ -307,9 +357,9 @@ LN = parameter-free layer norm), masks over valid steps.
 \mathcal L_{\text{vic}} &= \textstyle\sum_j \max(0, 1-\mathrm{std}(s^{(j)}))
   + 0.04\,\|\mathrm{offdiag}(\mathrm{Cov}(s))\|_F^2/D + 0.1\,\text{var}(a)
   &1.0\\
-\mathcal L_{\text{act}} &= \mathrm{CE}\big(\mathrm{op}\mid \Delta s_t\big)
-  + d\big(g(\Delta s_t),\, \sg\,\bar E_c(u_t)\big)\quad\text{(Delta-JEPA)}
-  &2.0\\
+\mathcal L_{\text{obs-act}} &= \mathrm{CE}\big(D(\Delta s_t),\,
+  \mathrm{tokens}(u_t)\big)\quad\text{(faithful observed-action LDAD)}
+  &\text{0 / selected}\\
 \mathcal L_{\text{val}} &= \mathrm{smoothL1}\big(V(s_t,s_0),\,
   \#\text{unresolved necessary}\big) &1.0\\
 \mathcal L_{\text{chunk}} &= d\big(h(\hat s_{t+1}),\, \sg\,\tilde E_c(y_{t+1})\big)
@@ -333,9 +383,10 @@ of $s_t$ to the trace-terminal EMA state; margin $m\in\{.02,.05\}$.
   \item AdamW, lr $3\!\times\!10^{-4}$, weight decay $0.05$ (none for dim
         $<2$ params), $\beta=(0.9,0.95)$; cosine schedule to floor $0.05$,
         1000-step warmup; grad clip 5.0.
-  \item Batch 128 problems; 20 epochs $\times$ 781 steps; \textbf{fresh data
-        every epoch} (no memorization confound). EMA momentum $0.99\to0.999$
-        linear over training.
+  \item Batch 128 problems; 20 epochs $\times$ 781 steps at the 100k setting.
+        Historical results reused a deterministic 100k corpus. Future runs use
+        a deterministic disjoint corpus per epoch. EMA momentum
+        $0.99\to0.999$ linear over training.
   \item Hardware: one V100-32GB, fp32, $\sim$40 min/run.
   \item In-training eval each epoch: all losses + collapse diagnostics
         (per-dim std, RankMe effective rank) + closed-form ridge probes.
@@ -410,34 +461,34 @@ next latent; lookahead 2 scores 2-step latent rollouts.
 \end{frame}
 
 % ---------------------------------------------------------------- experiments
-\begin{frame}{Experiment grid (each = one training run, 20 epochs)}
+\begin{frame}{Experiment grid (each condition is one 20-epoch run)}
 \centering\small
 \resizebox{\textwidth}{!}{%
 \begin{tabular}{llll}
 \toprule
-run & $\mathcal L_{\text{chunk}}$ anchor & value grad $\to$ encoder & other\\
+condition & fixed outcome target & value grad $\to$ encoder & additional change\\
 \midrule
-\texttt{base} & --- & no & reference\\
-\texttt{no\_delta} & --- & no & $\mathcal L_{\text{act}}$ weight 0\\
-\texttt{chunkpred} & frozen, w=2.0 & no & ---\\
-\texttt{valgrad} & --- & \textbf{yes} & ---\\
-\texttt{combo} & frozen, w=2.0 & \textbf{yes} & ---\\
-\texttt{value\_only} & --- & \textbf{yes} & \emph{all} JEPA weights 0\\
-\texttt{frozen\_enc} & --- & no & encoders frozen at init\\
+latent-prediction reference & --- & no & ---\\
+without displacement decoding & --- & no & $\mathcal L_{\text{act}}$ weight 0\\
+fixed outcome prediction & frozen, w=2.0 & no & ---\\
+end-to-end value shaping & --- & \textbf{yes} & ---\\
+fixed outcome + value shaping & frozen, w=2.0 & \textbf{yes} & ---\\
+value-only control & --- & \textbf{yes} & \emph{all} JEPA weights 0\\
+frozen-encoder control & --- & no & encoders frozen at init\\
 \midrule
-\texttt{straight\_\{lo,mid,---\}} & frozen, w=2.0 & \textbf{yes}
+curvature-weight sweep & frozen, w=2.0 & \textbf{yes}
   & $+\,\mathcal L_{\text{curv}}$, $\lambda\in\{.02,.05,.1\}$\\
-\texttt{mono\,/\,\_hi} & frozen, w=2.0 & \textbf{yes}
+goal-monotonicity sweep & frozen, w=2.0 & \textbf{yes}
   & $+\,\mathcal L_{\text{mono}}$, w1\,m.02\,/\,w2\,m.05\\
-\texttt{geo\_lo\,/\,\_geo} & frozen, w=2.0 & \textbf{yes} & both regularizers\\
-\texttt{mono\_novalue} & frozen, w=2.0 & no
+combined geometric constraints & frozen, w=2.0 & \textbf{yes} & both regularizers\\
+monotonicity without value head & frozen, w=2.0 & no
   & $+\,\mathcal L_{\text{mono}}$, \emph{no value head}\\
 \midrule
-\texttt{rank\_\{k2,k4\}(\_nodelta)} & frozen, w=2.0 & \textbf{yes}
+counterfactual preferences ($K=2,4$) & frozen, w=2.0 & \textbf{yes}
   & $+$ ranking over K counterfactual actions\\
-\texttt{champion} & frozen, w=2.0 & \textbf{yes}
+preference + goal monotonicity & frozen, w=2.0 & \textbf{yes}
   & ranking K=2 $+$ $\mathcal L_{\text{mono}}$ w2\\
-\texttt{\{shuffled, no\_distract, size*\}} & frozen, w=2.0 & \textbf{yes}
+grounding and data controls & frozen, w=2.0 & \textbf{yes}
   & grounding controls (Results 9, 11)\\
 \bottomrule
 \end{tabular}}
@@ -448,19 +499,22 @@ Baselines at plan time: \textbf{random feasible policy},
 (LeWM-style, uses the encoded solved state --- diagnostic only).
 \end{frame}
 
-\begin{frame}{Result 1 --- training objectives determine plannability}
-\claim{The anchor lifts the base model decisively; value-grad and the
-hinge sit within seed noise of it; counterfactual ranking is the step
-change. Bars: mean $\pm$ std over 3 seeds (thin caps).}
+\begin{frame}{Result 1 --- historical objective sweep (not an ablation shear)}
+\claim{Fixed outcome targets improve the latent baseline; counterfactual
+preference learning gives the largest further gain. Adjacent bars are separate
+recipes and must not be read as a cumulative one-factor-at-a-time sequence.}
 \begin{columns}
 \column{0.58\textwidth}
 \centering\includegraphics[width=\linewidth]{figs/planning_success.pdf}
 \column{0.4\textwidth}\small
 Success within the \emph{strict optimal budget}, greedy lookahead 1,
 200 episodes, mean necessary steps 4.07.\\[4pt]
-With slack 2 (mean of 3 seeds): base 0.83, +anchor 0.89,
-+hinge 0.91, +ranking / MDR \textbf{0.98--0.99} (random 0.41).\\[4pt]
-Distractor pick rate: random 0.43 $\to$ base 0.28 $\to$ valgrad 0.14.
+With slack 2 (mean of 3 seeds): latent baseline 0.83, fixed outcome target
+0.89, goal monotonicity 0.91, counterfactual preference models
+\textbf{0.98--0.99} (random 0.41).\\[4pt]
+Distractor pick rate: random 0.43 $\to$ latent baseline 0.28 $\to$
+end-to-end value shaping 0.14.
+The subtractive/constructive component tests appear in Result 16.
 \end{columns}
 \end{frame}
 
@@ -484,7 +538,7 @@ every depth.
 \end{columns}
 \end{frame}
 
-\begin{frame}{Result 3 --- encoder--predictor collusion, measured}
+\begin{frame}{Result 3 --- encoder--predictor co-adaptation, measured}
 \claim{Pure state-prediction JEPA \emph{removes} outcome information that was
 linearly present at initialization; a frozen outcome anchor prevents it.}
 \begin{columns}
@@ -501,7 +555,7 @@ at only 0.26 (random-init control: 0.65).
 \end{columns}
 \end{frame}
 
-\begin{frame}{Result 4 --- latent arithmetic under the frozen anchor}
+\begin{frame}{Result 4 --- latent arithmetic under a fixed outcome target}
 \claim{With $\mathcal L_{\text{chunk}}$, the predictor computes outcomes it
 never observes: value decodability from \emph{predicted} latents doubles the
 random-encoder control.}
@@ -511,7 +565,8 @@ random-encoder control.}
 \column{0.43\textwidth}\small
 Dashed = random-init encoder control (surface memory, no computation);
 dotted = chance $1/23$.\\[4pt]
-From $F(s_{t-1},a_t)$: base 0.15 ($=$ control) $\to$ anchor \textbf{0.31}.\\[2pt]
+From $F(s_{t-1},a_t)$: baseline 0.15 ($=$ control) $\to$ fixed outcome target
+\textbf{0.31}.\\[2pt]
 Answer from terminal state: $0.26 \to \mathbf{0.98}$.\\[2pt]
 Full-trace open-loop rollout: 0.22 (error compounds; matches Result 2's
 need for re-encoding).
@@ -528,15 +583,16 @@ random; the trained value head is the energy that works.}
 Oracle goal = encoded terminal state of the \emph{true} solution (planner
 gets it for free --- upper-bound diagnostic).\\[4pt]
 Scoring $\|\mathrm{LN}(\hat s)-\mathrm{LN}(s_{\text{goal}})\|_1$:
-base 0.13, anchor 0.18, valgrad 0.105 (distractor rates $\approx$ random).\\[4pt]
+latent baseline 0.13, fixed outcome target 0.18, end-to-end value shaping
+0.105 (distractor rates $\approx$ random).\\[4pt]
 $\Rightarrow$ \emph{unregularized} JEPA geometry is not a distance-to-goal
 metric. Result 7 shows temporal straightening fixes exactly this.
 \end{columns}
 \end{frame}
 
-\begin{frame}{Result 6 --- Delta-JEPA ablation; stability}
-\claim{Displacement-level action decoding is load-bearing for planning
-(replicates Delta-JEPA, arXiv:2606.31232, in language).}
+\begin{frame}{Result 6 --- displacement decoding ablation; stability}
+\claim{Our hybrid displacement decoder is useful for planning, but this is
+not an exact replication of Delta-JEPA's raw-action reconstruction objective.}
 \centering\small
 \begin{tabular}{lcccc}
 \toprule
@@ -547,14 +603,17 @@ metric. Result 7 shows temporal straightening fixes exactly this.
 \bottomrule
 \end{tabular}
 
-\smallskip{\scriptsize $^*$op stays decodable (it correlates with surface
+\smallskip{\scriptsize $^*$Operation type stays decodable (it correlates with surface
 features) but transitions lose the \emph{action-discriminative} structure the
 planner needs.}
 \medskip
 
 \textbf{Stability} (all runs): per-dim state std $\approx 1.03$, RankMe
 effective rank 220--243 / 256, no collapse; VICReg + EMA sufficed, discrete
-codes (FSQ) not needed.
+codes (FSQ) not needed. Delta-JEPA decodes the observed continuous action from
+$s_{t+1}-s_t$ with MSE and trains end-to-end without EMA or a distribution
+regularizer. Here the targets are an operation label and an EMA intent
+embedding; operation CE is therefore explicit symbolic action-type supervision.
 \end{frame}
 
 \begin{frame}{Result 7 --- temporal straightening makes raw geometry plannable}
@@ -566,7 +625,7 @@ progress metric: goal-distance planning goes $0.15\to0.43$ @optimal
 \centering\includegraphics[width=\linewidth]{figs/straighten_tradeoff.pdf}
 \column{0.46\textwidth}\small
 Dose-response over $\lambda_{\text{curv}}\in\{0,.02,.05,.1\}$ (all on the
-combo recipe):\\[2pt]
+fixed-outcome, end-to-end value model):\\[2pt]
 \begin{tabular}{lcccc}
 \toprule
  & 0 & .02 & .05 & .1\\
@@ -583,7 +642,7 @@ $\lambda=.05$ is the raw-geometry sweet spot.
 
 \begin{frame}{Result 8 --- two energies, one metric: the content--geometry
 trade-off}
-\claim{Straightening buys geometry planning, the monotonicity hinge keeps
+\claim{Straightening buys geometry planning, the goal-monotonicity constraint keeps
 content and sets the value-planning record; geometry needs JEPA losses, not
 value labels.}
 \centering\small
@@ -616,8 +675,8 @@ the JEPA objectives, not the value labels.
 (direct audit)}
 \claim{From each state we enumerate \emph{all} feasible actions, predict
 their next-state latents, and check against symbolic execution the model
-never saw: $F(s,a)$ is correct per action, and LDAD / outcome anchors are
-what ground it.}
+never saw: $F(s,a)$ is correct per action, and displacement decoding / fixed
+outcome targets are what ground it.}
 \begin{columns}
 \column{0.54\textwidth}
 \centering\includegraphics[width=\linewidth]{figs/audit.pdf}
@@ -647,7 +706,7 @@ not data diversity; it trades search-depth calibration for 1-step precision.}
 \texttt{rank\_k4} & 0.925 & 0.98 & 0.85 $\downarrow$ & 0.94\\
 \texttt{rank\_k4} \emph{no LDAD} & 0.875 & 0.965 & --- & 0.94\\
 \texttt{combo} \emph{no LDAD} & 0.48 & 0.805 & --- & 0.69\\
-\textbf{\texttt{champion}} (rank+mono) & \textbf{0.905} & \textbf{0.99}
+\textbf{preference + goal monotonicity} & \textbf{0.905} & \textbf{0.99}
  & --- & \textbf{0.96}\\
 \bottomrule
 \end{tabular}
@@ -656,20 +715,21 @@ not data diversity; it trades search-depth calibration for 1-step precision.}
 $\downarrow$ lookahead-2 \emph{hurts} ranking models (0.91$\to$0.85) while
 helping regression values (mono\_hi 0.655$\to$0.735): the margin loss
 perfects 1-step ordering but distorts $V$'s absolute scale that multi-step
-cost sums need. \texttt{champion} also has the best raw geometry
+cost sums need. Preference learning + goal monotonicity also has the best raw geometry
 ($\tau_{\text{goal}}$ 0.82, oracle-goal planning 0.655, no curvature loss).
 Seed replicates: rank\_k2 0.885--0.91 @opt, 0.98--0.985 @slack2.
 \end{frame}
 
-\begin{frame}{Result 11 --- data diversity is the counterfactual fuel}
-\claim{Grounding comes from cross-problem coverage: shrinking unique
-problems collapses planning; ranking supervision sharpens but cannot
-substitute.}
+\begin{frame}{Result 11 --- data-scale trend (coverage and compute confounded)}
+\claim{Performance increases with the procedural corpus size, but the original
+sweep also changes optimizer updates; it is evidence for a scale trend, not a
+clean causal estimate of data diversity.}
 \begin{columns}
 \column{0.5\textwidth}
 \centering\includegraphics[width=\linewidth]{figs/datascale.pdf}
 \column{0.48\textwidth}\small
-Same optimizer steps, fewer unique problems:\\[2pt]
+Fixed 20 epochs: 10k, 30k, and 100k imply approximately 1.6k, 4.7k, and
+15.6k optimizer updates, respectively.\\[2pt]
 \begin{tabular}{lccc}
 \toprule
 problems & 10k & 30k & 100k\\
@@ -683,11 +743,11 @@ value $\tau$ & 0.22 & 0.44 & 0.73\\
 Matching survives small data; \emph{ranking quality} does not --- the
 predictor stays roughly right, the energy loses discrimination.
 Within-trace variation matters too: no distractors $\Rightarrow$
-0.635$\to$0.415.
+0.635$\to$0.415. A compute-matched fresh-stream rerun is now required.
 \end{columns}
 \end{frame}
 
-\begin{frame}{Result 12 --- depth calibration: CostRanking and macro jumps}
+\begin{frame}{Result 12 --- cross-horizon calibration and macro transitions}
 \claim{Plain ranking breaks lookahead (0.91$\to$0.85); two independent
 fixes exist, and they don't stack because they repair the same defect.}
 \centering\small
@@ -696,13 +756,13 @@ fixes exist, and they don't stack because they repair the same defect.}
  & look-1 & look-2 & look-3 flat & look-3 $F_{\mathrm{hi}}$\\
 \midrule
 \texttt{rank\_k2} & 0.910 & 0.850 $\downarrow$ & 0.915 & \textbf{0.970}\\
-\texttt{rank\_cal} (+CostRanking) & 0.905 & \textbf{0.945} & --- & 0.915\\
-\texttt{champion\_cal} & 0.910 & 0.945 & --- & 0.915\\
+\texttt{rank\_cal} (+ cross-horizon calibration) & 0.905 & \textbf{0.945} & --- & 0.915\\
+preference + monotonicity + calibration & 0.910 & 0.945 & --- & 0.915\\
 \bottomrule
 \end{tabular}
 
 \medskip\small
-\textbf{CostRanking}: rank full MPC costs across depths — executed 2-step
+\textbf{Cross-horizon calibration}: rank full MPC costs across depths — executed 2-step
 continuation ($2+V(F^2)$) vs 1-step alternatives ($1+V(F(a'))$); zero new
 data. \textbf{Macro jumps}: score 3-step sequences with one
 $F_{\mathrm{hi}}$ call — worse \emph{fidelity} than $F^3$ (matching
@@ -713,14 +773,14 @@ Train-side hierarchy loss: neutral (\texttt{combo\_nohier} 0.670/0.910).
 \end{frame}
 
 \begin{frame}{Result 13 --- the non-symbolic value head (headline)}
-\claim{Shape the metric with the hinge, distill it into $V$, add ranking:
+\claim{Shape the metric with goal monotonicity, distill it into $V$, add preference learning:
 best planner with no numeric value labels anywhere.}
 \centering\small
 \begin{tabular}{llcc}
 \toprule
 run & energy supervision & @opt & @slack2\\
 \midrule
-\texttt{champion\_cal} & \emph{numeric} + ranking & 0.91 $\pm$ .01 & 0.995\\
+scalar value + preference + calibration & \emph{numeric} + order & 0.91 $\pm$ .01 & 0.995\\
 \textbf{\texttt{mono\_distill\_rank}} & \textbf{binary only (geometric $V$)}
  & \textbf{0.90 $\pm$ .03} & \textbf{0.98 $\pm$ .01}\\
 \texttt{mono\_hi} & \emph{numeric} regression & 0.63 $\pm$ .05 & 0.91 $\pm$ .02\\
@@ -735,15 +795,15 @@ run & energy supervision & @opt & @slack2\\
 Rows 1 vs 2 are the direct \textbf{numeric-vs-geometric} comparison at
 matched search settings: the geometric value head ($V$ regressed on the
 latent goal distance $d^{\text{goal}}$, ordered by binary-outcome ranking)
-matches the numeric-label champion within seed noise (0.90$\pm$.03 vs
+matches the scalar-label comparison within seed noise (0.90$\pm$.03 vs
 0.91$\pm$.01). Shaping is required: unshaped distillation fails (0.19).
 Mean$\pm$std over 3 seeds where shown; single-seed otherwise.
 \end{frame}
 
-\begin{frame}{Result 14 --- stability: the Delta-JEPA claim does not
-transfer; VICReg is load-bearing}
-\claim{LDAD alone does not prevent collapse in language JEPA, and VICReg
-is not redundant even with EMA + stopgrad + frozen anchor.}
+\begin{frame}{Result 14 --- stability of the hybrid displacement objective}
+\claim{Our operation/intent displacement decoder alone does not prevent
+collapse; VICReg remains important in the observed-intent architecture. This
+does not test Delta-JEPA's exact raw-action objective.}
 \centering\small
 \begin{tabular}{lcccc}
 \toprule
@@ -759,18 +819,18 @@ run & EMA & sg & VICReg & result\\
 \end{tabular}
 
 \medskip\small
-Honest negative replication of arXiv:2606.31232's stability claim in our
-domain (their evidence is visual control; our traces/action space differ).
+This is a negative result for our hybrid decoder, not a negative replication
+of arXiv:2606.31232: targets, encoders, and action observability differ.
 Also: non-residual predictor $\hat s = \mathrm{MLP}([\mathrm{LN}(s);a])$
 performs at least as well as residual (0.710/0.920) — the residual skip is
 convenience, not mechanism; LDAD constrains \emph{encoder} displacements,
 not predictor outputs, so it is not trivialized by either choice.
 \end{frame}
 
-\begin{frame}{Result 15 --- the baseline ladder (action-selection parity)}
-\claim{Every likelihood/reconstruction selector --- token- or
-sentence-level, any tested scale --- clusters at 0.47--0.74; explicit
-counterfactual training adds 20--30 points on top of all of them.}
+\begin{frame}{Result 15 --- historical outcome-candidate LM diagnostics}
+\claim{Outcome-likelihood/reconstruction selectors cluster at 0.47--0.74;
+these are strong controls, but their candidate sentences expose computed
+consequences and are not information-matched policy baselines.}
 \centering\small
 \begin{tabular}{llcc}
 \toprule
@@ -782,49 +842,53 @@ sentence-LM+latent tgt (\textbf{latent dist.}) & 7.2M & 0.605 & ---\\
 token LM (likelihood, best lr) & 8.2M & 0.670 & 0.910\\
 naive JEPA (combo, value head) & 9.1M & 0.635 & 0.890\\
 token LM & 25.5M & 0.735 & 0.940\\
-\textbf{JEPA + ranking (MDR / +cal)} & 9.1M & \textbf{0.935} & \textbf{0.99--1.00}\\
+\textbf{cross-horizon calibrated JEPA} & 9.1M & \textbf{0.935} & \textbf{0.99--1.00}\\
 \bottomrule
 \end{tabular}
 
 \medskip\small
-Parity protocol: every model scores the \emph{same} feasible candidates'
-rendered step sentences (LM: log-likelihood; sentence-LM: decoder CE or
-latent distance; JEPA: latent energy), same budget. LR swept for both
-families (LM prefers $10^{-3}$, JEPA $3\!\times\!10^{-4}$). Note the
+All models enumerate the same feasible actions and use the same budget, but
+the historical LMs score rendered outcomes whereas JEPA scores outcome-free
+intent phrases. Information-matched intent-policy LMs are running. LR was
+swept for both families. Note the
 within-model dissociation: the sentence-LM's \emph{latent} energy
 outranks its own decoder (0.605 vs 0.510) --- selection is a
 latent-geometry problem even for reconstruction-trained models.
 \end{frame}
 
-\begin{frame}{Result 16 --- the shear log (how the recipe was found)}
-\claim{Build up from nothing; shear down from everything: five components
-carry the result, each further addition is $\le$1--3\% ($\approx$ seed noise).}
+\begin{frame}{Result 16 --- objective ablations}
+\claim{A constructive sequence identifies anti-collapse and predictive
+ingredients; independent removals from the full model localize auxiliary
+roles. These are two analyses, not one cumulative ``recipe'' curve.}
+\smallskip
 \centering\small
-\begin{tabular}{lccc|lc}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcc|lc}
 \toprule
-\textbf{build-up} & losses & @opt & eff.\ rank &
- \textbf{sheared (from full)} & $\Delta$@opt\\
+\textbf{constructive sequence} & @opt & eff.\ rank &
+ \textbf{removed from full model} & $\Delta$@opt\\
 \midrule
-ranking only & 1 & 0.20 & \textbf{24 (collapse)} & hinge & $-$0.02\\
-+ latent prediction & 2 & 0.78 & 101 & distilled $V$ & $-$0.04\\
-+ VICReg & 3 & 0.745 & 234 (healthy) & rollout supervision & $\sim$0\\
-+ anchor + LDAD = \textbf{core5} & 5 & \textbf{0.88$\pm$.004} & 234 &
+ranking only & 0.20 & \textbf{24 (collapse)} & hinge & $-$0.02\\
++ latent prediction & 0.78 & 101 & distilled $V$ & $-$0.04\\
++ VICReg & 0.745 & 234 (healthy) & rollout supervision & $\sim$0\\
++ fixed outcome + displacement decoding & \textbf{0.88$\pm$.004} & 234 &
  hierarchy loss & $\sim$0\\
-full stack (MDR) & 9 & 0.90$\pm$.03 & 233 & EMA teacher & $-$0.03\\
- & & & & scalar value labels & $\sim$0\\
- & & & & residual skip & $+$0.02\\
+full geometry-distilled model & 0.90$\pm$.03 & 233 & EMA teacher & $-$0.03\\
+ & & & scalar value labels & $\sim$0\\
+ & & & residual skip & $+$0.02\\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 
 \medskip\small
-Each sheared component retains a specific \emph{auxiliary} role: hinge +
-distilled $V$ = the fully label-free-energy variant (0.36--0.57);
+Auxiliary roles remain identifiable: goal monotonicity + geometry-distilled
+$V$ defines the non-scalar-value variant (0.36--0.57);
 EMA = $+$0.03 over stopgrad+VICReg (which suffice for stability ---
-\texttt{noema} 0.605, no collapse); cost ranking = depth calibration, but
-only on the fuller stack (on core5: 0.885 look-2 $<$ 0.900 look-1; on the
-full stack: 0.945). \textbf{Failures remain chain-depth-limited}: 4.4\%
-(3--4 steps) $\to$ 59\% (7--9). Edit track mirrors the shear:
-\texttt{edit\_core5} 0.455/0.485 $=$ champion, no defect labels.
+\texttt{noema} 0.605, no collapse); cross-horizon ranking calibrates depth,
+but only with the full objective set (five-objective: 0.885 look-2 $<$ 0.900
+look-1; full: 0.945). \textbf{Failures remain chain-depth-limited}: 4.4\%
+(3--4 steps) $\to$ 59\% (7--9). The edit track shows the same ablation:
+the five-objective model reaches 0.455/0.485, matching the full model without
+defect labels.
 \end{frame}
 
 \begin{frame}{Probes I --- what the discourse state actually is}
@@ -870,7 +934,7 @@ and the circle sharpens under the anchor fix.
 \end{columns}
 \end{frame}
 
-\begin{frame}{Probe suite (champion vs.\ reference; random-encoder control)}
+\begin{frame}{Probe suite (fixed outcome target vs. baseline and random encoder)}
 \centering\scriptsize
 \begin{tabular}{lccc}
 \toprule
@@ -891,24 +955,23 @@ value-head MAE (remaining steps) & 0.76 & 0.57 & ---\\
 \end{tabular}
 
 \medskip\small
-\texttt{combo} adds value-grad: MAE \textbf{0.38} with the same
-collusion-free probes (state value 0.89).
+End-to-end value shaping gives MAE \textbf{0.38} with the same
+co-adaptation-resistant probes (state value 0.89).
 \end{frame}
 
-\begin{frame}{Scale-up preview --- the hard domain and faithful iGSM}
-\claim{On 10--18-step problems everything collapses --- the likelihood
-selector hardest --- and the ranking/capacity/search recipe degrades most
-gracefully. This is the quantified frontier for the next phase.}
+\begin{frame}{Scale-up preview --- the hard domain and official iGSM}
+\claim{Accuracy degrades sharply on 10--18-step problems; counterfactual
+preference learning, capacity, and search depth provide complementary gains.}
 \centering\small
 \begin{tabular}{lcccc}
 \toprule
 hard domain (14--24 vars, 10--18 steps) & @opt & @slack2 & look-2 & look-4\\
 \midrule
 reference recipe (\texttt{combo}, 9M) & 0.000 & 0.070 & 0.035 & 0.175\\
-minimal-labels + cost rank (\texttt{mdr\_cal}, 9M) & \textbf{0.120} &
+geometry-distilled + cross-horizon calibration (9M) & \textbf{0.120} &
  \textbf{0.445} & 0.105 & 0.150\\
 same recipe, 35M & 0.090 & 0.410 & 0.195 & \textbf{0.315}\\
-token LM (8M, parity selection) & 0.010 & --- & --- & ---\\
+token LM (8M, outcome-candidate score) & 0.010 & --- & --- & ---\\
 \bottomrule
 \end{tabular}
 
@@ -926,46 +989,146 @@ official domain, with the remaining gap to oracle as the next phase's
 frontier.
 \end{frame}
 
+\begin{frame}{Removing symbolic preference labels: geometric ranking}
+\claim{Geometric-advantage ranking (GAR) replaces remaining-step and binary
+preference targets with an ordering induced entirely by encoded outcomes.}
+\small
+At one visited state, execute the trace action and $K$ alternative feasible
+actions in cloned environments. Encode each true next sentence with the EMA
+encoder and measure its distance to the encoded terminal trace state:
+\[
+g_i=\|\mathrm{LN}(\bar s^{\mathrm{true}}_{t+1,i})-
+        \mathrm{LN}(\bar s_T)\|_1,
+\qquad E_i=V(F(s_t,a_i),s_0).
+\]
+GAR trains $E_i<E_j$ whenever $g_i<g_j$, using only pairwise margins. It uses
+no remaining-step count and no symbolic relevance flag.
+
+\medskip
+\textbf{Boundary of the claim.} GAR still enumerates feasible actions, renders
+counterfactual next sentences, and uses intent phrases. The current GAR jobs
+also retain operation-type displacement decoding. It is therefore
+\emph{preference-label-free}, not fully action-annotation-free. Two GAR variants
+are running; results are not yet included in the tables.
+\end{frame}
+
+\begin{frame}{Full variational JEPA over an undifferentiated sentence stream}
+\claim{The new model removes intent phrases entirely and represents uncertainty
+in both the unobserved transition and the next latent state.}
+\small
+Prompt and solution sentences form one causal stream; every adjacent pair is a
+training transition. Following VJEPA (arXiv:2601.14354), the EMA target encoder
+defines a diagonal-Gaussian inference distribution, a target sample is drawn,
+and the predictor assigns it likelihood:
+\begin{align*}
+q_\phi(z_{t+1}\mid x_{\le t+1})&=\mathcal N(\bar\mu_{t+1},
+  \mathrm{diag}\,\sigma^2_{q,t+1}),\\
+q_\psi(u_t\mid s_t,z_{t+1})&=\mathcal N(\mu^u_q,
+  \mathrm{diag}\,(\sigma^u_q)^2),\quad
+p_\omega(u_t\mid s_t)=\mathcal N(\mu^u_p,\mathrm{diag}\,(\sigma^u_p)^2),\\
+p_\theta(z_{t+1}\mid s_t,u_t)&=\mathcal N(\mu^z_\theta,
+  \mathrm{diag}\,(\sigma^z_\theta)^2),\\
+\mathcal L&=-\log p_\theta(z_{t+1}^{(q)}\mid s_t,u_t^{(q)})
+ +\beta_z\,D_{\mathrm{KL}}(q_\phi\|\mathcal N(0,I))
+ +\beta_u\,D_{\mathrm{KL}}(q_\psi\|p_\omega).
+\end{align*}
+Both predictor and target variances are learned. There is no token decoder,
+intent/outcome split, symbolic action target, or feasible-action interface.
+This first experiment evaluates representation dynamics and calibration, not
+task planning. Stylized and official-iGSM runs are active.
+\end{frame}
+
+\begin{frame}{Latent displacement decoding with unobserved actions: factorial test}
+\claim{EMA targets require an explicit distribution regularizer here: VICReg
+or SIGReg preserves high-rank states, whereas removing EMA produces collapsed
+or strongly low-rank states in every cell.}
+\small
+Delta-JEPA observes $a_t$ and minimizes
+$\|D(s_{t+1}-s_t)-a_t\|_2^2$. Our action-free extension instead uses
+$\|D(s_{t+1}-s_t)-\sg\,\mu_q^u\|_2^2$. The latter is a consistency constraint:
+$q_\psi$ and $D$ can agree on an uninformative code, so we report posterior-mean
+standard deviation and effective rank rather than transferring Delta-JEPA's
+anti-collapse claim.
+
+\medskip
+\centering
+\begin{tabular}{lccc}
+\toprule
+target encoder & no state regularizer & VICReg & SIGReg (LeJEPA)\\
+\midrule
+EMA target & 2.9 / 1.9 & \textbf{125.1 / 9.2} & \textbf{128.8 / 12.8}\\
+shared online target (no EMA/stop-grad) & collapse$^\dagger$ & 2.4 / 2.2 & 16.8 / 7.7\\
+\bottomrule
+\end{tabular}
+
+\medskip
+Each entry is state effective rank / posterior-action-mean effective rank
+(maxima 256 / 16) after the same 30k-problem, 10-epoch pilot. $^\dagger$State
+std. $=9\!\times\!10^{-4}$ and action-mean std. $=2.5\!\times\!10^{-3}$;
+effective rank is misleading at this scale. SIGReg follows LeJEPA's
+random-projection normality test. These are collapse diagnostics, not evidence
+that the inferred action code is semantically grounded.
+\end{frame}
+
+\begin{frame}{Experiments active on July 13, 2026}
+\small
+\begin{tabular}{p{0.40\textwidth}p{0.27\textwidth}p{0.25\textwidth}}
+\toprule
+question & runs & status\\
+\midrule
+Can geometric outcomes replace symbolic preference labels? & GAR + GAR-pure & training\\
+How many official-iGSM counterfactuals are needed? & $K=1$ and $K=4$ (with $K=2$ reference) & training\\
+Does counterfactual transition data help without ranking? & outcome prediction, $K=1,2,4$ & training\\
+Can fully latent actions model a sentence stream probabilistically? & stylized + official iGSM & training\\
+How do EMA, VICReg, and SIGReg interact with latent LDAD? & $2\times3$ factorial & completed; diagnostics above\\
+\bottomrule
+\end{tabular}
+
+\medskip
+Only the completed LDAD pilot diagnostics are reported above. The other rows
+remain active and should enter result tables only after checkpoint, validation,
+and the relevant planning or counterfactual-audit artifact exist.
+\end{frame}
+
 \begin{frame}{Honest limitations \& what this is not}
 \begin{itemize}\itemsep2pt
-  \item \textbf{iGSM-style, not iGSM}: flat DAG, binary mod-23 ops, one
-        question template, templated English --- no hierarchical categories /
-        instance-vs-abstract parameters of the original benchmark.
-  \item \textbf{Actions are observed intents}, not variational latents: the
-        symbolic world offers an enumerable interface. The
-        variational prior $p(a\mid s,g)$ (for CEM/MPPI over sampled actions)
-        is future work.
-  \item \textbf{The best goal energy is still supervised} (remaining-steps
-        labels); straightened raw geometry closes much of the gap
-        (0.845 vs 0.935 @slack 2, Results 7--8) and the curvature loss is
-        \emph{label-free}, but the monotonicity hinge uses the same labels
-        as the value head.
+  \item Most ablations use the stylized flat-DAG generator. Transfer is tested
+        on the vendored official iGSM generator, but not yet at broad language
+        variation or natural-text scale.
+  \item The reported planning records use observed intent phrases and an
+        oracle feasible-action enumerator. The new sentence-stream VJEPA removes
+        both interfaces, but does not yet support task planning.
+  \item Geometry-distilled values remove scalar remaining-step labels but the
+        best completed variant still uses binary relevance and symbolic
+        counterfactual ordering. GAR removes those preference labels but still
+        uses environment-generated counterfactual outcomes.
   \item Value labels shape only the value head unless \texttt{valgrad};
-        the op-CE in LDAD uses the executed action's type (JEPA-legit:
-        actions are observed at training time).
+        operation CE in the hybrid displacement loss is explicit symbolic
+        action-type supervision.
+  \item Historical data-scale artifacts reused fixed per-index corpora and
+        changed optimizer steps with corpus size. Fresh-per-epoch generation is
+        fixed for new experiments; the old diversity claim needs a matched rerun.
   \item Text ``generation'' is action selection + template rendering; a
         learned renderer is orthogonal to the world model.
 \end{itemize}
 \end{frame}
 
-\begin{frame}{Next steps}
+\begin{frame}{Next steps after the active runs}
 \begin{itemize}\itemsep2pt
-  \item \textbf{Depth-calibrated ranking}: rank multi-step rollout costs,
-        not only 1-step candidates, so lookahead helps ranking models too
-        (Result 10's anomaly); target $\ge$0.95 @optimal with look-2.
-  \item \textbf{Error analysis of the last 10\%}: what do the
-        \texttt{champion} failures share (chain depth, op mix,
-        tie patterns)?
-  \item \textbf{Hierarchical planning}: use the trained $F_{\mathrm{hi}}$ +
-        macro codes to propose 3-step jumps, refine with $F$ (HWM).
-  \item \textbf{Unobserved actions --- first results}: variational
-        $q(a\mid s_{t-1},s_t)$, prior sampling planner, detached
-        intent-decode readout. v1 posterior-collapses; free bits (4 nats)
-        reach 0.195/0.68 --- $\approx$22\%/70\% of the observed-action
-        ceiling. Open frontier: code-taxonomy probes, ranking in code
-        space.
-  \item \textbf{Harder worlds}: faithful iGSM (hierarchy + category sums),
-        larger moduli, paraphrase templates, natural-language noise; scale.
+  \item \textbf{Resolve the causal question}: compare $K=1,2,4$
+        counterfactual outcome prediction against matched preference-learning
+        runs, with identical updates and fresh problems.
+  \item \textbf{Audit latent actions}: posterior-mean variance/effective rank,
+        transition clustering, uncertainty calibration, and held-out
+        next-sentence likelihood for every EMA/regularizer cell.
+  \item \textbf{Recover planning without action names}: learn a proposal over
+        latent $u_t$ and a separate observation-to-action execution mechanism;
+        do not nearest-match against an oracle intent list in the final system.
+  \item \textbf{Scale only after the faithful verdict}: use the official iGSM
+        $K$ sweep to select counterfactual density, then increase capacity and
+        search horizon with a compute-matched protocol.
+  \item \textbf{Broaden text}: paraphrases, larger moduli, noisy statements,
+        and ultimately non-templated corpora; retain counterfactual audits.
 \end{itemize}
 \end{frame}
 

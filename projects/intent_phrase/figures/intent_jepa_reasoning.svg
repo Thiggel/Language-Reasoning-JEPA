@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="760" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
+  <title id="title">Intent-JEPA models reasoning as action-conditioned state transitions</title>
+  <desc id="desc">Three reasoning states progress from x equals 8, to y equals 4, to x times y equals 32. The arrows are labeled by observed natural-language intent actions. Encoders map each state into latent space, where a predictor forecasts the next latent state from the current latent state and intent.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#eef2ff"/>
+    </linearGradient>
+    <linearGradient id="stateFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f8fafc"/>
+    </linearGradient>
+    <linearGradient id="latentFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#334155"/>
+    </marker>
+    <marker id="latentArrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#6366f1"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="760" fill="url(#bg)"/>
+  <circle cx="1480" cy="90" r="170" fill="#c7d2fe" opacity="0.28"/>
+  <circle cx="110" cy="720" r="210" fill="#ddd6fe" opacity="0.24"/>
+
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="90" y="82" fill="#0f172a" font-size="38" font-weight="750">Intent-JEPA</text>
+    <text x="90" y="123" fill="#475569" font-size="24">Reasoning evolves through observed language actions</text>
+
+    <g>
+      <rect x="90" y="190" width="350" height="178" rx="26" fill="url(#stateFill)" stroke="#cbd5e1" stroke-width="2"/>
+      <rect x="625" y="190" width="350" height="178" rx="26" fill="url(#stateFill)" stroke="#cbd5e1" stroke-width="2"/>
+      <rect x="1160" y="190" width="350" height="178" rx="26" fill="url(#stateFill)" stroke="#cbd5e1" stroke-width="2"/>
+    </g>
+
+    <g fill="#64748b" font-size="18" font-weight="650" letter-spacing="1.3">
+      <text x="122" y="228">REASONING STATE  s<tspan baseline-shift="sub" font-size="13">t</tspan></text>
+      <text x="657" y="228">REASONING STATE  s<tspan baseline-shift="sub" font-size="13">t+1</tspan></text>
+      <text x="1192" y="228">REASONING STATE  s<tspan baseline-shift="sub" font-size="13">t+2</tspan></text>
+    </g>
+
+    <g fill="#0f172a" font-size="34" font-weight="650">
+      <text x="265" y="298" text-anchor="middle">x is 8</text>
+      <text x="800" y="298" text-anchor="middle">y is 4</text>
+      <text x="1335" y="298" text-anchor="middle">x × y = 32</text>
+    </g>
+    <g fill="#64748b" font-size="17">
+      <text x="265" y="337" text-anchor="middle">current numerical fact</text>
+      <text x="800" y="337" text-anchor="middle">new fact after execution</text>
+      <text x="1335" y="337" text-anchor="middle">derived result</text>
+    </g>
+
+    <path d="M440 279 H625" fill="none" stroke="#334155" stroke-width="4" marker-end="url(#arrow)"/>
+    <path d="M975 279 H1160" fill="none" stroke="#334155" stroke-width="4" marker-end="url(#arrow)"/>
+
+    <g>
+      <rect x="446" y="205" width="173" height="48" rx="24" fill="#e0e7ff" stroke="#818cf8" stroke-width="1.5"/>
+      <text x="532.5" y="225" text-anchor="middle" fill="#4338ca" font-size="13" font-weight="700" letter-spacing="0.8">INTENT ACTION</text>
+      <text x="532.5" y="243" text-anchor="middle" fill="#312e81" font-size="15" font-weight="600">find value of y</text>
+      <rect x="981" y="205" width="173" height="48" rx="24" fill="#e0e7ff" stroke="#818cf8" stroke-width="1.5"/>
+      <text x="1067.5" y="225" text-anchor="middle" fill="#4338ca" font-size="13" font-weight="700" letter-spacing="0.8">INTENT ACTION</text>
+      <text x="1067.5" y="243" text-anchor="middle" fill="#312e81" font-size="15" font-weight="600">multiply x and y</text>
+    </g>
+
+    <g stroke="#94a3b8" stroke-width="2.5" stroke-dasharray="7 8" fill="none" marker-end="url(#arrow)">
+      <path d="M265 368 V475"/>
+      <path d="M800 368 V475"/>
+      <path d="M1335 368 V475"/>
+    </g>
+    <g fill="#64748b" font-size="16" font-weight="600">
+      <text x="278" y="430">encode</text>
+      <text x="813" y="430">encode</text>
+      <text x="1348" y="430">encode</text>
+    </g>
+
+    <g>
+      <rect x="180" y="486" width="170" height="86" rx="43" fill="url(#latentFill)"/>
+      <rect x="715" y="486" width="170" height="86" rx="43" fill="url(#latentFill)"/>
+      <rect x="1250" y="486" width="170" height="86" rx="43" fill="url(#latentFill)"/>
+    </g>
+    <g fill="#ffffff" text-anchor="middle">
+      <text x="265" y="522" font-size="16" font-weight="600">latent state</text>
+      <text x="265" y="550" font-size="25" font-weight="750">z<tspan baseline-shift="sub" font-size="16">t</tspan></text>
+      <text x="800" y="522" font-size="16" font-weight="600">target state</text>
+      <text x="800" y="550" font-size="25" font-weight="750">z<tspan baseline-shift="sub" font-size="16">t+1</tspan></text>
+      <text x="1335" y="522" font-size="16" font-weight="600">target state</text>
+      <text x="1335" y="550" font-size="25" font-weight="750">z<tspan baseline-shift="sub" font-size="16">t+2</tspan></text>
+    </g>
+
+    <path d="M350 529 H715" fill="none" stroke="#6366f1" stroke-width="5" marker-end="url(#latentArrow)"/>
+    <path d="M885 529 H1250" fill="none" stroke="#6366f1" stroke-width="5" marker-end="url(#latentArrow)"/>
+    <g>
+      <rect x="438" y="484" width="188" height="41" rx="20.5" fill="#ffffff" stroke="#a5b4fc" stroke-width="2"/>
+      <text x="532" y="510" text-anchor="middle" fill="#4338ca" font-size="16" font-weight="700">predictor  F(z<tspan baseline-shift="sub" font-size="11">t</tspan>, a<tspan baseline-shift="sub" font-size="11">t</tspan>)</text>
+      <rect x="973" y="484" width="188" height="41" rx="20.5" fill="#ffffff" stroke="#a5b4fc" stroke-width="2"/>
+      <text x="1067" y="510" text-anchor="middle" fill="#4338ca" font-size="16" font-weight="700">predictor  F(z<tspan baseline-shift="sub" font-size="11">t+1</tspan>, a<tspan baseline-shift="sub" font-size="11">t+1</tspan>)</text>
+    </g>
+
+    <rect x="90" y="638" width="1420" height="72" rx="20" fill="#ffffff" opacity="0.92" stroke="#cbd5e1" stroke-width="1.5"/>
+    <circle cx="130" cy="674" r="9" fill="#4f46e5"/>
+    <text x="154" y="669" fill="#334155" font-size="18" font-weight="650">Observed:</text>
+    <text x="250" y="669" fill="#475569" font-size="18">the natural-language intent action</text>
+    <circle cx="634" cy="674" r="9" fill="#94a3b8"/>
+    <text x="658" y="669" fill="#334155" font-size="18" font-weight="650">Executed:</text>
+    <text x="756" y="669" fill="#475569" font-size="18">the environment produces the next reasoning sentence</text>
+    <text x="154" y="694" fill="#64748b" font-size="16">The model predicts the action-conditioned consequence in latent space; it does not generate the numeric outcome text.</text>
+  </g>
+</svg>

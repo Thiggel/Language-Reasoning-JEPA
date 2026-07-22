@@ -185,6 +185,107 @@ claim, verify the primary source and current publication status.
     evaluations, and disclose that any clean-target reranking is
     candidate-privileged rather than deployment-feasible.
 
+## 2026-07-22 — diagnosing one-token collapse in the sequence-edit MDLM
+
+- Decision: whether the all-`=` generations are an inherent limitation of
+  masked diffusion, an inference-only degeneration, or an invalid/undertrained
+  control that must be repaired before further JEPA comparisons.
+- Primary sources:
+  - MDLM paper: <https://arxiv.org/abs/2406.07524>
+  - MDLM official implementation:
+    <https://github.com/kuleshov-group/mdlm>
+  - LLaDA paper: <https://openreview.net/forum?id=W2tWu0aikL>
+  - Masked diffusion as a time-agnostic masked model:
+    <https://proceedings.iclr.cc/paper_files/paper/2025/file/9e3b203e72c4e058de26d02a92a81844-Paper-Conference.pdf>
+  - Neural text degeneration:
+    <https://arxiv.org/abs/1904.09751>
+  - Unlikelihood training: <https://arxiv.org/abs/1908.04319>
+- Applicable claims:
+  - Likelihood-trained language models can become repetitive under greedy or
+    maximization-based decoding even when their token distributions are useful;
+    stochastic truncated sampling can reduce that decoding degeneration.
+  - This generic explanation is insufficient here because the local model has
+    already converged to the same approximately 18.1% argmax accuracy at every
+    tested fixed mask rate. That is consistent with a frequent-token baseline,
+    before autoregressive error accumulation begins.
+  - Official MDLM uses SUBS constraints, categorical reverse-process sampling,
+    global batch 512, EMA 0.9999, antithetic time sampling, zero weight decay,
+    and up to one million optimizer steps. The local wave used batch 8, no EMA,
+    independent time draws, weight decay 0.01, about 1,000 updates over 2,000
+    fixed examples, and greedy highest-confidence coordinate commitment.
+  - Confidence-first irreversible commitment can amplify an early frequent-token
+    error: later predictions are conditioned on a wrong token pattern absent
+    from the absorbing-mask training distribution. Remasking/refinement is an
+    inference robustness mechanism, not a substitute for a denoiser that beats
+    the marginal-token baseline at fixed noise.
+  - Masked diffusion succeeding at language generation in published systems is
+    therefore not evidence that this small, short-run conditional iGSM model is
+    optimized correctly. It does show that the observed collapse is not an
+    inherent consequence of the objective.
+- Limitations:
+  - Published MDLM and LLaDA results use much larger data/model regimes than the
+    local 12M-parameter iGSM control. Their absolute schedules do not transfer
+    directly, and generic AR repetition remedies are analogies rather than
+    evidence on this task.
+  - Unlikelihood or repetition penalties could incorrectly suppress legitimate
+    repeated arithmetic punctuation such as `=`. They should not be applied
+    until the denoising distribution is otherwise valid.
+- Design change:
+  - Gate the implementation with one-example and one-minibatch overfit tests,
+    per-mask-rate top-1/top-k accuracy, predicted-token histograms, entropy, and
+    a measured majority-token baseline.
+  - Add a faithful MDLM control with explicit SUBS output constraints,
+    antithetic mask-rate sampling, EMA evaluation, zero weight decay, a larger
+    effective batch, fresh procedural examples, and a step-based rather than
+    four-epoch budget.
+  - Evaluate proper categorical ancestral/DDPM sampling separately from greedy
+    confidence unmasking, then cross irreversible carry-over with low-confidence
+    remasking or deliberately corrupted revealed-token training. Do not treat a
+    sampling-only diversity gain as a repaired training distribution.
+
+## 2026-07-22 — iGSM training scale and implications for edit models
+
+- Decision: whether a 50M-parameter model and roughly 50,000 synthetic
+  examples constitute a credible scale-up from the collapsed 12M/2,000-example
+  sequence-edit controls.
+- Primary source:
+  - Physics of Language Models, Part 2.1 (the iGSM paper):
+    <https://arxiv.org/abs/2407.20311>
+- Applicable claims:
+  - The main iGSM models are GPT2-12-12 scale (roughly GPT-2 small, about 124M
+    parameters). The architecture replaces absolute positional embeddings with
+    RoPE. The paper also compares 4/8/12/16/20-layer models at approximately
+    matched parameter counts and finds depth materially affects reasoning and
+    OOD length generalization.
+  - iGSM-medium pretraining uses fresh on-the-fly examples, peak learning rate
+    0.002, AdamW beta `(0.9, 0.98)`, weight decay 0.05, batch 512, context 768,
+    1,000 warmup steps, and 100,000 optimizer steps. This is 51.2 million
+    sequence presentations, not a fixed dataset of 50,000 examples.
+  - iGSM-hard uses batch 256, context 1,024, and 200,000 optimizer steps with
+    otherwise similar settings. Evaluation uses context 2,048 and at least
+    4,096 problems per reported cell.
+  - The authors explicitly do not estimate sample complexity. Their recipe is
+    evidence for a reliable upper/reference regime, not proof that every
+    alternative objective needs 100,000 steps or a 124M model.
+- Limitations:
+  - The paper trains an autoregressive token-likelihood model. A local edit
+    transition can be easier than full solution generation, while learning a
+    planning-useful JEPA geometry and a deployment proposal prior can be harder
+    than one-step token reconstruction.
+  - “Number of examples” is ambiguous for procedural data. Unique generator
+    seeds, total sequence presentations, total non-padding tokens, and optimizer
+    updates must all be reported separately.
+- Design change:
+  - Treat 50M parameters plus 50,000 fresh examples as a useful intermediate
+    pilot, not a paper-faithful iGSM scale. Prefer at least 12 reasonably narrow
+    layers over a shallow 50M model, and extend training by fresh steps if the
+    loss and mask-conditioned accuracy are still improving.
+  - Cross data exposure and model size rather than changing both only once:
+    retain a small validity model, test a 50M/deep intermediate model, and admit
+    a roughly 100--125M reference only if denoising/prior validity improves with
+    exposure. Count independent problems in each effective batch separately
+    from correlated trajectories and counterfactual candidates.
+
 ## 2026-07-16 — transfer benchmarks and anticipated review concerns
 
 - Query: language reasoning environments with explicit actions, outcomes, and

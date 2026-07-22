@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "project": "intent_phrase",
+  "round_id": "2026-07-22-intent-paper-process-gates-tmpfix-v2",
+  "decision": "Repeat the four process gates unchanged except for the validated short job-private multiprocessing directory at commit 2711922584ec5f8dcc4c694ea5c7fb3d9c01e5f9. All four must train, reload, and emit finite non-oracle closed-loop metrics before any learning-rate cell is admitted. The 2026-07-21 timeout/failure are invalid infrastructure runs caused by AF_UNIX path length and are not scientific exclusions.",
+  "git_commit": "2711922584ec5f8dcc4c694ea5c7fb3d9c01e5f9",
+  "jobs": [
+    {
+      "id": "intent-paper-gate-geometry-jepa-tmpfix-v2",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 20000,
+      "purpose": "Recover the geometry JEPA process gate after fixing only the multiprocessing socket path.",
+      "command": ["bash", "scripts/run_intent_paper_gate_cell.sh", "{python}", "geometry_jepa", "0", "128", "3e-4"],
+      "expected_artifacts": ["run_summary.json", "model/best.pt", "metrics.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "intent-paper-gate-looped-token-lm-tmpfix-v2",
+      "cluster": "alex",
+      "gpus": 1,
+      "cpus": 4,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 20000,
+      "purpose": "Recover the recurrent token LM process gate with a short job-private multiprocessing path.",
+      "command": ["bash", "scripts/run_intent_paper_gate_cell.sh", "{python}", "looped_token_lm", "0", "128", "3e-4"],
+      "expected_artifacts": ["run_summary.json", "model/best.pt", "metrics.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "intent-paper-gate-looped-sentence-lm-tmpfix-v2",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 20000,
+      "purpose": "Recover the recurrent sentence LM process gate after fixing only the multiprocessing socket path.",
+      "command": ["bash", "scripts/run_intent_paper_gate_cell.sh", "{python}", "looped_sentence_lm", "0", "128", "3e-4"],
+      "expected_artifacts": ["run_summary.json", "model/best.pt", "metrics.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "intent-paper-gate-looped-sentence-latent-lm-tmpfix-v2",
+      "cluster": "Grete",
+      "gpus": 1,
+      "cpus": 4,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 20000,
+      "purpose": "Recover the recurrent sentence-latent LM process gate with a short job-private multiprocessing path.",
+      "command": ["bash", "scripts/run_intent_paper_gate_cell.sh", "{python}", "looped_sentence_latent_lm", "0", "128", "3e-4"],
+      "expected_artifacts": ["run_summary.json", "model/best.pt", "metrics.json", "stdout.log", "stderr.log"]
+    }
+  ]
+}

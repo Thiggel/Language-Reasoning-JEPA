@@ -8,8 +8,8 @@ plan_path = "research/intent_phrase/NEXT_PLAN.json"
 branch = "research/intent_phrase"
 worktree = "/vol/home-vol2/ml/laitenbf/TextJEPA-worktrees/intent_phrase"
 prompt = "automation/prompts/projects/intent_phrase.md"
-scientifically_active = true
-autonomous_submission = true
+scientifically_active = false
+autonomous_submission = false
 
 [ownership]
 config_patterns = ["configs/experiment/disc_*", "configs/experiment/paper_causal_*", "configs/experiment/real_*", "configs/experiment/*intent*"]

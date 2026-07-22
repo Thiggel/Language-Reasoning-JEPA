@@ -21,6 +21,11 @@ proposal_pool_k: 0
 proposal_token_pool: current_buffer  # current_buffer | prompt_plus_current
 counterfactual_source: uniform_local
 gar_teacher: latent_distance
+# Opt-in frozen-policy state replay. A positive fraction replaces expert
+# presentations; dataset length and optimizer updates remain unchanged.
+replay_path: null
+replay_fraction: 0.0
+replay_proposal_seed: 3700
 corruption_mode: mixed  # mixed | mask | replace | remove | curriculum
 curriculum_epochs: 3
 # Compatibility fields unused by the text-only corruption process.

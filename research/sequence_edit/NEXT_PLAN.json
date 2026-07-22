@@ -1,59 +1,46 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-17-structured-edit-ldad-coarse-wave2",
-  "decision": "Test whether faithful displacement-only observed-action reconstruction restores causal edit sensitivity, and whether low VICReg helps or interferes.",
-  "git_commit": "AUTO",
+  "round_id": "2026-07-21-edit-gar-ranking-diversity-wave93",
+  "decision": "At fixed 12.5M token-only architecture, four trajectories per clean sequence, detached action prior, exact terminal token-edit teacher, and 512 clean sequences, does faithful GAR supervision—MSE regression weight 0.25 plus same-state pairwise margin ranking—create a discriminative deployment V(s,a), and does its benefit increase with target-independent counterfactual breadth K in {1,4,8}? K=1 regression-only anchors the changed regression scale, K=8 regression-only isolates breadth without ranking, and a K=8 learning-rate cross-check tests whether the new gradient scale merely changes optimization. Continue to deeper MPC only if pairwise/top-1 accuracy and posterior discrimination improve without damaging action-conditioned transition controls.",
+  "git_commit": "fa22cdcf97122ed831d896050dd6efc614492def",
+  "projected_gpu_hours": 29,
   "jobs": [
     {
-      "id": "edit-curriculum-vic002-ldad1-seed-0",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg_ldad", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.02", "objective.observed_action_ldad.weight=1.0"],
-      "gpus": 1,
-      "walltime_minutes": 60,
-      "purpose": "Test the low end of the paper-aligned LDAD range on the rank-safe VICReg anchor.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "id": "edit-gar-k1-mse025-norank-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 180,
+      "purpose": "Matched K=1 MSE-0.25 regression-only control for the ranked GAR objective.",
+      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "1", "0", "0.0003", "0", "512"],
+      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-curriculum-vic002-ldad10-seed-0",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg_ldad", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.02", "objective.observed_action_ldad.weight=10.0"],
-      "gpus": 1,
-      "walltime_minutes": 60,
-      "purpose": "Test Delta-JEPA's main LDAD coefficient on the rank-safe VICReg anchor.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "id": "edit-gar-k1-mse025-rank1-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 180,
+      "purpose": "K=1 expert-versus-counterfactual pairwise GAR control at MSE weight 0.25.",
+      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "1", "1", "0.0003", "0", "512"],
+      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-curriculum-vic002-ldad20-seed-0",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg_ldad", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.02", "objective.observed_action_ldad.weight=20.0"],
-      "gpus": 1,
-      "walltime_minutes": 60,
-      "purpose": "Test the high requested LDAD coefficient on the rank-safe VICReg anchor.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "id": "edit-gar-k4-mse025-rank1-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 300,
+      "purpose": "Four-counterfactual same-state GAR ranking cell measuring the first breadth increase.",
+      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "4", "1", "0.0003", "0", "512"],
+      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-curriculum-novic-ldad10-seed-0",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg_ldad", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.0", "objective.observed_action_ldad.weight=10.0"],
-      "gpus": 1,
-      "walltime_minutes": 60,
-      "purpose": "Isolate the Delta-JEPA displacement mechanism from VICReg under otherwise matched EMA dynamics.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "id": "edit-gar-k8-mse025-norank-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 360,
+      "purpose": "Eight-counterfactual regression-only control separating extra labels from pairwise ordering.",
+      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "8", "0", "0.0003", "0", "512"],
+      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-curriculum-vic01-ldad10-seed-0",
-      "cluster": "gruenau",
-      "command": ["bash", "scripts/run_faithful_token_edit_cell.sh", "{python}", "edit_token_structured_ema_vicreg_ldad", "0", "data.corruption_mode=curriculum", "objective.vicreg.weight=0.1", "objective.observed_action_ldad.weight=10.0"],
-      "gpus": 1,
-      "walltime_minutes": 60,
-      "purpose": "Measure whether moderate VICReg interacts beneficially with the main LDAD coefficient despite its rank cost alone.",
-      "expected_artifacts": ["run_summary.json", "metrics.json", "stdout.log", "stderr.log"],
-      "min_gpu_memory_mb": 40000
+      "id": "edit-gar-k8-mse025-rank1-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 360,
+      "purpose": "Eight-counterfactual ranked GAR cell testing whether wider same-state ordering changes useful geometry.",
+      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "8", "1", "0.0003", "0", "512"],
+      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "edit-gar-k8-mse025-rank1-lr1e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 360,
+      "purpose": "Lower-learning-rate cross-check for the widest ranked GAR cell after the objective changes gradient magnitude.",
+      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "8", "1", "0.0001", "0", "512"],
+      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
     }
   ]
 }

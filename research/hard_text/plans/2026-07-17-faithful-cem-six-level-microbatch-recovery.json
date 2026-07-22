@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "round_id": "2026-07-17-faithful-cem-six-level-microbatch-recovery",
+  "project": "token_igsm",
+  "decision": "Recover the unique failed six-level recursive CEM comparison using the validated rollout microbatch implementation while retaining the faithful 1000-candidate, 20-update planning budget.",
+  "git_commit": "3460b458748cc3de8b8f7fcf76aa7f96980ec347",
+  "projected_gpu_hours": 4,
+  "jobs": [
+    {
+      "id": "recursive-cem-six-level-microbatch-recovery",
+      "purpose": "Recover the six-level flat-versus-codebook recursive planning comparison invalidated only by full-population GPU memory exhaustion.",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 240,
+      "command": [
+        "bash",
+        "scripts/run_corrected_hierarchical_cem_bundle.sh",
+        "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-16-corrected-distinct-state-reachability/corrected-six-total-levels-distinct/model/best.pt",
+        "standard"
+      ],
+      "expected_artifacts": [
+        "flat_oracle_cem.json",
+        "codebook_reach_oracle_cem.json"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "mode": "flat",
+  "success": 0.0,
+  "valid_sentences_per_episode": 4.5,
+  "invalid_sentences_per_episode": 23.25,
+  "proposal_reference_recall": 0.052083333333333336,
+  "reference_selection_rate": 0.020833333333333332,
+  "ranking_failure_rate": 0.6,
+  "mean_value": 0.23548251321578087,
+  "mean_goal": 0.9371043212013319,
+  "mean_support": 0.0,
+  "mean_reachability": 0.0,
+  "episodes": 4,
+  "beam": 4,
+  "horizon": 1,
+  "oracle_goal": false,
+  "max_macros": 48,
+  "cem_candidates": null,
+  "cem_iterations": null
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "mode": "hierarchy",
+  "success": 0.0,
+  "valid_sentences_per_episode": 5.0,
+  "invalid_sentences_per_episode": 26.0,
+  "proposal_reference_recall": 0.046875,
+  "reference_selection_rate": 0.020833333333333332,
+  "ranking_failure_rate": 0.5555555555555556,
+  "mean_value": 0.02364152798933598,
+  "mean_goal": 0.895368409944543,
+  "mean_support": 0.9394417382233465,
+  "mean_reachability": 0.30245596141321585,
+  "episodes": 4,
+  "beam": 4,
+  "horizon": 1,
+  "oracle_goal": false,
+  "max_macros": 48,
+  "cem_candidates": null,
+  "cem_iterations": null
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "mode": "hierarchy",
+  "success": 0.0,
+  "valid_sentences_per_episode": 5.0,
+  "invalid_sentences_per_episode": 26.0,
+  "proposal_reference_recall": 0.046875,
+  "reference_selection_rate": 0.020833333333333332,
+  "ranking_failure_rate": 0.5555555555555556,
+  "mean_value": 0.02364152798933598,
+  "mean_goal": 0.885973876924254,
+  "mean_support": 0.9394417382233465,
+  "mean_reachability": 0.30245596141321585,
+  "episodes": 4,
+  "beam": 4,
+  "horizon": 1,
+  "oracle_goal": true,
+  "max_macros": 48,
+  "cem_candidates": null,
+  "cem_iterations": null
+}

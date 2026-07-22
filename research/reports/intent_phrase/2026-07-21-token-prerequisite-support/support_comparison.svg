@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="500" viewBox="0 0 1000 500">
+  <rect width="1000" height="500" fill="#fafafa"/>
+  <g font-family="sans-serif" fill="#172033">
+    <text x="500" y="36" text-anchor="middle" font-size="24" font-weight="bold">Length-nine learned-catalogue control</text>
+    <text x="250" y="75" text-anchor="middle" font-size="19" font-weight="bold">Success within two extra actions</text>
+    <text x="750" y="75" text-anchor="middle" font-size="19" font-weight="bold">Invalid-action episode rate</text>
+    <line x1="80" y1="410" x2="450" y2="410" stroke="#555" stroke-width="2"/>
+    <line x1="580" y1="410" x2="950" y2="410" stroke="#555" stroke-width="2"/>
+    <g fill="#94a3b8"><rect x="105" y="402" width="80" height="8"/><rect x="605" y="30" width="80" height="380"/></g>
+    <g fill="#f59e0b"><rect x="225" y="267" width="80" height="143"/><rect x="725" y="217" width="80" height="193"/></g>
+    <g fill="#16a34a"><rect x="345" y="123" width="80" height="287"/><rect x="845" y="334" width="80" height="76"/></g>
+    <g text-anchor="middle" font-size="18" font-weight="bold">
+      <text x="145" y="392">.025</text><text x="265" y="257">.358</text><text x="385" y="113">.717</text>
+      <text x="645" y="25">.950</text><text x="765" y="207">.483</text><text x="885" y="324">.192</text>
+    </g>
+    <g text-anchor="middle" font-size="15">
+      <text x="145" y="440">Token head,</text><text x="145" y="459">history masked</text>
+      <text x="265" y="440">Phrase-pooled</text><text x="265" y="459">history</text>
+      <text x="385" y="440">Token-level</text><text x="385" y="459">history</text>
+      <text x="645" y="440">Token head,</text><text x="645" y="459">history masked</text>
+      <text x="765" y="440">Phrase-pooled</text><text x="765" y="459">history</text>
+      <text x="885" y="440">Token-level</text><text x="885" y="459">history</text>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,27 @@
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+Traceback (most recent call last):
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/scripts/plan_token_hierarchy_v2.py", line 423, in <module>
+    main()
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/scripts/plan_token_hierarchy_v2.py", line 347, in main
+    candidates = beam_spans(
+                 ^^^^^^^^^^^
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/scripts/plan_token_hierarchy_v2.py", line 52, in beam_spans
+    logits = model(sequence)[0, -1]
+             ^^^^^^^^^^^^^^^
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/vol/home-vol2/ml/laitenbf/TextJEPA/src/textjepa/models/lm_baseline.py", line 47, in forward
+    x = self.tok(tokens) + self.pos[:, :L]
+        ~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~
+RuntimeError: The size of tensor a (769) must match the size of tensor b (768) at non-singleton dimension 1

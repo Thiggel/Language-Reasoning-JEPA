@@ -1,0 +1,31 @@
+Warning: Permanently added 'gruenau12' (ED25519) to the list of known hosts.
+{
+  "checkpoint": "runs/intent_action_support_r1/best.pt",
+  "examples": 2000,
+  "metrics": {
+    "true": {
+      "accuracy": 0.8644146919250488,
+      "positive_recall": 0.8880721926689148,
+      "negative_recall": 0.8495014905929565,
+      "pair_accuracy": 0.9050891995429993,
+      "positive_logit": 4.8314619064331055,
+      "negative_logit": -3.7140395641326904
+    },
+    "one_step": {
+      "accuracy": 0.7989903092384338,
+      "positive_recall": 0.8579580783843994,
+      "negative_recall": 0.7618181705474854,
+      "pair_accuracy": 0.8500494360923767,
+      "positive_logit": 4.781637668609619,
+      "negative_logit": -3.825995922088623
+    },
+    "open_loop": {
+      "accuracy": 0.788905680179596,
+      "positive_recall": 0.7272050380706787,
+      "negative_recall": 0.8278005719184875,
+      "pair_accuracy": 0.772713840007782,
+      "positive_logit": 3.729512929916382,
+      "negative_logit": -4.787983417510986
+    }
+  }
+}

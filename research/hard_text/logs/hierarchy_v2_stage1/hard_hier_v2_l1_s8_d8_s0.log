@@ -1,0 +1,175 @@
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+data:
+  name: igsm
+  modulus: 23
+  n_vars_range:
+  - 14
+  - 24
+  leaf_prob: 0.35
+  steps_range:
+  - 10
+  - 18
+  distractor_prob: 0.15
+  max_distractors: 3
+  train_size: 12000
+  val_size: 1000
+  test_size: 5000
+  train_seed: 1
+  val_seed: 2
+  test_seed: 3
+  shuffle_actions: false
+  n_alt: 0
+run_name: hard_hier_v2_l1_s8_d8_s0
+seed: 0
+device: cuda:3
+model:
+  d_model: 256
+  encoder_layers: 4
+  predictor_layers: 2
+  n_heads: 8
+  ff_mult: 4
+  max_len: 768
+  d_action: 64
+  level_spans:
+  - 8
+  level_dims:
+  - 8
+  variational_levels:
+  - false
+  concat_width: 8
+  low_dense_depth: 4
+  high_dense_depth: 4
+objective:
+  low_prediction: 1.0
+  low_dense: 1.0
+  low_value: 0.25
+  goal_prediction: 1.0
+  high_prediction: 1.0
+  high_dense: 1.0
+  reachability: 0.25
+  high_value: 1.0
+  macro_prior: 0.05
+  support: 0.1
+  vicreg: 1.0
+  covariance: 0.04
+  dense_discount: 0.7
+train:
+  batch_size: 24
+  num_workers: 8
+  epochs: 5
+  lr: 0.0003
+  weight_decay: 0.05
+  warmup_steps: 300
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 50
+  eval_batches: 30
+
+[epoch 0] goal_prediction=0.0009  level1_action_rank=5.6483  level1_action_std=2.0490  level1_dense=0.0248  level1_prediction=0.0256  level1_prior=0.7709  level1_reachability=0.0422  level1_support=0.8833  level1_value=0.0051  loss=0.8407  low_dense=0.0027  low_prediction=0.0024  low_value=0.0103  selection=0.0669  state_rank=45.9701  state_std=0.6590  vicreg=0.6393
+[epoch 1] goal_prediction=0.0020  level1_action_rank=5.7415  level1_action_std=2.6553  level1_dense=0.0156  level1_prediction=0.0177  level1_prior=0.7127  level1_reachability=0.1115  level1_support=0.8292  level1_value=0.0044  loss=1.2872  low_dense=0.0031  low_prediction=0.0023  low_value=0.0071  selection=0.0685  state_rank=38.1549  state_std=0.8600  vicreg=1.0939
+[epoch 2] goal_prediction=0.0027  level1_action_rank=5.7595  level1_action_std=2.7787  level1_dense=0.0131  level1_prediction=0.0154  level1_prior=0.6916  level1_reachability=0.1313  level1_support=0.8183  level1_value=0.0045  loss=1.3305  low_dense=0.0022  low_prediction=0.0019  low_value=0.0046  selection=0.0681  state_rank=38.9824  state_std=0.8821  vicreg=1.1403
+[epoch 3] goal_prediction=0.0030  level1_action_rank=5.7652  level1_action_std=2.8150  level1_dense=0.0117  level1_prediction=0.0138  level1_prior=0.6899  level1_reachability=0.1269  level1_support=0.8126  level1_value=0.0043  loss=1.3010  low_dense=0.0017  low_prediction=0.0014  low_value=0.0043  selection=0.0634  state_rank=39.5882  state_std=0.8835  vicreg=1.1165
+[epoch 4] goal_prediction=0.0032  level1_action_rank=5.7682  level1_action_std=2.8271  level1_dense=0.0118  level1_prediction=0.0140  level1_prior=0.6245  level1_reachability=0.1390  level1_support=0.8065  level1_value=0.0042  loss=1.2733  low_dense=0.0016  low_prediction=0.0013  low_value=0.0043  selection=0.0667  state_rank=40.3373  state_std=0.8835  vicreg=1.0896
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "goal_l1": 0.04816708341240883,
+  "token": {
+    "std": 0.8823076486587524,
+    "effective_rank": 39.587135314941406,
+    "token_identity_accuracy": 1.0,
+    "token_type_accuracy": 1.0,
+    "remaining_fraction_r2": 0.8851799368858337,
+    "final_answer_accuracy": 0.011325028312570781,
+    "sentence_position_r2": 0.959793746471405,
+    "boundary_distance_r2": 0.7859575748443604,
+    "numeric_token_accuracy": 1.0
+  },
+  "level1": {
+    "std": 0.8807315230369568,
+    "effective_rank": 39.4815788269043,
+    "token_identity_accuracy": 1.0,
+    "token_type_accuracy": 1.0,
+    "remaining_fraction_r2": 0.8740658164024353,
+    "final_answer_accuracy": 0.039030955585464336,
+    "sentence_position_r2": 0.9640184640884399,
+    "boundary_distance_r2": 0.8361576199531555,
+    "numeric_token_accuracy": 1.0,
+    "macro_first_token_accuracy": 0.5166666666666667,
+    "macro_last_token_accuracy": 0.5274151436031331,
+    "macro_action_std": 2.8167195320129395,
+    "macro_action_rank": 5.766012668609619,
+    "direct_prediction_l1": 0.08342856168746948,
+    "recursive_low_l1": 0.2650197744369507
+  },
+  "support_auc": 0.8711564688621933,
+  "abstraction_summary": {
+    "level1_answer_gain": 0.027705927272893553,
+    "level1_token_identity_drop": 0.0
+  }
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "mode": "flat",
+  "success": 0.0,
+  "valid_sentences_per_episode": 2.125,
+  "invalid_sentences_per_episode": 3.125,
+  "proposal_reference_recall": 0.21875,
+  "reference_selection_rate": 0.109375,
+  "ranking_failure_rate": 0.5,
+  "mean_value": 0.38578183529898524,
+  "mean_goal": 0.9956500900443643,
+  "mean_support": 0.0,
+  "mean_reachability": 0.0,
+  "episodes": 8,
+  "beam": 4,
+  "horizon": 1,
+  "oracle_goal": false,
+  "cem_candidates": null,
+  "cem_iterations": null
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "mode": "hierarchy",
+  "success": 0.0,
+  "valid_sentences_per_episode": 2.5,
+  "invalid_sentences_per_episode": 2.875,
+  "proposal_reference_recall": 0.21875,
+  "reference_selection_rate": 0.109375,
+  "ranking_failure_rate": 0.5,
+  "mean_value": 0.6631738068535924,
+  "mean_goal": 1.0003951258258894,
+  "mean_support": 0.5008162087760866,
+  "mean_reachability": 0.2177193007664755,
+  "episodes": 8,
+  "beam": 4,
+  "horizon": 1,
+  "oracle_goal": false,
+  "cem_candidates": null,
+  "cem_iterations": null
+}
+/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/lib64/python3.11/site-packages/torch/nn/modules/transformer.py:379: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  warnings.warn(
+{
+  "mode": "hierarchy",
+  "success": 0.0,
+  "valid_sentences_per_episode": 2.375,
+  "invalid_sentences_per_episode": 3.0,
+  "proposal_reference_recall": 0.21875,
+  "reference_selection_rate": 0.09375,
+  "ranking_failure_rate": 0.5714285714285714,
+  "mean_value": 0.6616263454779983,
+  "mean_goal": 1.0133614263031632,
+  "mean_support": 0.4973024366190657,
+  "mean_reachability": 0.21067601209506392,
+  "episodes": 8,
+  "beam": 4,
+  "horizon": 1,
+  "oracle_goal": true,
+  "cem_candidates": null,
+  "cem_iterations": null
+}

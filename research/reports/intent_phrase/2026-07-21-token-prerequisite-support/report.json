@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-21-token-prerequisite-support",
+  "project": "intent_phrase",
+  "title": "Token-level intent history makes learned action catalogues executable",
+  "created_at": "2026-07-21T11:10:00+02:00",
+  "status": "decision_complete",
+  "decision": "Adopt token-level history matching as the proposal-support interface, but do not attribute its prior-only gain to JEPA simulation.",
+  "plain_summary": "A token-level support head roughly doubles length-nine success and cuts invalid actions by about two thirds relative to phrase pooling, while a history-masked control fails; JEPA reranking was disabled and remains the next test.",
+  "report": "REPORT.md",
+  "review_required": true
+}

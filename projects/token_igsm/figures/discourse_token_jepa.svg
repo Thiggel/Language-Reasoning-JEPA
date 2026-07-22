@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Discourse Token-JEPA creates causal sentence-prefix embeddings and predicts the next embedding from the next token</title>
+  <desc id="desc">A causal token encoder produces one hidden state per word. Within each sentence, causal attention pooling creates a sentence-prefix embedding at every word using only that word and earlier words in the same sentence. A predictor combines the current sentence-prefix embedding with the next token to predict the subsequent sentence-prefix embedding.</desc>
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#ecfeff"/>
+    </linearGradient>
+    <linearGradient id="enc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f766e"/>
+      <stop offset="1" stop-color="#0891b2"/>
+    </linearGradient>
+    <linearGradient id="pool" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#4f46e5"/>
+    </linearGradient>
+    <marker id="arrow2" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#334155"/>
+    </marker>
+    <marker id="cyanArrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+      <path d="M1 1 L11 6 L1 11 Z" fill="#0891b2"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="980" fill="url(#bg2)"/>
+  <circle cx="1510" cy="100" r="190" fill="#a5f3fc" opacity="0.23"/>
+  <circle cx="40" cy="940" r="220" fill="#ddd6fe" opacity="0.20"/>
+
+  <g font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="80" y="72" fill="#0f172a" font-size="38" font-weight="750">Discourse / Token-JEPA</text>
+    <text x="80" y="112" fill="#475569" font-size="23">Token actions induce causal sentence-level state transitions</text>
+
+    <rect x="80" y="148" width="1440" height="90" rx="24" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="112" y="180" fill="#64748b" font-size="15" font-weight="700" letter-spacing="1.2">TOKEN STREAM</text>
+    <g font-size="22" font-weight="650" text-anchor="middle">
+      <g fill="#0f172a">
+        <rect x="245" y="170" width="105" height="44" rx="12" fill="#e0f2fe"/><text x="297.5" y="199">x</text>
+        <rect x="365" y="170" width="105" height="44" rx="12" fill="#e0f2fe"/><text x="417.5" y="199">is</text>
+        <rect x="485" y="170" width="105" height="44" rx="12" fill="#e0f2fe"/><text x="537.5" y="199">8</text>
+        <rect x="605" y="170" width="105" height="44" rx="12" fill="#e0f2fe"/><text x="657.5" y="199">.</text>
+        <rect x="805" y="170" width="105" height="44" rx="12" fill="#ede9fe"/><text x="857.5" y="199">y</text>
+        <rect x="925" y="170" width="105" height="44" rx="12" fill="#ede9fe"/><text x="977.5" y="199">is</text>
+        <rect x="1045" y="170" width="105" height="44" rx="12" fill="#ede9fe"/><text x="1097.5" y="199">4</text>
+        <rect x="1165" y="170" width="105" height="44" rx="12" fill="#ede9fe"/><text x="1217.5" y="199">.</text>
+      </g>
+    </g>
+    <path d="M760 158 V228" stroke="#64748b" stroke-width="2" stroke-dasharray="5 6"/>
+    <text x="680" y="257" fill="#0284c7" font-size="15" font-weight="700" text-anchor="middle">SENTENCE t</text>
+    <text x="1040" y="257" fill="#6d28d9" font-size="15" font-weight="700" text-anchor="middle">SENTENCE t+1</text>
+    <text x="760" y="257" fill="#64748b" font-size="14" text-anchor="middle">boundary</text>
+
+    <path d="M800 270 V308" stroke="#334155" stroke-width="3" marker-end="url(#arrow2)"/>
+    <rect x="590" y="310" width="420" height="70" rx="22" fill="url(#enc)" stroke="#0e7490" stroke-width="2"/>
+    <text x="800" y="339" fill="#ffffff" font-size="21" font-weight="750" text-anchor="middle">Causal token encoder</text>
+    <text x="800" y="363" fill="#cffafe" font-size="15" text-anchor="middle">hidden state h<tspan baseline-shift="sub" font-size="11">k</tspan> sees tokens x<tspan baseline-shift="sub" font-size="11">≤k</tspan> only</text>
+
+    <g fill="#ffffff" stroke="#0891b2" stroke-width="2.5">
+      <circle cx="300" cy="452" r="34"/><circle cx="470" cy="452" r="34"/><circle cx="640" cy="452" r="34"/><circle cx="810" cy="452" r="34"/>
+      <circle cx="990" cy="452" r="34"/><circle cx="1160" cy="452" r="34"/><circle cx="1330" cy="452" r="34"/>
+    </g>
+    <g fill="#0f766e" font-size="20" font-weight="750" text-anchor="middle">
+      <text x="300" y="459">h₁</text><text x="470" y="459">h₂</text><text x="640" y="459">h₃</text><text x="810" y="459">h₄</text>
+      <text x="990" y="459">h₅</text><text x="1160" y="459">h₆</text><text x="1330" y="459">h₇</text>
+    </g>
+    <g stroke="#67e8f9" stroke-width="2" opacity="0.75">
+      <path d="M300 418 V390"/><path d="M470 418 V390"/><path d="M640 418 V390"/><path d="M810 418 V390"/>
+      <path d="M990 418 V390"/><path d="M1160 418 V390"/><path d="M1330 418 V390"/>
+    </g>
+    <text x="165" y="458" fill="#64748b" font-size="16" font-weight="700">TOKEN STATES</text>
+
+    <text x="80" y="548" fill="#64748b" font-size="15" font-weight="700" letter-spacing="1.2">CAUSAL POOLING WITHIN EACH SENTENCE</text>
+    <g stroke="#a78bfa" stroke-width="2.2" fill="none" opacity="0.88">
+      <path d="M300 486 C300 520 300 526 300 558"/>
+      <path d="M300 486 C300 526 470 520 470 558"/><path d="M470 486 C470 520 470 526 470 558"/>
+      <path d="M300 486 C300 535 640 515 640 558"/><path d="M470 486 C470 530 640 520 640 558"/><path d="M640 486 V558"/>
+      <path d="M470 486 C470 540 810 515 810 558"/><path d="M640 486 C640 530 810 525 810 558"/><path d="M810 486 V558"/>
+      <path d="M990 486 V558"/>
+      <path d="M990 486 C990 525 1160 520 1160 558"/><path d="M1160 486 V558"/>
+      <path d="M990 486 C990 535 1330 515 1330 558"/><path d="M1160 486 C1160 530 1330 520 1330 558"/><path d="M1330 486 V558"/>
+    </g>
+    <path d="M900 500 V665" stroke="#64748b" stroke-width="2" stroke-dasharray="6 7"/>
+    <text x="910" y="536" fill="#64748b" font-size="14">pool resets at boundary</text>
+
+    <g>
+      <rect x="235" y="558" width="130" height="66" rx="22" fill="url(#pool)"/>
+      <rect x="405" y="558" width="130" height="66" rx="22" fill="url(#pool)"/>
+      <rect x="575" y="558" width="130" height="66" rx="22" fill="url(#pool)"/>
+      <rect x="745" y="558" width="130" height="66" rx="22" fill="url(#pool)"/>
+      <rect x="925" y="558" width="130" height="66" rx="22" fill="url(#pool)"/>
+      <rect x="1095" y="558" width="130" height="66" rx="22" fill="url(#pool)"/>
+      <rect x="1265" y="558" width="130" height="66" rx="22" fill="url(#pool)"/>
+    </g>
+    <g fill="#ffffff" font-size="19" font-weight="750" text-anchor="middle">
+      <text x="300" y="585">s<tspan baseline-shift="sub" font-size="12">t,1</tspan></text><text x="300" y="608" font-size="12" font-weight="500">pool(h₁)</text>
+      <text x="470" y="585">s<tspan baseline-shift="sub" font-size="12">t,2</tspan></text><text x="470" y="608" font-size="12" font-weight="500">pool(h₁:h₂)</text>
+      <text x="640" y="585">s<tspan baseline-shift="sub" font-size="12">t,3</tspan></text><text x="640" y="608" font-size="12" font-weight="500">pool(h₁:h₃)</text>
+      <text x="810" y="585">s<tspan baseline-shift="sub" font-size="12">t,4</tspan></text><text x="810" y="608" font-size="12" font-weight="500">pool(h₁:h₄)</text>
+      <text x="990" y="585">s<tspan baseline-shift="sub" font-size="12">t+1,1</tspan></text><text x="990" y="608" font-size="12" font-weight="500">pool(h₅)</text>
+      <text x="1160" y="585">s<tspan baseline-shift="sub" font-size="12">t+1,2</tspan></text><text x="1160" y="608" font-size="12" font-weight="500">pool(h₅:h₆)</text>
+      <text x="1330" y="585">s<tspan baseline-shift="sub" font-size="12">t+1,3</tspan></text><text x="1330" y="608" font-size="12" font-weight="500">pool(h₅:h₇)</text>
+    </g>
+
+    <rect x="180" y="690" width="1240" height="210" rx="28" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="220" y="730" fill="#64748b" font-size="15" font-weight="700" letter-spacing="1.2">TOKEN-CONDITIONED JEPA TRANSITION</text>
+
+    <rect x="250" y="767" width="210" height="78" rx="24" fill="#ede9fe" stroke="#8b5cf6" stroke-width="2"/>
+    <text x="355" y="798" text-anchor="middle" fill="#4c1d95" font-size="16" font-weight="650">current sentence state</text>
+    <text x="355" y="827" text-anchor="middle" fill="#4c1d95" font-size="25" font-weight="750">s<tspan baseline-shift="sub" font-size="15">t,4</tspan></text>
+
+    <text x="493" y="813" fill="#64748b" font-size="28" font-weight="650">+</text>
+    <rect x="530" y="767" width="190" height="78" rx="24" fill="#cffafe" stroke="#0891b2" stroke-width="2"/>
+    <text x="625" y="795" text-anchor="middle" fill="#155e75" font-size="15" font-weight="650">next token action</text>
+    <text x="625" y="828" text-anchor="middle" fill="#155e75" font-size="25" font-weight="750">“y”</text>
+
+    <path d="M720 806 H820" stroke="#334155" stroke-width="4" marker-end="url(#arrow2)"/>
+    <rect x="825" y="755" width="220" height="102" rx="28" fill="#0f172a"/>
+    <text x="935" y="795" text-anchor="middle" fill="#ffffff" font-size="21" font-weight="750">Predictor</text>
+    <text x="935" y="825" text-anchor="middle" fill="#cbd5e1" font-size="16">F(s<tspan baseline-shift="sub" font-size="11">t,4</tspan>, token<tspan baseline-shift="sub" font-size="11">next</tspan>)</text>
+    <path d="M1045 806 H1132" stroke="#334155" stroke-width="4" marker-end="url(#arrow2)"/>
+
+    <rect x="1138" y="767" width="210" height="78" rx="24" fill="#dcfce7" stroke="#16a34a" stroke-width="2.5"/>
+    <text x="1243" y="798" text-anchor="middle" fill="#166534" font-size="16" font-weight="650">predicted next state</text>
+    <text x="1243" y="827" text-anchor="middle" fill="#166534" font-size="25" font-weight="750">ŝ<tspan baseline-shift="sub" font-size="15">t+1,1</tspan></text>
+
+    <path d="M1243 767 C1243 705 990 698 990 624" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-dasharray="7 7" marker-end="url(#cyanArrow)"/>
+    <text x="1110" y="682" fill="#15803d" font-size="14" font-weight="650">match the encoded target</text>
+
+    <rect x="80" y="928" width="1440" height="34" rx="17" fill="#ecfeff" stroke="#a5f3fc"/>
+    <text x="800" y="951" text-anchor="middle" fill="#155e75" font-size="16" font-weight="650">No future leakage: token encoding is causal, pooling uses only the within-sentence prefix, and pooling never crosses a sentence boundary.</text>
+  </g>
+</svg>

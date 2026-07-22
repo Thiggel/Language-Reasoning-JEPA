@@ -15,3 +15,7 @@ Run families are `hard_hier_*`, `text_hier_*`, `deltajepa_text_*`, and the
 controller rounds under `runs/autonomy/`. This project's conclusions must not
 be transferred to the observed intent-phrase project without an explicit
 experiment.
+
+## Figure
+
+- [Discourse / Token-JEPA causal sentence-embedding figure](figures/discourse_token_jepa.svg)

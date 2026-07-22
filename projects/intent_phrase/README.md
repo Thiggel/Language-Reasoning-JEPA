@@ -41,9 +41,12 @@ information-matched protocol.
 
 ## Navigation
 
+- [Intent-JEPA reasoning-state figure](figures/intent_jepa_reasoning.svg)
 - [Current status](STATUS.md)
+- [Latest token prerequisite-support report](../../research/reports/intent_phrase/2026-07-21-token-prerequisite-support/REPORT.md)
 - [Code/config/run ownership](ARTIFACTS.md)
 - [ICLR paper roadmap](PAPER_ROADMAP.md)
+- [Geometry-first paper experiment contract](PAPER_EXPERIMENTS.md)
 - [Detailed historical waves](../../research/intent_phrase/README.md)
 - [Paper-facing experiment specification](../../research/intent_phrase/PAPER_PLAN.md)
 - [Staged historical backlog](../../research/intent_phrase/BACKLOG.md)

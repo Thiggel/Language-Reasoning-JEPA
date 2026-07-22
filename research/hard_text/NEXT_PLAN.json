@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-token-igsm-grete-move-wave85",
+  "decision": "Replace all three still-live token-iGSM jobs on credit-exhausted Grete (14993283, 14993285, 14993286) with exact-snapshot Grünau copies. Preserve every scientific and optimization setting. Exclude any eventual Grete outputs as duplicates; Grete is ineligible for future plans.",
+  "git_commit": "f358fb767ba4e354212eb089c5807da6bb989165",
+  "projected_gpu_hours": 21,
+  "jobs": [
+    {
+      "id": "sentence-monotonicity-only-seed0-gruenau-wave85",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 38000, "walltime_minutes": 300,
+      "purpose": "Exact replacement for Grete job 14993283: isolate monotonic remaining-cost supervision along correct sentence trajectories.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-monotonicity-only-seed0", "0", "0", "0", "0", "0", "global", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-full-lr1e4-seed0-gruenau-wave85",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 38000, "walltime_minutes": 480,
+      "purpose": "Exact replacement for Grete job 14993285: low-learning-rate cross-check for the complete sentence-hierarchy objective.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e4-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-4", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-full-lr1e3-seed0-gruenau-wave85",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 38000, "walltime_minutes": 480,
+      "purpose": "Exact replacement for Grete job 14993286: high-learning-rate cross-check for the complete sentence-hierarchy objective.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e3-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-3", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    }
+  ]
+}

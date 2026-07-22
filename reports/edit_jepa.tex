@@ -19,9 +19,9 @@
 \newcommand{\sg}{\mathrm{sg}}
 
 \title{Edit-JEPA:\\ Latent World Models over Text Buffers}
-\subtitle{``Edit until perfect'' --- method, results, and open problems}
+\subtitle{Latent planning over mutable text buffers}
 \author{TextJEPA project}
-\date{July 9, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/edit\_*})}
+\date{July 13, 2026 \quad (repo: \texttt{TextJEPA/}, runs: \texttt{runs/edit\_*})}
 
 \begin{document}
 \frame{\titlepage}
@@ -75,20 +75,21 @@ Repair trajectories: uniformly random fixing edit per step; with $p{=}0.1$
 
 \begin{frame}{Architecture: slot-based buffer encoder + shared JEPA core}
 \begin{columns}
-\column{0.55\textwidth}\small
+\column{0.55\textwidth}\footnotesize
 \begin{itemize}\itemsep2pt
   \item Chunk encoder $E_c$ (identical to discourse track, 256-d).
   \item \textbf{SlotBufferEncoder}: 4 learned slot queries cross-attend
-        (2 decoder layers, 4 heads) over [prompt chunks $|$ buffer chunks
-        (+ buffer position emb.)]; flatten slots $\to$ 256-d state.
-        Length-invariant, order-aware.
-  \item Action encoder, predictor $F$, LDAD ($n_{\text{ops}}{=}3$), macro
-        hierarchy ($K{=}3$), value head: the \emph{same}
-        \texttt{LatentDynamicsCore} as the discourse track.
+        over prompt and position-encoded buffer sentences; four flattened
+        slots form the 256-d state.
+  \item The action encoder, latent predictor $F$, displacement decoder,
+        hierarchical objective, and value head are shared with the discourse
+        architecture.
   \item Value target = \textbf{defects remaining} (distance to perfect).
-  \item \texttt{edit\_anchor}: predict the \emph{frozen random-init} buffer
-        embedding of the post-edit buffer from $(s_t,a_t)$ --- the collusion
-        fix ported from the discourse track.
+  \item \textbf{Fixed outcome target}: predict a frozen random-feature
+        embedding of the post-edit buffer from $(s_t,a_t)$.
+  \item \textbf{Sentence-attentive transition}: action-conditioned queries
+        attend to individual buffer sentences before next-state prediction,
+        avoiding a purely pooled transition bottleneck.
 \end{itemize}
 \column{0.43\textwidth}
 \centering
@@ -124,7 +125,7 @@ edit a fix or vandalism'' plays the goal-relevance role.
 \smallskip
 
 \textbf{Training}: batch 64 (each item encodes all $T{+}1$ buffer
-snapshots), 20 epochs $\times$ 60k fresh trajectories, otherwise identical
+snapshots), 20 epochs over a deterministic 60k-trajectory corpus, otherwise identical
 protocol (AdamW $3{\times}10^{-4}$, EMA $0.99{\to}0.999$, RTX 6000,
 $\sim$70--90 min).
 \smallskip
@@ -146,12 +147,12 @@ Success $=$ \textbf{perfect draft within the optimal number of edits}.
 learned edit value head --- the published weakness was a value-head
 failure.}
 \begin{itemize}\itemsep2pt
-  \item Value heads: \texttt{base} 0.115 (random 0.06),
-        \texttt{valgrad} 0.425, \texttt{anchor} 0.365 --- all
+  \item Value heads: latent-prediction baseline 0.115 (random 0.06),
+        end-to-end value shaping 0.425, fixed outcome target 0.365 --- all
         \textbf{slack-insensitive} (ties on no-op edits waste budget).
   \item Raw goal distance $\|\mathrm{LN}(\hat s)-\mathrm{LN}(s_{\text{goal}})\|_1$
-        ($s_{\text{goal}}$ = encoded perfect buffer): \texttt{base}
-        \textbf{0.425}, \texttt{anchor} \textbf{0.47} --- $4\times$ the
+        ($s_{\text{goal}}$ = encoded perfect buffer): latent-prediction
+        baseline \textbf{0.425}, fixed outcome target \textbf{0.47} --- $4\times$ the
         base value head, no value supervision used at plan time.
   \item Geometry regularizers (straighten/monotonicity, cf.\ discourse
         deck) change nothing here: 0.445--0.485 ---
@@ -160,45 +161,41 @@ failure.}
 \end{columns}
 \end{frame}
 
-\begin{frame}{Result 2 --- ranking, distillation, and the audited bottleneck}
-\claim{Counterfactual ranking sets the edit record and finally makes the
-planner slack-sensitive; the audit shows one-step buffer prediction ---
-not the goal energy --- is now the binding constraint.}
-\centering\small
+\begin{frame}{Result 2 --- preference learning and transition architecture}
+\claim{Counterfactual preference learning makes planning slack-sensitive;
+sentence-level attention then improves transition matching and planning.}
+\centering\scriptsize
 \begin{tabular}{lccccc}
 \toprule
  & \multicolumn{2}{c}{value energy} & goal dist. & value $\tau$ & matching\\
 run & @opt & @slack2 & @opt & (audit) & (chance .10)\\
 \midrule
-\texttt{edit\_anchor} & 0.365 & 0.375 & 0.47 & 0.39 & 0.47\\
-\texttt{edit\_rank} (K=4) & \textbf{0.46} & \textbf{0.505} & \textbf{0.60}
- & \textbf{0.59} & 0.43\\
-\texttt{edit\_distill\_v} (label-free) & 0.42 & 0.42 & 0.55 & 0.42 & 0.45\\
-\texttt{edit\_no\_vandal} & 0.22 & 0.225 & 0.445 & $-$0.07 & 0.39\\
-\texttt{edit\_core5} (sheared, no labels) & 0.455 & 0.485 & 0.545 & --- & ---\\
+fixed outcome target & 0.365 & 0.375 & 0.47 & 0.39 & 0.47\\
+counterfactual preference ($K=4$) & 0.46 & 0.505 & \textbf{0.60}
+ & 0.59 & 0.43\\
+\textbf{attention transition model} & \textbf{0.51} & \textbf{0.55} & 0.535
+ & \textbf{0.61} & \textbf{0.50}\\
+geometry-distilled value & 0.42 & 0.42 & 0.55 & 0.42 & 0.45\\
+without harmful-edit negatives & 0.22 & 0.225 & 0.445 & $-$0.07 & 0.39\\
+five-objective model (no defect counts) & 0.455 & 0.485 & 0.545 & --- & ---\\
 \bottomrule
 \end{tabular}
 
 \medskip\small
-\textbf{Readings.} (i) \texttt{edit\_rank}: first slack-\emph{sensitive}
-edit planner (0.46$\to$0.505) and best overall (0.60 with goal distance).
-(ii) \texttt{edit\_distill\_v}: distilling the latent goal distance into
-$V$ matches the \emph{label-supervised} head (0.42 vs 0.425) with zero
-defect-count labels. (iii) No vandal negatives $\Rightarrow$ the value
-energy becomes \emph{anti-correlated} ($\tau=-0.07$). (iv) Audit: buffer
-matching 0.39--0.47 vs \textbf{1.00} on the discourse track --- the edit
-predictor is the component to fix (slot-aligned predictor / per-slot
-outcome anchors), not the energy. (v) \textbf{The shear transfers}:
-\texttt{edit\_core5} (latent pred + ranking + VICReg + anchor + LDAD,
-$V$ from ranking margins, \emph{no defect-count labels}) matches the
-champion --- same five-loss recipe as the discourse track.
+\textbf{Readings.} Preference learning gives the first slack-sensitive edit
+planner. Action-conditioned attention over individual sentences raises the
+learned-value planner from 0.46/0.505 to 0.51/0.55 and matching from 0.43 to
+0.50. Geometry-distilled $V$ matches scalar defect-count supervision (0.42 vs
+0.425), while removing harmful-edit negatives makes the energy anti-correlated
+($\tau=-0.07$). Matching remains below the discourse track's 1.00, so transition
+fidelity still limits the edit model.
 \end{frame}
 
 \begin{frame}{Probe summary (edit track)}
 \centering\small
 \begin{tabular}{lccc}
 \toprule
-probe (linear, val split) & \texttt{base} & \texttt{valgrad} & random-enc\\
+probe (linear, validation split) & baseline & value shaping & random encoder\\
 \midrule
 edit op from $\Delta s$ & 1.00 & 1.00 & 1.00$^*$\\
 fix-vs-vandal from $\Delta s$ & 0.96 & 0.98 & 0.92\\
@@ -213,8 +210,8 @@ true answer from terminal state & 0.05 & --- & 0.13\\
 $^*$intent phrases are trivially separable by op --- the informative row is
 fix-vs-vandal. The two bottom rows show the \textbf{collusion signature}
 (trained $<$ random control): outcome content is being smoothed away, as in
-the discourse track before its anchor fix. \texttt{edit\_anchor} (frozen
-buffer anchor, w=2.0) trains $\mathcal L_{\text{chunk}}$ to 0.005 and lifts
+the discourse track before adding a fixed outcome target. The corresponding
+edit model (weight 2.0) trains $\mathcal L_{\text{chunk}}$ to 0.005 and lifts
 value-head planning to 0.365, but the linear \emph{defect-count} probe stays
 flat --- the goal signal lives in the \emph{metric} (see previous slide),
 not in a linearly decodable counter.
@@ -231,10 +228,10 @@ not in a linearly decodable counter.
         buffer; a deployable version needs a goal \emph{description} encoder
         (``all steps correct'') or a self-predicted fixed point
         $F(s,a_{\text{stop}}) \approx s$.
-  \item \textbf{Energy ties: fixed by ranking} (Result 2, 0.46/0.505 and
-        slack-sensitive). Next binding constraint per the audit:
-        \textbf{one-step buffer prediction} (matching 0.43 vs 1.00 on
-        discourse) --- slot-aligned predictor or per-slot outcome anchors.
+  \item \textbf{Energy ties}: counterfactual preferences make success
+        slack-sensitive. Sentence-level attention raises matching
+        0.43$\to$0.50 and planning 0.46/0.505$\to$0.51/0.55, but the remaining
+        gap to discourse matching indicates that transition fidelity still binds.
   \item \textbf{Harder corruption}: multiple root causes, order violations,
         subtle wrong-parent corruptions (currently only wrong values /
         missing / extra).
