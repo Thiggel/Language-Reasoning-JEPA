@@ -38,6 +38,8 @@ def main():
         d_model=saved.d_model, n_layers=saved.layers, n_heads=saved.heads,
         max_sequence_len=saved.max_sequence_len,
         boundary_id=vocab.token_to_id[STEP_BOUNDARY_TOKEN],
+        attention_backend=getattr(saved, "attention_backend", "auto"),
+        sequence_packing=getattr(saved, "sequence_packing", False),
     )
     model.load_state_dict(payload["model"])
     model.to(args.device).eval()

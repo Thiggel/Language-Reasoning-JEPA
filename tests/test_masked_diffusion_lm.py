@@ -80,6 +80,63 @@ def test_mdlm_elbo_is_finite_and_backpropagates():
     assert model.output.weight.grad.abs().sum() > 0
 
 
+def test_sparse_mdlm_head_matches_dense_reference_loss_and_gradient():
+    torch.manual_seed(19)
+    sparse = _model()
+    dense = _model()
+    dense.load_state_dict(sparse.state_dict())
+    clean, valid, response = sparse.pack_clean(
+        torch.tensor([[[2, 3, 0]], [[7, 0, 0]]]),
+        torch.tensor([[[4, 5, 0]], [[8, 9, 10]]]),
+    )
+    noise = torch.tensor([0.4, 0.8])
+    draw = torch.tensor([
+        [0.9, 0.9, 0.1, 0.7],
+        [0.9, 0.2, 0.1, 0.7],
+    ])
+    noised, masked = sparse.corrupt(clean, response, noise, random=draw)
+    states = dense.states(noised, valid, response)
+    logits = dense.output(states)
+    ce = torch.nn.functional.cross_entropy(
+        logits.reshape(-1, logits.shape[-1]), clean.reshape(-1),
+        reduction="none",
+    ).reshape_as(clean)
+    expected = (
+        ce * masked.to(ce.dtype) / noise[:, None]
+    ).sum() / response.sum()
+
+    # Reproduce the identical corruption inside mdlm_loss.
+    original_corrupt = sparse.corrupt
+    sparse.corrupt = lambda clean, response, noise: (noised, masked)
+    actual, extra = sparse.mdlm_loss(clean, valid, response, noise)
+    sparse.corrupt = original_corrupt
+    assert torch.allclose(actual, expected, atol=1e-6, rtol=1e-6)
+    assert extra["masked_logits"].shape == (int(masked.sum()), sparse.vocab_size)
+
+    actual.backward()
+    expected.backward()
+    assert torch.allclose(
+        sparse.token.weight.grad, dense.token.weight.grad,
+        atol=2e-6, rtol=2e-5,
+    )
+
+
+def test_sparse_mdlm_loss_handles_zero_sampled_masks():
+    model = _model()
+    clean, valid, response = model.pack_clean(
+        torch.tensor([[[2, 3, 0]]]), torch.tensor([[[4, 5, 0]]])
+    )
+    original_corrupt = model.corrupt
+    model.corrupt = lambda clean, response, noise: (
+        clean, torch.zeros_like(response)
+    )
+    loss, extra = model.mdlm_loss(clean, valid, response, torch.tensor([0.1]))
+    model.corrupt = original_corrupt
+    assert loss.item() == 0.0
+    assert extra["masked_logits"].shape == (0, model.vocab_size)
+    loss.backward()
+
+
 def test_subs_sampler_never_modifies_prompt_and_resolves_all_masks():
     torch.manual_seed(5)
     model = _model().eval()

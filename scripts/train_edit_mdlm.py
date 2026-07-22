@@ -79,10 +79,9 @@ def evaluate(model, data_loader, device, max_batches=16):
         noise = torch.full((len(clean),), 0.5, device=device)
         torch.manual_seed(10_000 + index)
         loss, extra = model.mdlm_loss(clean, valid, response, noise)
-        prediction = extra["logits"].argmax(-1)
-        masked = extra["masked"]
-        token_correct += prediction[masked].eq(clean[masked]).sum().item()
-        token_total += masked.sum().item()
+        prediction = extra["masked_logits"].argmax(-1)
+        token_correct += prediction.eq(extra["masked_targets"]).sum().item()
+        token_total += len(prediction)
         loss_sum += loss.item()
         seen += 1
     return {
@@ -114,6 +113,11 @@ def main():
     parser.add_argument("--attention-backend", choices=(
         "auto", "flash_attn_4", "flash_attn_2", "torch_flash", "torch"
     ), default="auto")
+    parser.add_argument(
+        "--sequence-packing", action=argparse.BooleanOptionalAction,
+        default=True,
+        help="remove padding before every attention and feed-forward block",
+    )
     parser.add_argument("--num-workers", type=int, default=16)
     parser.add_argument("--max-sequence-len", type=int, default=768)
     parser.add_argument("--precision", choices=("fp32", "bf16"), default="bf16")
@@ -146,6 +150,7 @@ def main():
         max_sequence_len=args.max_sequence_len,
         boundary_id=vocab.token_to_id[STEP_BOUNDARY_TOKEN],
         attention_backend=args.attention_backend,
+        sequence_packing=args.sequence_packing,
     ).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay,

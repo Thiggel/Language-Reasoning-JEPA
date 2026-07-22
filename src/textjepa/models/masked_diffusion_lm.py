@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from textjepa.models.layers import encoder_stack
+from textjepa.models.layers import encoder_stack, packed_encoder_forward
 
 
 def select_terminal_buffers(buffer_tokens: torch.Tensor,
@@ -26,7 +26,8 @@ class MaskedDiffusionLM(nn.Module):
                  d_model: int = 128, n_layers: int = 4, n_heads: int = 8,
                  ff_mult: int = 4, max_sequence_len: int = 2048,
                  dropout: float = 0.0, boundary_id: int | None = None,
-                 attention_backend: str = "torch"):
+                 attention_backend: str = "torch",
+                 sequence_packing: bool = False):
         super().__init__()
         if dropout != 0:
             raise ValueError("diffusion comparison requires dropout=0")
@@ -35,6 +36,7 @@ class MaskedDiffusionLM(nn.Module):
         self.mask_id = int(mask_id)
         self.boundary_id = None if boundary_id is None else int(boundary_id)
         self.max_sequence_len = int(max_sequence_len)
+        self.sequence_packing = bool(sequence_packing)
         self.token = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.position = nn.Parameter(torch.zeros(1, max_sequence_len, d_model))
         self.segment = nn.Parameter(torch.zeros(2, d_model))
@@ -94,8 +96,27 @@ class MaskedDiffusionLM(nn.Module):
         key_pad = ~valid
         key_pad = key_pad.clone()
         key_pad[key_pad.all(-1), 0] = False
-        h = self.norm(self.encoder(h, src_key_padding_mask=key_pad))
+        h = self.norm(
+            packed_encoder_forward(self.encoder, h, valid)
+            if self.sequence_packing else
+            self.encoder(h, src_key_padding_mask=key_pad)
+        )
         return self.output(h), h
+
+    def states(self, tokens: torch.Tensor, valid: torch.Tensor,
+               response: torch.Tensor) -> torch.Tensor:
+        """Encode clean/noised inputs without materializing vocabulary logits."""
+        h = (self.token(tokens) + self.position[:, :tokens.shape[1]]
+             + self.segment[response.long()])
+        key_pad = ~valid
+        key_pad = key_pad.clone()
+        key_pad[key_pad.all(-1), 0] = False
+        encoded = (
+            packed_encoder_forward(self.encoder, h, valid)
+            if self.sequence_packing else
+            self.encoder(h, src_key_padding_mask=key_pad)
+        )
+        return self.norm(encoded)
 
     def corrupt(self, clean: torch.Tensor, response: torch.Tensor,
                 noise: torch.Tensor, *, random: torch.Tensor | None = None):
@@ -117,17 +138,27 @@ class MaskedDiffusionLM(nn.Module):
             noise = torch.rand(len(clean), device=clean.device)
         noise = noise.clamp_min(1e-4)
         noised, masked = self.corrupt(clean, response, noise)
-        logits, states = self.logits(noised, valid, response)
-        ce = F.cross_entropy(
-            logits.reshape(-1, logits.shape[-1]), clean.reshape(-1),
-            reduction="none",
-        ).reshape_as(clean)
-        weight = masked.to(ce.dtype) / noise[:, None]
-        loss = (ce * weight).sum() / response.sum().clamp_min(1)
+        states = self.states(noised, valid, response)
+        # SUBS supervises only corrupted response coordinates. Projecting
+        # padding, visible prompt tokens, and visible response tokens through
+        # the vocabulary head is mathematically inert but was a major memory
+        # and runtime cost at the original iGSM scale.
+        masked_states = states[masked]
+        masked_targets = clean[masked]
+        if len(masked_states):
+            masked_logits = self.output(masked_states)
+            ce = F.cross_entropy(masked_logits, masked_targets, reduction="none")
+            row_noise = noise[:, None].expand_as(clean)[masked]
+            loss = (ce / row_noise).sum() / response.sum().clamp_min(1)
+        else:
+            masked_logits = states.new_empty((0, self.vocab_size))
+            loss = states.sum() * 0.0
         return loss, {
             "clean": clean, "noised": noised, "valid": valid,
             "response": response, "masked": masked, "noise": noise,
-            "logits": logits, "states": states,
+            "masked_logits": masked_logits,
+            "masked_targets": masked_targets,
+            "states": states,
         }
 
     @torch.no_grad()
