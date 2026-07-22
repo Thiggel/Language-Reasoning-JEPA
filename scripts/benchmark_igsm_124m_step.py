@@ -40,6 +40,7 @@ def arguments():
         "jepa_visreg", "jepa_visreg_d2_nogar",
         "jepa_visreg_d1_gar", "jepa_visreg_d1_nogar",
         "jepa_visreg_packed", "jepa_visreg_packed_d1_gar",
+        "jepa_ema_vicreg_packed_d1_gar",
     ))
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--warmup", type=int, default=2)
@@ -101,6 +102,7 @@ def build(kind, batch_size, device):
                 1 if kind in {
                     "jepa_visreg_d1_gar", "jepa_visreg_d1_nogar",
                     "jepa_visreg_packed_d1_gar",
+                    "jepa_ema_vicreg_packed_d1_gar",
                 }
                 else 2
             ),
@@ -110,18 +112,21 @@ def build(kind, batch_size, device):
                 "jepa_prior", "jepa_visreg", "jepa_visreg_d2_nogar",
                 "jepa_visreg_d1_gar", "jepa_visreg_d1_nogar",
                 "jepa_visreg_packed",
+                "jepa_ema_vicreg_packed_d1_gar",
             },
             target_mode=("visreg" if kind.startswith("jepa_visreg") else "ema"),
             visreg_projections=4096,
             attention_backend="auto",
             sequence_packing=kind in {
                 "jepa_visreg_packed", "jepa_visreg_packed_d1_gar",
+                "jepa_ema_vicreg_packed_d1_gar",
             },
         ).to(device)
         cfg = OmegaConf.load(Path(__file__).parents[1] / "configs/pooled_sentence_jepa.yaml")
         cfg.objective.dense_discount = 1.0
         cfg.objective.token_prior = float(
             kind == "jepa_prior" or kind.startswith("jepa_visreg")
+            or kind == "jepa_ema_vicreg_packed_d1_gar"
         )
         cfg.objective.vicreg = float(not kind.startswith("jepa_visreg"))
         cfg.objective.visreg = float(kind.startswith("jepa_visreg"))
