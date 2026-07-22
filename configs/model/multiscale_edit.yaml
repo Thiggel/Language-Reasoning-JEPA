@@ -26,5 +26,6 @@ macro_decoder_detach_inputs: true
 sentence_action_kind: context
 direct_content_scaffold: true
 attention_backend: auto
+sequence_packing: false
 efficient_pair_encoding: false
 target_encoder_mode: ema

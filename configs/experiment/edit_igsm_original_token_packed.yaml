@@ -1,0 +1,5 @@
+# @package _global_
+defaults: [edit_igsm_original_token, _self_]
+run_name: edit_igsm_original_token_packed
+model:
+  sequence_packing: true

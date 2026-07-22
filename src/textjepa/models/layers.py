@@ -147,6 +147,78 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
         )
         return output, None
 
+    def forward_packed(
+        self,
+        query: torch.Tensor,
+        cu_seqlens: torch.Tensor,
+        max_seqlen: int,
+        block_mask=None,
+    ) -> torch.Tensor:
+        """Self-attention over a flat, boundary-separated token stream.
+
+        ``query`` contains no padding. ``cu_seqlens`` identifies independent
+        examples; attention is therefore exactly block diagonal and can never
+        leak information between packed training items.
+        """
+        if query.ndim != 2:
+            raise ValueError("packed attention expects [total_tokens, dim]")
+        qkv = F.linear(query, self.in_proj_weight, self.in_proj_bias).view(
+            query.shape[0], 3, self.num_heads, self.head_dim
+        )
+        backend = self._select_backend(query)
+        if backend == "flash_attn_4":
+            fa4, _ = _external_flash_functions()
+            if fa4 is None:
+                raise RuntimeError("FlashAttention-4 was requested but is not installed")
+            attended = fa4(
+                qkv[:, 0], qkv[:, 1], qkv[:, 2],
+                cu_seqlens_q=cu_seqlens, cu_seqlens_k=cu_seqlens,
+                max_seqlen_q=max_seqlen, max_seqlen_k=max_seqlen,
+                causal=False,
+            )
+            self.last_backend = "flash_attn_4_packed"
+        elif backend == "flash_attn_2":
+            _, fa2 = _external_flash_functions()
+            if fa2 is None:
+                raise RuntimeError("FlashAttention-2 was requested but is not installed")
+            attended = fa2(
+                qkv, cu_seqlens, max_seqlen,
+                dropout_p=self.dropout if self.training else 0.0,
+                causal=False,
+            )
+            self.last_backend = "flash_attn_2_packed"
+        elif query.is_cuda:
+            if self.dropout:
+                raise ValueError("FlexAttention packed path requires dropout=0")
+            if block_mask is None:
+                raise ValueError("packed torch attention requires a block mask")
+            from torch.nn.attention.flex_attention import flex_attention
+            q, k, v = (part.transpose(0, 1).unsqueeze(0) for part in qkv.unbind(1))
+            attended = flex_attention(q, k, v, block_mask=block_mask)
+            attended = attended.squeeze(0).transpose(0, 1)
+            self.last_backend = "torch_flex_packed"
+        else:
+            # Exact, deliberately simple CPU fallback for tests and debugging.
+            pieces = []
+            for start, stop in zip(cu_seqlens[:-1], cu_seqlens[1:]):
+                lo, hi = int(start.item()), int(stop.item())
+                q, k, v = (
+                    part[lo:hi].transpose(0, 1).unsqueeze(0)
+                    for part in qkv.unbind(1)
+                )
+                value = F.scaled_dot_product_attention(
+                    q, k, v,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    is_causal=False,
+                )
+                pieces.append(value.squeeze(0).transpose(0, 1))
+            attended = torch.cat(pieces, dim=0)
+            self.last_backend = "torch_loop_packed"
+        return F.linear(
+            attended.reshape(query.shape[0], self.embed_dim),
+            self.out_proj.weight, self.out_proj.bias,
+        )
+
 
 def attention_backend_summary(module: nn.Module) -> list[str]:
     """Concrete kernels used by fused attention modules in the last forward."""
@@ -154,6 +226,69 @@ def attention_backend_summary(module: nn.Module) -> list[str]:
         child.last_backend for child in module.modules()
         if isinstance(child, FlashMultiheadAttention)
     })
+
+
+def packed_encoder_forward(
+    encoder: nn.TransformerEncoder,
+    src: torch.Tensor,
+    valid: torch.Tensor,
+) -> torch.Tensor:
+    """Run a pre-norm encoder with no padded activations between layers.
+
+    The returned tensor is dense only at the model boundary for compatibility
+    with token-aligned losses and edit routing. All attention and feed-forward
+    blocks operate on ``sum(valid)`` tokens.
+    """
+    if src.ndim != 3 or valid.shape != src.shape[:2]:
+        raise ValueError("packed encoder expects [batch, length, dim] plus mask")
+    lengths = valid.sum(1, dtype=torch.int32)
+    if (lengths == 0).any():
+        raise ValueError("packed encoder does not accept empty sequences")
+    flat = src[valid]
+    cu = F.pad(lengths.cumsum(0), (1, 0))
+    maximum = int(lengths.max().item())
+    block_mask = None
+    first_attention = encoder.layers[0].self_attn if encoder.layers else None
+    if flat.is_cuda and isinstance(first_attention, FlashMultiheadAttention):
+        if first_attention._select_backend(flat) in {"torch", "torch_flash"}:
+            from torch.nn.attention.flex_attention import create_block_mask
+            total = flat.shape[0]
+            padded_total = ((total + 127) // 128) * 128
+            sequence_ids = torch.full(
+                (padded_total,), -1, dtype=torch.int32, device=flat.device
+            )
+            sequence_ids[:total] = torch.repeat_interleave(
+                torch.arange(len(lengths), device=flat.device, dtype=torch.int32),
+                lengths.long(),
+            )
+
+            def same_sequence(batch, head, query_index, key_index):
+                return (
+                    (query_index < total) & (key_index < total)
+                    & (sequence_ids[query_index] == sequence_ids[key_index])
+                )
+
+            block_mask = create_block_mask(
+                same_sequence, B=1, H=None, Q_LEN=total, KV_LEN=total,
+                device=flat.device, _compile=False,
+            )
+    for layer in encoder.layers:
+        if not layer.norm_first:
+            raise ValueError("packed encoder currently requires norm_first=True")
+        if not isinstance(layer.self_attn, FlashMultiheadAttention):
+            raise ValueError(
+                "packed encoder requires a fused attention backend, not 'torch'"
+            )
+        attended = layer.self_attn.forward_packed(
+            layer.norm1(flat), cu, maximum, block_mask=block_mask
+        )
+        flat = flat + layer.dropout1(attended)
+        flat = flat + layer._ff_block(layer.norm2(flat))
+    if encoder.norm is not None:
+        flat = encoder.norm(flat)
+    output = src.new_zeros(src.shape)
+    output[valid] = flat
+    return output
 
 
 def mlp(dims: list[int], out_dim: int) -> nn.Sequential:

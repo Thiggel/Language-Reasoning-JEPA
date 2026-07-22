@@ -5,7 +5,9 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import FlashMultiheadAttention, mlp
+from textjepa.models.layers import (
+    FlashMultiheadAttention, mlp, packed_encoder_forward,
+)
 
 
 class ActionConditionedPredictor(nn.Module):
@@ -275,11 +277,13 @@ class TokenAlignedEditPredictor(nn.Module):
                  relative_radius: int = 32,
                  direct_content_scaffold: bool = True,
                  attention_backend: str = "torch",
+                 sequence_packing: bool = False,
                  replacement_only_fast_path: bool = False):
         super().__init__()
         self.d_action = d_action
         self.relative_radius = int(relative_radius)
         self.direct_content_scaffold = bool(direct_content_scaffold)
+        self.sequence_packing = bool(sequence_packing)
         self.replacement_only_fast_path = bool(replacement_only_fast_path)
         self.op = nn.Embedding(3, d_state)
         self.relative = nn.Embedding(2 * self.relative_radius + 3, d_state)
@@ -402,7 +406,12 @@ class TokenAlignedEditPredictor(nn.Module):
         key_pad = ~next_mask
         key_pad = key_pad.clone()
         key_pad[key_pad.all(-1), 0] = False
-        prediction = self.out(self.blocks(h, src_key_padding_mask=key_pad))
+        encoded = (
+            packed_encoder_forward(self.blocks, h, next_mask)
+            if self.sequence_packing else
+            self.blocks(h, src_key_padding_mask=key_pad)
+        )
+        prediction = self.out(encoded)
         prediction = prediction * next_mask.unsqueeze(-1)
         if return_action:
             return prediction, next_mask, action

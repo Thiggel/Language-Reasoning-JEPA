@@ -14,7 +14,7 @@ from torch import nn
 from textjepa.models.action import MacroActionModel
 from textjepa.models.delta_decoder import ObservedActionDecoder
 from textjepa.models.ema import EMATeacher
-from textjepa.models.layers import encoder_stack
+from textjepa.models.layers import encoder_stack, packed_encoder_forward
 from textjepa.models.outputs import JEPAOutputs
 from textjepa.models.predictor import TokenAlignedEditPredictor
 
@@ -32,12 +32,14 @@ class HierarchicalBufferEncoder(nn.Module):
                  n_heads: int = 8, ff_mult: int = 4,
                  max_sequence_len: int = 1024, max_sentences: int = 64,
                  dropout: float = 0.0, pooling: str = "attention",
-                 attention_backend: str = "torch"):
+                 attention_backend: str = "torch",
+                 sequence_packing: bool = False):
         super().__init__()
         if pooling not in {"attention", "mean"}:
             raise ValueError(f"unknown sentence pooling: {pooling}")
         self.pooling = pooling
         self.pad_id = int(pad_id)
+        self.sequence_packing = bool(sequence_packing)
         self.max_sequence_len = int(max_sequence_len)
         self.tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.token_pos = nn.Parameter(torch.zeros(1, max_sequence_len, d_model))
@@ -106,7 +108,12 @@ class HierarchicalBufferEncoder(nn.Module):
         key_pad = ~valid
         key_pad = key_pad.clone()
         key_pad[key_pad.all(-1), 0] = False
-        h = self.token_norm(self.token_encoder(h, src_key_padding_mask=key_pad))
+        encoded = (
+            packed_encoder_forward(self.token_encoder, h, valid)
+            if self.sequence_packing else
+            self.token_encoder(h, src_key_padding_mask=key_pad)
+        )
+        h = self.token_norm(encoded)
         buffer_valid = valid & sentence_ids.ge(0)
         widths = buffer_valid.sum(-1)
         width = max(int(widths.max().item()), 1)
@@ -164,9 +171,15 @@ class HierarchicalBufferEncoder(nn.Module):
         key_pad = ~sentence_mask
         key_pad = key_pad.clone()
         key_pad[key_pad.all(-1), 0] = False
-        encoded = self.sentence_encoder(
-            pooled + self.sentence_pos[:, :n_sentences],
-            src_key_padding_mask=key_pad,
+        sentence_input = pooled + self.sentence_pos[:, :n_sentences]
+        encoded = (
+            packed_encoder_forward(
+                self.sentence_encoder, sentence_input, sentence_mask
+            )
+            if self.sequence_packing else
+            self.sentence_encoder(
+                sentence_input, src_key_padding_mask=key_pad,
+            )
         )
         encoded = self.sentence_norm(encoded)
         encoded = encoded * sentence_mask.unsqueeze(-1)
@@ -186,9 +199,11 @@ class SentenceEditPredictor(nn.Module):
 
     def __init__(self, d_model: int, d_action: int, n_layers: int = 2,
                  n_heads: int = 8, correction: bool = False,
-                 attention_backend: str = "torch"):
+                 attention_backend: str = "torch",
+                 sequence_packing: bool = False):
         super().__init__()
         self.correction = correction
+        self.sequence_packing = bool(sequence_packing)
         self.action = nn.Linear(d_action, d_model)
         self.current = nn.Linear(d_model, d_model) if correction else None
         self.blocks = encoder_stack(
@@ -217,7 +232,12 @@ class SentenceEditPredictor(nn.Module):
         key_pad = ~mask
         key_pad = key_pad.clone()
         key_pad[key_pad.all(-1), 0] = False
-        delta = self.out(self.blocks(h, src_key_padding_mask=key_pad))
+        encoded = (
+            packed_encoder_forward(self.blocks, h, mask)
+            if self.sequence_packing else
+            self.blocks(h, src_key_padding_mask=key_pad)
+        )
+        delta = self.out(encoded)
         return self.norm(base + delta) * mask.unsqueeze(-1)
 
 
@@ -435,6 +455,7 @@ class MultiscaleEditJEPA(nn.Module):
                  direct_content_scaffold: bool = True,
                  base_prior_predict_position: bool = True,
                  attention_backend: str = "torch",
+                 sequence_packing: bool = False,
                  efficient_pair_encoding: bool = False,
                  target_encoder_mode: str = "ema"):
         super().__init__()
@@ -465,7 +486,7 @@ class MultiscaleEditJEPA(nn.Module):
         self.encoder = HierarchicalBufferEncoder(
             vocab_size, pad_id, d_model, token_layers, sentence_layers,
             n_heads, ff_mult, max_sequence_len, max_sentences, dropout,
-            sentence_pooling, attention_backend,
+            sentence_pooling, attention_backend, sequence_packing,
         )
         self.teacher = (
             EMATeacher(self.encoder) if target_encoder_mode == "ema" else None
@@ -475,6 +496,7 @@ class MultiscaleEditJEPA(nn.Module):
             relative_radius=token_relative_radius,
             direct_content_scaffold=direct_content_scaffold,
             attention_backend=attention_backend,
+            sequence_packing=sequence_packing,
             replacement_only_fast_path=efficient_pair_encoding,
         )
         self.sentence_action = None
@@ -491,6 +513,7 @@ class MultiscaleEditJEPA(nn.Module):
             d_model, d_action, predictor_layers, n_heads,
             correction=variant not in {"sentence", "sentence_macro"},
             attention_backend=attention_backend,
+            sequence_packing=sequence_packing,
         )
         self.macro_model = None
         self.macro_pred = None
@@ -504,6 +527,7 @@ class MultiscaleEditJEPA(nn.Module):
             self.macro_pred = SentenceEditPredictor(
                 d_model, d_macro, predictor_layers, n_heads,
                 attention_backend=attention_backend,
+                sequence_packing=sequence_packing,
             )
         self.macro_decoder = None
         if macro_decoder:

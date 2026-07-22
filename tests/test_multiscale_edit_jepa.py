@@ -186,6 +186,33 @@ def test_hybrid_sentence_prediction_really_depends_on_lower_prediction():
     assert model.token_pred.out.weight.grad.abs().sum() > 0
 
 
+def test_full_packed_model_matches_dense_model_and_backpropagates():
+    torch.manual_seed(8)
+    dense = _model(
+        "token_sentence", attention_backend="auto", sequence_packing=False
+    )
+    packed = _model(
+        "token_sentence", attention_backend="auto", sequence_packing=True
+    )
+    packed.load_state_dict(dense.state_dict())
+    dense.eval()
+    packed.eval()
+    dense_out = dense(copy.deepcopy(_batch()))
+    packed_out = packed(copy.deepcopy(_batch()))
+    assert torch.allclose(
+        packed_out.preds, dense_out.preds, atol=1e-5, rtol=1e-4
+    )
+    assert torch.allclose(
+        packed_out.extras["token_predictions"],
+        dense_out.extras["token_predictions"], atol=1e-5, rtol=1e-4,
+    )
+    packed.train()
+    train_out = packed(copy.deepcopy(_batch()))
+    train_out.preds.square().sum().backward()
+    assert packed.encoder.tok.weight.grad is not None
+    assert packed.encoder.tok.weight.grad.abs().sum() > 0
+
+
 def test_efficient_pair_encoding_halves_state_encodes_without_changing_transition():
     torch.manual_seed(9)
     full = _model("token_sentence", efficient_pair_encoding=False)
