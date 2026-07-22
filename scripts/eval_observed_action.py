@@ -288,12 +288,19 @@ def main():
         results = []
         for index, item in enumerate(evaluation_items):
             environment = make_environment(item)
-            shuffled = list(environment.catalogue)
-            random.Random(
-                f"{args.seed}:{index}"
-            ).shuffle(shuffled)
-            environment.catalogue = tuple(shuffled)
-            results.append(policy.run_episode(environment, excess))
+            try:
+                order_seed = f"{args.seed}:{index}"
+                if hasattr(environment, "set_candidate_order_seed"):
+                    environment.set_candidate_order_seed(order_seed)
+                else:
+                    shuffled = list(environment.catalogue)
+                    random.Random(order_seed).shuffle(shuffled)
+                    environment.catalogue = tuple(shuffled)
+                results.append(policy.run_episode(environment, excess))
+            finally:
+                close = getattr(environment, "close", None)
+                if close is not None:
+                    close()
         payload["metrics_by_excess_actions"][str(excess)] = _aggregate(results)
     path = Path(args.out)
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -100,6 +100,75 @@ class ProofWriterEnvironment:
         return render_fact(application.conclusion)
 
 
+class AlfworldEnvironment:
+    """Interactive text-only ALFWorld executor with a non-oracle catalogue."""
+
+    def __init__(self, episode: ObservedActionEpisode, data_root=None):
+        import hashlib
+        import os
+        from pathlib import Path
+
+        from textjepa.data.alfworld import (
+            AlfworldInteractiveSession,
+            observed_action_catalogue,
+            split_task_observation,
+        )
+
+        relative = episode.metadata.get("gamefile_relative")
+        if not relative:
+            raise ValueError("ALFWorld episode lacks replay gamefile metadata")
+        root_value = data_root or os.environ.get("ALFWORLD_DATA")
+        if not root_value:
+            raise ValueError("ALFWORLD_DATA is required for interactive evaluation")
+        root = Path(root_value)
+        self.session = AlfworldInteractiveSession(root / relative)
+        reset_observation, self.info = self.session.reset()
+        initial, task = split_task_observation(str(reset_observation))
+        if task != episode.goal:
+            raise RuntimeError("ALFWorld task differs from compiled episode")
+        self.prompt = (initial, task)
+        self.goal = task
+        self.initial_observation = initial
+        self.observations = [initial]
+        self.optimal_length = int(episode.metadata["expert_length"])
+        self.invalid_actions = 0
+        self._solved = False
+        self._catalogue_builder = observed_action_catalogue
+        self._candidate_order_seed = None
+        self._hashlib = hashlib
+
+    @property
+    def catalogue(self) -> tuple[str, ...]:
+        catalogue = self._catalogue_builder(
+            self.initial_observation, self.observations
+        )
+        if self._candidate_order_seed is None:
+            return catalogue
+        return tuple(sorted(catalogue, key=lambda action: self._hashlib.sha256(
+            f"{self._candidate_order_seed}:{action}".encode()
+        ).digest()))
+
+    def set_candidate_order_seed(self, seed: str) -> None:
+        """Choose a stable order that also covers newly observed entities."""
+        self._candidate_order_seed = str(seed)
+
+    @property
+    def solved(self) -> bool:
+        return self._solved
+
+    def step(self, action: str) -> str:
+        available = set(self.info["admissible_commands"])
+        if action not in available:
+            self.invalid_actions += 1
+        observation, _, done, self.info = self.session.step(action)
+        self.observations.append(str(observation))
+        self._solved = bool(self.info.get("won", False))
+        return str(observation)
+
+    def close(self) -> None:
+        self.session.close()
+
+
 class FaithfulIGSMEnvironment:
     """Full-catalogue wrapper around the official iGSM executor."""
 
@@ -140,6 +209,8 @@ def environment_from_episode(
         return BlocksworldEnvironment(episode)
     if episode.domain == "proofwriter":
         return ProofWriterEnvironment(episode)
+    if episode.domain == "alfworld-textworld":
+        return AlfworldEnvironment(episode)
     raise ValueError(
         f"domain {episode.domain!r} requires an interactive evaluator"
     )
