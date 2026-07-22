@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-igsm-124m-under24h-sentence-2xl40-v2",
+  "decision": "Restart the sentence-LM baseline on both adjacent free L40 GPUs after its measured one-L40 end-to-end rate projected 25–26 hours. Only 0.4 percent of training was discarded; two-way data parallelism projects about 13 hours.",
+  "git_commit": "4b27bba4fd074eba4e3cc8540340c8b94f96cd4e",
+  "jobs": [
+    {
+      "id": "igsm-124m-sentence-lm-under24h-2xl40-s0",
+      "cluster": "gruenau",
+      "node": 12,
+      "gpus": 2,
+      "cpus": 16,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "2", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the matched sentence LM on two L40 GPUs at global batch 512 and finish safely within 24 hours.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "sentence_lm", "igsm-124m-sentence-lm-under24h-2xl40-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    }
+  ]
+}
