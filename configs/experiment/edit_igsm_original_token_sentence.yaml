@@ -3,12 +3,12 @@ defaults: [edit_igsm_original_base, _self_]
 run_name: edit_igsm_original_token_sentence
 model:
   variant: token_sentence
-  d_model: 776
+  d_model: 768
   token_layers: 6
   sentence_layers: 3
   predictor_layers: 3
   n_heads: 8
-  ff_mult: 4.16
+  ff_mult: 4.395
 objective:
   token_aligned_pred: {weight: 1.0}
   sentence_level: {weight: 1.0, changed_weight: 1.0, unchanged_weight: 0.1}

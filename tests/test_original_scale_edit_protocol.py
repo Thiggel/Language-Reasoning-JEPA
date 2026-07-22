@@ -80,7 +80,7 @@ def test_content_prior_scores_every_slot_without_position_head():
 
 def test_three_jepas_match_the_mdlm_parameter_budget_within_one_percent():
     root = str(Path(__file__).parents[1] / "configs")
-    target = 123_792_144  # 12-layer, width-912, context-768 MDLM control
+    target = 123_794_620  # Flash-aligned 12-layer MDLM control
     with initialize_config_dir(config_dir=root, version_base="1.3"):
         for name in (
             "edit_igsm_original_token",
@@ -93,3 +93,5 @@ def test_three_jepas_match_the_mdlm_parameter_budget_within_one_percent():
                                 pad_id=vocab.pad_id)
             count = sum(p.numel() for p in model.parameters() if p.requires_grad)
             assert abs(count - target) / target < 0.01
+            assert cfg.model.d_model % cfg.model.n_heads == 0
+            assert (cfg.model.d_model // cfg.model.n_heads) % 8 == 0

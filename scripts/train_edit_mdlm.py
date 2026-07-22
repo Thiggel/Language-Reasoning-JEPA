@@ -107,9 +107,10 @@ def main():
     parser.add_argument("--weight-decay", type=float, default=0.05)
     parser.add_argument("--warmup-steps", type=int, default=1000)
     parser.add_argument("--lr-floor", type=float, default=0.01)
-    parser.add_argument("--d-model", type=int, default=912)
+    parser.add_argument("--d-model", type=int, default=896)
     parser.add_argument("--layers", type=int, default=12)
-    parser.add_argument("--heads", type=int, default=12)
+    parser.add_argument("--heads", type=int, default=14)
+    parser.add_argument("--ff-mult", type=float, default=4.22)
     parser.add_argument("--attention-backend", choices=(
         "auto", "flash_attn_4", "flash_attn_2", "torch_flash", "torch"
     ), default="auto")
@@ -141,6 +142,7 @@ def main():
     model = MaskedDiffusionLM(
         len(vocab), vocab.pad_id, vocab.token_to_id[MASK_TOKEN],
         d_model=args.d_model, n_layers=args.layers, n_heads=args.heads,
+        ff_mult=args.ff_mult,
         max_sequence_len=args.max_sequence_len,
         boundary_id=vocab.token_to_id[STEP_BOUNDARY_TOKEN],
         attention_backend=args.attention_backend,
