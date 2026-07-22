@@ -2,7 +2,7 @@
 set -euo pipefail
 
 python_bin=${1:?python executable}
-kind=${2:?token_lm, sentence_lm, jepa_prior, or jepa_no_prior}
+kind=${2:?token_lm, sentence_lm, jepa_prior, jepa_no_prior, or jepa_visreg}
 name=${3:?unique run name}
 if [[ -z "${RUN_DIR:-}" ]]; then
   echo "RUN_DIR must be supplied by researchctl" >&2
@@ -59,14 +59,21 @@ case "$kind" in
       model.dec_layers=3 model.dec_heads=12 model.ff_mult=4 \
       model.max_chunk_len=96 model.max_chunks=64 model.latent_target=false
     ;;
-  jepa_prior|jepa_no_prior)
+  jepa_prior|jepa_no_prior|jepa_visreg)
     micro_batch=2
     accumulation=$((512 / (micro_batch * world)))
     use_prior=true
     prior_weight=1
+    target_mode=ema
+    vicreg_weight=1
+    visreg_weight=0
     if [[ "$kind" == jepa_no_prior ]]; then
       use_prior=false
       prior_weight=0
+    elif [[ "$kind" == jepa_visreg ]]; then
+      target_mode=visreg
+      vicreg_weight=0
+      visreg_weight=1
     fi
     "${launcher[@]}" "${TEXTJEPA_ROOT}/scripts/train_pooled_sentence_jepa.py" \
       "${common[@]}" "train.batch_size=$micro_batch" train.eval_batch_size=2 \
@@ -76,6 +83,8 @@ case "$kind" in
       model.dense_depth=2 model.dense_checkpoint=true \
       model.pooling_scope=sentence model.use_prefix_decoder=false \
       "model.use_token_prior=$use_prior" "objective.token_prior=$prior_weight" \
+      "model.target_mode=$target_mode" model.visreg_projections=4096 \
+      "objective.vicreg=$vicreg_weight" "objective.visreg=$visreg_weight" \
       objective.dense_discount=1.0
     ;;
   *)

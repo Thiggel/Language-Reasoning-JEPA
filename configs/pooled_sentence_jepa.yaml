@@ -28,6 +28,8 @@ model:
   decoder_heads: 8
   decoder_max_len: 96
   decoder_prefixes_per_sequence: 8
+  target_mode: ema  # ema | visreg
+  visreg_projections: 4096
 
 objective:
   prediction: 1.0
@@ -36,6 +38,7 @@ objective:
   token_prior: 1.0
   goal: 1.0
   vicreg: 1.0
+  visreg: 0.0
   covariance: 0.04
   gar: 1.0
   gar_k: 8

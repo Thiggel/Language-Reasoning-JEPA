@@ -35,7 +35,10 @@ from textjepa.training.trainer import to_device
 
 def arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("kind", choices=("token_lm", "sentence_lm", "jepa_prior", "jepa_no_prior"))
+    parser.add_argument("kind", choices=(
+        "token_lm", "sentence_lm", "jepa_prior", "jepa_no_prior",
+        "jepa_visreg",
+    ))
     parser.add_argument("--batch-size", type=int, required=True)
     parser.add_argument("--warmup", type=int, default=2)
     parser.add_argument("--steps", type=int, default=5)
@@ -92,11 +95,16 @@ def build(kind, batch_size, device):
             encoder_layers=10, pool_heads=12, predictor_layers=6,
             n_heads=12, ff_mult=4, max_len=768, d_action=128,
             dense_depth=2, dense_checkpoint=True, pooling_scope="sentence",
-            use_prefix_decoder=False, use_token_prior=kind == "jepa_prior",
+            use_prefix_decoder=False,
+            use_token_prior=kind in {"jepa_prior", "jepa_visreg"},
+            target_mode="visreg" if kind == "jepa_visreg" else "ema",
+            visreg_projections=4096,
         ).to(device)
         cfg = OmegaConf.load(Path(__file__).parents[1] / "configs/pooled_sentence_jepa.yaml")
         cfg.objective.dense_discount = 1.0
-        cfg.objective.token_prior = float(kind == "jepa_prior")
+        cfg.objective.token_prior = float(kind in {"jepa_prior", "jepa_visreg"})
+        cfg.objective.vicreg = float(kind != "jepa_visreg")
+        cfg.objective.visreg = float(kind == "jepa_visreg")
         loss_fn = lambda module: compute_losses(
             jepa_forward(module, batch, device), cfg, module, batch,
         )[0]

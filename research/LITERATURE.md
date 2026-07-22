@@ -51,3 +51,31 @@ claim, verify the primary source and current publication status.
   - Add a direct preference/policy model trained from precisely the same GAR
     supervision to isolate whether predictive latent learning contributes beyond
     the ranking objective.
+
+## 2026-07-22 — VISReg as a heuristic-free TextJEPA target stabilizer
+
+- Query: can VISReg faithfully replace EMA targets and VICReg in the pooled
+  token-action JEPA, and which computation does that actually remove?
+- Primary sources:
+  - Paper: <https://arxiv.org/abs/2606.02572>
+  - Official implementation: <https://github.com/HaiyuWu/visreg>
+- Applicable claims:
+  - VISReg uses center and per-dimension scale penalties plus a
+    sliced-Wasserstein shape loss on random projections. Its official
+    ImageNet configuration uses 4,096 projections and weights regularization
+    by 0.9 versus 0.1 for the invariance term.
+  - The method is explicitly trained without EMA, a teacher network, or
+    stop-gradient. For temporal TextJEPA this maps to reusing future positions
+    from the same online causal encoder as prediction targets, allowing the
+    ordinary target-encoder pass to be removed.
+- Limitations:
+  - The evidence is from multi-view vision, not causal language trajectories.
+    TextJEPA has highly correlated token-position samples and additional GAR
+    counterfactual encodings, so stability and speed cannot be assumed.
+  - Exact GAR outcome labels still require encoding modified prefixes. VISReg
+    removes the standard EMA pass, not those auxiliary counterfactual passes;
+    an end-to-end timing comparison is therefore required.
+- Design change:
+  - Add a faithful online-gradient VISReg mode with 4,096 projections. Compare
+    it against EMA+VICReg using matched full-objective steps, collapse/effective
+    rank diagnostics, and a two-A100 timing smoke before any long replacement.

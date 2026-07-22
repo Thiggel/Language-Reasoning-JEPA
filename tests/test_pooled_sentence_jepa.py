@@ -13,8 +13,9 @@ from scripts.eval_pooled_sentence_planning import (
     beam_plan, summarize_drift, summarize_examples, validate_generated_trace,
 )
 from scripts.train_pooled_sentence_jepa import (
-    accumulation_group_size, optimizer_step_count,
+    accumulation_group_size, compute_losses, optimizer_step_count,
 )
+from omegaconf import OmegaConf
 
 
 def _batch(size=2):
@@ -39,6 +40,17 @@ def _model(vocab, scope="sentence", decoder=True):
         use_token_prior=True, use_prefix_decoder=decoder,
         decoder_dim=24, decoder_layers=1, decoder_heads=4,
         decoder_max_len=64, decoder_prefixes_per_sequence=3,
+    )
+
+
+def _visreg_model(vocab):
+    return PooledSentenceJEPA(
+        len(vocab), vocab.pad_id, period_id=vocab.token_to_id["."],
+        question_id=vocab.token_to_id["?"], d_state=32, encoder_layers=1,
+        pool_heads=4, predictor_layers=1, n_heads=4, ff_mult=2,
+        max_len=768, d_action=8, dense_depth=2, pooling_scope="sentence",
+        use_token_prior=True, use_prefix_decoder=False,
+        target_mode="visreg", visreg_projections=16,
     )
 
 
@@ -111,6 +123,51 @@ def test_next_token_action_predicts_next_pooled_prefix_state():
         )
     assert model.predictor.causal_sequence
     assert model.predictor.residual
+
+
+def test_visreg_mode_reuses_online_states_as_gradient_targets_without_teacher():
+    batch, vocab = _batch(1)
+    model = _visreg_model(vocab).train()
+    out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
+    assert model.teacher is None
+    assert out["targets"] is out["states"]
+    assert out["target"].requires_grad
+    out["target"].retain_grad()
+    loss = (out["pred"][out["valid"]] - out["target"][out["valid"]]).square().mean()
+    loss.backward()
+    assert out["target"].grad is not None
+    assert out["target"].grad.abs().sum() > 0
+
+
+def test_visreg_mode_counterfactual_targets_use_online_encoder():
+    batch, vocab = _batch(1)
+    model = _visreg_model(vocab).eval()
+    with torch.no_grad():
+        out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
+        counterfactual = model.token_counterfactuals(
+            out, batch["tokens"], batch["prompt_len"], k=3, max_anchors=2,
+        )
+    assert counterfactual["exact_outcome"].shape[:2] == (2, 3)
+    assert torch.isfinite(counterfactual["advantage_target"]).all()
+
+
+def test_visreg_full_objective_is_finite_and_reaches_online_encoder():
+    batch, vocab = _batch(1)
+    model = _visreg_model(vocab).train()
+    cfg = OmegaConf.load("configs/pooled_sentence_jepa.yaml")
+    cfg.objective.vicreg = 0.0
+    cfg.objective.visreg = 1.0
+    cfg.objective.gar_k = 3
+    cfg.objective.gar_max_anchors = 2
+    out = model(batch["tokens"], batch["prompt_len"], batch["sentence_ends"])
+    loss, metrics = compute_losses(out, cfg, model, batch)
+    assert torch.isfinite(loss)
+    assert "visreg" in metrics and "vicreg" not in metrics
+    loss.backward()
+    assert any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.state_encoder.parameters()
+    )
 
 
 def test_dense_rollout_supervises_every_valid_anchor_with_observed_history():

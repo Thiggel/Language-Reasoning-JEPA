@@ -99,7 +99,12 @@ def compute_losses(out, cfg, model, batch, distributed_regularizer=False):
     regularizer_features = out["prev"][out["valid"]]
     if distributed_regularizer:
         regularizer_features = _global_valid_features(regularizer_features)
-    regularizer = vicreg(regularizer_features, obj.covariance)
+    if model.visreg is not None:
+        regularizer = model.visreg(regularizer_features)
+        regularizer_weight = float(obj.get("visreg", 1.0))
+    else:
+        regularizer = vicreg(regularizer_features, obj.covariance)
+        regularizer_weight = float(obj.vicreg)
     cf = model.token_counterfactuals(
         out, batch["tokens"].to(out["states"].device),
         batch["prompt_len"].to(out["states"].device), k=int(obj.gar_k),
@@ -141,14 +146,15 @@ def compute_losses(out, cfg, model, batch, distributed_regularizer=False):
     total = (
         obj.prediction * prediction + obj.dense * dense
         + obj.token_prior * prior + obj.goal * goal
-        + obj.vicreg * regularizer + obj.gar * gar_total
+        + regularizer_weight * regularizer + obj.gar * gar_total
         + obj.prefix_decoder * decoder_ce
         + obj.decoder_state_use * decoder_state_use
     )
     items = {
         "prediction": prediction, "dense": dense, "token_prior": prior,
         "token_prior_accuracy": prior_accuracy, "goal": goal,
-        "vicreg": regularizer, "gar_regression": gar_regression,
+        "visreg" if model.visreg is not None else "vicreg": regularizer,
+        "gar_regression": gar_regression,
         "gar_ranking": gar_ranking, "gar_counterfactual_mse": gar_dynamics,
         "gar_advantage_std": cf["advantage_target"].std(),
         "prefix_decoder": decoder_ce, "decoder_state_use": decoder_state_use,
@@ -228,7 +234,11 @@ def main(cfg: DictConfig):
     if distributed.primary:
         print({
             "trainable_parameters": sum(p.numel() for p in raw_model.parameters() if p.requires_grad),
-            "ema_target_parameters": sum(p.numel() for p in raw_model.teacher.parameters()),
+            "ema_target_parameters": (
+                sum(p.numel() for p in raw_model.teacher.parameters())
+                if raw_model.teacher is not None else 0
+            ),
+            "target_mode": raw_model.target_mode,
         }, flush=True)
     model = wrap(raw_model, distributed)
     optimizer = build_optimizer(

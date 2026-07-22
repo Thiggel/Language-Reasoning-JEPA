@@ -12,6 +12,7 @@ from textjepa.models.heads import MacroValueHead
 from textjepa.models.layers import mlp
 from textjepa.models.predictor import CausalHistoryPredictor
 from textjepa.models.token_hierarchy import CausalTokenStateEncoder
+from textjepa.objectives.visreg import VISReg
 
 
 class CausalAttentionPooler(nn.Module):
@@ -143,8 +144,12 @@ class PooledSentenceJEPA(nn.Module):
         use_prefix_decoder: bool = False, decoder_dim: int = 256,
         decoder_layers: int = 2, decoder_heads: int = 8,
         decoder_max_len: int = 96, decoder_prefixes_per_sequence: int = 8,
+        target_mode: str = "ema", visreg_projections: int = 4096,
     ):
         super().__init__()
+        if target_mode not in {"ema", "visreg"}:
+            raise ValueError("target_mode must be 'ema' or 'visreg'")
+        self.target_mode = target_mode
         self.pad_id, self.period_id = int(pad_id), int(period_id)
         self.question_id = int(question_id)
         self.vocab_size, self.d_state, self.d_action = int(vocab_size), int(d_state), int(d_action)
@@ -157,7 +162,10 @@ class PooledSentenceJEPA(nn.Module):
             encoder_layers, n_heads, ff_mult, max_len, pool_heads,
             pooling_scope,
         )
-        self.teacher = EMATeacher(self.state_encoder)
+        self.teacher = (
+            EMATeacher(self.state_encoder) if target_mode == "ema" else None
+        )
+        self.visreg = VISReg(visreg_projections) if target_mode == "visreg" else None
         self.token_action = nn.Embedding(vocab_size, d_action, padding_idx=pad_id)
         self.predictor = CausalHistoryPredictor(
             d_state, d_action, predictor_layers, n_heads, ff_mult,
@@ -184,7 +192,8 @@ class PooledSentenceJEPA(nn.Module):
 
     @torch.no_grad()
     def update_teacher(self, momentum):
-        self.teacher.update(self.state_encoder, momentum)
+        if self.teacher is not None:
+            self.teacher.update(self.state_encoder, momentum)
 
     def _sequences(self, states, targets, tokens, prompt_len):
         batch, _, dim = states.shape
@@ -270,8 +279,13 @@ class PooledSentenceJEPA(nn.Module):
 
     def forward(self, tokens, prompt_len, sentence_ends=None):
         states = self.state_encoder(tokens)
-        with torch.no_grad():
-            targets = self.teacher(tokens)
+        if self.teacher is None:
+            # Heuristic-free VISReg: the future target is another position from
+            # the same online encoder and receives prediction-loss gradients.
+            targets = states
+        else:
+            with torch.no_grad():
+                targets = self.teacher(tokens)
         seq = self._sequences(states, targets, tokens, prompt_len)
         actions = self.token_action(seq["action_ids"])
         pred = self.predictor(seq["prev"], actions, seq["valid"])
@@ -351,7 +365,8 @@ class PooledSentenceJEPA(nn.Module):
         for index, sequence in enumerate(sequences):
             padded[index, :len(sequence)] = sequence
         with torch.no_grad():
-            encoded = self.teacher(padded)
+            target_encoder = self.teacher if self.teacher is not None else self.state_encoder
+            encoded = target_encoder(padded)
             exact = torch.stack([
                 encoded[index, length - 1] for index, length in enumerate(lengths)
             ]).reshape(n, k, self.d_state)
