@@ -82,6 +82,7 @@ case "$kind" in
       model.n_heads=12 model.ff_mult=4 model.max_len=768 model.d_action=128 \
       model.dense_depth=2 model.dense_checkpoint=true \
       model.pooling_scope=sentence model.use_prefix_decoder=false \
+      model.sequence_packing=true model.attention_backend=auto \
       "model.use_token_prior=$use_prior" "objective.token_prior=$prior_weight" \
       "model.target_mode=$target_mode" model.visreg_projections=4096 \
       "objective.vicreg=$vicreg_weight" "objective.visreg=$visreg_weight" \

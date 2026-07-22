@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-token-jepa-packed-throughput",
+  "decision": "Measure how padding-free variable-length causal attention changes full-objective token-iGSM JEPA memory and throughput, including a direct physical microbatch-256 test.",
+  "git_commit": "1a908d04416067ad01e45c420f2da3894b24f950",
+  "jobs": [
+    {
+      "id": "packed-full-mb24", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Matched control against the established unpacked full-objective microbatch-24 throughput and memory result.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "24"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "packed-full-mb32", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Test whether packing crosses the first unpacked out-of-memory boundary.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "32"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "packed-full-mb64", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Measure a practical large physical batch under the complete JEPA objective.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "64"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "packed-full-mb128", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Establish whether packing permits edit-JEPA-scale physical batching with dense rollout and GAR retained.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "128"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "packed-full-mb256", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Directly test 256 physical sequences on one A100 without weakening the model objective.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "256"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}
