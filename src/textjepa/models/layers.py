@@ -27,6 +27,62 @@ def _external_flash_functions():
     return fa4, fa2
 
 
+def _bucketed_packed_attention(
+    qkv: torch.Tensor,
+    cu_seqlens: torch.Tensor,
+    dropout_p: float = 0.0,
+    backend: str = "torch",
+) -> torch.Tensor:
+    """Native SDPA over isolated power-of-two length buckets.
+
+    Input/output are flat ``[total_tokens, heads, head_dim]`` streams. Each
+    sequence occupies its own SDPA batch row, so cross-example attention is
+    structurally impossible. Bucket padding is always less than 2x.
+    """
+    lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).tolist()
+    groups: dict[int, list[tuple[int, int]]] = {}
+    for start, length in zip(cu_seqlens[:-1].tolist(), lengths):
+        bucket = max(1, 1 << (int(length) - 1).bit_length())
+        groups.setdefault(bucket, []).append((int(start), int(length)))
+    heads, head_dim = qkv.shape[-2:]
+    attended = qkv.new_zeros(qkv.shape[0], heads, head_dim)
+    context = nullcontext()
+    if qkv.is_cuda:
+        from torch.nn.attention import SDPBackend, sdpa_kernel
+        allowed = (
+            [SDPBackend.FLASH_ATTENTION]
+            if backend == "torch_flash" else
+            [SDPBackend.FLASH_ATTENTION,
+             SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+        )
+        context = sdpa_kernel(allowed)
+    with context:
+        for bucket, members in groups.items():
+            shape = (len(members), heads, bucket, head_dim)
+            q_group = qkv.new_zeros(shape)
+            k_group = qkv.new_zeros(shape)
+            v_group = qkv.new_zeros(shape)
+            group_valid = torch.zeros(
+                len(members), bucket, dtype=torch.bool, device=qkv.device,
+            )
+            for row, (start, length) in enumerate(members):
+                stop = start + length
+                q_group[row, :, :length] = qkv[start:stop, 0].transpose(0, 1)
+                k_group[row, :, :length] = qkv[start:stop, 1].transpose(0, 1)
+                v_group[row, :, :length] = qkv[start:stop, 2].transpose(0, 1)
+                group_valid[row, :length] = True
+            result = F.scaled_dot_product_attention(
+                q_group, k_group, v_group,
+                attn_mask=group_valid[:, None, None, :],
+                dropout_p=dropout_p, is_causal=False,
+            )
+            for row, (start, length) in enumerate(members):
+                attended[start:start + length] = result[
+                    row, :, :length
+                ].transpose(0, 1)
+    return attended
+
+
 class FlashMultiheadAttention(nn.MultiheadAttention):
     """Self-attention dispatched to FA4, FA2, or PyTorch fused SDPA.
 
@@ -193,49 +249,11 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             # native fused SDPA, bounds attention slack below 2x, and never
             # constructs a cross-example score. External FA2/FA4 above remains
             # the completely padding-free path when installed.
-            lengths = (cu_seqlens[1:] - cu_seqlens[:-1]).tolist()
-            groups: dict[int, list[tuple[int, int]]] = {}
-            for start, length in zip(cu_seqlens[:-1].tolist(), lengths):
-                bucket = max(1, 1 << (int(length) - 1).bit_length())
-                groups.setdefault(bucket, []).append((int(start), int(length)))
-            attended = qkv.new_zeros(
-                query.shape[0], self.num_heads, self.head_dim
+            attended = _bucketed_packed_attention(
+                qkv, cu_seqlens,
+                dropout_p=self.dropout if self.training else 0.0,
+                backend=backend,
             )
-            context = nullcontext()
-            from torch.nn.attention import SDPBackend, sdpa_kernel
-            allowed = (
-                [SDPBackend.FLASH_ATTENTION]
-                if backend == "torch_flash" else
-                [SDPBackend.FLASH_ATTENTION,
-                 SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
-            )
-            context = sdpa_kernel(allowed)
-            with context:
-                for bucket, members in groups.items():
-                    shape = (len(members), self.num_heads, bucket, self.head_dim)
-                    q_group = qkv.new_zeros(shape)
-                    k_group = qkv.new_zeros(shape)
-                    v_group = qkv.new_zeros(shape)
-                    group_valid = torch.zeros(
-                        len(members), bucket, dtype=torch.bool,
-                        device=query.device,
-                    )
-                    for row, (start, length) in enumerate(members):
-                        stop = start + length
-                        q_group[row, :, :length] = qkv[start:stop, 0].transpose(0, 1)
-                        k_group[row, :, :length] = qkv[start:stop, 1].transpose(0, 1)
-                        v_group[row, :, :length] = qkv[start:stop, 2].transpose(0, 1)
-                        group_valid[row, :length] = True
-                    result = F.scaled_dot_product_attention(
-                        q_group, k_group, v_group,
-                        attn_mask=group_valid[:, None, None, :],
-                        dropout_p=self.dropout if self.training else 0.0,
-                        is_causal=False,
-                    )
-                    for row, (start, length) in enumerate(members):
-                        attended[start:start + length] = result[
-                            row, :, :length
-                        ].transpose(0, 1)
             self.last_backend = "torch_bucketed_packed"
         else:
             # Exact, deliberately simple CPU fallback for tests and debugging.

@@ -3,7 +3,9 @@ import copy
 import pytest
 import torch
 
-from textjepa.models.layers import encoder_stack, packed_encoder_forward
+from textjepa.models.layers import (
+    _bucketed_packed_attention, encoder_stack, packed_encoder_forward,
+)
 
 
 def _prefix_mask(lengths, width):
@@ -189,3 +191,34 @@ def test_randomized_masks_and_shapes_match_dense_reference():
             packed[valid], dense[valid], atol=1e-5, rtol=1e-4
         ), seed
         assert packed[~valid].eq(0).all(), seed
+
+
+def test_bucketed_sdpa_matches_independent_sequences_and_gradients():
+    torch.manual_seed(2201)
+    lengths = [1, 3, 4, 5, 9, 16, 17]
+    cu = torch.nn.functional.pad(
+        torch.tensor(lengths, dtype=torch.int32).cumsum(0), (1, 0)
+    )
+    qkv = torch.randn(sum(lengths), 3, 8, 104, requires_grad=True)
+    reference_input = qkv.detach().clone().requires_grad_(True)
+    actual = _bucketed_packed_attention(qkv, cu)
+    expected_parts = []
+    for start, stop in zip(cu[:-1], cu[1:]):
+        lo, hi = int(start), int(stop)
+        query, key, value = (
+            part.transpose(0, 1).unsqueeze(0)
+            for part in reference_input[lo:hi].unbind(1)
+        )
+        expected_parts.append(
+            torch.nn.functional.scaled_dot_product_attention(
+                query, key, value
+            ).squeeze(0).transpose(0, 1)
+        )
+    expected = torch.cat(expected_parts)
+    assert torch.allclose(actual, expected, atol=2e-6, rtol=2e-5)
+    weight = torch.randn_like(actual)
+    (actual * weight).sum().backward()
+    (expected * weight).sum().backward()
+    assert torch.allclose(
+        qkv.grad, reference_input.grad, atol=3e-6, rtol=3e-5
+    )
