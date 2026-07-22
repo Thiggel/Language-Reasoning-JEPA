@@ -25,3 +25,5 @@ macro_decoder: false
 macro_decoder_detach_inputs: true
 sentence_action_kind: context
 direct_content_scaffold: true
+attention_backend: auto
+efficient_pair_encoding: false

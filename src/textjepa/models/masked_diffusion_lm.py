@@ -25,7 +25,8 @@ class MaskedDiffusionLM(nn.Module):
     def __init__(self, vocab_size: int, pad_id: int, mask_id: int,
                  d_model: int = 128, n_layers: int = 4, n_heads: int = 8,
                  ff_mult: int = 4, max_sequence_len: int = 2048,
-                 dropout: float = 0.0, boundary_id: int | None = None):
+                 dropout: float = 0.0, boundary_id: int | None = None,
+                 attention_backend: str = "torch"):
         super().__init__()
         if dropout != 0:
             raise ValueError("diffusion comparison requires dropout=0")
@@ -38,7 +39,7 @@ class MaskedDiffusionLM(nn.Module):
         self.position = nn.Parameter(torch.zeros(1, max_sequence_len, d_model))
         self.segment = nn.Parameter(torch.zeros(2, d_model))
         self.encoder = encoder_stack(
-            d_model, n_layers, n_heads, ff_mult, dropout
+            d_model, n_layers, n_heads, ff_mult, dropout, attention_backend
         )
         self.norm = nn.LayerNorm(d_model)
         self.output = nn.Linear(d_model, vocab_size, bias=False)
@@ -48,51 +49,42 @@ class MaskedDiffusionLM(nn.Module):
 
     def pack_clean(self, prompt: torch.Tensor, buffer: torch.Tensor):
         """Pack valid ``[prompt | response]`` tokens and retain ownership."""
-        rows, response_flags = [], []
-        for row in range(len(prompt)):
-            p = prompt[row].reshape(-1)
-            p = p[p.ne(self.pad_id)]
-            sentences = [
-                sentence[sentence.ne(self.pad_id)] for sentence in buffer[row]
-                if bool(sentence.ne(self.pad_id).any())
-            ]
-            if self.boundary_id is None:
-                r = torch.cat(sentences) if sentences else p.new_empty(0)
-                r_flags = torch.ones_like(r, dtype=torch.bool)
-            else:
-                pieces, flags = [], []
-                for index, sentence in enumerate(sentences):
-                    if index:
-                        pieces.append(sentence.new_tensor([self.boundary_id]))
-                        # The target-derived step scaffold is visible and
-                        # immutable for every compared architecture.
-                        flags.append(torch.zeros(1, dtype=torch.bool,
-                                                 device=sentence.device))
-                    pieces.append(sentence)
-                    flags.append(torch.ones_like(sentence, dtype=torch.bool))
-                r = torch.cat(pieces) if pieces else p.new_empty(0)
-                r_flags = torch.cat(flags) if flags else p.new_empty(
-                    0, dtype=torch.bool
-                )
-            rows.append(torch.cat([p, r]))
-            response_flags.append(torch.cat([
-                torch.zeros_like(p, dtype=torch.bool),
-                r_flags,
-            ]))
-        width = max(max(x.numel(), 1) for x in rows)
+        n, sentences, sentence_width = buffer.shape
+        prompt_flat = prompt.reshape(n, -1)
+        prompt_valid = prompt_flat.ne(self.pad_id)
+        buffer_valid = buffer.ne(self.pad_id)
+        if self.boundary_id is None:
+            response_values = buffer.reshape(n, -1)
+            response_valid = buffer_valid.reshape(n, -1)
+            response_loss = response_valid
+        else:
+            nonempty = buffer_valid.any(-1)
+            boundary_valid = nonempty & nonempty.long().cumsum(1).gt(1)
+            boundary = buffer.new_full((n, sentences, 1), self.boundary_id)
+            response_values = torch.cat([boundary, buffer], -1).reshape(n, -1)
+            response_valid = torch.cat(
+                [boundary_valid.unsqueeze(-1), buffer_valid], -1
+            ).reshape(n, -1)
+            response_loss = torch.cat(
+                [torch.zeros_like(boundary_valid).unsqueeze(-1), buffer_valid], -1
+            ).reshape(n, -1)
+        values = torch.cat([prompt_flat, response_values], 1)
+        keep = torch.cat([prompt_valid, response_valid], 1)
+        loss_source = torch.cat([torch.zeros_like(prompt_valid), response_loss], 1)
+        counts = keep.sum(1)
+        width = max(int(counts.max().item()), 1)
         if width > self.max_sequence_len:
             raise ValueError(
                 f"packed length {width} exceeds max_sequence_len="
                 f"{self.max_sequence_len}"
             )
-        clean = prompt.new_full((len(rows), width), self.pad_id)
-        valid = torch.zeros(len(rows), width, dtype=torch.bool,
-                            device=prompt.device)
+        clean = prompt.new_full((n, width), self.pad_id)
+        valid = torch.arange(width, device=prompt.device)[None] < counts[:, None]
         response = torch.zeros_like(valid)
-        for row, (tokens, flags) in enumerate(zip(rows, response_flags)):
-            clean[row, :tokens.numel()] = tokens
-            valid[row, :tokens.numel()] = True
-            response[row, :flags.numel()] = flags
+        destination = keep.long().cumsum(1) - 1
+        row = torch.arange(n, device=prompt.device).unsqueeze(1).expand_as(keep)
+        clean[row[keep], destination[keep]] = values[keep]
+        response[row[keep], destination[keep]] = loss_source[keep]
         return clean, valid, response
 
     def logits(self, tokens: torch.Tensor, valid: torch.Tensor,

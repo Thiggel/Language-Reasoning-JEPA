@@ -22,6 +22,7 @@ from textjepa.models.masked_diffusion_lm import (
     MaskedDiffusionLM,
     select_terminal_buffers,
 )
+from textjepa.models.layers import attention_backend_summary
 from textjepa.utils.checkpoint import build_dataset, collate_for
 
 
@@ -43,13 +44,14 @@ def make_cfg(args):
     return OmegaConf.create({"data": data})
 
 
-def loader(cfg, vocab, split, batch_size, shuffle):
+def loader(cfg, vocab, split, batch_size, shuffle, num_workers):
     dataset = build_dataset(cfg, vocab, split)
     return DataLoader(
         dataset, batch_size=batch_size, shuffle=shuffle,
-        num_workers=0,
+        num_workers=num_workers,
         collate_fn=partial(collate_for(cfg), pad_id=vocab.pad_id),
         drop_last=shuffle,
+        persistent_workers=num_workers > 0,
     )
 
 
@@ -108,6 +110,10 @@ def main():
     parser.add_argument("--d-model", type=int, default=912)
     parser.add_argument("--layers", type=int, default=12)
     parser.add_argument("--heads", type=int, default=12)
+    parser.add_argument("--attention-backend", choices=(
+        "auto", "flash_attn_4", "flash_attn_2", "torch_flash", "torch"
+    ), default="auto")
+    parser.add_argument("--num-workers", type=int, default=16)
     parser.add_argument("--max-sequence-len", type=int, default=768)
     parser.add_argument("--precision", choices=("fp32", "bf16"), default="bf16")
     parser.add_argument("--eval-batches", type=int, default=16)
@@ -125,13 +131,19 @@ def main():
     accumulation = args.batch_size // args.microbatch_size
     vocab = faithful_replacement_vocab()
     cfg = make_cfg(args)
-    train_loader = loader(cfg, vocab, "train", args.microbatch_size, False)
-    val_loader = loader(cfg, vocab, "val", args.microbatch_size, False)
+    train_loader = loader(
+        cfg, vocab, "train", args.microbatch_size, False, args.num_workers
+    )
+    val_loader = loader(
+        cfg, vocab, "val", args.microbatch_size, False,
+        min(args.num_workers, 4),
+    )
     model = MaskedDiffusionLM(
         len(vocab), vocab.pad_id, vocab.token_to_id[MASK_TOKEN],
         d_model=args.d_model, n_layers=args.layers, n_heads=args.heads,
         max_sequence_len=args.max_sequence_len,
         boundary_id=vocab.token_to_id[STEP_BOUNDARY_TOKEN],
+        attention_backend=args.attention_backend,
     ).to(device)
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay,
@@ -140,6 +152,7 @@ def main():
     total_steps = args.max_steps
     best = math.inf
     history = []
+    reported_attention = False
     for epoch in range(args.epochs):
         model.train()
         running = 0.0
@@ -158,6 +171,11 @@ def main():
             )
             with amp:
                 loss, _ = model.mdlm_loss(clean, valid, response)
+            if not reported_attention:
+                print(json.dumps({
+                    "attention_backends": attention_backend_summary(model),
+                }), flush=True)
+                reported_attention = True
             (loss / accumulation).backward()
             running += loss.item()
             if (batch_index + 1) % accumulation:
@@ -179,6 +197,10 @@ def main():
                     "loss": loss.item(),
                     "lr": optimizer.param_groups[0]["lr"],
                     "updates_per_second": interval_updates / elapsed,
+                    "peak_memory_gib": (
+                        torch.cuda.max_memory_allocated(device) / 2**30
+                        if device.type == "cuda" else 0.0
+                    ),
                 }, sort_keys=True), flush=True)
                 interval_start = time.perf_counter()
                 interval_updates = 0

@@ -26,6 +26,32 @@ def test_pack_keeps_prompt_out_of_diffusion_domain():
     assert response.tolist() == [[False, False, True, True, True]]
 
 
+def test_vectorized_pack_handles_empty_sentences_and_visible_boundaries():
+    model = MaskedDiffusionLM(
+        32, pad_id=0, mask_id=1, boundary_id=31, d_model=16,
+        n_layers=1, n_heads=4, max_sequence_len=32,
+    )
+    clean, valid, response = model.pack_clean(
+        torch.tensor([[[2, 3, 0]], [[7, 0, 0]]]),
+        torch.tensor([
+            [[4, 5, 0], [0, 0, 0], [6, 0, 0]],
+            [[8, 0, 0], [9, 10, 0], [0, 0, 0]],
+        ]),
+    )
+    assert clean.tolist() == [
+        [2, 3, 4, 5, 31, 6],
+        [7, 8, 31, 9, 10, 0],
+    ]
+    assert valid.tolist() == [
+        [True, True, True, True, True, True],
+        [True, True, True, True, True, False],
+    ]
+    assert response.tolist() == [
+        [False, False, True, True, False, True],
+        [False, True, False, True, True, False],
+    ]
+
+
 def test_absorbing_corruption_never_changes_prompt_or_uses_random_tokens():
     model = _model()
     clean = torch.tensor([[2, 3, 4, 5]])

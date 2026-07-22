@@ -11,6 +11,7 @@ import torch
 from omegaconf import OmegaConf
 
 from textjepa.objectives.geometry import goal_distances, velocity_cosines
+from textjepa.models.layers import attention_backend_summary
 from textjepa.probing.probes import ridge_probe_accuracy
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup, ema_momentum
@@ -60,6 +61,7 @@ class Trainer:
         if self.precision not in {"fp32", "bf16"}:
             raise ValueError(f"unsupported training precision: {self.precision}")
         self.step = 0
+        self._reported_attention_backend = False
 
     def _autocast(self):
         if self.precision == "bf16" and self.device.type == "cuda":
@@ -108,6 +110,13 @@ class Trainer:
             with self._autocast():
                 out = self.model(batch)
                 loss, items = self.objective(out, batch)
+            if not self._reported_attention_backend:
+                print(
+                    "attention_backends="
+                    + ",".join(attention_backend_summary(self.model)),
+                    flush=True,
+                )
+                self._reported_attention_backend = True
             support_logits = out.extras.get("action_support_logits")
             if support_logits is not None:
                 support_valid = out.extras["action_support_valid"]
@@ -143,6 +152,10 @@ class Trainer:
                     grad_norm=gnorm.item(),
                     steps_per_s=updates_since_log / max(
                         time.time() - t0, 1e-6
+                    ),
+                    peak_memory_gib=(
+                        torch.cuda.max_memory_allocated(self.device) / 2**30
+                        if self.device.type == "cuda" else 0.0
                     ),
                 )
                 t0 = time.time()

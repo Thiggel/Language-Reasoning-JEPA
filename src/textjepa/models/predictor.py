@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import mlp
+from textjepa.models.layers import FlashMultiheadAttention, mlp
 
 
 class ActionConditionedPredictor(nn.Module):
@@ -273,11 +273,14 @@ class TokenAlignedEditPredictor(nn.Module):
     def __init__(self, d_state: int, d_action: int, n_layers: int = 2,
                  n_heads: int = 8, ff_mult: int = 4,
                  relative_radius: int = 32,
-                 direct_content_scaffold: bool = True):
+                 direct_content_scaffold: bool = True,
+                 attention_backend: str = "torch",
+                 replacement_only_fast_path: bool = False):
         super().__init__()
         self.d_action = d_action
         self.relative_radius = int(relative_radius)
         self.direct_content_scaffold = bool(direct_content_scaffold)
+        self.replacement_only_fast_path = bool(replacement_only_fast_path)
         self.op = nn.Embedding(3, d_state)
         self.relative = nn.Embedding(2 * self.relative_radius + 3, d_state)
         self.action_code = nn.Sequential(
@@ -291,6 +294,11 @@ class TokenAlignedEditPredictor(nn.Module):
             d_state, n_heads, d_state * ff_mult, dropout=0.0,
             batch_first=True, norm_first=True, activation="gelu",
         )
+        if attention_backend != "torch":
+            layer.self_attn = FlashMultiheadAttention(
+                d_state, n_heads, dropout=0.0, batch_first=True,
+                attention_backend=attention_backend,
+            )
         self.blocks = nn.TransformerEncoder(
             layer, n_layers, norm=nn.LayerNorm(d_state),
             enable_nested_tensor=False,
@@ -324,6 +332,19 @@ class TokenAlignedEditPredictor(nn.Module):
     def _scaffold(self, states: torch.Tensor, mask: torch.Tensor,
                   operations: torch.Tensor, positions: torch.Tensor,
                   content: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.replacement_only_fast_path:
+            scaffold = states.clone()
+            if self.direct_content_scaffold:
+                lengths = mask.sum(-1).long()
+                selected = positions.clamp_min(0).minimum(
+                    (lengths - 1).clamp_min(0)
+                )
+                row = torch.arange(len(states), device=states.device)
+                active = lengths.gt(0)
+                scaffold[row[active], selected[active]] = content[active].to(
+                    scaffold.dtype
+                )
+            return scaffold, mask.clone()
         scaffold = states.new_zeros(states.shape)
         next_mask = torch.zeros_like(mask)
         width = states.shape[1]

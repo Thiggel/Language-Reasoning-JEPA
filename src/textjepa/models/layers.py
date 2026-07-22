@@ -2,8 +2,151 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+from functools import lru_cache
+
 import torch
+import torch.nn.functional as F
 from torch import nn
+
+
+@lru_cache(maxsize=1)
+def _external_flash_functions():
+    """Return optional FA4/FA2 varlen kernels without hard dependencies."""
+    fa4 = fa2 = None
+    try:
+        from flash_attn.cute import flash_attn_varlen_func
+        fa4 = flash_attn_varlen_func
+    except (ImportError, OSError):
+        pass
+    try:
+        from flash_attn import flash_attn_varlen_qkvpacked_func
+        fa2 = flash_attn_varlen_qkvpacked_func
+    except (ImportError, OSError):
+        pass
+    return fa4, fa2
+
+
+class FlashMultiheadAttention(nn.MultiheadAttention):
+    """Self-attention dispatched to FA4, FA2, or PyTorch fused SDPA.
+
+    External FlashAttention uses its variable-length interface, so padding is
+    removed before the quadratic kernel. The inherited projection parameter
+    layout remains checkpoint-compatible with ``nn.MultiheadAttention``.
+    """
+
+    VALID_BACKENDS = {
+        "auto", "flash_attn_4", "flash_attn_2", "torch_flash", "torch"
+    }
+
+    def __init__(self, *args, attention_backend: str = "auto", **kwargs):
+        super().__init__(*args, **kwargs)
+        if attention_backend not in self.VALID_BACKENDS:
+            raise ValueError(f"unknown attention backend: {attention_backend}")
+        if not self.batch_first:
+            raise ValueError("fused TextJEPA attention requires batch_first=True")
+        self.attention_backend = attention_backend
+        self.last_backend = "not_run"
+
+    def _external_attention(self, qkv, valid, backend):
+        fa4, fa2 = _external_flash_functions()
+        flat = qkv[valid].contiguous()
+        lengths = valid.sum(1, dtype=torch.int32)
+        cu = F.pad(lengths.cumsum(0), (1, 0))
+        maximum = int(lengths.max().item())
+        if backend == "flash_attn_4":
+            if fa4 is None:
+                raise RuntimeError("FlashAttention-4 was requested but is not installed")
+            output = fa4(
+                flat[:, 0], flat[:, 1], flat[:, 2], cu, cu,
+                maximum, maximum, causal=False,
+            )
+        else:
+            if fa2 is None:
+                raise RuntimeError("FlashAttention-2 was requested but is not installed")
+            output = fa2(
+                flat, cu, maximum,
+                dropout_p=self.dropout if self.training else 0.0,
+                causal=False,
+            )
+        padded = output.new_zeros(
+            qkv.shape[0], qkv.shape[1], self.num_heads, self.head_dim
+        )
+        padded[valid] = output
+        self.last_backend = backend
+        return padded
+
+    def _select_backend(self, query):
+        requested = self.attention_backend
+        if requested != "auto":
+            return requested
+        if query.is_cuda and query.dtype in {torch.float16, torch.bfloat16}:
+            fa4, fa2 = _external_flash_functions()
+            major, _ = torch.cuda.get_device_capability(query.device)
+            if major >= 9 and fa4 is not None:
+                return "flash_attn_4"
+            if major >= 8 and fa2 is not None:
+                return "flash_attn_2"
+            return "torch_flash"
+        return "torch"
+
+    def forward(self, query, key, value, key_padding_mask=None,
+                need_weights=True, attn_mask=None, average_attn_weights=True,
+                is_causal=False):
+        if (query is not key or query is not value or need_weights
+                or attn_mask is not None or is_causal or self.bias_k is not None
+                or self.bias_v is not None or self.add_zero_attn):
+            self.last_backend = "torch_mha_fallback"
+            return super().forward(
+                query, key, value, key_padding_mask=key_padding_mask,
+                need_weights=need_weights, attn_mask=attn_mask,
+                average_attn_weights=average_attn_weights, is_causal=is_causal,
+            )
+        batch, length, _ = query.shape
+        qkv = F.linear(query, self.in_proj_weight, self.in_proj_bias).view(
+            batch, length, 3, self.num_heads, self.head_dim
+        )
+        valid = (
+            torch.ones(batch, length, dtype=torch.bool, device=query.device)
+            if key_padding_mask is None else ~key_padding_mask
+        )
+        backend = self._select_backend(query)
+        if backend in {"flash_attn_4", "flash_attn_2"}:
+            attended = self._external_attention(qkv, valid, backend)
+        else:
+            q, k, v = (part.transpose(1, 2) for part in qkv.unbind(2))
+            mask = valid[:, None, None, :]
+            context = nullcontext()
+            if query.is_cuda:
+                from torch.nn.attention import SDPBackend, sdpa_kernel
+                allowed = (
+                    [SDPBackend.FLASH_ATTENTION]
+                    if backend == "torch_flash" else
+                    [SDPBackend.FLASH_ATTENTION,
+                     SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH]
+                )
+                context = sdpa_kernel(allowed)
+            with context:
+                attended = F.scaled_dot_product_attention(
+                    q, k, v, attn_mask=mask,
+                    dropout_p=self.dropout if self.training else 0.0,
+                    is_causal=False,
+                ).transpose(1, 2)
+            attended = attended * valid[:, :, None, None]
+            self.last_backend = backend
+        output = F.linear(
+            attended.reshape(batch, length, self.embed_dim),
+            self.out_proj.weight, self.out_proj.bias,
+        )
+        return output, None
+
+
+def attention_backend_summary(module: nn.Module) -> list[str]:
+    """Concrete kernels used by fused attention modules in the last forward."""
+    return sorted({
+        child.last_backend for child in module.modules()
+        if isinstance(child, FlashMultiheadAttention)
+    })
 
 
 def mlp(dims: list[int], out_dim: int) -> nn.Sequential:
@@ -15,7 +158,8 @@ def mlp(dims: list[int], out_dim: int) -> nn.Sequential:
 
 
 def encoder_stack(
-    d_model: int, n_layers: int, n_heads: int, ff_mult: float, dropout: float
+    d_model: int, n_layers: int, n_heads: int, ff_mult: float, dropout: float,
+    attention_backend: str = "torch",
 ) -> nn.TransformerEncoder:
     layer = nn.TransformerEncoderLayer(
         d_model,
@@ -26,6 +170,11 @@ def encoder_stack(
         batch_first=True,
         norm_first=True,
     )
+    if attention_backend != "torch":
+        layer.self_attn = FlashMultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True,
+            attention_backend=attention_backend,
+        )
     return nn.TransformerEncoder(layer, n_layers, enable_nested_tensor=False)
 
 

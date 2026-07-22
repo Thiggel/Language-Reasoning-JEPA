@@ -165,6 +165,56 @@ def test_hybrid_sentence_prediction_really_depends_on_lower_prediction():
     assert model.token_pred.out.weight.grad.abs().sum() > 0
 
 
+def test_efficient_pair_encoding_halves_state_encodes_without_changing_transition():
+    torch.manual_seed(9)
+    full = _model("token_sentence", efficient_pair_encoding=False)
+    efficient = _model("token_sentence", efficient_pair_encoding=True)
+    efficient.load_state_dict(full.state_dict())
+    batch = copy.deepcopy(_batch())
+    batch["buffer_tokens"] = batch["buffer_tokens"][:, :2]
+    batch["buffer_mask"] = batch["buffer_mask"][:, :2]
+    for key in ("op", "edit_position", "edit_content_token", "step_mask",
+                "action_tokens"):
+        batch[key] = batch[key][:, :1]
+    encoded = {"full": 0, "efficient": 0}
+
+    def count(name):
+        def hook(_module, inputs):
+            encoded[name] += inputs[0].shape[0]
+        return hook
+
+    full_hook = full.encoder.token_encoder.register_forward_pre_hook(count("full"))
+    full_teacher_hook = full.teacher.module.token_encoder.register_forward_pre_hook(
+        count("full")
+    )
+    efficient_hook = efficient.encoder.token_encoder.register_forward_pre_hook(
+        count("efficient")
+    )
+    efficient_teacher_hook = (
+        efficient.teacher.module.token_encoder.register_forward_pre_hook(
+            count("efficient")
+        )
+    )
+    full_out = full(copy.deepcopy(batch))
+    efficient_out = efficient(copy.deepcopy(batch))
+    for hook in (full_hook, full_teacher_hook, efficient_hook,
+                 efficient_teacher_hook):
+        hook.remove()
+    assert encoded == {"full": 4, "efficient": 2}
+    assert efficient_out.extras["efficient_pair_encoding"] is True
+    assert torch.allclose(
+        efficient_out.extras["token_predictions"],
+        full_out.extras["token_predictions"], atol=1e-6,
+    )
+    assert torch.allclose(
+        efficient_out.extras["sentence_predictions"],
+        full_out.extras["sentence_predictions"], atol=1e-6,
+    )
+    assert torch.allclose(
+        efficient_out.step_states_tgt, full_out.step_states_tgt, atol=1e-6,
+    )
+
+
 def test_macro_code_uses_all_actions_and_preserves_order():
     torch.manual_seed(11)
     model = _model("token_sentence_macro")

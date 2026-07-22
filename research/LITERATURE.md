@@ -329,3 +329,32 @@ claim, verify the primary source and current publication status.
   - Add a direct preference/policy model trained from precisely the same GAR
     supervision to isolate whether predictive latent learning contributes beyond
     the ranking objective.
+
+## 2026-07-22 — architecture-specific fused attention for edit pretraining
+
+- Decision: which exact attention kernel can accelerate the 124M-parameter
+  sequence-edit controls without changing their bidirectional attention rule.
+- Primary sources:
+  - Dao-AILab FlashAttention repository and current releases:
+    <https://github.com/Dao-AILab/flash-attention>
+  - PyTorch scaled-dot-product attention documentation:
+    <https://docs.pytorch.org/docs/main/generated/torch.nn.functional.scaled_dot_product_attention.html>
+- Applicable claims:
+  - FlashAttention-4 is a current beta optimized for Hopper/Blackwell and
+    exposes padded and variable-length exact-attention kernels.
+  - FlashAttention-2 is the supported external kernel for Ampere/Ada/Hopper;
+    it supports BF16 and head dimensions through 256.
+  - PyTorch SDPA can select a fused FlashAttention-2 implementation and can be
+    restricted to that backend so an unsupported input fails visibly instead
+    of silently using the math kernel.
+- Limitations:
+  - The shared PyTorch 2.5.1+cu121 environment cannot use the recommended
+    CUDA-12.8 FlashAttention-3/4 stack unchanged. FA4 is not an A100 backend.
+  - Kernel equivalence does not imply end-to-end speedup when Python packing,
+    CUDA synchronizations, redundant encoder calls, or tiny microbatches
+    dominate.
+- Design change:
+  - Dispatch FA4 on installed Hopper environments, FA2 on installed Ampere
+    environments, and otherwise require PyTorch fused SDPA. Log the concrete
+    backend, peak memory, and optimizer throughput. Vectorize packing and sweep
+    the largest fitting microbatch before estimating full training time.

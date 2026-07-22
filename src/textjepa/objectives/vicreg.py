@@ -101,11 +101,18 @@ class SIGReg(Objective):
         self.integration_limit = integration_limit
 
     def forward(self, out, batch: dict) -> torch.Tensor:
-        mask = out.step_mask.reshape(-1)
-        x = torch.cat([
-            out.s0,
-            out.step_states.reshape(-1, out.step_states.shape[-1])[mask],
-        ], dim=0).float()
+        if "sigreg_states" in out.extras:
+            source = out.extras["sigreg_states"]
+            source_mask = out.extras["sigreg_state_mask"]
+            x = source.reshape(-1, source.shape[-1])[
+                source_mask.reshape(-1)
+            ].float()
+        else:
+            mask = out.step_mask.reshape(-1)
+            x = torch.cat([
+                out.s0,
+                out.step_states.reshape(-1, out.step_states.shape[-1])[mask],
+            ], dim=0).float()
         directions = torch.randn(
             x.shape[-1], self.num_slices, device=x.device, dtype=x.dtype
         )

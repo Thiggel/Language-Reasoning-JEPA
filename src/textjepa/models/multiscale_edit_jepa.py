@@ -31,7 +31,8 @@ class HierarchicalBufferEncoder(nn.Module):
                  token_layers: int = 2, sentence_layers: int = 2,
                  n_heads: int = 8, ff_mult: int = 4,
                  max_sequence_len: int = 1024, max_sentences: int = 64,
-                 dropout: float = 0.0, pooling: str = "attention"):
+                 dropout: float = 0.0, pooling: str = "attention",
+                 attention_backend: str = "torch"):
         super().__init__()
         if pooling not in {"attention", "mean"}:
             raise ValueError(f"unknown sentence pooling: {pooling}")
@@ -43,7 +44,7 @@ class HierarchicalBufferEncoder(nn.Module):
         self.segment = nn.Parameter(torch.zeros(2, d_model))
         self.sentence_start = nn.Parameter(torch.zeros(d_model))
         self.token_encoder = encoder_stack(
-            d_model, token_layers, n_heads, ff_mult, dropout
+            d_model, token_layers, n_heads, ff_mult, dropout, attention_backend
         )
         self.token_norm = nn.LayerNorm(d_model)
         # A learned scalar attention score, normalized independently inside
@@ -54,7 +55,8 @@ class HierarchicalBufferEncoder(nn.Module):
         )
         self.sentence_pos = nn.Parameter(torch.zeros(1, max_sentences, d_model))
         self.sentence_encoder = encoder_stack(
-            d_model, sentence_layers, n_heads, ff_mult, dropout
+            d_model, sentence_layers, n_heads, ff_mult, dropout,
+            attention_backend,
         )
         self.sentence_norm = nn.LayerNorm(d_model)
         nn.init.normal_(self.token_pos, std=0.02)
@@ -66,30 +68,24 @@ class HierarchicalBufferEncoder(nn.Module):
     def _pack(prompt: torch.Tensor, buffer: torch.Tensor, pad_id: int):
         """Pack valid tokens and retain -1(prompt)/sentence buffer labels."""
         n, c, length = buffer.shape
-        rows, labels = [], []
-        widths = []
-        for row in range(n):
-            p = prompt[row].reshape(-1)
-            p = p[p.ne(pad_id)]
-            pieces, ids = [p], [torch.full_like(p, -1)]
-            for sentence in range(c):
-                value = buffer[row, sentence]
-                value = value[value.ne(pad_id)]
-                pieces.append(value)
-                ids.append(torch.full_like(value, sentence))
-            packed = torch.cat(pieces) if pieces else prompt.new_empty(0)
-            label = torch.cat(ids) if ids else prompt.new_empty(0)
-            rows.append(packed)
-            labels.append(label)
-            widths.append(max(int(packed.numel()), 1))
-        width = max(widths)
+        prompt_flat = prompt.reshape(n, -1)
+        buffer_flat = buffer.reshape(n, -1)
+        values = torch.cat([prompt_flat, buffer_flat], dim=1)
+        keep = values.ne(pad_id)
+        labels = torch.cat([
+            prompt_flat.new_full(prompt_flat.shape, -1),
+            torch.arange(c, device=buffer.device, dtype=buffer.dtype)
+            .view(1, c, 1).expand(n, c, length).reshape(n, -1),
+        ], dim=1)
+        counts = keep.sum(1)
+        width = max(int(counts.max().item()), 1)
         tokens = prompt.new_full((n, width), pad_id)
         sentence_ids = prompt.new_full((n, width), -2)
-        valid = torch.zeros(n, width, dtype=torch.bool, device=prompt.device)
-        for row, (values, ids) in enumerate(zip(rows, labels)):
-            tokens[row, :values.numel()] = values
-            sentence_ids[row, :ids.numel()] = ids
-            valid[row, :values.numel()] = True
+        destination = keep.long().cumsum(1) - 1
+        row = torch.arange(n, device=prompt.device).unsqueeze(1).expand_as(keep)
+        tokens[row[keep], destination[keep]] = values[keep]
+        sentence_ids[row[keep], destination[keep]] = labels[keep]
+        valid = torch.arange(width, device=prompt.device).unsqueeze(0) < counts[:, None]
         return tokens, valid, sentence_ids
 
     def contextual_tokens(self, prompt: torch.Tensor, buffer: torch.Tensor):
@@ -112,19 +108,21 @@ class HierarchicalBufferEncoder(nn.Module):
         key_pad[key_pad.all(-1), 0] = False
         h = self.token_norm(self.token_encoder(h, src_key_padding_mask=key_pad))
         buffer_valid = valid & sentence_ids.ge(0)
-        widths = buffer_valid.sum(-1).clamp_min(1)
-        width = int(widths.max().item())
+        widths = buffer_valid.sum(-1)
+        width = max(int(widths.max().item()), 1)
         out = h.new_zeros(h.shape[0], width, h.shape[-1])
         out_ids = sentence_ids.new_full((h.shape[0], width), -1)
-        out_mask = torch.zeros(
-            h.shape[0], width, dtype=torch.bool, device=h.device
+        destination = buffer_valid.long().cumsum(1) - 1
+        row = torch.arange(h.shape[0], device=h.device).unsqueeze(1).expand_as(
+            buffer_valid
         )
-        for row in range(h.shape[0]):
-            keep = buffer_valid[row]
-            count = int(keep.sum().item())
-            out[row, :count] = h[row, keep]
-            out_ids[row, :count] = sentence_ids[row, keep]
-            out_mask[row, :count] = True
+        out[row[buffer_valid], destination[buffer_valid]] = h[buffer_valid]
+        out_ids[row[buffer_valid], destination[buffer_valid]] = sentence_ids[
+            buffer_valid
+        ]
+        out_mask = (
+            torch.arange(width, device=h.device).unsqueeze(0) < widths[:, None]
+        )
         return out, out_mask, out_ids
 
     def pool_sentences(self, token_states: torch.Tensor,
@@ -133,26 +131,31 @@ class HierarchicalBufferEncoder(nn.Module):
         if n_sentences > self.sentence_pos.shape[1]:
             raise ValueError("too many sentences for configured sentence positions")
         n, width, dim = token_states.shape
-        sentence_mask = torch.zeros(
-            n, n_sentences, dtype=torch.bool, device=token_states.device
-        )
-        pooled = token_states.new_zeros(n, n_sentences, dim)
-        attention = token_states.new_zeros(n, width)
         raw_score = self.pool_score(token_states).squeeze(-1)
-        for sentence in range(n_sentences):
-            members = token_mask & sentence_ids.eq(sentence)
-            sentence_mask[:, sentence] = members.any(-1)
-            if self.pooling == "attention":
-                score = raw_score.masked_fill(~members, -torch.inf)
-                # Avoid NaNs for absent/padded sentences; output is masked.
-                score = torch.where(members.any(-1, keepdim=True), score,
-                                    torch.zeros_like(score))
-                weight = torch.softmax(score, -1) * members.to(score.dtype)
-            else:
-                weight = members.to(raw_score.dtype)
-            weight = weight / weight.sum(-1, keepdim=True).clamp_min(1)
-            attention = attention + weight
-            pooled[:, sentence] = torch.einsum("nw,nwd->nd", weight, token_states)
+        members = token_mask & sentence_ids.ge(0) & sentence_ids.lt(n_sentences)
+        groups = sentence_ids.clamp(0, n_sentences - 1)
+        if self.pooling == "attention":
+            maxima = raw_score.new_full((n, n_sentences), -torch.inf)
+            maxima.scatter_reduce_(
+                1, groups, raw_score.masked_fill(~members, -torch.inf),
+                reduce="amax", include_self=True,
+            )
+            centered = (raw_score - maxima.gather(1, groups)).masked_fill(
+                ~members, -torch.inf
+            )
+            weight = centered.exp()
+        else:
+            weight = members.to(raw_score.dtype)
+        denominator = raw_score.new_zeros(n, n_sentences)
+        denominator.scatter_add_(1, groups, weight)
+        attention = weight / denominator.gather(1, groups).clamp_min(1)
+        attention = attention * members.to(attention.dtype)
+        pooled = token_states.new_zeros(n, n_sentences, dim)
+        pooled.scatter_add_(
+            1, groups.unsqueeze(-1).expand(-1, -1, dim),
+            token_states * attention.unsqueeze(-1),
+        )
+        sentence_mask = denominator.gt(0)
         key_pad = ~sentence_mask
         key_pad = key_pad.clone()
         key_pad[key_pad.all(-1), 0] = False
@@ -177,12 +180,15 @@ class SentenceEditPredictor(nn.Module):
     """Bidirectional sentence transition with local or global action injection."""
 
     def __init__(self, d_model: int, d_action: int, n_layers: int = 2,
-                 n_heads: int = 8, correction: bool = False):
+                 n_heads: int = 8, correction: bool = False,
+                 attention_backend: str = "torch"):
         super().__init__()
         self.correction = correction
         self.action = nn.Linear(d_action, d_model)
         self.current = nn.Linear(d_model, d_model) if correction else None
-        self.blocks = encoder_stack(d_model, n_layers, n_heads, 4, 0.0)
+        self.blocks = encoder_stack(
+            d_model, n_layers, n_heads, 4, 0.0, attention_backend
+        )
         self.norm = nn.LayerNorm(d_model)
         self.out = nn.Linear(d_model, d_model)
 
@@ -242,11 +248,14 @@ class SentencePatternActionEncoder(nn.Module):
     """
 
     def __init__(self, d_model: int, d_action: int, n_heads: int = 8,
-                 max_sentence_len: int = 256):
+                 max_sentence_len: int = 256,
+                 attention_backend: str = "torch"):
         super().__init__()
         self.blank = nn.Parameter(torch.zeros(d_model))
         self.relative = nn.Parameter(torch.zeros(1, max_sentence_len, d_model))
-        self.blocks = encoder_stack(d_model, 1, n_heads, 2, 0.0)
+        self.blocks = encoder_stack(
+            d_model, 1, n_heads, 2, 0.0, attention_backend
+        )
         self.score = nn.Sequential(nn.LayerNorm(d_model), nn.Linear(d_model, 1))
         self.out = nn.Sequential(
             nn.LayerNorm(d_model), nn.Linear(d_model, d_action),
@@ -258,28 +267,30 @@ class SentencePatternActionEncoder(nn.Module):
                 sentence_ids: torch.Tensor, operations: torch.Tensor,
                 positions: torch.Tensor, content: torch.Tensor):
         del states, operations  # routing and content are the complete action
-        rows: list[torch.Tensor] = []
-        selected_offsets: list[int] = []
-        for row in range(len(mask)):
-            length = int(mask[row].sum().item())
-            position = min(max(int(positions[row].item()), 0), max(length - 1, 0))
-            sentence = int(sentence_ids[row, position].clamp_min(0).item())
-            members = sentence_ids[row, :length].eq(sentence).nonzero().flatten()
-            if not len(members):
-                members = positions.new_tensor([position])
-            selected = (members == position).nonzero().flatten()
-            selected_offsets.append(int(selected[0].item()) if len(selected) else 0)
-            rows.append(members)
-        width = max(len(row) for row in rows)
+        lengths = mask.sum(1)
+        selected_position = positions.clamp_min(0).minimum(
+            (lengths - 1).clamp_min(0)
+        )
+        row = torch.arange(len(mask), device=mask.device)
+        selected_sentence = sentence_ids[row, selected_position].clamp_min(0)
+        members = mask & sentence_ids.eq(selected_sentence[:, None])
+        member_count = members.sum(1).clamp_min(1)
+        before_or_at = (
+            torch.arange(mask.shape[1], device=mask.device).unsqueeze(0)
+            <= selected_position[:, None]
+        )
+        selected_offset = (members & before_or_at).sum(1).sub(1).clamp_min(0)
+        width = int(member_count.max().item())
         if width > self.relative.shape[1]:
             raise ValueError(
                 f"sentence action length {width} exceeds {self.relative.shape[1]}"
             )
-        pattern = self.blank.view(1, 1, -1).expand(len(rows), width, -1).clone()
-        valid = torch.zeros(len(rows), width, dtype=torch.bool, device=mask.device)
-        for row, members in enumerate(rows):
-            valid[row, :len(members)] = True
-            pattern[row, selected_offsets[row]] = content[row].to(pattern.dtype)
+        pattern = self.blank.view(1, 1, -1).expand(len(mask), width, -1).clone()
+        valid = (
+            torch.arange(width, device=mask.device).unsqueeze(0)
+            < member_count[:, None]
+        )
+        pattern[row, selected_offset] = content.to(pattern.dtype)
         pattern = pattern + self.relative[:, :width]
         h = self.blocks(pattern, src_key_padding_mask=~valid)
         logits = self.score(h).squeeze(-1).masked_fill(~valid, -torch.inf)
@@ -417,7 +428,9 @@ class MultiscaleEditJEPA(nn.Module):
                  macro_decoder_detach_inputs: bool = True,
                  sentence_action_kind: str = "context",
                  direct_content_scaffold: bool = True,
-                 base_prior_predict_position: bool = True):
+                 base_prior_predict_position: bool = True,
+                 attention_backend: str = "torch",
+                 efficient_pair_encoding: bool = False):
         super().__init__()
         if variant not in self.VALID_VARIANTS:
             raise ValueError(f"unknown multiscale edit variant: {variant}")
@@ -434,27 +447,34 @@ class MultiscaleEditJEPA(nn.Module):
         self.max_transitions_per_forward = max(
             0, int(max_transitions_per_forward)
         )
+        self.efficient_pair_encoding = bool(efficient_pair_encoding)
         self.encoder = HierarchicalBufferEncoder(
             vocab_size, pad_id, d_model, token_layers, sentence_layers,
             n_heads, ff_mult, max_sequence_len, max_sentences, dropout,
-            sentence_pooling,
+            sentence_pooling, attention_backend,
         )
         self.teacher = EMATeacher(self.encoder)
         self.token_pred = None if variant in {"sentence", "sentence_macro"} else TokenAlignedEditPredictor(
             d_model, d_action, predictor_layers, n_heads,
             relative_radius=token_relative_radius,
             direct_content_scaffold=direct_content_scaffold,
+            attention_backend=attention_backend,
+            replacement_only_fast_path=efficient_pair_encoding,
         )
         self.sentence_action = None
         if variant in {"sentence", "sentence_macro"}:
             self.sentence_action = (
-                SentencePatternActionEncoder(d_model, d_action, n_heads)
+                SentencePatternActionEncoder(
+                    d_model, d_action, n_heads,
+                    attention_backend=attention_backend,
+                )
                 if sentence_action_kind == "blank_pattern"
                 else PrimitiveEditActionEncoder(d_model, d_action)
             )
         self.sentence_pred = None if not self.use_sentence else SentenceEditPredictor(
             d_model, d_action, predictor_layers, n_heads,
             correction=variant not in {"sentence", "sentence_macro"},
+            attention_backend=attention_backend,
         )
         self.macro_model = None
         self.macro_pred = None
@@ -466,7 +486,8 @@ class MultiscaleEditJEPA(nn.Module):
                 kind="concat", concat_width=min(d_action, 8),
             )
             self.macro_pred = SentenceEditPredictor(
-                d_model, d_macro, predictor_layers, n_heads
+                d_model, d_macro, predictor_layers, n_heads,
+                attention_backend=attention_backend,
             )
         self.macro_decoder = None
         if macro_decoder:
@@ -513,25 +534,25 @@ class MultiscaleEditJEPA(nn.Module):
     def affected_sentences(ids: torch.Tensor, mask: torch.Tensor,
                            operations: torch.Tensor, positions: torch.Tensor):
         """Map a pointer/gap to a sentence without a mutable absolute register."""
-        result = torch.zeros_like(positions)
-        for row in range(len(ids)):
-            length = int(mask[row].sum().item())
-            if length == 0:
-                continue
-            pos = int(positions[row].item())
-            op = int(operations[row].item())
-            if op == 1:  # insert: a gap belongs to the sentence on its right
-                pos = min(max(pos, 0), length - 1)
-            else:
-                pos = min(max(pos, 0), length - 1)
-            result[row] = ids[row, pos].clamp_min(0)
-        return result
+        del operations  # every pointer/gap is owned by the token on its right
+        lengths = mask.sum(1)
+        pos = positions.clamp_min(0).minimum((lengths - 1).clamp_min(0))
+        row = torch.arange(len(ids), device=ids.device)
+        result = ids[row, pos].clamp_min(0)
+        return torch.where(lengths.gt(0), result, torch.zeros_like(result))
 
     @staticmethod
     def transition_sentence_ids(ids: torch.Tensor, mask: torch.Tensor,
                                 operations: torch.Tensor,
                                 positions: torch.Tensor):
         """Apply the same structural edit as the token predictor to labels."""
+        if operations.eq(2).all():
+            return (
+                ids.clone(), mask.clone(),
+                MultiscaleEditJEPA.affected_sentences(
+                    ids, mask, operations, positions
+                ),
+            )
         out = ids.new_full(ids.shape, -1)
         out_mask = torch.zeros_like(mask)
         affected = MultiscaleEditJEPA.affected_sentences(
@@ -555,15 +576,16 @@ class MultiscaleEditJEPA(nn.Module):
             out_mask[row, :count] = True
         return out, out_mask, affected
 
-    def _encode_trajectory(self, batch: dict, teacher: bool = False):
-        b, states, sentences, length = batch["buffer_tokens"].shape
+    def _encode_buffers(self, batch: dict, buffers: torch.Tensor,
+                        teacher: bool = False):
+        b, states, sentences, length = buffers.shape
         prompt = batch["prompt_tokens"].unsqueeze(1).expand(
             b, states, *batch["prompt_tokens"].shape[1:]
         )
         module = self.teacher if teacher else self.encoder
         result = module(
             prompt.reshape(b * states, *prompt.shape[2:]),
-            batch["buffer_tokens"].reshape(b * states, sentences, length),
+            buffers.reshape(b * states, sentences, length),
         )
         token, token_mask, ids, sent, sent_mask, attention = result
         return (
@@ -574,6 +596,30 @@ class MultiscaleEditJEPA(nn.Module):
             sent_mask.reshape(b, states, sentences),
             attention.reshape(b, states, -1),
         )
+
+    def _encode_trajectory(self, batch: dict, teacher: bool = False):
+        return self._encode_buffers(batch, batch["buffer_tokens"], teacher)
+
+    def _encode_transition_pair(self, batch: dict):
+        """Encode only online current and EMA next for one replacement step."""
+        current = self._encode_buffers(batch, batch["buffer_tokens"][:, :1])
+        with torch.no_grad():
+            target = self._encode_buffers(
+                batch, batch["buffer_tokens"][:, 1:2], teacher=True
+            )
+        # Preserve the long-standing [current, next] output contract. The
+        # second online slot is the detached EMA state because no enabled
+        # transition objective consumes an online encoding of the next state.
+        online = tuple(
+            torch.cat([left, right.detach()], dim=1)
+            for left, right in zip(current, target)
+        )
+        # Target index one must remain the EMA next state. Index zero is unused.
+        teacher = tuple(
+            torch.cat([left.detach(), right], dim=1)
+            for left, right in zip(current, target)
+        )
+        return online, teacher
 
     def _limit_trajectory(self, batch: dict) -> int:
         """Sample a contiguous exact-transition segment to bound O(T L^2).
@@ -616,13 +662,25 @@ class MultiscaleEditJEPA(nn.Module):
 
     def forward(self, batch: dict) -> JEPAOutputs:
         transition_start = self._limit_trajectory(batch)
-        tokens, token_mask, ids, sentences, sentence_mask, attention = (
-            self._encode_trajectory(batch)
+        use_pair_encoding = (
+            self.efficient_pair_encoding
+            and batch["buffer_tokens"].shape[1] == 2
+            and batch["op"].shape[1] == 1
         )
-        with torch.no_grad():
-            tgt_tokens, tgt_token_mask, _, tgt_sentences, tgt_sentence_mask, _ = (
-                self._encode_trajectory(batch, teacher=True)
+        if use_pair_encoding:
+            online, target = self._encode_transition_pair(batch)
+            tokens, token_mask, ids, sentences, sentence_mask, attention = online
+            (tgt_tokens, tgt_token_mask, _, tgt_sentences,
+             tgt_sentence_mask, _) = target
+        else:
+            tokens, token_mask, ids, sentences, sentence_mask, attention = (
+                self._encode_trajectory(batch)
             )
+            with torch.no_grad():
+                (tgt_tokens, tgt_token_mask, _, tgt_sentences,
+                 tgt_sentence_mask, _) = self._encode_trajectory(
+                    batch, teacher=True
+                )
         b, states, width, dim = tokens.shape
         steps = states - 1
         op = batch["op"][:, :steps]
@@ -674,10 +732,14 @@ class MultiscaleEditJEPA(nn.Module):
             if self.variant in {"sentence", "sentence_macro"}:
                 base = sentences[:, :-1]
             else:
-                next_ids, next_mask, _ = self.transition_sentence_ids(
-                    ids[:, :-1].reshape(b * steps, width), current_mask,
-                    op.reshape(-1), pos.reshape(-1),
-                )
+                if use_pair_encoding:
+                    next_ids = ids[:, :-1].reshape(b * steps, width)
+                    next_mask = current_mask
+                else:
+                    next_ids, next_mask, _ = self.transition_sentence_ids(
+                        ids[:, :-1].reshape(b * steps, width), current_mask,
+                        op.reshape(-1), pos.reshape(-1),
+                    )
                 # The lower prediction is re-encoded into the macro space;
                 # no target state or target boundary enters this path.
                 base, _, _ = self.encoder.pool_sentences(
@@ -732,6 +794,9 @@ class MultiscaleEditJEPA(nn.Module):
             "sentence_states": sentences,
             "sentence_states_tgt": tgt_sentences.detach(),
             "transition_slice_start": transition_start,
+            "efficient_pair_encoding": use_pair_encoding,
+            "sigreg_states": global_states[:, :-1],
+            "sigreg_state_mask": step_mask,
             "observed_action_targets": batch["action_tokens"][:, :steps],
         })
         if "goal_distance" in batch:
