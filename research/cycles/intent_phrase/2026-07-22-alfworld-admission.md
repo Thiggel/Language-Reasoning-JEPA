@@ -49,10 +49,24 @@ scientific admission gate. The recovery pins the exact original eight game
 identities and raises only the per-episode cap; it may not substitute easier
 games.
 
+That exact-identity recovery also failed admission despite completing cleanly.
+ALFWorld's hand-coded expert took 11 rather than 57 steps through one fixed
+game, demonstrating that factual transition count is not stable enough to be
+an identity criterion. More importantly, one of 104 states had no retained
+rejected-action branch because the collector tried only its first shuffled
+invalid candidate. The collector now retries up to the declared attempt
+budget, and the validator independently requires exactly one admissible and
+one rejected-action branch at every factual state. The 57-step game itself
+exceeded a 15-minute strict-coverage smoke, so the bounded fixture freezes the
+eight identities selected by the first pre-model collection that completed
+full coverage. This exclusion is based on collection validity and elapsed
+time, not model performance.
+
 ## Falsifiable next gate
 
-Rebuild the training split with one admissible and one rejected-action
-transition at every state, then compare prior-free JEPA+GAR, token LM,
+Rebuild the frozen bounded training split with one admissible and one
+rejected-action transition at every actual factual state, without requiring a
+nondeterministic total transition count. Then compare prior-free JEPA+GAR, token LM,
 sentence LM, and sentence-latent LM on exactly the same full catalogue. Each
 family must substantially overfit train strict success before any full
 ALFWorld collection or paper-scale sweep is admitted. If it cannot, diagnose

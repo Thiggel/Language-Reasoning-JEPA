@@ -40,8 +40,12 @@ collect_args=(
   --invalid-counterfactual-k "$invalid_counterfactual_k"
   --teacher-horizon "$teacher_horizon" --counterfactual-attempts 4
   --episode-timeout-seconds "$episode_timeout_seconds"
+  --require-full-counterfactual-coverage
 )
 if [[ -n "$episode_template" ]]; then
+  if [[ "$episode_template" != /* ]]; then
+    episode_template=$TEXTJEPA_ROOT/$episode_template
+  fi
   collect_args+=(--episode-template "$episode_template")
 fi
 "$alfworld_python" "$TEXTJEPA_ROOT/scripts/collect_alfworld_intent_data.py" \
@@ -49,4 +53,6 @@ fi
 
 "$alfworld_python" "$TEXTJEPA_ROOT/scripts/validate_alfworld_intent_data.py" \
   --dataset "$split=$output/compiled/$split.jsonl" \
+  --require-counterfactual-k "$counterfactual_k" \
+  --require-invalid-counterfactual-k "$invalid_counterfactual_k" \
   --out "$RUN_DIR/metrics.json"

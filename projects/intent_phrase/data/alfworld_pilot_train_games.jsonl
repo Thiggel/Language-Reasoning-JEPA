@@ -1,0 +1,8 @@
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_clean_then_place_in_recep-Tomato-None-Fridge-18/trial_T20190909_045742_414595/game.tw-pddl"}}
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_heat_then_place_in_recep-Cup-None-CounterTop-14/trial_T20190908_215907_972581/game.tw-pddl"}}
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_and_place_simple-ToiletPaper-None-ToiletPaperHanger-415/trial_T20190908_050443_333939/game.tw-pddl"}}
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_cool_then_place_in_recep-Potato-None-DiningTable-27/trial_T20190908_204023_864421/game.tw-pddl"}}
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_cool_then_place_in_recep-Apple-None-CounterTop-14/trial_T20190909_045026_110157/game.tw-pddl"}}
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_cool_then_place_in_recep-Lettuce-None-GarbageCan-16/trial_T20190909_042958_594440/game.tw-pddl"}}
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_cool_then_place_in_recep-Mug-None-CoffeeMachine-14/trial_T20190906_182911_281946/game.tw-pddl"}}
+{"split":"train","metadata":{"gamefile_relative":"json_2.1.1/train/pick_clean_then_place_in_recep-Bowl-None-Shelf-7/trial_T20190908_152915_959135/game.tw-pddl"}}

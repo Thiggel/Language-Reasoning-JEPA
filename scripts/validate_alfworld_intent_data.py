@@ -19,12 +19,37 @@ def _parse_dataset(value: str) -> tuple[str, Path]:
     return split, Path(path)
 
 
+def _require_counterfactual_coverage(
+    episodes, admissible_k: int, invalid_k: int,
+) -> None:
+    for episode in episodes:
+        for index, transition in enumerate(episode.transitions):
+            admissible = sum(
+                value.action in transition.available
+                for value in transition.counterfactuals
+            )
+            invalid = sum(
+                value.action not in transition.available
+                for value in transition.counterfactuals
+            )
+            if admissible != admissible_k or invalid != invalid_k:
+                raise RuntimeError(
+                    f"{episode.episode_id} step {index}: counterfactual "
+                    f"coverage admissible={admissible}/{admissible_k}, "
+                    f"rejected={invalid}/{invalid_k}"
+                )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", action="append", type=_parse_dataset,
                         required=True)
     parser.add_argument("--replay-limit", type=int, default=0,
                         help="zero replays every episode")
+    parser.add_argument("--require-counterfactual-k", type=int, default=-1)
+    parser.add_argument(
+        "--require-invalid-counterfactual-k", type=int, default=-1
+    )
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -39,6 +64,15 @@ def main() -> None:
         episodes = load_observed_action_jsonl(
             path, expected_domain="alfworld-textworld"
         )
+        if (
+            args.require_counterfactual_k >= 0
+            and args.require_invalid_counterfactual_k >= 0
+        ):
+            _require_counterfactual_coverage(
+                episodes,
+                args.require_counterfactual_k,
+                args.require_invalid_counterfactual_k,
+            )
         replayed = episodes[
             : args.replay_limit if args.replay_limit > 0 else len(episodes)
         ]
@@ -89,6 +123,10 @@ def main() -> None:
             "transitions": transitions,
             "counterfactuals": counterfactuals,
             "invalid_counterfactuals": invalid_counterfactuals,
+            "full_counterfactual_coverage": (
+                args.require_counterfactual_k >= 0
+                and args.require_invalid_counterfactual_k >= 0
+            ),
             "replayed_episodes": len(replayed),
             "expert_catalogue_recall": 1.0,
             "exact_replay_rate": 1.0,

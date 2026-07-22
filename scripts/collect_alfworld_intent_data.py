@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
+import hashlib
 from importlib.metadata import distribution, version
 import json
 import multiprocessing
@@ -72,6 +73,14 @@ def _write_jsonl(path: Path, values: list[dict]) -> None:
             handle.write(json.dumps(value, sort_keys=True) + "\n")
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _runtime_provenance() -> dict:
     direct_url = json.loads(
         distribution("alfworld").read_text("direct_url.json") or "{}"
@@ -100,6 +109,7 @@ def _collect_and_replay(payload: tuple) -> dict:
         gamefile, data_root, split, seed, counterfactual_k,
         invalid_counterfactual_k,
         teacher_horizon, max_steps, counterfactual_attempts,
+        require_full_counterfactual_coverage,
     ) = payload
     record = collect_alfworld_record(
         gamefile, data_root, split, seed,
@@ -108,6 +118,7 @@ def _collect_and_replay(payload: tuple) -> dict:
         teacher_horizon=teacher_horizon,
         max_steps=max_steps,
         counterfactual_attempts_per_step=counterfactual_attempts,
+        require_full_counterfactual_coverage=require_full_counterfactual_coverage,
     )
     replay_alfworld_record(record, data_root)
     return record
@@ -133,6 +144,7 @@ def collect_split(args, split: str, limit: int) -> dict:
                 args.counterfactual_k, args.invalid_counterfactual_k,
                 args.teacher_horizon, args.max_steps,
                 args.counterfactual_attempts,
+                args.require_full_counterfactual_coverage,
             )
             try:
                 pending = pool.apply_async(_collect_and_replay, (payload,))
@@ -201,6 +213,10 @@ def main() -> None:
     parser.add_argument("--counterfactual-attempts", type=int, default=4)
     parser.add_argument("--episode-timeout-seconds", type=int, default=300)
     parser.add_argument(
+        "--require-full-counterfactual-coverage", action="store_true",
+        help="reject an episode unless every state reaches each requested branch count",
+    )
+    parser.add_argument(
         "--episode-template", type=Path,
         help="compiled JSONL whose exact ordered game identities must be reused",
     )
@@ -223,6 +239,14 @@ def main() -> None:
         "counterfactual_attempts": args.counterfactual_attempts,
         "episode_timeout_seconds": args.episode_timeout_seconds,
         "runtime": _runtime_provenance(),
+        "episode_template": (
+            str(args.episode_template.resolve())
+            if args.episode_template is not None else None
+        ),
+        "episode_template_sha256": (
+            _sha256(args.episode_template)
+            if args.episode_template is not None else None
+        ),
         "splits": {},
     }
     selected = sizes.items() if args.split == "all" else (

@@ -41,6 +41,9 @@ information-matched protocol.
 
 ## Navigation
 
+- [Frozen ALFWorld pilot training-game identities](data/alfworld_pilot_train_games.jsonl),
+  selected only for deterministic branch-complete collection before model
+  evaluation; this fixture is not headline evaluation data.
 - Intent-JEPA reasoning-state figure:
   [TikZ source](figures/intent_jepa_reasoning.tex),
   [rendered PDF](figures/intent_jepa_reasoning.pdf),

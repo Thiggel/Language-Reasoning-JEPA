@@ -165,3 +165,95 @@ def test_invalid_counterfactual_is_observed_as_transition_not_feasibility_label(
     assert alternative["outcome"] == "Nothing happens."
     episode = compile_alfworld_trace(record, "train")
     assert episode.transitions[0].counterfactuals[0].action == alternative["action"]
+
+
+def test_invalid_counterfactual_retries_after_first_branch_failure(
+    monkeypatch, tmp_path,
+):
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def reset(self):
+            return (
+                "You see a counter 1. Your task is to: inspect the counter",
+                {
+                    "won": False,
+                    "admissible_commands": ["go to counter 1"],
+                    "extra.expert_plan": ["go to counter 1"],
+                },
+            )
+
+        def step(self, action):
+            assert action == "go to counter 1"
+            return "You arrive at counter 1.", 1, True, {"won": True}
+
+        def close(self):
+            pass
+
+    attempted = []
+
+    def fake_branch(session, actions, alternative, horizon, max_steps):
+        attempted.append(alternative)
+        if len(attempted) == 1:
+            return None
+        return {
+            "action": alternative,
+            "outcome": "Nothing happens.",
+            "teacher_rollouts": [["You arrive at counter 1."]],
+        }
+
+    monkeypatch.setattr(
+        "textjepa.data.alfworld.AlfworldTextSession", FakeSession
+    )
+    monkeypatch.setattr(
+        "textjepa.data.alfworld._branch_counterfactual", fake_branch
+    )
+    gamefile = tmp_path / "train" / "game.tw-pddl"
+    gamefile.parent.mkdir()
+    gamefile.write_text("{}")
+    record = collect_alfworld_record(
+        gamefile, tmp_path, "train", seed=1, counterfactual_k=0,
+        invalid_counterfactual_k=1, counterfactual_attempts_per_step=4,
+        require_full_counterfactual_coverage=True,
+    )
+    assert len(attempted) == 2
+    assert len(record["steps"][0]["counterfactuals"]) == 1
+
+
+def test_strict_counterfactual_coverage_rejects_missing_branch(
+    monkeypatch, tmp_path,
+):
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def reset(self):
+            return (
+                "You see a counter 1. Your task is to: inspect the counter",
+                {
+                    "won": False,
+                    "admissible_commands": ["go to counter 1"],
+                    "extra.expert_plan": ["go to counter 1"],
+                },
+            )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "textjepa.data.alfworld.AlfworldTextSession", FakeSession
+    )
+    monkeypatch.setattr(
+        "textjepa.data.alfworld._branch_counterfactual",
+        lambda *args, **kwargs: None,
+    )
+    gamefile = tmp_path / "train" / "game.tw-pddl"
+    gamefile.parent.mkdir()
+    gamefile.write_text("{}")
+    with pytest.raises(RuntimeError, match="rejected-action"):
+        collect_alfworld_record(
+            gamefile, tmp_path, "train", seed=1, counterfactual_k=0,
+            invalid_counterfactual_k=1,
+            require_full_counterfactual_coverage=True,
+        )

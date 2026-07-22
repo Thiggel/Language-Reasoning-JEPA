@@ -312,6 +312,7 @@ def collect_alfworld_record(
     teacher_horizon: int = 8,
     max_steps: int = 200,
     counterfactual_attempts_per_step: int | None = None,
+    require_full_counterfactual_coverage: bool = False,
 ) -> dict:
     """Execute the official hand-coded expert and capture replayable labels."""
     gamefile, data_root = Path(gamefile).resolve(), Path(data_root).resolve()
@@ -339,7 +340,8 @@ def collect_alfworld_record(
             rng.shuffle(alternatives)
             attempt_budget = counterfactual_attempts_per_step
             if attempt_budget is None:
-                attempt_budget = max(counterfactual_k, 4 * counterfactual_k)
+                requested = max(counterfactual_k, invalid_counterfactual_k)
+                attempt_budget = max(requested, 4 * requested)
             alternatives = alternatives[:max(0, int(attempt_budget))]
             counterfactuals = []
             for alternative in alternatives:
@@ -357,14 +359,30 @@ def collect_alfworld_record(
                 f"{seed}:{gamefile}:{step_index}:invalid"
             ).shuffle(invalid_alternatives)
             invalid_counterfactuals = []
-            for alternative in invalid_alternatives[
-                :max(0, int(invalid_counterfactual_k))
-            ]:
+            invalid_attempt_budget = max(
+                int(invalid_counterfactual_k), int(attempt_budget)
+            )
+            for alternative in invalid_alternatives[:invalid_attempt_budget]:
+                if len(invalid_counterfactuals) >= invalid_counterfactual_k:
+                    break
                 branch = _branch_counterfactual(
                     session, actions, alternative, teacher_horizon, max_steps
                 )
                 if branch is not None:
                     invalid_counterfactuals.append(branch)
+            if require_full_counterfactual_coverage:
+                if len(counterfactuals) != counterfactual_k:
+                    raise RuntimeError(
+                        f"step {step_index}: collected {len(counterfactuals)} "
+                        f"of {counterfactual_k} admissible counterfactuals"
+                    )
+                if len(invalid_counterfactuals) != invalid_counterfactual_k:
+                    raise RuntimeError(
+                        f"step {step_index}: collected "
+                        f"{len(invalid_counterfactuals)} of "
+                        f"{invalid_counterfactual_k} rejected-action "
+                        "counterfactuals"
+                    )
             counterfactuals.extend(invalid_counterfactuals)
             # Counterfactual branches reset and mutate the shared engine.
             # Restore the factual prefix before taking the expert action.
