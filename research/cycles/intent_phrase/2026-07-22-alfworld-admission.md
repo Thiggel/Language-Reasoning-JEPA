@@ -62,15 +62,22 @@ eight identities selected by the first pre-model collection that completed
 full coverage. This exclusion is based on collection validity and elapsed
 time, not model performance.
 
+The corrected v3 gate passes. Its frozen template SHA256 is
+`e9181dbecd1889071bad45ac3562f97b0d5fdd8fa5203e5fbf6fc571baf94c15`.
+It contains 8 episodes, 115 realized factual transitions, 230 counterfactuals
+with exactly 115 rejected-action outcomes, zero failed games, and independently
+validated full per-state coverage. Exact replay, goal success, and expert
+catalogue recall are all 100%. This admits the fixture for the bounded
+learnability gate, not for headline performance claims.
+
 ## Falsifiable next gate
 
-Rebuild the frozen bounded training split with one admissible and one
-rejected-action transition at every actual factual state, without requiring a
-nondeterministic total transition count. Then compare prior-free JEPA+GAR, token LM,
-sentence LM, and sentence-latent LM on exactly the same full catalogue. Each
-family must substantially overfit train strict success before any full
-ALFWorld collection or paper-scale sweep is admitted. If it cannot, diagnose
-its objective, optimization, and planner without reinstating support heads.
+Compare prior-free JEPA+GAR, token LM, sentence LM, and sentence-latent LM on
+the admitted pilot v2 using exactly the same full catalogue. Use approximately
+matched optimizer-update counts and two learning-rate checks per family. Each
+family must reach at least 75% strict train success before any full ALFWorld
+collection or paper-scale sweep is admitted. Evaluate JEPA at one simulated
+step first; deeper simulation is admitted only after basic learnability.
 
 ## Human steering incorporated
 

@@ -2,7 +2,7 @@
 
 ## The one-sentence answer
 
-The real ALFWorld engine collects and exactly replays a disjoint 16-episode non-oracle pilot, but the original training set and process runs used a now-discarded feasibility-supervision design; the next valid question is whether prior-free JEPA+GAR and matched LM baselines can overfit a corrected transition-only pilot.
+The real ALFWorld engine now collects and exactly replays a branch-complete, transition-only training pilot with no action or feasibility prior; the next valid question is whether prior-free JEPA+GAR and matched LM baselines can overfit it.
 
 ## First, the idea in everyday language
 
@@ -33,13 +33,14 @@ At evaluation, every model sees natural-language history, the goal, and the same
 | Geometry JEPA process gate | 1 run | completed | Training, checkpoint reload, and metrics path work |
 | Recurrent sentence model process gate | 1 run | completed | Training, checkpoint reload, and metrics path work |
 | Recurrent token / sentence-latent gates | 2 recovery runs | completed | Training, checkpoint reload, and finite metrics paths work |
-| Unseen ALFWorld schema recovery | 4 episodes, 67 steps | completed | Raw oracle menus compile to feasibility only within the non-oracle catalogue; exact replay remains 100% |
-| Train admission set | 8 episodes, 150 steps | completed | Exact replay, goal success, and expert catalogue recall are all 100% |
+| Unseen ALFWorld schema recovery | 4 episodes, 67 steps | completed | Raw oracle menus remain collection/audit metadata only; exact replay remains 100% |
+| Historical train admission set | 8 episodes, 150 steps | environment-valid only | Exact replay, goal success, and expert catalogue recall are 100%, but its feasibility-supervised model protocol is discarded |
 | Seen-validation admission set | 4 episodes, 74 steps | completed | One bounded pathological game was recorded and skipped; retained episodes pass all validity checks |
 | Split identity audit | 16 episodes | disjoint | No episode identity crosses train, seen-validation, or unseen-validation |
 | Local seen-validation bounds | 4 episodes | oracle 100%, random 0% strict success | The environment is solvable and random action selection is not a viable shortcut |
 | Prior-free transition rebuild v1 | 8 episodes, 115 steps | process-valid but gate-invalid | Six hard games hit the 300-second branch cap; substitutions changed the predeclared 150-step fixture, so these data are not admitted |
 | Exact-identity transition recovery v2 | 8 episodes, 104 steps | process-valid but gate-invalid | The same games produced a shorter valid expert path, and one state missed its rejected-action branch |
+| Frozen branch-complete rebuild v3 | 8 episodes, 115 steps | admitted for learnability only | 230 alternatives include exactly 115 rejected actions; coverage, replay, goals, and expert recall all pass |
 
 These are engineering-validity observations, not estimates of model quality. The completed two-epoch models solved zero validation episodes, which is unsurprising at this scale and is not used to rank methods.
 
@@ -57,15 +58,15 @@ Fast Downward maps a private planner library for each engine and does not releas
 
 ## What we can conclude
 
-We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. The retained 16-episode pilot has disjoint identities, 291 factual transitions, 291 recoverable admissible counterfactuals, exact replay, 100% goal completion, and 100% expert recall in the non-oracle catalogue. We also observe that all four core model pathways can execute. These observations validate the environment interface, but not the discarded feasibility-supervised models. The paper-facing protocol instead scores the complete non-oracle catalogue and trains invalid-action effects as transitions.
+We directly observe that the adapter can collect and replay official train, seen-validation, and unseen-test games without exposing the oracle menu during interactive evaluation. The corrected training fixture has eight frozen identities, 115 factual transitions, exactly one admissible and one rejected-action consequence per state, exact replay, 100% goal completion, and 100% expert recall in the non-oracle catalogue. We also observe that all four core model pathways can execute. These observations validate the environment interface, but not model quality. The paper-facing protocol scores the complete non-oracle catalogue and trains invalid-action effects as transitions.
 
 ## What we cannot conclude
 
-We cannot yet claim model learnability or paper-level ALFWorld performance. Tiny-set overfitting, action-shuffle degradation, and learned-policy closed-loop success remain untested. Neither transition-only rebuild is admitted: the first changed identities after timeouts, while the second established that the expert path length is nondeterministic and missed one rejected-action branch because the collector failed to retry. The pilot is an admission fixture, not a headline benchmark sample, and is too small to estimate recovery coverage. The external Alex and Grete duplicates remain scheduler-pending, but they are obsolete for the process decision.
+We cannot yet claim model learnability or paper-level ALFWorld performance. Tiny-set overfitting, action-shuffle degradation, and learned-policy closed-loop success remain untested. The corrected v3 pilot is an admission fixture, not a headline benchmark sample, and is too small to estimate deployment performance. Its identities were frozen before model evaluation and selected only for bounded, branch-complete collection. The external Alex and Grete duplicates remain scheduler-pending, but they are obsolete for the process decision.
 
 ## What happens next
 
-Freeze the eight pre-model game identities that demonstrated bounded full-coverage collection, excluding the pathological game solely because it exceeds the 15-minute per-game collection cap. Recollect them with retrying and require, independently in the validator, exactly one recoverable admissible alternative and one rejected catalogue action at every actual factual state. Do not require a fixed total transition count because the official expert path is not stable. Then run a matched tiny-set gate for prior-free JEPA+GAR, token LM, sentence LM, and sentence LM with latent MSE. The primary gate is substantial train strict success; validation is diagnostic and must not select the learning rate.
+Run the matched tiny-set gate for prior-free JEPA+GAR, token LM, sentence LM, and sentence LM with latent MSE on pilot v2. Use the identical full catalogue, approximately matched optimizer-update counts, and two learning-rate checks per family. The primary gate is at least 75% strict train success; validation is diagnostic and must not select the learning rate. Evaluate JEPA at one simulated step first, admitting deeper simulation only after basic learnability.
 
 ## Words used in this report
 
