@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -110,7 +111,23 @@ def main():
     parser.add_argument("--examples-lm", type=int, default=64)
     parser.add_argument("--examples-jepa", type=int, default=16)
     parser.add_argument("--max-tokens", type=int, default=256)
+    parser.add_argument("--wait-for-completed-state")
+    parser.add_argument("--wait-timeout-minutes", type=int, default=240)
     args = parser.parse_args()
+    if args.wait_for_completed_state:
+        state_path = Path(args.wait_for_completed_state)
+        deadline = time.monotonic() + 60 * args.wait_timeout_minutes
+        while True:
+            state = state_path.read_text().strip() if state_path.exists() else "MISSING"
+            if state == "COMPLETED":
+                break
+            if state in {"FAILED", "TIMEOUT", "CANCELLED"}:
+                raise RuntimeError(
+                    f"upstream training reached terminal state {state}: {state_path}"
+                )
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"upstream state did not complete: {state_path}")
+            time.sleep(60)
     root = Path(args.output_dir or os.environ["RUN_DIR"]) / "length_eval"
     root.mkdir(parents=True, exist_ok=True)
     summary_path = root / "suite_summary.json"
