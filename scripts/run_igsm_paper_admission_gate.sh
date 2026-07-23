@@ -8,6 +8,15 @@ fi
 python_bin=${1:?python executable}
 seed=${2:-0}
 device=${DEVICE:-cuda:0}
+job_token=${SLURM_JOB_ID:-$$}
+worker_tmp=${SLURM_TMPDIR:-/tmp/iipa-$job_token}
+if (( ${#worker_tmp} > 60 )); then
+  worker_tmp=/tmp/iipa-$job_token
+fi
+mkdir -p "$worker_tmp"
+chmod 700 "$worker_tmp"
+trap 'rm -rf "$worker_tmp"' EXIT
+export TMPDIR=$worker_tmp TMP=$worker_tmp TEMP=$worker_tmp
 
 for reference in random oracle; do
   "$python_bin" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \

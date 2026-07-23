@@ -13,6 +13,12 @@ seed=${3:-0}
 device=${DEVICE:-cuda:0}
 source_root=$RUN_DIR/source
 data_root=$RUN_DIR/data
+job_token=${SLURM_JOB_ID:-$$}
+worker_tmp=/tmp/irag-$job_token
+mkdir -p "$worker_tmp"
+chmod 700 "$worker_tmp"
+trap 'rm -rf "$worker_tmp"' EXIT
+export TMPDIR=$worker_tmp TMP=$worker_tmp TEMP=$worker_tmp
 mkdir -p "$source_root" "$data_root"
 
 case "$gate" in
