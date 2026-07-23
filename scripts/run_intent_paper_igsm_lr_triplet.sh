@@ -6,6 +6,18 @@ if [[ -z "${RUN_DIR:-}" ]]; then
   exit 2
 fi
 
+job_token=${SLURM_JOB_ID:-$$}
+worker_tmp=${SLURM_TMPDIR:-/tmp/tj-$job_token}
+if (( ${#worker_tmp} > 60 )); then
+  worker_tmp=/tmp/tj-$job_token
+fi
+mkdir -p "$worker_tmp"
+chmod 700 "$worker_tmp"
+export TMPDIR=$worker_tmp
+export TMP=$worker_tmp
+export TEMP=$worker_tmp
+echo "multiprocessing_tmp=$worker_tmp"
+
 python_bin=${1:?python executable}
 family=${2:?model family}
 width=${3:?model width}
@@ -26,7 +38,7 @@ common=(
   "train.lr=$learning_rate"
   "train.epochs=10"
   "train.batch_size=32"
-  "train.num_workers=4"
+  "train.num_workers=0"
   "train.warmup_steps=500"
   "data.train_size=30000"
   "data.val_size=2000"
