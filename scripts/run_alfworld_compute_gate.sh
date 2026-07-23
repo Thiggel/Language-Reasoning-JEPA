@@ -15,6 +15,12 @@ export ALFWORLD_DATA=${ALFWORLD_DATA:-$shared_root/data/intent_phrase/alfworld_e
 eval_python=${ALFWORLD_PYTHON:-/vol/home-vol2/ml/laitenbf/.venv-alfworld/bin/python}
 project_site=${TEXTJEPA_PROJECT_SITE:-$shared_root/.venv/lib64/python3.11/site-packages}
 export PYTHONPATH=$TEXTJEPA_ROOT/src:$project_site
+job_token=${SLURM_JOB_ID:-$$}
+worker_tmp=/tmp/iawc-$job_token
+mkdir -p "$worker_tmp"
+chmod 700 "$worker_tmp"
+trap 'rm -rf "$worker_tmp"' EXIT
+export TMPDIR=$worker_tmp TMP=$worker_tmp TEMP=$worker_tmp
 
 depths=(1 2 4 8)
 if [[ "$requested_depth" != all ]]; then
