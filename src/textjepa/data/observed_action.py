@@ -181,6 +181,7 @@ class ObservedActionDataset(Dataset):
         geo_rank_k: int = 0,
         geo_rank_horizon: int = 1,
         dense_geo_anchors: bool = False,
+        shuffle_actions: bool = False,
         seed: int = 0,
     ):
         if not episodes:
@@ -190,6 +191,7 @@ class ObservedActionDataset(Dataset):
         self.geo_rank_k = max(0, int(geo_rank_k))
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
         self.dense_geo_anchors = bool(dense_geo_anchors)
+        self.shuffle_actions = bool(shuffle_actions)
         self.seed = int(seed)
         self.examples: list[tuple[int, int | None]] = []
         for episode_index, episode in enumerate(self.episodes):
@@ -204,6 +206,34 @@ class ObservedActionDataset(Dataset):
                 )
             else:
                 self.examples.append((episode_index, None))
+
+    def _training_action(
+        self,
+        episode: ObservedActionEpisode,
+        position: int,
+        action: str,
+    ) -> str:
+        """Return a deterministic, observable action-grounding falsifier.
+
+        Outcomes, histories, candidate sets, and teacher rollouts stay fixed.
+        Only the action phrase paired with each supervised consequence is
+        permuted.  The permutation is formed inside that prefix's public
+        catalogue, so dynamic domains never leak future-discovered strings.
+        """
+        if not self.shuffle_actions:
+            return action
+        catalogue = episode.transitions[position].catalogue
+        if len(catalogue) < 2:
+            return action
+        rng = random.Random(
+            f"{self.seed}:{episode.episode_id}:{position}:action-shuffle"
+        )
+        offset = 1 + rng.randrange(len(catalogue) - 1)
+        mapping = {
+            value: catalogue[(index + offset) % len(catalogue)]
+            for index, value in enumerate(catalogue)
+        }
+        return mapping[action]
 
     def __len__(self) -> int:
         return len(self.examples)
@@ -221,7 +251,14 @@ class ObservedActionDataset(Dataset):
         item = {
             "prompt": [self.vocab.encode(value) for value in episode.prompt],
             "steps": [self.vocab.encode(value.outcome) for value in transitions],
-            "actions": [self.vocab.encode(value.action) for value in transitions],
+            "actions": [
+                self.vocab.encode(
+                    self._training_action(
+                        episode, position, transition.action
+                    )
+                )
+                for position, transition in enumerate(transitions)
+            ],
             # Domain-neutral placeholders used only by legacy diagnostics;
             # paper objectives for external domains must not enable symbolic
             # value, operation, or necessity supervision.
@@ -283,7 +320,11 @@ class ObservedActionDataset(Dataset):
                     ga_t=anchor,
                     ga_horizon=self.geo_rank_horizon,
                     ga_alt_actions=[
-                        self.vocab.encode(value.action)
+                        self.vocab.encode(
+                            self._training_action(
+                                episode, anchor, value.action
+                            )
+                        )
                         for value in alternatives
                     ],
                     ga_alt_steps=[

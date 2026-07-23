@@ -10,6 +10,7 @@ fi
 python_bin=${1:?python executable}
 gate=${2:?proofwriter or planbench3}
 seed=${3:-0}
+coverage_mode=${4:-feasible_k4}
 device=${DEVICE:-cuda:0}
 source_root=$RUN_DIR/source
 data_root=$RUN_DIR/data
@@ -20,6 +21,15 @@ chmod 700 "$worker_tmp"
 trap 'rm -rf "$worker_tmp"' EXIT
 export TMPDIR=$worker_tmp TMP=$worker_tmp TEMP=$worker_tmp
 mkdir -p "$source_root" "$data_root"
+coverage_args=(--counterfactual-k 4 --invalid-counterfactual-k 0)
+geo_rank_k=4
+if [[ "$coverage_mode" == full_catalogue ]]; then
+  coverage_args=(--counterfactual-k -1 --invalid-counterfactual-k -1)
+  geo_rank_k=64
+elif [[ "$coverage_mode" != feasible_k4 ]]; then
+  echo "unknown coverage mode: $coverage_mode" >&2
+  exit 2
+fi
 
 case "$gate" in
   proofwriter)
@@ -35,7 +45,7 @@ case "$gate" in
     "$python_bin" "$TEXTJEPA_ROOT/scripts/prepare_intent_reasoning_data.py" \
       proofwriter --archive "$archive" --output "$data_root" \
       --train-size 24 --val-size 8 --test-size 8 \
-      --teacher-horizon 4 --counterfactual-k 4 --seed 1741
+      --teacher-horizon 4 "${coverage_args[@]}" --seed 1741
     cat > "$RUN_DIR/source_manifest.json" <<EOF
 {"source":"https://allenai.org/data/proofwriter","release":"V2020.12.3","sha256":"bbc5694901e8306d0bd659aa1ad53ccfd02c201864f4b320ffa3777827d1fc26","subset":"OWA depth-3 train; OWA depth-5 validation/test"}
 EOF
@@ -57,7 +67,7 @@ EOF
       planbench --train-dir "$instances" --val-dir "$instances" \
       --test-dir "$instances" --output "$data_root" \
       --train-size 24 --val-size 8 --test-size 8 \
-      --teacher-horizon 4 --counterfactual-k 4 --max-objects 3
+      --teacher-horizon 4 "${coverage_args[@]}" --max-objects 3
     cat > "$RUN_DIR/source_manifest.json" <<EOF
 {"source":"https://github.com/harshakokel/PlanBench","commit":"1f4d600f4806bedbefebbbe44b168372aaf5060d","subset":"official generated_basic_3 compiler gate; not full PlanBench admission"}
 EOF
@@ -97,7 +107,7 @@ train_cell() {
     "data.train_path=$data_root/train.jsonl" \
     "data.val_path=$data_root/val.jsonl" \
     "data.test_path=$data_root/test.jsonl" \
-    "data.shuffle_actions=$shuffled" data.geo_rank_k=4 \
+    "data.shuffle_actions=$shuffled" "data.geo_rank_k=$geo_rank_k" \
     data.geo_rank_horizon=2 data.dense_geo_anchors=true \
     "seed=$seed" "device=$device" "train.lr=$learning_rate" \
     train.epochs=30 train.batch_size=2 train.num_workers=0 \

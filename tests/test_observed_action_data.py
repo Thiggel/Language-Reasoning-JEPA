@@ -109,6 +109,51 @@ def test_compiled_episode_collates_and_isolates_teacher_rollouts():
     assert batch["ga_rollout_step_tokens"].shape[:3] == (1, 2, 1)
 
 
+def test_observed_action_shuffle_breaks_factual_and_counterfactual_alignment():
+    episode = _episode()
+    vocab = build_observed_action_vocab([episode])
+    aligned = ObservedActionDataset(
+        [episode], vocab, geo_rank_k=1, seed=7
+    )[0]
+    shuffled = ObservedActionDataset(
+        [episode], vocab, geo_rank_k=1, shuffle_actions=True, seed=7
+    )[0]
+    assert shuffled["steps"] == aligned["steps"]
+    assert shuffled["ga_alt_steps"] == aligned["ga_alt_steps"]
+    assert shuffled["ga_rollout_steps"] == aligned["ga_rollout_steps"]
+    assert shuffled["action_candidate_tokens"] == aligned[
+        "action_candidate_tokens"
+    ]
+    assert shuffled["actions"] != aligned["actions"]
+    assert shuffled["ga_alt_actions"] != aligned["ga_alt_actions"]
+    assert shuffled["actions"][0] == aligned["ga_alt_actions"][0]
+    assert shuffled["ga_alt_actions"][0] == aligned["actions"][0]
+
+
+def test_observed_action_shuffle_never_uses_future_catalogue_strings():
+    episode = ObservedActionEpisode.from_dict({
+        "episode_id": "dynamic-shuffle", "domain": "alfworld-textworld",
+        "split": "train", "prompt": ["room"], "goal": "done",
+        "transitions": [{
+            "action": "look", "outcome": "see cabinet",
+            "catalogue": ["look", "open cabinet"],
+            "available": ["look"],
+        }, {
+            "action": "take apple", "outcome": "done",
+            "catalogue": ["look", "open cabinet", "take apple"],
+            "available": ["take apple"],
+        }],
+    })
+    vocab = build_observed_action_vocab([episode])
+    item = ObservedActionDataset(
+        [episode], vocab, shuffle_actions=True, seed=9
+    )[0]
+    assert item["actions"][0] in [
+        vocab.encode("look"), vocab.encode("open cabinet")
+    ]
+    assert item["actions"][0] != vocab.encode("take apple")
+
+
 def test_dense_geometry_dataset_exposes_every_counterfactual_anchor():
     base = asdict(_episode())
     base["transitions"] = list(base["transitions"])
@@ -271,6 +316,24 @@ def test_external_config_runs_geometry_value_end_to_end(tmp_path):
         parameter.grad is not None
         for parameter in model.core.value_head.parameters()
     )
+
+
+def test_external_config_propagates_training_action_shuffle(tmp_path):
+    episode = _episode()
+    path = tmp_path / "train.jsonl"
+    path.write_text(json.dumps(asdict(episode)) + "\n")
+    cfg = OmegaConf.create({"data": {
+        "name": "observed_action", "domain": "proofwriter",
+        "train_path": str(path), "val_path": str(path),
+        "test_path": str(path), "train_seed": 1, "val_seed": 2,
+        "geo_rank_k": 1, "geo_rank_horizon": 2,
+        "shuffle_actions": True,
+    }})
+    vocab = build_vocab_for_config(cfg)
+    train = build_dataset(cfg, vocab, "train")[0]
+    val = build_dataset(cfg, vocab, "val")[0]
+    assert train["actions"] != val["actions"]
+    assert train["ga_alt_actions"] != val["ga_alt_actions"]
 
 
 def test_no_prior_model_skips_action_support_computation():

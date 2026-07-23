@@ -286,6 +286,11 @@ def diagnose(checkpoint: Path, device_name: str, split: str,
     for index in range(len(dense)):
         batch = _to_device(collate([dense[index]], pad_id=vocab.pad_id), device)
         out = model(batch)
+        # Recorded domains can contain deterministic episodes with no
+        # alternative action at any prefix.  They remain factual-transition
+        # examples but contribute no configured GAR label.
+        if "ga_valid" not in out.extras:
+            continue
         valid = out.extras["ga_valid"][0]
         label = out.extras["ga_label"][0, valid]
         configured_energy = out.extras["ga_energy"][0, valid]

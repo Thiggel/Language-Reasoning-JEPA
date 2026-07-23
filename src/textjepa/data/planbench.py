@@ -226,6 +226,7 @@ def compile_blocksworld_episode(
     split: str,
     teacher_horizon: int = 8,
     counterfactual_k: int | None = None,
+    invalid_counterfactual_k: int = 0,
 ) -> ObservedActionEpisode:
     catalogue = action_catalogue(problem.objects)
     expert = shortest_plan(problem.initial, problem.goal, catalogue)
@@ -239,8 +240,8 @@ def compile_blocksworld_episode(
             action for action in catalogue
             if action != executed and is_applicable(state, action)
         ]
-        if counterfactual_k is not None:
-            feasible = feasible[:max(0, int(counterfactual_k))]
+        if counterfactual_k is not None and counterfactual_k >= 0:
+            feasible = feasible[:int(counterfactual_k)]
         counterfactuals = []
         for alternative in feasible:
             next_state = transition(state, alternative)
@@ -256,6 +257,28 @@ def compile_blocksworld_episode(
                 render_state(next_state),
                 (tuple(rollout_states),),
             ))
+        invalid = [
+            action for action in catalogue
+            if action != executed and not is_applicable(state, action)
+        ]
+        if invalid_counterfactual_k >= 0:
+            invalid = invalid[:int(invalid_counterfactual_k)]
+        if invalid:
+            continuation = shortest_plan(state, problem.goal, catalogue)
+            rollout_states = []
+            cursor = state
+            if continuation is not None:
+                for action in continuation[:max(teacher_horizon - 1, 0)]:
+                    cursor = transition(cursor, action)
+                    rollout_states.append(render_state(cursor))
+            counterfactuals.extend(
+                Counterfactual(
+                    alternative.text,
+                    "The proposed action is invalid and the state is unchanged .",
+                    (tuple(rollout_states),),
+                )
+                for alternative in invalid
+            )
         next_state = transition(state, executed)
         observed.append(ObservedTransition(
             executed.text,

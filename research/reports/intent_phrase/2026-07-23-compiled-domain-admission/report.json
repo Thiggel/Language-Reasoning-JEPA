@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-23-compiled-domain-admission",
+  "project": "intent_phrase",
+  "title": "ProofWriter and PlanBench executors pass, but missing invalid-action outcomes prevent model admission",
+  "created_at": "2026-07-23T14:20:00+02:00",
+  "status": "decision_complete",
+  "decision": "Keep both compiled domains gated and test exhaustive full-catalogue consequence supervision with a repaired action-shuffle falsifier.",
+  "plain_summary": "The tiny models fit stored transitions and ranking labels but fail over the full catalogue because infeasible actions had no transition targets; the original shuffle control was also not wired into compiled data.",
+  "report": "REPORT.md",
+  "review_required": true
+}

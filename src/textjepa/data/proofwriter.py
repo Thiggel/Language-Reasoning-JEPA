@@ -178,6 +178,7 @@ def compile_proofwriter_episode(
     split: str,
     teacher_horizon: int = 8,
     counterfactual_k: int | None = None,
+    invalid_counterfactual_k: int = 0,
 ) -> ObservedActionEpisode:
     question = record["questions"][question_id]
     target = _target_for_question(question)
@@ -227,8 +228,8 @@ def compile_proofwriter_episode(
             application for application in available
             if application.text != executed.text
         ]
-        if counterfactual_k is not None:
-            alternatives = alternatives[:max(0, int(counterfactual_k))]
+        if counterfactual_k is not None and counterfactual_k >= 0:
+            alternatives = alternatives[:int(counterfactual_k)]
         counterfactuals = []
         for alternative in alternatives:
             next_state = state | {alternative.conclusion}
@@ -244,6 +245,28 @@ def compile_proofwriter_episode(
                 render_fact(alternative.conclusion),
                 (rollout,),
             ))
+        invalid = [
+            action for action in catalogue_text
+            if action != executed.text and action not in by_text
+        ]
+        if invalid_counterfactual_k >= 0:
+            invalid = invalid[:int(invalid_counterfactual_k)]
+        if invalid:
+            continuation = shortest_derivation(state, rules, target)
+            rollout = tuple(
+                render_fact(application.conclusion)
+                for application in (continuation or ())[
+                    :max(teacher_horizon - 1, 0)
+                ]
+            )
+            counterfactuals.extend(
+                Counterfactual(
+                    action,
+                    "The proposed inference is invalid and no fact is added .",
+                    (rollout,),
+                )
+                for action in invalid
+            )
         state = state | {executed.conclusion}
         transitions.append(ObservedTransition(
             executed.text,

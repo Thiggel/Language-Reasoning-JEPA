@@ -62,6 +62,9 @@ def prepare_proofwriter(args) -> None:
                             record, question_id, split,
                             teacher_horizon=args.teacher_horizon,
                             counterfactual_k=args.counterfactual_k,
+                            invalid_counterfactual_k=(
+                                args.invalid_counterfactual_k
+                            ),
                         )
                     except (ValueError, RuntimeError):
                         skipped += 1
@@ -101,6 +104,7 @@ def prepare_planbench(args) -> None:
                 episode = compile_blocksworld_episode(
                     problem, split, args.teacher_horizon,
                     args.counterfactual_k,
+                    args.invalid_counterfactual_k,
                 )
             except ValueError:
                 skipped += 1
@@ -147,6 +151,10 @@ def main() -> None:
     proof.add_argument("--test-size", type=int, default=5_000)
     proof.add_argument("--teacher-horizon", type=int, default=8)
     proof.add_argument("--counterfactual-k", type=int, default=8)
+    proof.add_argument(
+        "--invalid-counterfactual-k", type=int, default=0,
+        help="-1 records every invalid public-catalogue action",
+    )
     proof.add_argument("--seed", type=int, default=1741)
     proof.set_defaults(function=prepare_proofwriter)
 
@@ -160,6 +168,10 @@ def main() -> None:
     plan.add_argument("--test-size", type=int, default=300)
     plan.add_argument("--teacher-horizon", type=int, default=8)
     plan.add_argument("--counterfactual-k", type=int, default=8)
+    plan.add_argument(
+        "--invalid-counterfactual-k", type=int, default=0,
+        help="-1 records every invalid public-catalogue action",
+    )
     plan.add_argument(
         "--max-objects", type=int, default=0,
         help="zero keeps every problem; positive values define a named "

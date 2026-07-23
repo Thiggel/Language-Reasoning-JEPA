@@ -60,3 +60,22 @@ def test_compiled_episode_uses_full_catalogue_but_feasible_counterfactuals():
         for transition in episode.transitions
         for alternative in transition.counterfactuals
     )
+
+
+def test_compiler_can_observe_every_invalid_catalogue_consequence():
+    problem = parse_blocksworld_pddl(PDDL)
+    episode = compile_blocksworld_episode(
+        problem, "train", teacher_horizon=4,
+        counterfactual_k=None, invalid_counterfactual_k=-1,
+    )
+    for transition_value in episode.transitions:
+        alternatives = {
+            item.action: item for item in transition_value.counterfactuals
+        }
+        assert set(alternatives) == set(transition_value.catalogue) - {
+            transition_value.action
+        }
+        for action in (
+            set(transition_value.catalogue) - set(transition_value.available)
+        ):
+            assert "state is unchanged" in alternatives[action].outcome

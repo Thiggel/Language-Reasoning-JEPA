@@ -64,6 +64,22 @@ def test_compiled_proof_episode_separates_catalogue_and_availability():
     assert episode.transitions[-1].outcome == "Bob is round."
 
 
+def test_compiler_can_observe_every_invalid_catalogue_consequence():
+    episode = compile_proofwriter_episode(
+        _record(), "Q1", "train", counterfactual_k=None,
+        invalid_counterfactual_k=-1,
+    )
+    for transition in episode.transitions:
+        alternatives = {
+            item.action: item for item in transition.counterfactuals
+        }
+        assert set(alternatives) == set(transition.catalogue) - {
+            transition.action
+        }
+        for action in set(transition.catalogue) - set(transition.available):
+            assert "no fact is added" in alternatives[action].outcome
+
+
 def test_unknown_or_trivial_questions_are_not_trajectory_examples():
     record = _record()
     record["questions"]["Q1"]["answer"] = None
