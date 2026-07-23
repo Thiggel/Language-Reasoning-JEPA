@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="330" viewBox="0 0 760 330" role="img" aria-labelledby="title desc">
+  <title id="title">Broader counterfactual coverage improves local diagnostics but not task success</title>
+  <desc id="desc">Three groups compare low coverage and two broad coverage learning rates. Full-catalogue expert top one and selected action feasibility improve modestly, while closed-loop success remains zero for all.</desc>
+  <rect width="760" height="330" fill="white"/>
+  <text x="380" y="28" text-anchor="middle" font-family="sans-serif" font-size="18">Coverage helps locally; closed-loop success stays at zero</text>
+  <line x1="70" y1="275" x2="730" y2="275" stroke="#333"/>
+  <line x1="70" y1="55" x2="70" y2="275" stroke="#333"/>
+  <g font-family="sans-serif" font-size="12" fill="#333">
+    <text x="54" y="279" text-anchor="end">0%</text>
+    <text x="54" y="224" text-anchor="end">25%</text>
+    <text x="54" y="169" text-anchor="end">50%</text>
+    <text x="54" y="114" text-anchor="end">75%</text>
+    <text x="54" y="59" text-anchor="end">100%</text>
+    <text x="170" y="300" text-anchor="middle">K=2, LR .003</text>
+    <text x="390" y="300" text-anchor="middle">K=12, LR .003</text>
+    <text x="610" y="300" text-anchor="middle">K=12, LR .001</text>
+  </g>
+  <g fill="#4c78a8">
+    <rect x="105" y="258" width="38" height="17"/>
+    <rect x="325" y="250" width="38" height="25"/>
+    <rect x="545" y="256" width="38" height="19"/>
+  </g>
+  <g fill="#f58518">
+    <rect x="151" y="166" width="38" height="109"/>
+    <rect x="371" y="114" width="38" height="161"/>
+    <rect x="591" y="156" width="38" height="119"/>
+  </g>
+  <g fill="#e45756">
+    <rect x="197" y="275" width="38" height="0"/>
+    <rect x="417" y="275" width="38" height="0"/>
+    <rect x="637" y="275" width="38" height="0"/>
+  </g>
+  <g font-family="sans-serif" font-size="12">
+    <rect x="190" y="315" width="12" height="12" fill="#4c78a8"/><text x="208" y="326">expert top-1</text>
+    <rect x="315" y="315" width="12" height="12" fill="#f58518"/><text x="333" y="326">selected feasible</text>
+    <rect x="465" y="315" width="12" height="12" fill="#e45756"/><text x="483" y="326">train success</text>
+  </g>
+</svg>

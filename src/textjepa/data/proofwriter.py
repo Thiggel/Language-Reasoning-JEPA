@@ -92,7 +92,10 @@ def _instantiate(pattern: Fact, bindings: dict[str, str]) -> Fact:
 
 
 def rule_applications(
-    facts: frozenset[Fact], rules: tuple[ProofRule, ...]
+    facts: frozenset[Fact],
+    rules: tuple[ProofRule, ...],
+    *,
+    include_known_conclusions: bool = False,
 ) -> tuple[RuleApplication, ...]:
     applications = []
     ordered_facts = tuple(sorted(facts))
@@ -108,7 +111,7 @@ def rule_applications(
             partial = next_partial
         for bindings, premises in partial:
             conclusion = _instantiate(rule.conclusion, bindings)
-            if conclusion not in facts:
+            if include_known_conclusions or conclusion not in facts:
                 applications.append(RuleApplication(rule, premises, conclusion))
     # Multiple syntactically identical paths are not distinct policy actions.
     unique = {application.text: application for application in applications}
@@ -201,6 +204,16 @@ def compile_proofwriter_episode(
             break
         catalogue.update((application.text, application) for application in available)
         closure = closure | {application.conclusion for application in available}
+    # Saturation can miss alternative justifications for a conclusion after
+    # one grounding has already derived it.  Such a justification may still
+    # be a valid action along another expert prefix, so enumerate every
+    # grounding once the finite closure is known.
+    catalogue.update(
+        (application.text, application)
+        for application in rule_applications(
+            closure, rules, include_known_conclusions=True
+        )
+    )
     catalogue_text = tuple(sorted(catalogue))
 
     transitions = []

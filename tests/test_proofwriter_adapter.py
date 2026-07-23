@@ -69,3 +69,23 @@ def test_unknown_or_trivial_questions_are_not_trajectory_examples():
     record["questions"]["Q1"]["answer"] = None
     with pytest.raises(ValueError, match="unknown"):
         compile_proofwriter_episode(record, "Q1", "train")
+
+
+def test_static_catalogue_keeps_groundings_after_conclusion_is_known():
+    facts = frozenset({
+        ("lion", "eats", "lion", "+"),
+        ("tiger", "eats", "lion", "+"),
+        ("lion", "eats", "tiger", "+"),
+    })
+    rule = parse_rule("rule", {
+        "text": "If something eats the lion then the lion eats the tiger.",
+        "representation": (
+            '("someone" "eats" "lion" "+") -> '
+            '("lion" "eats" "tiger" "+")'
+        ),
+    })
+    assert rule_applications(facts, (rule,)) == ()
+    catalogue = rule_applications(
+        facts, (rule,), include_known_conclusions=True
+    )
+    assert len(catalogue) == 2

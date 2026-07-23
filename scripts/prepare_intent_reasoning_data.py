@@ -92,6 +92,8 @@ def prepare_planbench(args) -> None:
         episodes, skipped = [], 0
         for path in sorted(root.glob("instance-*.pddl")):
             problem = load_blocksworld_pddl(path)
+            if args.max_objects > 0 and len(problem.objects) > args.max_objects:
+                continue
             identity = (len(problem.objects), problem.initial, problem.goal)
             if identity in used_ids:
                 continue
@@ -158,6 +160,11 @@ def main() -> None:
     plan.add_argument("--test-size", type=int, default=300)
     plan.add_argument("--teacher-horizon", type=int, default=8)
     plan.add_argument("--counterfactual-k", type=int, default=8)
+    plan.add_argument(
+        "--max-objects", type=int, default=0,
+        help="zero keeps every problem; positive values define a named "
+             "compiler/admission subset",
+    )
     plan.set_defaults(function=prepare_planbench)
 
     alf = subparsers.add_parser("alfworld")
