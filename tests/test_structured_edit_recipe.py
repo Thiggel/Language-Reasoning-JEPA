@@ -1,6 +1,7 @@
 from functools import partial
 from types import SimpleNamespace
 
+import pytest
 import torch
 from torch.utils.data import DataLoader
 
@@ -14,6 +15,7 @@ from textjepa.data.faithful_token_edits import (
 from textjepa.data.sampling import GroupedTrajectoryBatchSampler
 from textjepa.data.token_edit_distance import (
     boundary_token_edit_distance, exact_one_step_advantage,
+    exact_replacement_advantages, replacement_goal_distance,
 )
 from textjepa.models.edit_jepa import EditJEPA
 from textjepa.models.ema import EMATeacher
@@ -56,6 +58,20 @@ def test_exact_token_edit_teacher_preserves_boundaries():
     assert exact_one_step_advantage(
         [[1, 9], [2]], [[1], [2]], [[1], [2]]
     ) == 1
+
+
+def test_replacement_distance_is_exact_for_unmasking_action_space():
+    before = [[1, 9, 3], [4, 8]]
+    target = [[1, 2, 3], [4, 5]]
+    outcomes = [
+        [[1, 2, 3], [4, 8]],
+        [[1, 9, 3], [4, 7]],
+        [[6, 9, 3], [4, 8]],
+    ]
+    assert replacement_goal_distance(before, target) == 2
+    assert exact_replacement_advantages(before, outcomes, target) == [1, 0, -1]
+    with pytest.raises(ValueError, match="identical sentence boundaries"):
+        replacement_goal_distance([[1, 2, 3]], [[1], [2, 3]])
 
 
 def test_exact_token_edit_gar_targets_expert_and_counterfactual_actions():
@@ -200,6 +216,29 @@ def test_independent_transition_emits_exact_deployable_gar_pool():
     batch = collate_edits(items, vocab.pad_id)
     assert batch["proposal_valid"].shape == (3, 1, 8)
     assert batch["gar_proposal_token_edit_target"].shape == (3, 1, 8)
+
+
+def test_independent_replacement_teacher_matches_optimal_action_distance():
+    vocab = faithful_replacement_vocab()
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=2, seed=79, max_op=6, max_edge=12,
+        op_range=(3, 6), corruption_mode="iterative_refinement",
+        sample_transition=True, content_only_actions=True,
+        proposal_pool_k=8, proposal_token_pool="prompt_plus_current",
+        gar_teacher="replacement_distance",
+    )
+    item = dataset[0]
+    target = item["goal_buffer"]
+    assert item["goal_distance"] == [
+        replacement_goal_distance(item["buffers"][0], target),
+        replacement_goal_distance(item["buffers"][1], target),
+    ]
+    assert item["gar_token_edit_target"] == [1]
+    assert item["gar_proposal_token_edit_target"] == [[
+        replacement_goal_distance(item["buffers"][0], target)
+        - replacement_goal_distance(outcome, target)
+        for outcome in item["proposal_buffers"][0]
+    ]]
 
 
 def test_vectorized_candidate_action_encoding_matches_scalar_path():

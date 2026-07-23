@@ -15,6 +15,7 @@ from textjepa.data.edits.dataset import collate_edits
 from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
 from textjepa.data.token_edit_distance import (
     boundary_token_edit_distance, exact_one_step_advantages,
+    exact_replacement_advantages, replacement_goal_distance,
 )
 from textjepa.data.vocab import Vocab
 
@@ -276,7 +277,9 @@ class FaithfulTokenEditDataset(Dataset):
             raise ValueError(
                 f"unknown proposal_token_pool: {self.proposal_token_pool}"
             )
-        if self.gar_teacher not in {"latent_distance", "token_edit_distance"}:
+        if self.gar_teacher not in {
+            "latent_distance", "token_edit_distance", "replacement_distance"
+        }:
             raise ValueError(f"unknown gar_teacher: {self.gar_teacher}")
         if not 0.0 <= self.refinement_probability <= 1.0:
             raise ValueError("refinement_probability must lie in [0, 1]")
@@ -521,13 +524,21 @@ class FaithfulTokenEditDataset(Dataset):
             )
             _apply(current, action)
             buffers.append([list(sentence) for sentence in current])
-            if self.gar_teacher == "token_edit_distance":
+            if self.gar_teacher in {
+                "token_edit_distance", "replacement_distance"
+            }:
                 outcomes = [buffers[-1]]
                 if sampled_k:
                     outcomes.extend(step_buffers)
-                advantages = exact_one_step_advantages(
-                    buffers[-2], outcomes, target,
-                    max_distance=len(repairs) - step,
+                advantages = (
+                    exact_replacement_advantages(
+                        buffers[-2], outcomes, target,
+                    )
+                    if self.gar_teacher == "replacement_distance"
+                    else exact_one_step_advantages(
+                        buffers[-2], outcomes, target,
+                        max_distance=len(repairs) - step,
+                    )
                 )
                 gar_targets.append(advantages[0])
                 if self.counterfactual_k:
@@ -561,7 +572,11 @@ class FaithfulTokenEditDataset(Dataset):
             # Terminal-privileged supervision for a deployable state-value
             # head. The planner never receives this field.
             "goal_distance": [
-                boundary_token_edit_distance(buffer, target)
+                (
+                    replacement_goal_distance(buffer, target)
+                    if self.gar_teacher == "replacement_distance"
+                    else boundary_token_edit_distance(buffer, target)
+                )
                 for buffer in buffers
             ],
             "edit_pos": [min(action[1], 15) for action in repairs],
@@ -578,7 +593,7 @@ class FaithfulTokenEditDataset(Dataset):
             out[f"{prefix}_op"] = alt_ops
             out[f"{prefix}_edit_position"] = alt_positions
             out[f"{prefix}_edit_content_token"] = alt_content_tokens
-        if self.gar_teacher == "token_edit_distance":
+        if self.gar_teacher in {"token_edit_distance", "replacement_distance"}:
             out["gar_token_edit_target"] = gar_targets
             if self.counterfactual_k:
                 out["gar_alt_token_edit_target"] = gar_alt_targets
@@ -651,7 +666,7 @@ class FaithfulTokenEditDataset(Dataset):
             "changed": [list(after[sentence])],
             "defect_masks": [[]],
         }
-        if self.gar_teacher == "token_edit_distance":
+        if self.gar_teacher in {"token_edit_distance", "replacement_distance"}:
             outcomes = [after]
             proposal_actions = []
             proposal_buffers = []
@@ -712,8 +727,12 @@ class FaithfulTokenEditDataset(Dataset):
                     "proposal_edit_position": [proposal_positions],
                     "proposal_edit_content_token": [proposal_content],
                 })
-            advantages = exact_one_step_advantages(
-                current, outcomes, target, max_distance=unresolved_count,
+            advantages = (
+                exact_replacement_advantages(current, outcomes, target)
+                if self.gar_teacher == "replacement_distance"
+                else exact_one_step_advantages(
+                    current, outcomes, target, max_distance=unresolved_count,
+                )
             )
             out["gar_token_edit_target"] = [advantages[0]]
             if self.proposal_pool_k:

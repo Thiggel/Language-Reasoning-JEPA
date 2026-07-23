@@ -110,7 +110,10 @@ def test_original_scale_gar_configs_use_exact_deployable_ranked_teacher():
             assert cfg.data.trajectory_variants == 1
             assert cfg.data.proposal_pool_k == 8
             assert cfg.data.proposal_token_pool == "prompt_plus_current"
-            assert cfg.data.gar_teacher == "token_edit_distance"
+            assert cfg.data.gar_teacher == "replacement_distance"
+            assert cfg.model.base_q_hidden == 128
+            if name == "edit_igsm_original_sentence_gar":
+                assert cfg.model.base_q_primitive_action
             assert cfg.objective.base_action_value.weight == 1.0
             assert cfg.objective.base_action_value.regression_kind == "mse"
             assert cfg.objective.base_action_value.regression_weight == 0.25

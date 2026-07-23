@@ -21,6 +21,8 @@ macro_prior_detach_state: true
 base_prior: false
 base_prior_detach_state: true
 base_prior_predict_position: true
+base_q_hidden: null
+base_q_primitive_action: false
 macro_decoder: false
 macro_decoder_detach_inputs: true
 sentence_action_kind: context

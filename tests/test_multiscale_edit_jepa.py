@@ -90,6 +90,42 @@ def test_gar_candidate_pool_runs_for_every_original_jepa_variant(variant):
     assert model.base_q_head[-1].weight.grad is not None
 
 
+def test_sentence_gar_primitive_q_encoder_avoids_blank_pattern_candidates():
+    batch = _batch()
+    batch.update({
+        "gar_token_edit_target": torch.tensor([[1, 1]]),
+        "proposal_op": torch.full((1, 2, 3), 2),
+        "proposal_edit_position": torch.tensor([[
+            [0, 1, 3], [0, 2, 3],
+        ]]),
+        "proposal_edit_content_token": torch.tensor([[
+            [8, 9, 10], [7, 8, 9],
+        ]]),
+        "proposal_valid": torch.ones(1, 2, 3, dtype=torch.bool),
+        "gar_proposal_token_edit_target": torch.tensor([[
+            [0, 1, -1], [1, 0, -1],
+        ]]),
+    })
+    model = _model(
+        "sentence", sentence_action_kind="blank_pattern",
+        base_q_primitive_action=True, base_q_hidden=8,
+    )
+    called = {"transition": 0}
+    original = model.sentence_action.forward
+
+    def counted(*args, **kwargs):
+        called["transition"] += args[1].shape[0]
+        return original(*args, **kwargs)
+
+    model.sentence_action.forward = counted
+    out = model(batch)
+    # Only the two executed transition actions use the expensive pattern
+    # encoder; three Q alternatives per state use the primitive Q encoder.
+    assert called["transition"] == 2
+    assert out.extras["base_alt_action_value"].shape == (1, 2, 3)
+    assert model.base_q_head[1].out_features == 8
+
+
 def _batch():
     # Two replacement transitions over two persistent sentence spans.
     return {

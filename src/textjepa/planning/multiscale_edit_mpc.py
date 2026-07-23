@@ -228,6 +228,28 @@ class MultiscaleEditMPC:
         )
 
     @torch.no_grad()
+    def _value_action_codes(
+        self, state: EncodedState, actions: list[Edit],
+        transition_codes: torch.Tensor,
+    ) -> torch.Tensor:
+        """Use the same cheap primitive Q-action encoder as GAR training."""
+        if self.model.base_q_action is None:
+            return transition_codes
+        count = len(actions)
+        operations = torch.full(
+            (count,), OPS["replace"], dtype=torch.long, device=self.device
+        )
+        positions = torch.tensor([a[1] for a in actions], device=self.device)
+        content = self.model.encoder.tok(torch.tensor(
+            [int(a[2]) for a in actions], device=self.device
+        ))
+        return self.model.base_q_action(
+            state.tokens.expand(count, -1, -1),
+            state.token_mask.expand(count, -1),
+            operations, positions, content,
+        )
+
+    @torch.no_grad()
     def _predicted_next_distance(self, state: EncodedState,
                                  actions: list[Edit],
                                  codes: torch.Tensor) -> torch.Tensor:
@@ -290,9 +312,10 @@ class MultiscaleEditMPC:
             return []
         actions = [action for action, _ in proposed]
         codes = self._action_codes(encoded, actions)
+        q_codes = self._value_action_codes(encoded, actions, codes)
         q = (
             self.model.action_value(
-                encoded.global_state.expand(len(actions), -1), codes
+                encoded.global_state.expand(len(actions), -1), q_codes
             )
             if self.action_value_weight else codes.new_zeros(len(actions))
         )

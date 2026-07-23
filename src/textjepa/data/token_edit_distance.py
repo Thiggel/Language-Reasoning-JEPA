@@ -71,6 +71,35 @@ def boundary_token_edit_distance(
     )
 
 
+def replacement_goal_distance(
+    buffer: list[list[int]], target: list[list[int]],
+) -> int:
+    """Exact shortest-path distance for replacement-only planning."""
+    if len(buffer) != len(target) or any(
+        len(left) != len(right) for left, right in zip(buffer, target)
+    ):
+        raise ValueError(
+            "replacement goal distance requires identical sentence boundaries"
+        )
+    return sum(
+        int(left_token != right_token)
+        for left, right in zip(buffer, target)
+        for left_token, right_token in zip(left, right)
+    )
+
+
+def exact_replacement_advantages(
+    before: list[list[int]], outcomes: list[list[list[int]]],
+    target: list[list[int]],
+) -> list[int]:
+    """Exact goal-distance improvement for same-state replacement actions."""
+    distance = replacement_goal_distance(before, target)
+    return [
+        distance - replacement_goal_distance(outcome, target)
+        for outcome in outcomes
+    ]
+
+
 def exact_one_step_advantage(
     before: list[list[int]], after: list[list[int]], target: list[list[int]],
     max_distance: int | None = None,
@@ -103,5 +132,6 @@ def exact_one_step_advantages(
 __all__ = [
     "boundary_token_edit_distance", "boundary_token_sequence",
     "exact_one_step_advantage", "exact_one_step_advantages",
+    "exact_replacement_advantages", "replacement_goal_distance",
     "token_levenshtein",
 ]

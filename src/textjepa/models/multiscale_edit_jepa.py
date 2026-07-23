@@ -478,6 +478,8 @@ class MultiscaleEditJEPA(nn.Module):
                  sentence_action_kind: str = "context",
                  direct_content_scaffold: bool = True,
                  base_prior_predict_position: bool = True,
+                 base_q_hidden: int | None = None,
+                 base_q_primitive_action: bool = False,
                  attention_backend: str = "torch",
                  sequence_packing: bool = False,
                  efficient_pair_encoding: bool = False,
@@ -569,10 +571,18 @@ class MultiscaleEditJEPA(nn.Module):
             d_model, vocab_size, base_prior_detach_state,
             base_prior_predict_position,
         ) if base_prior else None
+        self.base_q_primitive_action = bool(base_q_primitive_action)
+        self.base_q_action = (
+            PrimitiveEditActionEncoder(d_model, d_action)
+            if self.base_q_primitive_action else None
+        )
+        q_hidden = d_model if base_q_hidden is None else int(base_q_hidden)
+        if q_hidden < 1:
+            raise ValueError("base_q_hidden must be positive")
         self.base_q_head = nn.Sequential(
             nn.LayerNorm(d_model + d_action),
-            nn.Linear(d_model + d_action, d_model), nn.GELU(),
-            nn.Linear(d_model, 1),
+            nn.Linear(d_model + d_action, q_hidden), nn.GELU(),
+            nn.Linear(q_hidden, 1),
         )
         self.value_head = nn.Sequential(
             nn.LayerNorm(d_model), nn.Linear(d_model, d_model), nn.GELU(),
@@ -794,6 +804,13 @@ class MultiscaleEditJEPA(nn.Module):
                 content.reshape(-1, dim),
             )
         action = action.reshape(b, steps, -1)
+        q_action = (
+            self.base_q_action(
+                current, current_mask, op.reshape(-1), pos.reshape(-1),
+                content.reshape(-1, dim),
+            ).reshape(b, steps, -1)
+            if self.base_q_action is not None else action
+        )
         affected = self.affected_sentences(
             ids[:, :-1].reshape(b * steps, width), current_mask,
             op.reshape(-1), pos.reshape(-1),
@@ -900,7 +917,7 @@ class MultiscaleEditJEPA(nn.Module):
             ], 1)
         pooled_current = global_states[:, :-1]
         out.extras["base_action_value"] = self.action_value(
-            pooled_current, action
+            pooled_current, q_action
         )
         if "gar_token_edit_target" in batch:
             out.extras["base_action_value_target"] = (
@@ -942,7 +959,11 @@ class MultiscaleEditJEPA(nn.Module):
             p_content = p_content.reshape(
                 b * proposal_steps, candidates, dim
             )
-            if self.token_pred is None:
+            if self.base_q_action is not None:
+                p_actions = self.base_q_action.encode_candidates(
+                    base_states, base_masks, p_ops, p_pos, p_content,
+                )
+            elif self.token_pred is None:
                 if isinstance(self.sentence_action, SentencePatternActionEncoder):
                     # The blank-pattern encoder is candidate-specific but does
                     # not consume state values.  Only the compact masks and
