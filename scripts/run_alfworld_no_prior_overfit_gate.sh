@@ -12,6 +12,7 @@ learning_rate=${4:?learning rate}
 epochs=${5:?epochs}
 simulation_depth=${6:-1}
 counterfactual_state_weight=${7:-1.0}
+geo_rank_k=${8:-2}
 device=${DEVICE:-cuda:0}
 shared_root=${TEXTJEPA_SHARED_ROOT:-/vol/home-vol2/ml/laitenbf/TextJEPA}
 pilot_root=${ALFWORLD_PILOT_ROOT:-$shared_root/data/intent_phrase/alfworld/pilot_v2}
@@ -40,7 +41,8 @@ case "$family" in
   geometry_jepa)
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train.py" \
       +experiment=paper_causal_geometry_gar_no_prior "${common[@]}" \
-      train.eval_batches=2 data.geo_rank_k=2 data.geo_rank_horizon=4 \
+      train.eval_batches=2 data.geo_rank_k="$geo_rank_k" \
+      data.geo_rank_horizon=4 \
       data.dense_geo_anchors=true \
       objective.counterfactual_state.weight="$counterfactual_state_weight" \
       model.d_model=64 model.chunk_layers=1 model.chunk_heads=4 \

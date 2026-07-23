@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import random
 from statistics import mean
 
 import torch
@@ -70,6 +71,15 @@ def _summary(values: list[float]) -> dict[str, float]:
     }
 
 
+def _selected_counterfactual_actions(
+    episode, transition, seed: int, k: int,
+) -> set[str]:
+    """Reproduce the dataset's deterministic per-anchor alternative sample."""
+    alternatives = list(transition.counterfactuals)
+    random.Random(f"{seed}:{episode.episode_id}:geo").shuffle(alternatives)
+    return {value.action for value in alternatives[:max(0, int(k))]}
+
+
 @torch.no_grad()
 def _target_state(model, planner: CatalogueLatentPlanner, prompt,
                   outcomes: list[str]) -> torch.Tensor:
@@ -107,6 +117,8 @@ def diagnose(checkpoint: Path, device_name: str, split: str,
     executed_persistence: list[float] = []
     executed_retrieval: list[bool] = []
     counterfactual_error: list[float] = []
+    counterfactual_trained_error: list[float] = []
+    counterfactual_heldout_error: list[float] = []
     counterfactual_legacy_error: list[float] = []
     counterfactual_persistence: list[float] = []
     gar_full_top1: list[bool] = []
@@ -176,9 +188,15 @@ def diagnose(checkpoint: Path, device_name: str, split: str,
             catalogue_sizes.append(float(len(catalogue)))
             state_count += 1
 
-            alternatives = list(transition.counterfactuals)[:2]
+            alternatives = list(transition.counterfactuals)
             if not alternatives:
                 continue
+            selected_actions = _selected_counterfactual_actions(
+                episode,
+                transition,
+                int(cfg.seed),
+                int(cfg.data.get("geo_rank_k", 2)),
+            )
             alt_codes = planner._action_codes(
                 tuple(value.action for value in alternatives)
             )
@@ -208,9 +226,17 @@ def diagnose(checkpoint: Path, device_name: str, split: str,
                 )
                 for alternative in alternatives
             ])
-            counterfactual_error.extend(
-                _ln_l1(cf_predictions, true_cf).cpu().tolist()
-            )
+            alternative_error = _ln_l1(
+                cf_predictions, true_cf
+            ).cpu().tolist()
+            counterfactual_error.extend(alternative_error)
+            for alternative, error in zip(alternatives, alternative_error):
+                target = (
+                    counterfactual_trained_error
+                    if alternative.action in selected_actions
+                    else counterfactual_heldout_error
+                )
+                target.append(error)
             counterfactual_legacy_error.extend(
                 _ln_l1(legacy_predictions, true_cf).cpu().tolist()
             )
@@ -316,6 +342,12 @@ def diagnose(checkpoint: Path, device_name: str, split: str,
         "observed_counterfactual_transition": {
             "planner_consistent_full_prefix_ln_l1": _summary(
                 counterfactual_error
+            ),
+            "training_selected_ln_l1": _summary(
+                counterfactual_trained_error
+            ),
+            "heldout_stored_ln_l1": _summary(
+                counterfactual_heldout_error
             ),
             "legacy_gar_single_token_ln_l1": _summary(
                 counterfactual_legacy_error

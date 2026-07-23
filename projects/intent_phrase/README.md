@@ -53,6 +53,7 @@ information-matched protocol.
 - [ALFWorld implementation and admission status](../../research/reports/intent_phrase/2026-07-22-alfworld-admission/REPORT.md)
 - [Discarded ALFWorld feasibility-hybrid diagnostic](../../research/reports/intent_phrase/2026-07-22-alfworld-overfit-failure/REPORT.md)
 - [ALFWorld JEPA causal-supervision audit](../../research/reports/intent_phrase/2026-07-23-alfworld-jepa-supervision-audit/REPORT.md)
+- [ALFWorld causal-prefix repair and remaining coverage gap](../../research/reports/intent_phrase/2026-07-23-counterfactual-prefix-repair/REPORT.md)
 - [Code/config/run ownership](ARTIFACTS.md)
 - [ICLR paper roadmap](PAPER_ROADMAP.md)
 - [Geometry-first paper experiment contract](PAPER_EXPERIMENTS.md)

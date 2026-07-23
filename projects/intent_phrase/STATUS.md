@@ -17,6 +17,8 @@ _Updated 2026-07-23._
 | The paper-facing JEPA uses a learned action or feasibility prior. | false; the final protocol scores the same full non-oracle catalogue as the LM baselines |
 | The current ALFWorld no-prior gate tests full-history counterfactual JEPA planning. | false; alternative predictions and GAR rollout targets omit required causal prefixes |
 | The ALFWorld JEPA memorizes executed training transitions. | supported; 115/115 within-episode target retrieval at both audited learning rates |
+| Direct full-state counterfactual latent supervision learns the repaired observed alternatives. | supported one-seed memorization gate; 60–68% error reduction versus persistence at two learning rates |
+| The repaired two-alternative fixture is sufficient for full-catalogue ALFWorld planning. | contradicted; expert top-1 remains 11–12% and train success is 0/8 |
 
 ## Current causal validation matrix
 
@@ -49,3 +51,5 @@ causal reference is not yet strong enough to support the desired headline.
    rather than merely being linearly decodable?
 6. Can full-catalogue JEPA+GAR learn invalid-action consequences and improve
    with deeper prior-free latent simulation under the matched LM interface?
+7. How much exact admissible and rejected-action coverage is needed before
+   full-catalogue geometric scoring stops extrapolating to unsupported actions?

@@ -13,6 +13,7 @@ teacher_horizon=${4:-4}
 invalid_counterfactual_k=${5:-0}
 episode_timeout_seconds=${6:-300}
 episode_template=${7:-}
+counterfactual_attempts=${8:-4}
 case "$split" in train|val|test) ;; *) echo "invalid split: $split" >&2; exit 2;; esac
 
 job_token=${SLURM_JOB_ID:-$$}
@@ -38,7 +39,8 @@ collect_args=(
   --data-root "$alfworld_data" --output "$output" --split "$split"
   "$size_argument" "$size" --counterfactual-k "$counterfactual_k"
   --invalid-counterfactual-k "$invalid_counterfactual_k"
-  --teacher-horizon "$teacher_horizon" --counterfactual-attempts 4
+  --teacher-horizon "$teacher_horizon"
+  --counterfactual-attempts "$counterfactual_attempts"
   --episode-timeout-seconds "$episode_timeout_seconds"
   --require-full-counterfactual-coverage
 )

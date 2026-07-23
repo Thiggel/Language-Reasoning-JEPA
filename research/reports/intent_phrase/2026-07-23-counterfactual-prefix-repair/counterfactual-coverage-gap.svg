@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">Observed counterfactual coverage versus the full action catalogue</title>
+  <desc id="desc">A factual history leads to one expert and two observed alternative actions with accurate predictions. Hundreds of unsupervised catalogue actions fan out to unreliable predicted states.</desc>
+  <rect width="960" height="420" fill="#ffffff"/>
+  <style>
+    text { font-family: sans-serif; fill: #172033; }
+    .label { font-size: 18px; font-weight: 600; }
+    .small { font-size: 15px; }
+    .good { stroke: #14866d; stroke-width: 5; fill: none; }
+    .bad { stroke: #c84b4b; stroke-width: 2; fill: none; opacity: .7; }
+    .node { fill: #eef3fb; stroke: #526b91; stroke-width: 2; }
+    .target { fill: #e5f6ef; stroke: #14866d; stroke-width: 2; }
+    .unknown { fill: #fff0ef; stroke: #c84b4b; stroke-width: 2; }
+  </style>
+  <rect class="node" x="40" y="165" rx="12" width="190" height="90"/>
+  <text class="label" x="135" y="200" text-anchor="middle">Factual history</text>
+  <text class="small" x="135" y="228" text-anchor="middle">prompt + prior outcomes</text>
+  <path class="good" d="M230 210 C310 210 310 85 390 85"/>
+  <path class="good" d="M230 210 C310 210 310 175 390 175"/>
+  <path class="good" d="M230 210 C310 210 310 265 390 265"/>
+  <rect class="target" x="390" y="50" rx="10" width="230" height="70"/>
+  <rect class="target" x="390" y="140" rx="10" width="230" height="70"/>
+  <rect class="target" x="390" y="230" rx="10" width="230" height="70"/>
+  <text class="label" x="505" y="80" text-anchor="middle">Expert action</text>
+  <text class="small" x="505" y="104" text-anchor="middle">exact next-state target</text>
+  <text class="label" x="505" y="170" text-anchor="middle">Admissible alternative</text>
+  <text class="small" x="505" y="194" text-anchor="middle">exact next-state target</text>
+  <text class="label" x="505" y="260" text-anchor="middle">Rejected alternative</text>
+  <text class="small" x="505" y="284" text-anchor="middle">exact next-state target</text>
+  <path class="bad" d="M230 210 C410 210 600 70 735 55"/>
+  <path class="bad" d="M230 210 C420 210 610 125 735 120"/>
+  <path class="bad" d="M230 210 C430 210 630 190 735 185"/>
+  <path class="bad" d="M230 210 C430 210 630 255 735 250"/>
+  <path class="bad" d="M230 210 C420 210 610 325 735 315"/>
+  <rect class="unknown" x="735" y="30" rx="12" width="190" height="315"/>
+  <text class="label" x="830" y="82" text-anchor="middle">Hundreds of other</text>
+  <text class="label" x="830" y="108" text-anchor="middle">catalogue actions</text>
+  <text class="small" x="830" y="160" text-anchor="middle">no observed</text>
+  <text class="small" x="830" y="184" text-anchor="middle">next-state target</text>
+  <text class="small" x="830" y="244" text-anchor="middle">unreliable imagined</text>
+  <text class="small" x="830" y="268" text-anchor="middle">goal progress</text>
+  <text class="small" x="480" y="380" text-anchor="middle">The repair fixes the green branches; the red coverage gap still breaks full-catalogue planning.</text>
+</svg>
