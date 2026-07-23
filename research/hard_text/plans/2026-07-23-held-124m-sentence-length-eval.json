@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-23-held-124m-sentence-length-eval",
+  "decision": "Wait for the running 124M sentence LM to complete without reading an intermediate checkpoint, then evaluate solving accuracy across operation-count strata.",
+  "git_commit": "a0681248c1ec0228ffde8b06d35e157b77ce761a",
+  "jobs": [
+    {
+      "id": "gruenau-124m-sentence-length-suite",
+      "cluster": "gruenau",
+      "command": [
+        "{python}",
+        "scripts/run_igsm_length_eval_suite.py",
+        "--model",
+        "sentence=/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-22-igsm-124m-under24h-sentence-2xl40-v2/igsm-124m-sentence-lm-under24h-2xl40-s0/model/last.pt",
+        "--wait-for-completed-state",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-22-igsm-124m-under24h-sentence-2xl40-v2/igsm-124m-sentence-lm-under24h-2xl40-s0/state",
+        "--wait-timeout-minutes",
+        "180",
+        "--examples-lm",
+        "64",
+        "--max-tokens",
+        "256"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 480,
+      "cpus": 8,
+      "min_gpu_memory_mb": 40000,
+      "purpose": "Dependency-hold the sentence baseline evaluation until its final checkpoint is complete, then measure exact-operation length generalization without symbolic feedback.",
+      "expected_artifacts": [
+        "length_eval/suite_summary.json",
+        "length_eval/sentence_op_le_12.json",
+        "length_eval/sentence_op_eq_12.json",
+        "length_eval/sentence_op_eq_16.json",
+        "length_eval/sentence_op_eq_17.json",
+        "length_eval/sentence_op_eq_18.json"
+      ]
+    }
+  ]
+}
