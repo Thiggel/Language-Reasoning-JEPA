@@ -8,6 +8,7 @@ from textjepa.data.edits.dataset import collate_edits
 from textjepa.data.faithful_token_edits import (
     FaithfulTokenEditDataset,
     MASK_TOKEN,
+    faithful_replacement_vocab,
     faithful_token_edit_vocab,
 )
 from textjepa.data.sampling import GroupedTrajectoryBatchSampler
@@ -168,6 +169,66 @@ def test_iterative_refinement_is_fully_masked_replace_only_and_diverse():
     assert any(advantage == 0 for advantage in variants[0]["gar_token_edit_target"])
     assert variants[0]["trajectory_variant"] == 0
     assert variants[3]["trajectory_variant"] == 3
+
+
+def test_independent_transition_emits_exact_deployable_gar_pool():
+    vocab = faithful_replacement_vocab()
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=3, seed=73, max_op=6, max_edge=12,
+        op_range=(3, 6), corruption_mode="iterative_refinement",
+        sample_transition=True, content_only_actions=True,
+        refinement_probability=0.25, proposal_pool_k=8,
+        proposal_token_pool="prompt_plus_current",
+        gar_teacher="token_edit_distance",
+    )
+    items = [dataset[index] for index in range(3)]
+    for item in items:
+        assert len(item["buffers"]) == 2
+        assert len(item["proposal_actions"]) == 1
+        assert len(item["proposal_actions"][0]) == 8
+        assert set(item["proposal_op"][0]) == {2}
+        assert all(len(action) == 1 for action in item["proposal_actions"][0])
+        target = item["goal_buffer"]
+        expected = exact_one_step_advantage(
+            item["buffers"][0], item["buffers"][1], target
+        )
+        assert item["gar_token_edit_target"] == [expected]
+        assert item["gar_proposal_token_edit_target"] == [[
+            exact_one_step_advantage(item["buffers"][0], outcome, target)
+            for outcome in item["proposal_buffers"][0]
+        ]]
+    batch = collate_edits(items, vocab.pad_id)
+    assert batch["proposal_valid"].shape == (3, 1, 8)
+    assert batch["gar_proposal_token_edit_target"].shape == (3, 1, 8)
+
+
+def test_vectorized_candidate_action_encoding_matches_scalar_path():
+    torch.manual_seed(81)
+    predictor = TokenAlignedEditPredictor(
+        d_state=16, d_action=4, n_layers=1, n_heads=4,
+    )
+    states = torch.randn(3, 7, 16)
+    mask = torch.tensor([
+        [1, 1, 1, 1, 1, 1, 1],
+        [1, 1, 1, 1, 0, 0, 0],
+        [1, 1, 0, 0, 0, 0, 0],
+    ], dtype=torch.bool)
+    operations = torch.full((3, 5), 2)
+    positions = torch.tensor([
+        [0, 1, 3, 5, 6], [0, 2, 3, 6, 1], [0, 1, 3, 5, 6],
+    ])
+    content = torch.randn(3, 5, 16)
+    vectorized = predictor.encode_action_candidates(
+        states, mask, operations, positions, content
+    )
+    scalar = torch.stack([
+        predictor.encode_action(
+            states, mask, operations[:, candidate], positions[:, candidate],
+            content[:, candidate],
+        )
+        for candidate in range(5)
+    ], 1)
+    torch.testing.assert_close(vectorized, scalar)
 
 
 def test_grouped_trajectory_sampler_emits_n_by_m_batches():

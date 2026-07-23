@@ -333,6 +333,34 @@ class TokenAlignedEditPredictor(nn.Module):
             self.op(operations.clamp(0, 2)), left, right, content,
         ], dim=-1))
 
+    def encode_action_candidates(
+        self, states: torch.Tensor, mask: torch.Tensor,
+        operations: torch.Tensor, positions: torch.Tensor,
+        content: torch.Tensor,
+    ) -> torch.Tensor:
+        """Encode K actions per state without materializing K state copies."""
+        n, _, _ = states.shape
+        if operations.shape != positions.shape or operations.shape != content.shape[:2]:
+            raise ValueError("candidate action tensors must share [N, K]")
+        lengths = mask.sum(-1).long()
+        left_index = torch.minimum(
+            (positions - 1).clamp_min(0),
+            (lengths - 1).clamp_min(0).unsqueeze(-1),
+        )
+        right_index = torch.minimum(
+            positions.clamp_min(0),
+            (lengths - 1).clamp_min(0).unsqueeze(-1),
+        )
+        row = torch.arange(n, device=states.device).unsqueeze(-1)
+        left = states[row, left_index]
+        right = states[row, right_index]
+        active = lengths.gt(0).view(n, 1, 1)
+        left = left * active
+        right = right * active
+        return self.action_code(torch.cat([
+            self.op(operations.clamp(0, 2)), left, right, content,
+        ], dim=-1))
+
     def _scaffold(self, states: torch.Tensor, mask: torch.Tensor,
                   operations: torch.Tensor, positions: torch.Tensor,
                   content: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:

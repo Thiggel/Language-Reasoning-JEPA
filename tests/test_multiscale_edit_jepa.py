@@ -59,6 +59,37 @@ def test_base_action_value_uses_mse_and_same_state_pairwise_ranking():
     assert mse_only(reversed_order, {}) > 0
 
 
+@pytest.mark.parametrize("variant", ["token", "sentence", "token_sentence"])
+def test_gar_candidate_pool_runs_for_every_original_jepa_variant(variant):
+    batch = _batch()
+    batch.update({
+        "gar_token_edit_target": torch.tensor([[1, 1]]),
+        "goal_distance": torch.tensor([[2, 1, 0]]),
+        "proposal_op": torch.full((1, 2, 3), 2),
+        "proposal_edit_position": torch.tensor([[
+            [0, 1, 3], [0, 2, 3],
+        ]]),
+        "proposal_edit_content_token": torch.tensor([[
+            [8, 9, 10], [7, 8, 9],
+        ]]),
+        "proposal_valid": torch.ones(1, 2, 3, dtype=torch.bool),
+        "gar_proposal_token_edit_target": torch.tensor([[
+            [0, 1, -1], [1, 0, -1],
+        ]]),
+    })
+    model = _model(variant)
+    out = model(batch)
+    assert out.extras["base_action_value"].shape == (1, 2)
+    assert out.extras["base_alt_action_value"].shape == (1, 2, 3)
+    loss = BaseActionValue(
+        regression_kind="mse", regression_weight=0.25,
+        pairwise_weight=1.0,
+    )(out, batch)
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert model.base_q_head[-1].weight.grad is not None
+
+
 def _batch():
     # Two replacement transitions over two persistent sentence spans.
     return {

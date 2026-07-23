@@ -262,6 +262,30 @@ class PrimitiveEditActionEncoder(nn.Module):
             self.op(operations.clamp(0, 2)), left, right, content
         ], -1))
 
+    def encode_candidates(
+        self, states: torch.Tensor, mask: torch.Tensor,
+        operations: torch.Tensor, positions: torch.Tensor,
+        content: torch.Tensor,
+    ) -> torch.Tensor:
+        """Encode K pointer-relative actions without copying state sequences."""
+        n = states.shape[0]
+        lengths = mask.sum(-1).long()
+        left_index = torch.minimum(
+            (positions - 1).clamp_min(0),
+            (lengths - 1).clamp_min(0).unsqueeze(-1),
+        )
+        right_index = torch.minimum(
+            positions.clamp_min(0),
+            (lengths - 1).clamp_min(0).unsqueeze(-1),
+        )
+        row = torch.arange(n, device=states.device).unsqueeze(-1)
+        active = lengths.gt(0).view(n, 1, 1)
+        left = states[row, left_index] * active
+        right = states[row, right_index] * active
+        return self.net(torch.cat([
+            self.op(operations.clamp(0, 2)), left, right, content,
+        ], -1))
+
 
 class SentencePatternActionEncoder(nn.Module):
     """Encode ``[blank ... replacement ... blank]`` without coordinates.
@@ -900,40 +924,47 @@ class MultiscaleEditJEPA(nn.Module):
         if proposal_ops is not None:
             proposal_steps = min(steps, proposal_ops.shape[1])
             candidates = proposal_ops.shape[2]
-            p_states = tokens[:, :proposal_steps].unsqueeze(2).expand(
-                -1, -1, candidates, -1, -1
+            base_states = tokens[:, :proposal_steps].reshape(
+                b * proposal_steps, width, dim
             )
-            p_masks = token_mask[:, :proposal_steps].unsqueeze(2).expand(
-                -1, -1, candidates, -1
+            base_masks = token_mask[:, :proposal_steps].reshape(
+                b * proposal_steps, width
             )
             p_content = self.encoder.tok(
                 batch["proposal_edit_content_token"][:, :proposal_steps]
             )
-            p_flat_states = p_states.reshape(-1, width, dim)
-            p_flat_masks = p_masks.reshape(-1, width)
-            p_flat_ops = proposal_ops[:, :proposal_steps].reshape(-1)
-            p_flat_pos = batch[
-                "proposal_edit_position"
-            ][:, :proposal_steps].reshape(-1)
-            p_flat_content = p_content.reshape(-1, dim)
+            p_ops = proposal_ops[:, :proposal_steps].reshape(
+                b * proposal_steps, candidates
+            )
+            p_pos = batch["proposal_edit_position"][:, :proposal_steps].reshape(
+                b * proposal_steps, candidates
+            )
+            p_content = p_content.reshape(
+                b * proposal_steps, candidates, dim
+            )
             if self.token_pred is None:
                 if isinstance(self.sentence_action, SentencePatternActionEncoder):
-                    p_ids = ids[:, :proposal_steps].unsqueeze(2).expand(
-                        -1, -1, candidates, -1
+                    # The blank-pattern encoder is candidate-specific but does
+                    # not consume state values.  Only the compact masks and
+                    # sentence labels are repeated.
+                    p_masks = base_masks.unsqueeze(1).expand(
+                        -1, candidates, -1
                     ).reshape(-1, width)
+                    p_ids = ids[:, :proposal_steps].reshape(
+                        b * proposal_steps, width
+                    ).unsqueeze(1).expand(-1, candidates, -1).reshape(-1, width)
                     p_actions = self.sentence_action(
-                        p_flat_states, p_flat_masks, p_ids, p_flat_ops,
-                        p_flat_pos, p_flat_content,
-                    )
+                        p_content.new_empty(0), p_masks, p_ids,
+                        p_ops.reshape(-1), p_pos.reshape(-1),
+                        p_content.reshape(-1, dim),
+                    ).reshape(b * proposal_steps, candidates, -1)
                 else:
-                    p_actions = self.sentence_action(
-                        p_flat_states, p_flat_masks, p_flat_ops, p_flat_pos,
-                        p_flat_content,
+                    p_actions = self.sentence_action.encode_candidates(
+                        base_states, base_masks, p_ops, p_pos, p_content,
                     )
             else:
-                p_actions = self.token_pred.encode_action(
-                    p_flat_states, p_flat_masks, p_flat_ops, p_flat_pos,
-                    p_flat_content,
+                p_actions = self.token_pred.encode_action_candidates(
+                    base_states, base_masks, p_ops, p_pos, p_content,
                 )
             p_actions = p_actions.reshape(b, proposal_steps, candidates, -1)
             p_global = global_states[:, :proposal_steps].unsqueeze(2).expand(

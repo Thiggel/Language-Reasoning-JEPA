@@ -629,7 +629,7 @@ class FaithfulTokenEditDataset(Dataset):
             token == mask_id or token in clean_pool
             for value in current for token in value
         )
-        return {
+        out = {
             "prompt": prompt,
             "buffers": [current, after],
             "actions": [[content]],
@@ -651,6 +651,74 @@ class FaithfulTokenEditDataset(Dataset):
             "changed": [list(after[sentence])],
             "defect_masks": [[]],
         }
+        if self.gar_teacher == "token_edit_distance":
+            outcomes = [after]
+            proposal_actions = []
+            proposal_buffers = []
+            proposal_changed = []
+            proposal_ops = []
+            proposal_positions = []
+            proposal_content = []
+            if self.proposal_pool_k:
+                # This pool is a function only of the observable prompt and
+                # current buffer.  In particular, it neither excludes nor
+                # inserts the expert action using the hidden clean target.
+                proposal_rng = random.Random(
+                    f"faithful-token-edit-independent-proposal:{self.seed}:"
+                    f"{source_index}:{trajectory_variant}:"
+                    f"{self.proposal_token_pool}"
+                )
+                token_pool = _proposal_tokens(
+                    prompt, current, self.proposal_token_pool
+                )
+                sampled: set[tuple[str, int, int | None]] = set()
+                attempts = 0
+                while len(proposal_actions) < self.proposal_pool_k:
+                    candidate = len(proposal_actions)
+                    alternative = _counterfactual_action(
+                        current, proposal_rng, "deployable_mixed", candidate,
+                        operation_order=("replace",), token_pool=token_pool,
+                    )
+                    attempts += 1
+                    if alternative in sampled:
+                        if attempts >= 10_000:
+                            raise RuntimeError(
+                                "could not sample enough distinct replacement "
+                                "proposals"
+                            )
+                        continue
+                    sampled.add(alternative)
+                    proposal_after = [list(value) for value in current]
+                    _apply(proposal_after, alternative)
+                    alt_kind, alt_position, alt_token = alternative
+                    alt_sentence, _ = _position(current, alt_position)
+                    proposal_actions.append(
+                        [int(alt_token)] if self.content_only_actions
+                        else _render_action(self.vocab, alternative)
+                    )
+                    proposal_buffers.append(proposal_after)
+                    proposal_changed.append(
+                        list(proposal_after[alt_sentence])
+                    )
+                    proposal_ops.append(OPS[alt_kind])
+                    proposal_positions.append(alt_position)
+                    proposal_content.append(int(alt_token))
+                outcomes.extend(proposal_buffers)
+                out.update({
+                    "proposal_actions": [proposal_actions],
+                    "proposal_buffers": [proposal_buffers],
+                    "proposal_changed": [proposal_changed],
+                    "proposal_op": [proposal_ops],
+                    "proposal_edit_position": [proposal_positions],
+                    "proposal_edit_content_token": [proposal_content],
+                })
+            advantages = exact_one_step_advantages(
+                current, outcomes, target, max_distance=unresolved_count,
+            )
+            out["gar_token_edit_target"] = [advantages[0]]
+            if self.proposal_pool_k:
+                out["gar_proposal_token_edit_target"] = [advantages[1:]]
+        return out
 
 
 __all__ = [

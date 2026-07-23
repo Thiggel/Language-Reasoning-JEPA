@@ -95,3 +95,24 @@ def test_three_jepas_match_the_mdlm_parameter_budget_within_one_percent():
             assert abs(count - target) / target < 0.01
             assert cfg.model.d_model % cfg.model.n_heads == 0
             assert (cfg.model.d_model // cfg.model.n_heads) % 8 == 0
+
+
+def test_original_scale_gar_configs_use_exact_deployable_ranked_teacher():
+    root = str(Path(__file__).parents[1] / "configs")
+    with initialize_config_dir(config_dir=root, version_base="1.3"):
+        for name in (
+            "edit_igsm_original_token_gar",
+            "edit_igsm_original_sentence_gar",
+            "edit_igsm_original_token_sentence_gar",
+        ):
+            cfg = compose(config_name="config", overrides=[f"+experiment={name}"])
+            assert cfg.data.sample_transition
+            assert cfg.data.trajectory_variants == 1
+            assert cfg.data.proposal_pool_k == 8
+            assert cfg.data.proposal_token_pool == "prompt_plus_current"
+            assert cfg.data.gar_teacher == "token_edit_distance"
+            assert cfg.objective.base_action_value.weight == 1.0
+            assert cfg.objective.base_action_value.regression_kind == "mse"
+            assert cfg.objective.base_action_value.regression_weight == 0.25
+            assert cfg.objective.base_action_value.pairwise_weight == 1.0
+            assert cfg.objective.state_goal_distance.weight == 1.0
