@@ -64,6 +64,28 @@ class ResearchCtlTests(unittest.TestCase):
         self.assertIn("resolved_config.json", script)
         self.assertIn("environment.json", script)
 
+    def test_slurm_afterany_dependency_is_validated_and_rendered(self):
+        plan = copy.deepcopy(self.plan)
+        plan["jobs"][0]["cluster"] = "alex"
+        plan["jobs"][0]["dependency_afterany"] = ["1234", 5678]
+        validated = self.controller.validate_plan(plan)
+        script = self.controller._sbatch_script(
+            validated, validated["jobs"][0],
+            self.controller.cfg["clusters"]["alex"],
+            "/snapshot", "/remote/run",
+        )
+        self.assertIn("#SBATCH --dependency=afterany:1234:5678", script)
+
+    def test_multiple_dependency_types_are_rejected(self):
+        plan = copy.deepcopy(self.plan)
+        plan["jobs"][0]["cluster"] = "alex"
+        plan["jobs"][0]["dependency_afterok"] = ["1234"]
+        plan["jobs"][0]["dependency_afterany"] = ["5678"]
+        with self.assertRaisesRegex(
+            researchctl.ResearchCtlError, "only one scheduler dependency type"
+        ):
+            self.controller.validate_plan(plan)
+
     def test_runner_executes_and_writes_compact_contract(self):
         job = copy.deepcopy(self.plan["jobs"][0])
         job["id"] = "local-runner-contract-test"
