@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-23-held-124m-jepa-no-prior-resume-v2",
+  "decision": "Retry the scheduler submission that failed before sbatch during a transient Alex SSH outage; after the original no-prior JEPA allocation terminates, restore its final epoch checkpoint and complete the remaining fresh iGSM exposures.",
+  "git_commit": "ce12f0c333e6411d339cbeed8420fd3f7fcdcfcb",
+  "jobs": [
+    {
+      "id": "igsm-124m-jepa-no-prior-final-resume-v2-s0",
+      "cluster": "alex",
+      "command": [
+        "bash",
+        "scripts/run_igsm_124m_scale.sh",
+        "{python}",
+        "jepa_no_prior",
+        "igsm-124m-jepa-no-prior-final-resume-v2-s0"
+      ],
+      "gpus": 2,
+      "walltime_minutes": 360,
+      "cpus": 32,
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "min_gpu_memory_mb": 90000,
+      "dependency_afterany": [
+        "3882825"
+      ],
+      "env": {
+        "WORLD_GPUS": "2",
+        "OMP_NUM_THREADS": "4",
+        "RESUME_FROM": "/home/atuin/c107fa/c107fa12/TextJEPA/runs/autonomy/token_igsm/2026-07-22-igsm-124m-under24h-no-prior-recovery/igsm-124m-jepa-no-prior-under24h-s0/model/last.pt"
+      },
+      "purpose": "Wait without GPU allocation for the original no-prior JEPA, then resume the complete optimizer and EMA checkpoint through 51.2 million examples.",
+      "expected_artifacts": [
+        "model/last.pt",
+        "model/checkpoint-examples-051200000.pt",
+        "metrics.json"
+      ]
+    }
+  ]
+}
