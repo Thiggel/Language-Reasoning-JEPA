@@ -1121,6 +1121,17 @@ class Controller:
             for round_id, round_state in state.get("rounds", {}).items():
                 for job_id, job_state in round_state.get("jobs", {}).items():
                     if job_state.get("state") not in ACTIVE_STATES:
+                        # A transient network failure may happen after Slurm has
+                        # already reached a terminal state.  Such jobs are no
+                        # longer polled, but their bounded artifact retrieval
+                        # must remain retryable on later refreshes.
+                        if (
+                            job_state.get("backend") == "slurm"
+                            and job_state.get("retrieval_error")
+                            and not job_state.get("retrieved_at")
+                        ):
+                            cluster = self.cfg["clusters"][job_state["cluster"]]
+                            self._retrieve(cluster, job_state)
                         continue
                     if job_state["backend"] == "gruenau":
                         state_file = Path(job_state["local_dir"]) / "state"

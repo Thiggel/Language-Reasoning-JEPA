@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -216,6 +217,34 @@ class ResearchCtlTests(unittest.TestCase):
                 with self.assertRaisesRegex(researchctl.ResearchCtlError, "already running"):
                     with ctl.oversight_lock():
                         pass
+
+    def test_refresh_retries_terminal_slurm_artifact_retrieval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctl = researchctl.Controller(ROOT / "automation/config.toml")
+            ctl.state_dir = Path(tmp)
+            ctl.state_path = ctl.state_dir / "state.json"
+            ctl.lock_path = ctl.state_dir / "controller.lock"
+            job = {
+                "backend": "slurm",
+                "backend_id": "123",
+                "cluster": "alex",
+                "state": "COMPLETED",
+                "retrieval_error": "transient network failure",
+                "local_dir": str(Path(tmp) / "local"),
+                "remote_dir": "/remote/run",
+            }
+            ctl.save_state({
+                "rounds": {
+                    "round": {
+                        "state": "TERMINAL",
+                        "jobs": {"job": job},
+                    }
+                }
+            })
+            with mock.patch.object(ctl, "_retrieve") as retrieve:
+                ctl.refresh()
+            retrieve.assert_called_once()
+            self.assertEqual(retrieve.call_args.args[1]["backend_id"], "123")
 
     def test_too_many_unread_reports_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:

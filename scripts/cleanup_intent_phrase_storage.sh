@@ -17,7 +17,8 @@ roots=()
 for root in \
   /vol/home-vol2/ml/laitenbf/TextJEPA \
   "${WORK:-}/TextJEPA" \
-  "${PROJECT:-}/TextJEPA"; do
+  "${PROJECT:-}/TextJEPA" \
+  "${HPCVAULT:-}"; do
   [[ -n "$root" && -d "$root" ]] || continue
   real=$(realpath -e "$root")
   [[ " ${roots[*]:-} " == *" $real "* ]] || roots+=("$real")
@@ -51,8 +52,18 @@ is_referenced() {
 }
 
 for root in "${roots[@]}"; do
-  intent_root="$root/runs/autonomy/intent_phrase"
-  if [[ -d "$intent_root" ]]; then
+  intent_roots=()
+  [[ -d "$root/runs/autonomy/intent_phrase" ]] \
+    && intent_roots+=("$root/runs/autonomy/intent_phrase")
+  if [[ "$root" == "${HPCVAULT:-/__unset__}" ]]; then
+    while IFS= read -r found; do
+      [[ " ${intent_roots[*]:-} " == *" $found "* ]] \
+        || intent_roots+=("$found")
+    done < <(find "$root" -xdev -maxdepth 7 -type d \
+      -path '*/runs/autonomy/intent_phrase' -print 2>/dev/null)
+  fi
+
+  for intent_root in "${intent_roots[@]}"; do
     canonical=$(realpath -e "$intent_root")
     [[ "$canonical" == */runs/autonomy/intent_phrase ]] || {
       echo "refusing unexpected run root: $canonical" >&2
@@ -124,23 +135,34 @@ for root in "${roots[@]}"; do
         -type d -name 'tmp-*' -print)
     done < <(find "$canonical" -xdev -mindepth 3 -maxdepth 3 \
       -type f -name state -print)
-  fi
+  done
 
-  data_root="$root/data/intent_phrase"
-  while [[ -d "$data_root" ]] && IFS= read -r cache; do
-    real=$(realpath -e "$cache")
-    [[ "$real" == */data/intent_phrase/*/__pycache__ \
-       || "$real" == */data/intent_phrase/*/.pytest_cache ]] || {
-      echo "refusing unexpected cache path: $real" >&2
-      exit 7
-    }
-    bytes=$(du -x -s -B1 "$real" | awk '{print $1}')
-    printf 'intent_data_cache\t%s\t%s\n' "$bytes" "$real" >>"$manifest"
-    if [[ "$execute" == 1 ]]; then rm -rf -- "$real"; fi
-    freed=$((freed + bytes))
-    removed=$((removed + 1))
-  done < <(find "$data_root" -xdev -type d \
-    \( -name __pycache__ -o -name .pytest_cache \) -print 2>/dev/null)
+  data_roots=()
+  [[ -d "$root/data/intent_phrase" ]] \
+    && data_roots+=("$root/data/intent_phrase")
+  if [[ "$root" == "${HPCVAULT:-/__unset__}" ]]; then
+    while IFS= read -r found; do
+      [[ " ${data_roots[*]:-} " == *" $found "* ]] \
+        || data_roots+=("$found")
+    done < <(find "$root" -xdev -maxdepth 7 -type d \
+      -path '*/data/intent_phrase' -print 2>/dev/null)
+  fi
+  for data_root in "${data_roots[@]}"; do
+    while IFS= read -r cache; do
+      real=$(realpath -e "$cache")
+      [[ "$real" == */data/intent_phrase/*/__pycache__ \
+         || "$real" == */data/intent_phrase/*/.pytest_cache ]] || {
+        echo "refusing unexpected cache path: $real" >&2
+        exit 7
+      }
+      bytes=$(du -x -s -B1 "$real" | awk '{print $1}')
+      printf 'intent_data_cache\t%s\t%s\n' "$bytes" "$real" >>"$manifest"
+      if [[ "$execute" == 1 ]]; then rm -rf -- "$real"; fi
+      freed=$((freed + bytes))
+      removed=$((removed + 1))
+    done < <(find "$data_root" -xdev -type d \
+      \( -name __pycache__ -o -name .pytest_cache \) -print 2>/dev/null)
+  done
 done
 
 printf 'candidate_count=%s\ncandidate_bytes=%s\n' \
