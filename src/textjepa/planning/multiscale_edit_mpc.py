@@ -148,21 +148,40 @@ class MultiscaleEditMPC:
             ]
             return proposals[:self.max_candidates]
         dummy = torch.zeros(1, dtype=torch.long, device=self.device)
-        position_logits, _ = self.model.replacement_prior(
+        position_logits, all_token_logits = self.model.replacement_prior(
             state.tokens, state.token_mask, state.prompt, dummy
         )
-        allowed = torch.zeros_like(position_logits, dtype=torch.bool)
-        allowed[:, available] = True
-        position_logp = position_logits.masked_fill(~allowed, -torch.inf).log_softmax(-1)
         count = min(self.top_positions, len(available))
-        positions = position_logp.topk(count, -1).indices[0]
-        _, token_logits = self.model.replacement_prior(
-            state.tokens.expand(count, -1, -1),
-            state.token_mask.expand(count, -1),
-            state.prompt.expand(count, -1), positions,
-        )
-        token_logits[:, list(self.excluded)] = -torch.inf
-        token_logp = token_logits.log_softmax(-1)
+        if position_logits is None:
+            # Content-only edit models deliberately do not learn numeric
+            # position labels. Search enumerates every structurally grounded
+            # unresolved slot and chooses the slots whose best token is most
+            # confident, matching confidence-order masked diffusion.
+            token_logits_all = all_token_logits.clone()
+            token_logits_all[..., list(self.excluded)] = -torch.inf
+            token_logp_all = token_logits_all.log_softmax(-1)
+            confidence = token_logp_all.amax(-1)
+            allowed = torch.zeros_like(confidence, dtype=torch.bool)
+            allowed[:, available] = True
+            positions = confidence.masked_fill(~allowed, -torch.inf).topk(
+                count, -1
+            ).indices[0]
+            token_logp = token_logp_all[0, positions]
+            position_logp = None
+        else:
+            allowed = torch.zeros_like(position_logits, dtype=torch.bool)
+            allowed[:, available] = True
+            position_logp = position_logits.masked_fill(
+                ~allowed, -torch.inf
+            ).log_softmax(-1)
+            positions = position_logp.topk(count, -1).indices[0]
+            _, token_logits = self.model.replacement_prior(
+                state.tokens.expand(count, -1, -1),
+                state.token_mask.expand(count, -1),
+                state.prompt.expand(count, -1), positions,
+            )
+            token_logits[:, list(self.excluded)] = -torch.inf
+            token_logp = token_logits.log_softmax(-1)
         proposals: list[tuple[Edit, float]] = []
         for row, position in enumerate(positions.tolist()):
             accepted = 0
@@ -171,6 +190,7 @@ class MultiscaleEditMPC:
                     continue
                 proposals.append((
                     ("replace", position, token),
+                    float(token_logp[row, token]) if position_logp is None else
                     float(position_logp[0, position] + token_logp[row, token]),
                 ))
                 accepted += 1
@@ -262,10 +282,16 @@ class MultiscaleEditMPC:
             return []
         actions = [action for action, _ in proposed]
         codes = self._action_codes(encoded, actions)
-        q = self.model.action_value(
-            encoded.global_state.expand(len(actions), -1), codes
+        q = (
+            self.model.action_value(
+                encoded.global_state.expand(len(actions), -1), codes
+            )
+            if self.action_value_weight else codes.new_zeros(len(actions))
         )
-        predicted_distance = self._predicted_next_distance(encoded, actions, codes)
+        predicted_distance = (
+            self._predicted_next_distance(encoded, actions, codes)
+            if self.state_value_weight else codes.new_zeros(len(actions))
+        )
         children = []
         for index, ((action, log_prior), action_q) in enumerate(zip(proposed, q)):
             outcome = copy_buffer(node.buffer)

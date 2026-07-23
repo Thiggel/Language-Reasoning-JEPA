@@ -1,4 +1,5 @@
 from functools import partial
+from unittest.mock import patch
 
 import torch
 from torch.utils.data import DataLoader
@@ -55,6 +56,23 @@ def test_faithful_token_edits_preserve_official_multistep_segmentation():
         # Official iGSM usually ends steps with fused numeric punctuation,
         # not the standalone period token used by the old segmentation.
         assert any(sentence[-1] != vocab.token_to_id["."] for sentence in source_steps)
+
+
+def test_faithful_dataset_can_restrict_official_template_hash_bins():
+    vocab = faithful_token_edit_vocab()
+    dataset = FaithfulTokenEditDataset(
+        vocab, size=1, seed=98, max_op=6, max_edge=12,
+        op_range=(6, 6), min_edits=1, max_edits=1,
+        hash_bins=(16,),
+    )
+    sentinel = object()
+    with (
+        patch("textjepa.data.faithful.gen_problem", return_value=sentinel) as gen,
+        patch("textjepa.data.faithful.FaithfulProblem", side_effect=lambda x: x),
+    ):
+        problem, _ = dataset.source.problem(0)
+    assert problem is sentinel
+    assert gen.call_args.args[-1] == (16,)
 
 
 def test_boundary_edits_are_literal_and_causally_invertible():

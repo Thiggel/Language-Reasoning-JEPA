@@ -236,6 +236,7 @@ class FaithfulTokenEditDataset(Dataset):
                  refinement_probability: float = 0.25,
                  sample_transition: bool = False,
                  content_only_actions: bool = False,
+                 hash_bins=None,
                  **_):
         self.vocab = vocab
         self.seed = seed
@@ -282,7 +283,7 @@ class FaithfulTokenEditDataset(Dataset):
         self.source = FaithfulDataset(
             vocab, size=size, seed=seed, max_op=max_op, max_edge=max_edge,
             op_range=tuple(op_range), distractor_prob=0.0,
-            max_distractors=0,
+            max_distractors=0, hash_bins=hash_bins,
         )
 
     def set_epoch(self, epoch: int) -> None:

@@ -40,7 +40,8 @@ def _fix_seed(key: str) -> None:
     fix_seed(h % (2**31 - 1))
 
 
-def gen_problem(key: str, max_op: int, max_edge: int, op_range=(None, None)):
+def gen_problem(key: str, max_op: int, max_edge: int, op_range=(None, None),
+                hash_bins=None):
     """Deterministic official-generator call; optional rejection on n_op."""
     from data_gen.pretrain.id_gen import IdGen
 
@@ -48,7 +49,10 @@ def gen_problem(key: str, max_op: int, max_edge: int, op_range=(None, None)):
     for attempt in range(50):
         g = IdGen(max_op=max_op, max_edge=max_edge, perm_level=5,
                   detail_level=0)
-        g.gen_prob(list(range(23)), p_format="pq")
+        g.gen_prob(
+            list(range(23)) if hash_bins is None else list(hash_bins),
+            p_format="pq",
+        )
         lo, hi = op_range
         n = g.problem.n_op
         if (lo is None or n >= lo) and (hi is None or n <= hi):
@@ -210,6 +214,7 @@ class FaithfulDataset(Dataset):
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
+        hash_bins=None,
         **_,
     ):
         self.n_alt = n_alt
@@ -231,13 +236,15 @@ class FaithfulDataset(Dataset):
         self.op_range = tuple(op_range)
         self.distractor_prob = distractor_prob
         self.max_distractors = max_distractors
+        self.hash_bins = None if hash_bins is None else tuple(hash_bins)
 
     def __len__(self) -> int:
         return self.size
 
     def problem(self, index: int):
         gen = gen_problem(
-            f"{self.seed}:{index}", self.max_op, self.max_edge, self.op_range
+            f"{self.seed}:{index}", self.max_op, self.max_edge, self.op_range,
+            self.hash_bins,
         )
         return FaithfulProblem(gen), random.Random(f"{self.seed}:{index}:t")
 
