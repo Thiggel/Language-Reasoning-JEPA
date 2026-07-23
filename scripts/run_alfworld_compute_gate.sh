@@ -8,9 +8,14 @@ if [[ -z "${RUN_DIR:-}" || -z "${TEXTJEPA_ROOT:-}" ]]; then
 fi
 python_bin=${1:?python executable}
 checkpoint=${2:?checkpoint}
+requested_depth=${3:-all}
 device=${DEVICE:-cuda:0}
 
-for depth in 1 2 4 8; do
+depths=(1 2 4 8)
+if [[ "$requested_depth" != all ]]; then
+  depths=("$requested_depth")
+fi
+for depth in "${depths[@]}"; do
   for beam in 1 4 8; do
     "$python_bin" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
       --kind jepa --checkpoint "$checkpoint" --device "$device" \
