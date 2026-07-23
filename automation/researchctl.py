@@ -507,6 +507,7 @@ class Controller:
             "id", "cluster", "command", "gpus", "walltime_minutes", "purpose",
             "expected_artifacts", "env", "cpus", "partition", "qos", "account",
             "gpu_type", "min_gpu_memory_mb", "node", "dependency_afterok",
+            "dependency_afterany",
         }
         for index, job in enumerate(jobs):
             prefix = f"jobs[{index}]"
@@ -528,16 +529,29 @@ class Controller:
             if not cluster or not cluster.get("enabled", False):
                 errors.append(f"{prefix}.cluster is unknown or disabled: {cluster_name}")
                 continue
-            dependencies = job.get("dependency_afterok", [])
+            dependency_fields = [
+                key for key in ("dependency_afterok", "dependency_afterany")
+                if job.get(key)
+            ]
+            if len(dependency_fields) > 1:
+                errors.append(
+                    f"{prefix} may specify only one scheduler dependency type"
+                )
+            dependencies = (
+                job.get(dependency_fields[0], []) if dependency_fields else []
+            )
             if dependencies:
                 if cluster.get("kind") != "slurm":
-                    errors.append(f"{prefix}.dependency_afterok requires a Slurm cluster")
+                    errors.append(
+                        f"{prefix}.{dependency_fields[0]} requires a Slurm cluster"
+                    )
                 if not isinstance(dependencies, list) or not dependencies or not all(
                     isinstance(value, (str, int)) and str(value).isdigit()
                     for value in dependencies
                 ):
                     errors.append(
-                        f"{prefix}.dependency_afterok must be a non-empty list of Slurm job IDs"
+                        f"{prefix}.{dependency_fields[0]} must be a non-empty "
+                        "list of Slurm job IDs"
                     )
             command = job.get("command")
             if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
@@ -786,10 +800,14 @@ class Controller:
         gpu_type = job.get("gpu_type") or cluster.get("gpu_type")
         gres = f"gpu:{gpu_type}:{job['gpus']}" if gpu_type else f"gpu:{job['gpus']}"
         opts.append(f"#SBATCH --gres={gres}")
-        dependencies = job.get("dependency_afterok", [])
-        if dependencies:
+        dependency_type = next((
+            name for name in ("afterok", "afterany")
+            if job.get(f"dependency_{name}")
+        ), None)
+        if dependency_type:
+            dependencies = job[f"dependency_{dependency_type}"]
             opts.append(
-                "#SBATCH --dependency=afterok:"
+                f"#SBATCH --dependency={dependency_type}:"
                 + ":".join(str(value) for value in dependencies)
             )
         if cluster.get("export_none", False):

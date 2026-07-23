@@ -40,6 +40,13 @@ common=(
   train.log_every=100
   'train.checkpoint_examples=[204800,819200,3225600,6400000,12800000,25600000,51200000]'
 )
+if [[ -n "${RESUME_FROM:-}" ]]; then
+  if [[ ! -s "$RESUME_FROM" ]]; then
+    echo "resume checkpoint does not exist or is empty: $RESUME_FROM" >&2
+    exit 2
+  fi
+  common+=("train.resume_from=$RESUME_FROM")
+fi
 launcher=("$python_bin" -m torch.distributed.run --standalone "--nproc_per_node=$world")
 
 case "$kind" in
