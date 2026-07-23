@@ -100,6 +100,26 @@ def test_content_only_prior_enumerates_positions_by_token_confidence():
     assert torch.isfinite(torch.tensor(score))
 
 
+def test_sentence_blank_pattern_planner_routes_action_without_coordinates():
+    vocab = _vocab()
+    model = MultiscaleEditJEPA(
+        len(vocab), vocab.pad_id, "sentence", d_model=16, d_action=4,
+        token_layers=1, sentence_layers=1, predictor_layers=1, n_heads=4,
+        max_sequence_len=32, max_sentences=4, base_prior=True,
+        base_prior_predict_position=False, sentence_action_kind="blank_pattern",
+    ).eval()
+    planner = MultiscaleEditMPC(
+        model, vocab, device="cpu", beam_width=1,
+        top_positions=1, top_tokens=1, max_candidates=1,
+        action_value_weight=0.0, state_value_weight=0.0,
+    )
+    mask = vocab.token_to_id["<mask>"]
+    action, _, _ = planner.first_action(
+        [[vocab.token_to_id["prompt"]]], [[mask, mask]], horizon=1
+    )
+    assert action is not None and action[0] == "replace"
+
+
 def test_macro_planner_only_scores_codes_built_from_executable_actions():
     vocab = _vocab()
     model = _model(vocab, variant="sentence_macro").eval()

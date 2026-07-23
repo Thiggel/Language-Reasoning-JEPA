@@ -16,6 +16,7 @@ from typing import Optional
 import torch
 
 from textjepa.data.faithful_token_edits import MASK_TOKEN, OPS, _apply
+from textjepa.models.multiscale_edit_jepa import SentencePatternActionEncoder
 
 
 Buffer = list[list[int]]
@@ -210,13 +211,20 @@ class MultiscaleEditMPC:
         content = self.model.encoder.tok(torch.tensor(
             [int(a[2]) for a in actions], device=self.device
         ))
-        module = (
-            self.model.sentence_action if self.model.token_pred is None
-            else self.model.token_pred.encode_action
-        )
-        return module(
-            state.tokens.expand(count, -1, -1),
-            state.token_mask.expand(count, -1), operations, positions, content,
+        expanded_states = state.tokens.expand(count, -1, -1)
+        expanded_mask = state.token_mask.expand(count, -1)
+        if self.model.token_pred is not None:
+            return self.model.token_pred.encode_action(
+                expanded_states, expanded_mask, operations, positions, content,
+            )
+        if isinstance(self.model.sentence_action, SentencePatternActionEncoder):
+            return self.model.sentence_action(
+                expanded_states, expanded_mask,
+                state.sentence_ids.expand(count, -1),
+                operations, positions, content,
+            )
+        return self.model.sentence_action(
+            expanded_states, expanded_mask, operations, positions, content,
         )
 
     @torch.no_grad()
