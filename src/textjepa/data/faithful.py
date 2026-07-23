@@ -28,6 +28,9 @@ if str(_IGSM_ROOT) not in sys.path:
     sys.path.insert(0, str(_IGSM_ROOT))
 
 OP_LABELS = {"const": 0, "sum": 1, "diff": 2, "mul": 3}
+INVALID_DEFINITION_OUTCOME = (
+    "The proposed definition is invalid and nothing changes ."
+)
 
 
 def _fix_seed(key: str) -> None:
@@ -165,6 +168,12 @@ class FaithfulEnv:
         self.resolved.append(q)
         return self.p2.solution[-1] + "."
 
+    def step_or_invalid(self, q) -> str:
+        """Execute a grounded action without exposing feasibility to a policy."""
+        if q not in self.feasible_actions():
+            return INVALID_DEFINITION_OUTCOME
+        return self.step(q)
+
     @property
     def solved(self) -> bool:
         return self.fp.query in self.resolved_set
@@ -211,6 +220,7 @@ class FaithfulDataset(Dataset):
         geo_rank_rollouts: int = 1,
         geo_rank_policy: str = "random",
         geo_rank_beam_width: int = 1,
+        invalid_counterfactual_k: int = 0,
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
@@ -223,6 +233,9 @@ class FaithfulDataset(Dataset):
         self.geo_rank_rollouts = max(1, int(geo_rank_rollouts))
         self.geo_rank_policy = str(geo_rank_policy)
         self.geo_rank_beam_width = max(1, int(geo_rank_beam_width))
+        self.invalid_counterfactual_k = max(
+            0, int(invalid_counterfactual_k)
+        )
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
@@ -326,6 +339,14 @@ class FaithfulDataset(Dataset):
             alternatives = [q for q in env2.feasible_actions() if q != executed]
             rng.shuffle(alternatives)
             alternatives = alternatives[: self.geo_rank_k]
+            infeasible = [
+                q for q in fp.action_order
+                if q != executed and q not in env2.feasible_actions()
+            ]
+            rng.shuffle(infeasible)
+            alternatives.extend(
+                infeasible[: self.invalid_counterfactual_k]
+            )
             if alternatives:
                 candidates = [executed, *alternatives]
                 ga = {
@@ -338,7 +359,7 @@ class FaithfulDataset(Dataset):
                         for q in alternatives
                     ],
                     "ga_alt_steps": [
-                        self.vocab.encode(env2.clone().step(q))
+                        self.vocab.encode(env2.clone().step_or_invalid(q))
                         for q in alternatives
                     ],
                 }
@@ -456,6 +477,7 @@ def build_faithful_vocab(n_scan: int = 1500, max_op: int = 21,
     """Vocabulary from a deterministic scan of the official generator's
     output space (all worlds' names appear quickly) + solution symbols."""
     words: set[str] = set(EDIT_WORDS)
+    words.update(INVALID_DEFINITION_OUTCOME.split())
     for i in range(n_scan):
         gen = gen_problem(f"vocab:{i}", max_op, max_edge)
         fp = FaithfulProblem(gen)

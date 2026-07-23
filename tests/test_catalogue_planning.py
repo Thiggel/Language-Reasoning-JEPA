@@ -191,3 +191,44 @@ def test_candidate_order_seed_is_stable_with_both_interfaces():
     feasible = environment.catalogue
     assert feasible == environment.catalogue
     assert set(feasible).issubset(full)
+
+
+def test_faithful_invalid_action_observation_leaves_executor_state_unchanged():
+    from textjepa.data.faithful import (
+        FaithfulDataset,
+        FaithfulEnv,
+        INVALID_DEFINITION_OUTCOME,
+        cached_faithful_vocab,
+    )
+
+    dataset = FaithfulDataset(
+        cached_faithful_vocab(), size=1, seed=917, max_op=15,
+        max_edge=20, op_range=(3, 5), distractor_prob=0.0,
+    )
+    problem, _ = dataset.problem(0)
+    environment = FaithfulEnv(problem)
+    infeasible = next(
+        action for action in problem.action_order
+        if action not in environment.feasible_actions()
+    )
+    before = tuple(environment.resolved)
+    assert environment.step_or_invalid(infeasible) == INVALID_DEFINITION_OUTCOME
+    assert tuple(environment.resolved) == before
+
+
+def test_faithful_gar_can_include_feasible_and_invalid_counterfactuals():
+    from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
+
+    dataset = FaithfulDataset(
+        cached_faithful_vocab(), size=8, seed=917, max_op=15,
+        max_edge=20, op_range=(5, 8), distractor_prob=0.0,
+        geo_rank_k=2, geo_rank_horizon=4, geo_rank_policy="greedy",
+        invalid_counterfactual_k=2,
+    )
+    item = next(dataset[index] for index in range(8) if "ga_t" in dataset[index])
+    assert len(item["ga_alt_actions"]) >= 2
+    assert len(item["ga_alt_actions"]) == len(item["ga_alt_steps"])
+    invalid_tokens = dataset.vocab.encode(
+        "The proposed definition is invalid and nothing changes ."
+    )
+    assert invalid_tokens in item["ga_alt_steps"]

@@ -788,7 +788,12 @@ class DiscourseJEPA(nn.Module):
                     continue
                 child = env.clone()
                 sequence = list(history)
-                sequence.append(vocab.encode(child.step(action)))
+                if env_kind == "faithful":
+                    sequence.append(
+                        vocab.encode(child.step_or_invalid(action))
+                    )
+                else:
+                    sequence.append(vocab.encode(child.step(action)))
                 paths.append({"b": b, "c": c, "env": child, "seq": sequence})
 
         labels = goal.new_full((B, C), float("inf"))

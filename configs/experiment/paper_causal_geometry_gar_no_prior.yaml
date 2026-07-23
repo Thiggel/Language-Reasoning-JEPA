@@ -14,4 +14,7 @@ data:
   all_action_supervision: false
   dense_geo_anchors: true
   geo_rank_k: 2
+  # Match full-catalogue deployment by also observing grounded actions whose
+  # current executor consequence is the unchanged-state invalid message.
+  invalid_counterfactual_k: 2
   geo_rank_horizon: 4
