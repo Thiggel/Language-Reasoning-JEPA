@@ -506,7 +506,7 @@ class Controller:
         allowed_job_keys = {
             "id", "cluster", "command", "gpus", "walltime_minutes", "purpose",
             "expected_artifacts", "env", "cpus", "partition", "qos", "account",
-            "gpu_type", "min_gpu_memory_mb", "node",
+            "gpu_type", "min_gpu_memory_mb", "node", "dependency_afterok",
         }
         for index, job in enumerate(jobs):
             prefix = f"jobs[{index}]"
@@ -528,6 +528,17 @@ class Controller:
             if not cluster or not cluster.get("enabled", False):
                 errors.append(f"{prefix}.cluster is unknown or disabled: {cluster_name}")
                 continue
+            dependencies = job.get("dependency_afterok", [])
+            if dependencies:
+                if cluster.get("kind") != "slurm":
+                    errors.append(f"{prefix}.dependency_afterok requires a Slurm cluster")
+                if not isinstance(dependencies, list) or not dependencies or not all(
+                    isinstance(value, (str, int)) and str(value).isdigit()
+                    for value in dependencies
+                ):
+                    errors.append(
+                        f"{prefix}.dependency_afterok must be a non-empty list of Slurm job IDs"
+                    )
             command = job.get("command")
             if not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command):
                 errors.append(f"{prefix}.command must be a non-empty argv string list")
@@ -775,6 +786,12 @@ class Controller:
         gpu_type = job.get("gpu_type") or cluster.get("gpu_type")
         gres = f"gpu:{gpu_type}:{job['gpus']}" if gpu_type else f"gpu:{job['gpus']}"
         opts.append(f"#SBATCH --gres={gres}")
+        dependencies = job.get("dependency_afterok", [])
+        if dependencies:
+            opts.append(
+                "#SBATCH --dependency=afterok:"
+                + ":".join(str(value) for value in dependencies)
+            )
         if cluster.get("export_none", False):
             opts.extend(["#SBATCH --export=NONE", "unset SLURM_EXPORT_ENV"])
         opts.append(self._runner_script(job, cluster, snapshot, remote_dir))

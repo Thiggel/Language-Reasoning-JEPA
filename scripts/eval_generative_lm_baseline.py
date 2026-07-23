@@ -177,11 +177,23 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=64)
     parser.add_argument("--width", type=int, choices=(1, 8), default=1)
     parser.add_argument("--eval-seed", type=int, default=200003)
+    parser.add_argument("--steps-min", type=int)
+    parser.add_argument("--steps-max", type=int)
+    parser.add_argument("--n-vars-min", type=int)
+    parser.add_argument("--n-vars-max", type=int)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     model, vocab, cfg = load_model(args.kind, args.ckpt, args.device)
     eval_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
     eval_cfg.data.test_seed = args.eval_seed
+    if (args.steps_min is None) != (args.steps_max is None):
+        raise ValueError("--steps-min and --steps-max must be supplied together")
+    if (args.n_vars_min is None) != (args.n_vars_max is None):
+        raise ValueError("--n-vars-min and --n-vars-max must be supplied together")
+    if args.steps_min is not None:
+        eval_cfg.data.steps_range = [args.steps_min, args.steps_max]
+    if args.n_vars_min is not None:
+        eval_cfg.data.n_vars_range = [args.n_vars_min, args.n_vars_max]
     dataset = build_dataset(eval_cfg, vocab, split="test", size=args.examples)
     fixed, matched_prefixes, references, validity = [], [], [], []
     for index in range(args.examples):
@@ -209,6 +221,8 @@ def main():
         "examples": args.examples,
         "eval_seed": args.eval_seed,
         "max_tokens": args.max_tokens,
+        "steps_range": list(eval_cfg.data.steps_range),
+        "n_vars_range": list(eval_cfg.data.n_vars_range),
         "reference_length_prefix_metrics": summarize_examples(
             matched_prefixes, references,
             {vocab.token_to_id["."], vocab.token_to_id["?"]}, args.eval_seed,

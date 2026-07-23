@@ -63,6 +63,26 @@ class ResearchCtlTests(unittest.TestCase):
         self.assertIn("resolved_config.json", script)
         self.assertIn("environment.json", script)
 
+    def test_slurm_afterok_dependency_is_validated_and_rendered(self):
+        plan = copy.deepcopy(self.plan)
+        plan["jobs"][0]["cluster"] = "alex"
+        plan["jobs"][0]["dependency_afterok"] = ["1234", 5678]
+        validated = self.controller.validate_plan(plan)
+        job = validated["jobs"][0]
+        script = self.controller._sbatch_script(
+            validated, job, self.controller.cfg["clusters"]["alex"],
+            "/snapshot", "/remote/run",
+        )
+        self.assertIn("#SBATCH --dependency=afterok:1234:5678", script)
+
+    def test_afterok_dependency_is_rejected_for_direct_backend(self):
+        plan = copy.deepcopy(self.plan)
+        plan["jobs"][0]["dependency_afterok"] = ["1234"]
+        with self.assertRaisesRegex(
+            researchctl.ResearchCtlError, "requires a Slurm cluster"
+        ):
+            self.controller.validate_plan(plan)
+
     def test_runner_executes_and_writes_compact_contract(self):
         job = copy.deepcopy(self.plan["jobs"][0])
         job["id"] = "local-runner-contract-test"

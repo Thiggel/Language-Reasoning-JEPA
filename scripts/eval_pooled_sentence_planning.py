@@ -305,6 +305,10 @@ def main():
     parser.add_argument("--proposal-topk", type=int, default=20)
     parser.add_argument("--prior-score-weight", type=float, default=1.0)
     parser.add_argument("--eval-seed", type=int, default=None)
+    parser.add_argument("--steps-min", type=int)
+    parser.add_argument("--steps-max", type=int)
+    parser.add_argument("--n-vars-min", type=int)
+    parser.add_argument("--n-vars-max", type=int)
     parser.add_argument("--output-tag", default="")
     parser.add_argument("--output-dir", default=None)
     args = parser.parse_args()
@@ -318,11 +322,23 @@ def main():
     model.load_state_dict(payload["model"])
     model.eval()
     eval_seed = cfg.data.val_seed + 104729 if args.eval_seed is None else args.eval_seed
+    if (args.steps_min is None) != (args.steps_max is None):
+        raise ValueError("--steps-min and --steps-max must be supplied together")
+    if (args.n_vars_min is None) != (args.n_vars_max is None):
+        raise ValueError("--n-vars-min and --n-vars-max must be supplied together")
+    steps_range = (
+        (args.steps_min, args.steps_max)
+        if args.steps_min is not None else tuple(cfg.data.steps_range)
+    )
+    n_vars_range = (
+        (args.n_vars_min, args.n_vars_max)
+        if args.n_vars_min is not None else tuple(cfg.data.n_vars_range)
+    )
     dataset = SemanticBoundaryLMDataset(
         vocab, size=args.examples, seed=eval_seed,
         boundary_mode="semantic", modulus=cfg.data.modulus,
-        n_vars_range=tuple(cfg.data.n_vars_range), leaf_prob=cfg.data.leaf_prob,
-        steps_range=tuple(cfg.data.steps_range),
+        n_vars_range=n_vars_range, leaf_prob=cfg.data.leaf_prob,
+        steps_range=steps_range,
         distractor_prob=cfg.data.distractor_prob,
         max_distractors=cfg.data.max_distractors,
     )
@@ -364,6 +380,7 @@ def main():
         "proposal_topk": args.proposal_topk,
         "prior_score_weight": args.prior_score_weight,
         "length_mode": args.length_mode,
+        "steps_range": list(steps_range), "n_vars_range": list(n_vars_range),
         "mean_expanded_candidates": expanded / args.examples,
         "executed_latent_drift_by_plan_offset": summarize_drift(drift),
         "uses_oracle_goal": args.score == "oracle",

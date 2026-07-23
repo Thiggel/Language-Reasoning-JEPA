@@ -104,3 +104,31 @@ claim, verify the primary source and current publication status.
   - Compare methods at 100,000 optimizer updates and global batch 512, but also
     report tokens and non-padding tokens processed. Do not infer that the
     published schedule should finish in hours on one A100.
+
+## 2026-07-23 — operation-count-stratified iGSM evaluation
+
+- Query: how does the original iGSM work define and evaluate reasoning length?
+- Primary sources:
+  - Published Part 2.1 paper: <https://arxiv.org/pdf/2407.20311>
+  - Official generator and evaluation code:
+    <https://github.com/facebookresearch/iGSM>
+- Applicable claim:
+  - iGSM defines `op` as the number of necessary solution operations and `ip`
+    as the number of instance parameters. For iGSM-medium, the original work
+    trains on `op <= 15, ip <= 20`, reports the in-distribution mixture and the
+    exact boundary `op = 15`, and tests longer exact-operation sets at
+    `op in {20,21,22,23}`. Evaluation permits a longer context than training.
+- Limitations:
+  - Our current procedural environment uses training support `op in [6,12]`
+    and `n_vars in [10,18]`, and its renderer/tokenizer are not byte-for-byte
+    the official iGSM generator. Calling our curves a reproduction of the
+    original test sets would therefore be incorrect.
+  - Exact high-`op` examples require enough variables, so fixing
+    `n_vars <= 18` makes `op > 18` unavailable in this implementation.
+- Design change:
+  - Mirror the *structure* of the published protocol: report the training
+    mixture (`op <= 12`), its exact boundary (`op = 12`), and exact longer
+    sets (`op = 16,17,18`) with a common `n_vars in [10,20]`. Record both
+    problem-solving success and generation validity. Treat the first held pass
+    as a runtime/confidence pilot, then scale each stratum rather than pooling
+    lengths.
