@@ -10,6 +10,11 @@ python_bin=${1:?python executable}
 checkpoint=${2:?checkpoint}
 requested_depth=${3:-all}
 device=${DEVICE:-cuda:0}
+shared_root=${TEXTJEPA_SHARED_ROOT:-/vol/home-vol2/ml/laitenbf/TextJEPA}
+export ALFWORLD_DATA=${ALFWORLD_DATA:-$shared_root/data/intent_phrase/alfworld_engine}
+eval_python=${ALFWORLD_PYTHON:-/vol/home-vol2/ml/laitenbf/.venv-alfworld/bin/python}
+project_site=${TEXTJEPA_PROJECT_SITE:-$shared_root/.venv/lib64/python3.11/site-packages}
+export PYTHONPATH=$TEXTJEPA_ROOT/src:$project_site
 
 depths=(1 2 4 8)
 if [[ "$requested_depth" != all ]]; then
@@ -17,13 +22,13 @@ if [[ "$requested_depth" != all ]]; then
 fi
 for depth in "${depths[@]}"; do
   for beam in 1 4 8; do
-    "$python_bin" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
+    "$eval_python" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
       --kind jepa --checkpoint "$checkpoint" --device "$device" \
       --split train --episodes 8 --excess-actions 0 1 2 4 \
       --simulation-depth "$depth" --jepa-candidate-mode full \
       --beam-width "$beam" \
       --out "$RUN_DIR/depth${depth}_beam${beam}_train.json"
-    "$python_bin" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
+    "$eval_python" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
       --kind jepa --checkpoint "$checkpoint" --device "$device" \
       --split val --episodes 4 --excess-actions 0 1 2 4 \
       --simulation-depth "$depth" --jepa-candidate-mode full \
