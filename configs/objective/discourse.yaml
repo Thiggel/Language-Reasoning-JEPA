@@ -126,6 +126,11 @@ geo_advantage_mse:
 counterfactual_outcome:
   _target_: textjepa.objectives.CounterfactualOutcomePrediction
   weight: 0.0  # data-only control: observed alternatives, no preference labels
+counterfactual_state:
+  _target_: textjepa.objectives.CounterfactualStatePrediction
+  weight: 0.0  # full-state alternative analogue of latent_pred
+  kind: smooth_l1
+  norm_targets: true
 counterfactual_token:
   _target_: textjepa.objectives.TokenAlignedCounterfactualPrediction
   weight: 0.0  # exact structured alternative transitions; no quality labels

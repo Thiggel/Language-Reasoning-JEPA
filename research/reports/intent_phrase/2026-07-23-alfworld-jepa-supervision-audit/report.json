@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-23-alfworld-jepa-supervision-audit",
+  "project": "intent_phrase",
+  "title": "The ALFWorld JEPA learned expert transitions but was trained on mismatched counterfactual histories",
+  "created_at": "2026-07-23T09:00:00+02:00",
+  "status": "decision_complete",
+  "decision": "Invalidate the current ALFWorld GAR result, repair both causal-prefix paths, and add direct counterfactual state-latent prediction before retraining.",
+  "plain_summary": "The model retrieves every executed training transition, but counterfactual dynamics remain near persistence and GAR fits labels constructed through a different causal interface from planning.",
+  "report": "REPORT.md",
+  "review_required": true
+}

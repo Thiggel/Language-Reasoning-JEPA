@@ -30,6 +30,34 @@ class CounterfactualOutcomePrediction(Objective):
         return masked_mean(d, out.extras["cf_valid"].float())
 
 
+class CounterfactualStatePrediction(Objective):
+    """Match observed alternative actions to complete next-state latents.
+
+    This is the counterfactual analogue of ``LatentPrediction``: the predictor
+    receives the factual causal prefix plus an alternative action, and its
+    output is regressed directly onto the EMA state obtained after the
+    alternative's observed outcome.  It supplies no action-quality label.
+    """
+
+    def __init__(self, kind: str = "smooth_l1", norm_targets: bool = True):
+        super().__init__()
+        self.kind = kind
+        self.norm_targets = norm_targets
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "ga_cf_pred" not in out.extras:
+            return out.preds.sum() * 0.0
+        distance = latent_distance(
+            out.extras["ga_cf_pred"],
+            out.extras["ga_cf_target"],
+            self.kind,
+            self.norm_targets,
+        )
+        return masked_mean(
+            distance, out.extras["ga_cf_valid"].float()
+        )
+
+
 class CounterfactualSlotPrediction(Objective):
     """Predict the exact changed-step anchor for each mechanical edit.
 

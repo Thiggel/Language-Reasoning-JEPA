@@ -26,6 +26,63 @@ from textjepa.models.state_model import DiscourseStateModel
 DiscourseOutputs = JEPAOutputs  # backwards-compatible alias
 
 
+def prepend_factual_prefix(
+    step_tokens: torch.Tensor,
+    step_mask: torch.Tensor,
+    anchors: torch.Tensor,
+    candidate_tokens: torch.Tensor,
+    candidate_mask: torch.Tensor,
+    pad_id: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Prepend the observed outcome history to candidate continuations.
+
+    ``candidate_tokens`` has shape ``[B, ..., R, L]`` and its mask has shape
+    ``[B, ..., R]``.  For row ``b``, factual outcomes strictly before
+    ``anchors[b]`` are copied before every candidate continuation.  This is
+    the exact state history available to the action predictor at that anchor.
+    """
+    if candidate_tokens.shape[:-1] != candidate_mask.shape:
+        raise ValueError("candidate token and mask shapes disagree")
+    if candidate_tokens.shape[0] != step_tokens.shape[0]:
+        raise ValueError("candidate and factual batch sizes disagree")
+    batch = step_tokens.shape[0]
+    candidate_dims = candidate_tokens.shape[1:-2]
+    rollout_steps = candidate_tokens.shape[-2]
+    width = max(step_tokens.shape[-1], candidate_tokens.shape[-1])
+    total_steps = step_tokens.shape[1] + rollout_steps
+    output = torch.full(
+        (batch, *candidate_dims, total_steps, width),
+        pad_id,
+        dtype=step_tokens.dtype,
+        device=step_tokens.device,
+    )
+    output_mask = torch.zeros(
+        (batch, *candidate_dims, total_steps),
+        dtype=torch.bool,
+        device=step_tokens.device,
+    )
+    for row in range(batch):
+        prefix = int(anchors[row].clamp(min=0, max=step_tokens.shape[1]))
+        if prefix:
+            factual = step_tokens[row, :prefix]
+            factual = factual.view(
+                *([1] * len(candidate_dims)), prefix, factual.shape[-1]
+            ).expand(*candidate_dims, prefix, factual.shape[-1])
+            factual_valid = step_mask[row, :prefix].view(
+                *([1] * len(candidate_dims)), prefix
+            ).expand(*candidate_dims, prefix)
+            output[row, ..., :prefix, :factual.shape[-1]] = factual
+            output_mask[row, ..., :prefix] = factual_valid
+        output[
+            row, ..., prefix:prefix + rollout_steps,
+            :candidate_tokens.shape[-1],
+        ] = candidate_tokens[row]
+        output_mask[
+            row, ..., prefix:prefix + rollout_steps
+        ] = candidate_mask[row]
+    return output, output_mask
+
+
 class DiscourseJEPA(nn.Module):
     def __init__(
         self,
@@ -515,16 +572,30 @@ class DiscourseJEPA(nn.Module):
         a_alt = self.encode_actions(batch["ga_alt_action_tokens"])  # [B,K,da]
         K = a_alt.shape[1]
         s_anchor = out.prev_states[bidx, t]  # state before the anchor step
-        preds_alt = self.core.predictor(
-            s_anchor.unsqueeze(1).expand(-1, K, -1).reshape(B * K, -1),
-            a_alt.reshape(B * K, -1),
-        )
+        if getattr(self.core.predictor, "causal_sequence", False):
+            # Evaluate every alternative with the same teacher-forced causal
+            # prefix as the executed action and as planner rollout.  The old
+            # length-one call reset transformer position/history for alts.
+            T = out.prev_states.shape[1]
+            alt_at_every_anchor = a_alt.unsqueeze(1).expand(-1, T, -1, -1)
+            preds_alt = self.core._predict_counterfactuals(
+                out.prev_states,
+                out.actions,
+                alt_at_every_anchor,
+                out.step_mask,
+            )[bidx, t]
+        else:
+            preds_alt = self.core.predictor(
+                s_anchor.unsqueeze(1).expand(-1, K, -1).reshape(B * K, -1),
+                a_alt.reshape(B * K, -1),
+            ).reshape(B, K, -1)
+        cf_preds_alt = preds_alt
         pe = out.preds[bidx, t]
         if self.core.value_detach:
             pe, preds_alt = pe.detach(), preds_alt.detach()
         e_exec = self.core.value_head(pe, out.s0)
         e_alt = self.core.value_head(
-            preds_alt, out.s0.repeat_interleave(K, 0)
+            preds_alt.reshape(B * K, -1), out.s0.repeat_interleave(K, 0)
         ).reshape(B, K)
         # Geometric labels in EMA space.  For horizon 1 these are true
         # one-step next states.  Longer horizons either use random shooting or
@@ -534,6 +605,35 @@ class DiscourseJEPA(nn.Module):
             last = out.step_mask.sum(1).clamp(min=1) - 1
             goal = out.step_states_tgt[bidx, last]
             ln = lambda x: Fn.layer_norm(x, x.shape[-1:])
+            # Complete next-state targets for direct counterfactual JEPA
+            # supervision.  These always include the true factual prefix.
+            ga_steps = batch["ga_alt_step_tokens"]
+            ga_valid = batch["ga_valid"] & valid_b.unsqueeze(1)
+            next_tokens, next_mask = prepend_factual_prefix(
+                batch["step_tokens"],
+                batch["step_mask"],
+                t,
+                ga_steps.unsqueeze(-2),
+                ga_valid.unsqueeze(-1),
+                self.chunk_encoder.pad_id,
+            )
+            _, _, next_T, next_L = next_tokens.shape
+            flat_next_mask = next_mask.reshape(B * K, next_T).clone()
+            empty_next = ~flat_next_mask.any(1)
+            flat_next_mask[empty_next, 0] = True
+            _, alt_next_states = self.encode_states(
+                batch["prompt_tokens"].repeat_interleave(K, 0),
+                batch["prompt_mask"].repeat_interleave(K, 0),
+                next_tokens.reshape(B * K, next_T, next_L),
+                flat_next_mask,
+                teacher=True,
+            )
+            next_index = next_mask.reshape(B * K, next_T).sum(1).clamp(
+                min=1
+            ) - 1
+            s_alt_true = alt_next_states[
+                torch.arange(B * K, device=device), next_index
+            ].reshape(B, K, -1)
             if batch.get("ga_greedy", False):
                 d, candidate_valid = self._greedy_geo_labels(batch, goal)
                 out.extras["ga_greedy_distance"] = d
@@ -541,6 +641,14 @@ class DiscourseJEPA(nn.Module):
                 rt = batch["ga_rollout_step_tokens"]  # [B,C,R,Tr,L]
                 rm = batch["ga_rollout_step_mask"]
                 rv = batch["ga_rollout_valid"]
+                rt, rm = prepend_factual_prefix(
+                    batch["step_tokens"],
+                    batch["step_mask"],
+                    t,
+                    rt,
+                    rm,
+                    self.chunk_encoder.pad_id,
+                )
                 _, C, R, Tr, L = rt.shape
                 flat_mask = rm.reshape(B * C * R, Tr).clone()
                 # Transformer attention cannot consume an entirely masked
@@ -612,6 +720,9 @@ class DiscourseJEPA(nn.Module):
         out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
         out.extras["ga_label"] = d
         out.extras["ga_valid"] = candidate_valid
+        out.extras["ga_cf_pred"] = cf_preds_alt
+        out.extras["ga_cf_target"] = s_alt_true
+        out.extras["ga_cf_valid"] = ga_valid
 
     @torch.no_grad()
     def _greedy_geo_labels(

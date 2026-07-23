@@ -8,6 +8,7 @@ model:
 objective:
   geo_rank: {weight: 1.0, margin: 0.5, label_gap: 0.02}
   geo_advantage_mse: {weight: 0.25, target_scale: 1.0}
+  counterfactual_state: {weight: 1.0}
   action_feasibility: {weight: 0.0, positive_weight: 2.0}
 data:
   all_action_supervision: false

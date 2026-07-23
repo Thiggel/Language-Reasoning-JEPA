@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360" viewBox="0 0 1000 360" role="img" aria-label="Expert transition prediction receives full history and a direct latent target, while counterfactual ranking drops earlier history and has no direct next-state target">
+  <rect width="1000" height="360" fill="#faf9f5"/>
+  <text x="500" y="38" text-anchor="middle" font-family="sans-serif" font-size="24">What the two training paths actually see</text>
+  <text x="35" y="105" font-family="sans-serif" font-size="20" fill="#245b85">Expert action</text>
+  <rect x="180" y="70" width="260" height="70" rx="12" fill="#dcebf6" stroke="#245b85" stroke-width="3"/>
+  <text x="310" y="112" text-anchor="middle" font-family="sans-serif" font-size="18">full history + expert action</text>
+  <path d="M450 105 H570" stroke="#245b85" stroke-width="6"/>
+  <rect x="585" y="70" width="180" height="70" rx="12" fill="#dcebf6" stroke="#245b85" stroke-width="3"/>
+  <text x="675" y="112" text-anchor="middle" font-family="sans-serif" font-size="18">predicted state</text>
+  <path d="M775 105 H850" stroke="#245b85" stroke-width="6"/>
+  <text x="910" y="100" text-anchor="middle" font-family="sans-serif" font-size="17">direct latent</text>
+  <text x="910" y="122" text-anchor="middle" font-family="sans-serif" font-size="17">target ✓</text>
+  <text x="35" y="250" font-family="sans-serif" font-size="20" fill="#9a3434">Alternative</text>
+  <rect x="180" y="215" width="260" height="70" rx="12" fill="#f6dddd" stroke="#9a3434" stroke-width="3"/>
+  <text x="310" y="244" text-anchor="middle" font-family="sans-serif" font-size="18">current state + alternative</text>
+  <text x="310" y="268" text-anchor="middle" font-family="sans-serif" font-size="15">earlier history omitted</text>
+  <path d="M450 250 H570" stroke="#9a3434" stroke-width="6" stroke-dasharray="14 10"/>
+  <rect x="585" y="215" width="180" height="70" rx="12" fill="#f6dddd" stroke="#9a3434" stroke-width="3"/>
+  <text x="675" y="244" text-anchor="middle" font-family="sans-serif" font-size="18">predicted state</text>
+  <text x="675" y="268" text-anchor="middle" font-family="sans-serif" font-size="15">wrong causal interface</text>
+  <path d="M775 250 H850" stroke="#9a3434" stroke-width="6" stroke-dasharray="14 10"/>
+  <text x="910" y="244" text-anchor="middle" font-family="sans-serif" font-size="17">ranking only</text>
+  <text x="910" y="268" text-anchor="middle" font-family="sans-serif" font-size="17">no state target ✗</text>
+  <text x="500" y="330" text-anchor="middle" font-family="sans-serif" font-size="18">Planning uses the full-history interface, so the red training path does not match deployment.</text>
+</svg>

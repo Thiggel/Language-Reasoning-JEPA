@@ -34,6 +34,7 @@ from textjepa.objectives.ranking import (
 )
 from textjepa.objectives.counterfactual import (
     CounterfactualOutcomePrediction,
+    CounterfactualStatePrediction,
     CounterfactualSlotPrediction,
 )
 from textjepa.objectives.macro_hierarchy import (
@@ -70,6 +71,7 @@ __all__ = [
     "GeoAdvantageRank",
     "GeoAdvantageRegression",
     "CounterfactualOutcomePrediction",
+    "CounterfactualStatePrediction",
     "CounterfactualSlotPrediction",
     "MacroCounterfactualDynamics",
     "MacroStateValue",

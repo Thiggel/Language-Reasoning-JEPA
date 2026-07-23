@@ -11,6 +11,7 @@ seed=${3:?seed}
 learning_rate=${4:?learning rate}
 epochs=${5:?epochs}
 simulation_depth=${6:-1}
+counterfactual_state_weight=${7:-1.0}
 device=${DEVICE:-cuda:0}
 shared_root=${TEXTJEPA_SHARED_ROOT:-/vol/home-vol2/ml/laitenbf/TextJEPA}
 pilot_root=${ALFWORLD_PILOT_ROOT:-$shared_root/data/intent_phrase/alfworld/pilot_v2}
@@ -41,6 +42,7 @@ case "$family" in
       +experiment=paper_causal_geometry_gar_no_prior "${common[@]}" \
       train.eval_batches=2 data.geo_rank_k=2 data.geo_rank_horizon=4 \
       data.dense_geo_anchors=true \
+      objective.counterfactual_state.weight="$counterfactual_state_weight" \
       model.d_model=64 model.chunk_layers=1 model.chunk_heads=4 \
       model.state_layers=2 model.state_heads=4 model.predictor_layers=2 \
       model.predictor_heads=4 model.ff_mult=2 model.d_action=16 \
@@ -110,6 +112,11 @@ if [[ "$family" == geometry_jepa ]]; then
     --split val --episodes 4 --excess-actions 0 4 \
     --simulation-depth "$simulation_depth" "${eval_extra[@]}" \
     --out "$RUN_DIR/metrics.json"
+  "$eval_python" \
+    "$TEXTJEPA_ROOT/scripts/diagnose_alfworld_jepa_memorization.py" \
+    --device "$device" --split train --episodes 8 \
+    --checkpoint "$checkpoint" \
+    --out "$RUN_DIR/memorization_diagnostic.json"
 else
   "$eval_python" "$TEXTJEPA_ROOT/scripts/eval_observed_action.py" \
     --kind "$eval_kind" --checkpoint "$checkpoint" --device "$device" \

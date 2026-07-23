@@ -1,6 +1,6 @@
 # Intent-phrase project status
 
-_Updated 2026-07-22._
+_Updated 2026-07-23._
 
 ## Defensible observations
 
@@ -15,6 +15,8 @@ _Updated 2026-07-22._
 | Hierarchical planning improves this project. | contradicted by corrected confirmations |
 | Token-level executed-intent history repairs most learned-catalogue feasibility failures. | supported one-seed pilot; prior-only, not a JEPA simulation claim |
 | The paper-facing JEPA uses a learned action or feasibility prior. | false; the final protocol scores the same full non-oracle catalogue as the LM baselines |
+| The current ALFWorld no-prior gate tests full-history counterfactual JEPA planning. | false; alternative predictions and GAR rollout targets omit required causal prefixes |
+| The ALFWorld JEPA memorizes executed training transitions. | supported; 115/115 within-episode target retrieval at both audited learning rates |
 
 ## Current causal validation matrix
 

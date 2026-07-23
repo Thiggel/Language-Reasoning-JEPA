@@ -13,7 +13,12 @@ from textjepa.data.observed_action import (
     load_observed_action_jsonl,
 )
 from textjepa.models import DiscourseJEPA
-from textjepa.objectives import GeoAdvantageRank, GeoAdvantageRegression
+from textjepa.models.discourse_jepa import prepend_factual_prefix
+from textjepa.objectives import (
+    CounterfactualStatePrediction,
+    GeoAdvantageRank,
+    GeoAdvantageRegression,
+)
 from textjepa.utils.checkpoint import build_dataset, build_vocab_for_config
 
 
@@ -127,6 +132,91 @@ def test_dense_geometry_dataset_exposes_every_counterfactual_anchor():
     )
     assert len(dataset) == 2
     assert {dataset[index]["ga_t"] for index in range(2)} == {0, 1}
+
+
+def test_counterfactual_prefix_builder_keeps_only_pre_anchor_history():
+    factual = torch.tensor([[[11], [12], [13]]])
+    factual_mask = torch.tensor([[True, True, True]])
+    anchors = torch.tensor([2])
+    candidates = torch.tensor([[[[21], [22]], [[31], [0]]]])
+    candidate_mask = torch.tensor([[[True, True], [True, False]]])
+    tokens, mask = prepend_factual_prefix(
+        factual, factual_mask, anchors, candidates, candidate_mask, pad_id=0
+    )
+    assert tokens.shape == (1, 2, 5, 1)
+    assert tokens[0, 0, :, 0].tolist() == [11, 12, 21, 22, 0]
+    assert tokens[0, 1, :, 0].tolist() == [11, 12, 31, 0, 0]
+    assert mask[0, 0].tolist() == [True, True, True, True, False]
+    assert mask[0, 1].tolist() == [True, True, True, False, False]
+
+
+def test_geometry_alternatives_use_full_causal_prefix_and_state_target():
+    base = asdict(_episode())
+    base["transitions"] = list(base["transitions"])
+    base["transitions"].append({
+        "action": "apply kind implies round to Bob",
+        "outcome": "Bob is round .",
+        "catalogue": [
+            "apply blue implies kind to Bob",
+            "apply kind implies round to Bob",
+        ],
+        "available": ["apply kind implies round to Bob"],
+        "counterfactuals": [{
+            "action": "apply blue implies kind to Bob",
+            "outcome": "Bob remains kind .",
+            "teacher_rollouts": [["Bob is round ."]],
+        }],
+    })
+    episode = ObservedActionEpisode.from_dict(base)
+    vocab = build_observed_action_vocab([episode])
+    dataset = ObservedActionDataset(
+        [episode], vocab, geo_rank_k=1, geo_rank_horizon=2,
+        dense_geo_anchors=True,
+    )
+    item = next(dataset[index] for index in range(len(dataset))
+                if dataset[index]["ga_t"] == 1)
+    batch = collate([item], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id, d_model=32,
+        chunk_layers=1, chunk_heads=2, state_layers=1, state_heads=2,
+        predictor_layers=1, predictor_heads=2, d_action=8, macro_k=0,
+        value_detach=False,
+    ).eval()
+    out = model(batch)
+    alt = model.encode_actions(batch["ga_alt_action_tokens"])
+    all_anchors = alt.unsqueeze(1).expand(-1, out.actions.shape[1], -1, -1)
+    expected = model.core._predict_counterfactuals(
+        out.prev_states, out.actions, all_anchors, out.step_mask
+    )[0, 1]
+    torch.testing.assert_close(out.extras["ga_cf_pred"][0], expected)
+    legacy = model.core.predictor(out.prev_states[0, 1:2], alt[0])
+    assert not torch.allclose(out.extras["ga_cf_pred"][0], legacy)
+    assert out.extras["ga_cf_target"].shape == out.extras["ga_cf_pred"].shape
+    assert out.extras["ga_cf_valid"].tolist() == [[True]]
+
+
+def test_counterfactual_state_loss_updates_causal_predictor():
+    episode = _episode()
+    vocab = build_observed_action_vocab([episode])
+    batch = collate(
+        [ObservedActionDataset(
+            [episode], vocab, geo_rank_k=1, geo_rank_horizon=2
+        )[0]],
+        vocab.pad_id,
+    )
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id, d_model=32,
+        chunk_layers=1, chunk_heads=2, state_layers=1, state_heads=2,
+        predictor_layers=1, predictor_heads=2, d_action=8, macro_k=0,
+        value_detach=True,
+    )
+    loss = CounterfactualStatePrediction()(model(batch), batch)
+    assert torch.isfinite(loss) and loss > 0
+    loss.backward()
+    assert any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.core.predictor.parameters()
+    )
 
 
 def test_dynamic_catalogue_masks_future_discovered_actions():
