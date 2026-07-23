@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Protocol
 
 import torch
@@ -33,7 +34,34 @@ class TextActionEnvironment(Protocol):
 
     @property
     def solved(self) -> bool: ...
+    def set_candidate_interface(self, interface: str) -> None: ...
+    def set_candidate_order_seed(self, seed: str) -> None: ...
     def step(self, action: str) -> str: ...
+
+
+def _ordered_candidates(
+    full_catalogue: tuple[str, ...],
+    feasible: set[str],
+    interface: str,
+    order_seed: str | None,
+) -> tuple[str, ...]:
+    if interface == "full":
+        candidates = full_catalogue
+    elif interface == "oracle_feasible":
+        candidates = tuple(
+            action for action in full_catalogue if action in feasible
+        )
+    else:
+        raise ValueError(f"unknown candidate interface: {interface!r}")
+    if not candidates:
+        raise RuntimeError(
+            f"candidate interface {interface!r} produced an empty catalogue"
+        )
+    if order_seed is None:
+        return candidates
+    return tuple(sorted(candidates, key=lambda action: hashlib.sha256(
+        f"{order_seed}:{action}".encode()
+    ).digest()))
 
 
 class BlocksworldEnvironment:
@@ -41,9 +69,11 @@ class BlocksworldEnvironment:
         spec = episode.metadata["environment_spec"]
         self.prompt = episode.prompt
         self.goal = episode.goal
-        self.catalogue = tuple(dict.fromkeys(
+        self._full_catalogue = tuple(dict.fromkeys(
             action for value in episode.transitions for action in value.catalogue
         ))
+        self._candidate_interface = "full"
+        self._candidate_order_seed = None
         self.optimal_length = int(episode.metadata["optimal_plan_length"])
         self.expert_actions = tuple(
             value.action for value in episode.transitions
@@ -53,6 +83,23 @@ class BlocksworldEnvironment:
         self.goal_state = frozenset(tuple(atom) for atom in spec["goal"])
         actions = action_catalogue(tuple(spec["objects"]))
         self.actions = {action.text: action for action in actions}
+
+    @property
+    def catalogue(self) -> tuple[str, ...]:
+        feasible = {
+            text for text, action in self.actions.items()
+            if is_applicable(self.state, action)
+        }
+        return _ordered_candidates(
+            self._full_catalogue, feasible, self._candidate_interface,
+            self._candidate_order_seed,
+        )
+
+    def set_candidate_interface(self, interface: str) -> None:
+        self._candidate_interface = interface
+
+    def set_candidate_order_seed(self, seed: str) -> None:
+        self._candidate_order_seed = str(seed)
 
     @property
     def solved(self) -> bool:
@@ -72,9 +119,11 @@ class ProofWriterEnvironment:
         spec = episode.metadata["environment_spec"]
         self.prompt = episode.prompt
         self.goal = episode.goal
-        self.catalogue = tuple(dict.fromkeys(
+        self._full_catalogue = tuple(dict.fromkeys(
             action for value in episode.transitions for action in value.catalogue
         ))
+        self._candidate_interface = "full"
+        self._candidate_order_seed = None
         self.optimal_length = int(episode.metadata["optimal_derivation_length"])
         self.expert_actions = tuple(
             value.action for value in episode.transitions
@@ -88,6 +137,23 @@ class ProofWriterEnvironment:
             tuple(tuple(fact) for fact in item["antecedents"]),
             tuple(item["conclusion"]),
         ) for item in spec["rules"])
+
+    @property
+    def catalogue(self) -> tuple[str, ...]:
+        feasible = {
+            application.text
+            for application in rule_applications(self.state, self.rules)
+        }
+        return _ordered_candidates(
+            self._full_catalogue, feasible, self._candidate_interface,
+            self._candidate_order_seed,
+        )
+
+    def set_candidate_interface(self, interface: str) -> None:
+        self._candidate_interface = interface
+
+    def set_candidate_order_seed(self, seed: str) -> None:
+        self._candidate_order_seed = str(seed)
 
     @property
     def solved(self) -> bool:
@@ -144,18 +210,22 @@ class AlfworldEnvironment:
         self._solved = False
         self._catalogue_builder = observed_action_catalogue
         self._candidate_order_seed = None
+        self._candidate_interface = "full"
         self._hashlib = hashlib
 
     @property
     def catalogue(self) -> tuple[str, ...]:
-        catalogue = self._catalogue_builder(
+        full_catalogue = self._catalogue_builder(
             self.initial_observation, self.observations
         )
-        if self._candidate_order_seed is None:
-            return catalogue
-        return tuple(sorted(catalogue, key=lambda action: self._hashlib.sha256(
-            f"{self._candidate_order_seed}:{action}".encode()
-        ).digest()))
+        feasible = set(self.info["admissible_commands"])
+        return _ordered_candidates(
+            full_catalogue, feasible, self._candidate_interface,
+            self._candidate_order_seed,
+        )
+
+    def set_candidate_interface(self, interface: str) -> None:
+        self._candidate_interface = interface
 
     def set_candidate_order_seed(self, seed: str) -> None:
         """Choose a stable order that also covers newly observed entities."""
@@ -188,13 +258,32 @@ class FaithfulIGSMEnvironment:
         self.environment = FaithfulEnv(problem)
         self.prompt = tuple(problem.prompt_sentences)
         self.goal = problem.prompt_sentences[-1]
-        self.catalogue = tuple(
+        self._full_catalogue = tuple(
             self.environment.action_text(action)
             for action in problem.action_order
         )
-        self.actions = dict(zip(self.catalogue, problem.action_order))
+        self.actions = dict(zip(self._full_catalogue, problem.action_order))
+        self._candidate_interface = "full"
+        self._candidate_order_seed = None
         self.optimal_length = len(problem.necessary)
         self.invalid_actions = 0
+
+    @property
+    def catalogue(self) -> tuple[str, ...]:
+        feasible = {
+            self.environment.action_text(action)
+            for action in self.environment.feasible_actions()
+        }
+        return _ordered_candidates(
+            self._full_catalogue, feasible, self._candidate_interface,
+            self._candidate_order_seed,
+        )
+
+    def set_candidate_interface(self, interface: str) -> None:
+        self._candidate_interface = interface
+
+    def set_candidate_order_seed(self, seed: str) -> None:
+        self._candidate_order_seed = str(seed)
 
     @property
     def solved(self) -> bool:

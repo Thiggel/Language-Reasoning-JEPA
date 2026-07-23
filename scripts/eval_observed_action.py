@@ -290,6 +290,14 @@ def main():
         "--jepa-candidate-mode", choices=("full", "support_top_m"),
         default="full",
     )
+    parser.add_argument(
+        "--candidate-interface", choices=("full", "oracle_feasible"),
+        default="full",
+        help=(
+            "Action set exposed to every policy. oracle_feasible is a "
+            "candidate-privileged diagnostic and must not be the headline."
+        ),
+    )
     parser.add_argument("--prior-only", action="store_true")
     parser.add_argument("--prior-weight", type=float, default=0.0)
     parser.add_argument("--sentence-score", choices=("decoder", "latent"),
@@ -325,12 +333,21 @@ def main():
         "split": args.split,
         "checkpoint": args.checkpoint,
         "candidate_interface": (
-            "privileged_expert_replay_over_non_oracle_catalogue"
+            "privileged_expert_replay_over_"
+            + (
+                "oracle_feasible_catalogue"
+                if args.candidate_interface == "oracle_feasible"
+                else "non_oracle_full_catalogue"
+            )
             if args.kind == "oracle" else (
                 "legacy_learned_support_top_m"
                 if args.kind == "jepa"
                 and args.jepa_candidate_mode == "support_top_m"
-                else "non_oracle_full_catalogue"
+                else (
+                    "candidate_privileged_oracle_feasible_catalogue"
+                    if args.candidate_interface == "oracle_feasible"
+                    else "non_oracle_full_catalogue"
+                )
             )
         ),
         "candidate_order_seed": args.seed,
@@ -342,12 +359,8 @@ def main():
             environment = make_environment(item)
             try:
                 order_seed = f"{args.seed}:{index}"
-                if hasattr(environment, "set_candidate_order_seed"):
-                    environment.set_candidate_order_seed(order_seed)
-                else:
-                    shuffled = list(environment.catalogue)
-                    random.Random(order_seed).shuffle(shuffled)
-                    environment.catalogue = tuple(shuffled)
+                environment.set_candidate_interface(args.candidate_interface)
+                environment.set_candidate_order_seed(order_seed)
                 results.append(policy.run_episode(environment, excess))
             finally:
                 close = getattr(environment, "close", None)

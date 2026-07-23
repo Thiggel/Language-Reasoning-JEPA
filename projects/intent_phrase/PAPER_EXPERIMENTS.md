@@ -10,7 +10,12 @@ Its action value is constrained to be
 `Q(s,a,g) = V(F(s,a), g)`: the value loss and ranking loss operate on the same
 predicted-consequence energy. There is no direct action-only policy head,
 action prior, proposal prior, or feasibility prior. JEPA and all language-model
-baselines score the identical full non-oracle action catalogue.
+baselines score the identical full non-oracle action catalogue for the
+headline result. Every final checkpoint is additionally evaluated against the
+current symbolic feasible subset of that same catalogue. This second
+interface is explicitly **candidate-privileged/oracle-feasible**: it diagnoses
+whether failure comes from feasibility recognition or from consequence/value
+reasoning, and never replaces the full-catalogue headline.
 
 ## Datasets and information boundary
 

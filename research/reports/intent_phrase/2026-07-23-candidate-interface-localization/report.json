@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-23-candidate-interface-localization",
+  "project": "intent_phrase",
+  "title": "Feasible-only evaluation reveals useful reasoning hidden by invalid-action selection",
+  "created_at": "2026-07-23T15:15:00+02:00",
+  "status": "decision_complete",
+  "decision": "Report both full-catalogue and explicitly candidate-privileged feasible-only evaluation, while retaining the full catalogue as the headline interface.",
+  "plain_summary": "The repaired JEPA still chooses many invalid actions from the full catalogue, but the same checkpoints solve up to 87.5% of ProofWriter and 50% of PlanBench validation episodes when the symbolic executor exposes only currently feasible actions.",
+  "report": "REPORT.md",
+  "review_required": true
+}
