@@ -57,6 +57,39 @@ for root in "${roots[@]}"; do
       removed=$((removed + 1))
     done < <(find "$canonical" -xdev -type f -path '*/model/last.pt' -print)
 
+    # Completed throughput/capacity/smoke jobs retain their measurements,
+    # resolved configs, logs, and state markers.  Their model tensors are not
+    # scientific checkpoints and are never valid resume/evaluation inputs.
+    # Keep this allowlist deliberately lexical and sequence-edit-local.
+    while IFS= read -r state_file; do
+      [[ "$(tr -d '[:space:]' <"$state_file")" == COMPLETED ]] || continue
+      job=${state_file%/state}
+      relative=${job#"$canonical"/}
+      case "$relative" in
+        *benchmark*|*throughput*|*speed-gate*|*smoke*)
+          ;;
+        *) continue ;;
+      esac
+      while IFS= read -r checkpoint; do
+        real_checkpoint=$(realpath -e "$checkpoint")
+        [[ "$real_checkpoint" == "$job"/*/model/*.pt \
+           || "$real_checkpoint" == "$job"/model/*.pt ]] || {
+          echo "refusing unexpected benchmark checkpoint: $real_checkpoint" >&2
+          exit 6
+        }
+        bytes=$(stat -c %s "$real_checkpoint")
+        printf 'benchmark_checkpoint\t%s\t%s\n' \
+          "$bytes" "$real_checkpoint" >>"$manifest"
+        if [[ "$execute" == 1 ]]; then
+          rm -f -- "$real_checkpoint"
+        fi
+        freed=$((freed + bytes))
+        removed=$((removed + 1))
+      done < <(find "$job" -xdev -type f -path '*/model/*.pt' \
+        ! -name last.pt -print)
+    done < <(find "$canonical" -xdev -mindepth 3 -maxdepth 3 \
+      -type f -name state -print)
+
     # Job-local temporary directories are disposable after terminal success;
     # scientific logs, metrics, configs, and checkpoints remain untouched.
     while IFS= read -r state_file; do
