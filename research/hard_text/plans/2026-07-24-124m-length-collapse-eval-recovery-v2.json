@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-24-124m-length-collapse-eval-recovery-v2",
+  "decision": "Run the checkpoint-qualified directional 124M evaluation now that all three required checkpoint files are independently confirmed complete. This replaces the rejected stale-dependency submission without changing the evaluation protocol.",
+  "git_commit": "10f5c6f5ee750ca2c146a1cac36d053c542ce305",
+  "jobs": [
+    {
+      "id": "alex-124m-length-and-collapse-suite-recovery-v2",
+      "cluster": "alex",
+      "command": [
+        "{python}",
+        "scripts/run_igsm_length_eval_suite.py",
+        "--model",
+        "token=/home/atuin/c107fa/c107fa12/TextJEPA/runs/autonomy/token_igsm/2026-07-22-igsm-124m-under24h-rtxpro-recovery/igsm-124m-token-lm-under24h-rtxpro-s0/model/last.pt",
+        "--model",
+        "jepa-prior=/home/atuin/c107fa/c107fa12/TextJEPA/runs/autonomy/token_igsm/2026-07-23-held-124m-jepa-prior-resume/igsm-124m-jepa-prior-final-resume-s0/model/last.pt",
+        "--model",
+        "jepa-no-prior=/home/atuin/c107fa/c107fa12/TextJEPA/runs/autonomy/token_igsm/2026-07-23-held-124m-jepa-no-prior-resume-v2/igsm-124m-jepa-no-prior-final-resume-v2-s0/model/last.pt",
+        "--examples-lm",
+        "64",
+        "--examples-jepa",
+        "16",
+        "--max-tokens",
+        "256"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 960,
+      "cpus": 12,
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "min_gpu_memory_mb": 90000,
+      "purpose": "Run the previously blocked matched 124M directional evaluation against the completed recovery checkpoints. It remains explicitly a pilot.",
+      "expected_artifacts": [
+        "length_eval/suite_summary.json",
+        "length_eval/jepa-prior_collapse.json",
+        "length_eval/jepa-no-prior_collapse.json",
+        "length_eval/jepa-prior_representation_probes.json",
+        "length_eval/jepa-no-prior_representation_probes.json"
+      ]
+    }
+  ]
+}
