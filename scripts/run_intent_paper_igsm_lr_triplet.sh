@@ -54,13 +54,35 @@ evaluate() {
     --candidate-interface "$interface" --seed 7321 "$@" --out "$out"
 }
 
-for seed in 0 1 2; do
+# A checkpoint is written at every epoch by the trainers, so its mere
+# existence is not evidence that the requested training budget completed.
+# Keep a separate, atomic completion record written only after the trainer
+# exits successfully.  This prevents timed-out jobs from being silently
+# evaluated and admitted to LR selection as partial runs.
+read -r -a seeds <<< "${SEEDS:-0 1 2}"
+if (( ${#seeds[@]} == 0 )); then
+  echo "SEEDS must contain at least one integer seed" >&2
+  exit 2
+fi
+
+for seed in "${seeds[@]}"; do
+  if ! [[ "$seed" =~ ^[0-9]+$ ]]; then
+    echo "invalid seed in SEEDS: $seed" >&2
+    exit 2
+  fi
   seed_dir="$RUN_DIR/seed-$seed"
   model_dir="$seed_dir/model"
   mkdir -p "$seed_dir"
   checkpoint="$model_dir/best.pt"
+  completion="$seed_dir/training_complete.json"
 
-  if [[ ! -s "$checkpoint" ]]; then
+  if [[ -s "$checkpoint" && ! -s "$completion" ]]; then
+    echo "partial checkpoint at $checkpoint has no training completion record; refusing evaluation or implicit restart" >&2
+    echo "submit a new seed-qualified run to restart this seed from scratch" >&2
+    exit 75
+  fi
+
+  if [[ ! -s "$completion" ]]; then
     case "$family" in
       token_lm|looped_token_lm)
         experiment=paper_token_lm_faithful
@@ -105,6 +127,25 @@ for seed in 0 1 2; do
           "hydra.run.dir=$model_dir" hydra.output_subdir=null
         ;;
     esac
+    "$python_bin" - "$completion" "$seed" "$family" "$width" "$learning_rate" <<'PY'
+import json
+import os
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+payload = {
+    "schema_version": 1,
+    "seed": int(sys.argv[2]),
+    "model_family": sys.argv[3],
+    "width": int(sys.argv[4]),
+    "learning_rate": float(sys.argv[5]),
+    "status": "completed",
+}
+tmp = path.with_suffix(".tmp")
+tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+os.replace(tmp, path)
+PY
   fi
 
   eval_kind=$family
@@ -164,14 +205,15 @@ for seed in 0 1 2; do
   fi
 done
 
-"$python_bin" - "$RUN_DIR" "$family" "$width" "$learning_rate" <<'PY'
+"$python_bin" - "$RUN_DIR" "$family" "$width" "$learning_rate" "${seeds[@]}" <<'PY'
 import json
 import pathlib
 import sys
 
 root = pathlib.Path(sys.argv[1])
 members = []
-for seed in range(3):
+for raw_seed in sys.argv[5:]:
+    seed = int(raw_seed)
     path = root / f"seed-{seed}" / "metrics.json"
     payload = json.loads(path.read_text())
     success = payload["metrics_by_excess_actions"]
