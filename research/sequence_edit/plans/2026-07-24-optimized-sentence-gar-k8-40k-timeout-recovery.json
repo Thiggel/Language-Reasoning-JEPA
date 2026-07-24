@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "project": "sequence_edit",
+  "round_id": "2026-07-24-optimized-sentence-gar-k8-40k-timeout-recovery",
+  "decision": "Repeat the exact 124M optimized sentence K=8 GAR configuration after its first execution reached 28,600/40,000 healthy updates but exceeded the 24-hour direct-job limit before checkpointing. The recovery changes only the wall-time safety margin and run identifier.",
+  "git_commit": "1641cf418107e293245d1d8dc1f40693a0b4056f",
+  "jobs": [
+    {
+      "id": "edit-optimized-sentence-gar-k8-124m-b256-40k-lr2e3-s0-timeout-recovery",
+      "cluster": "gruenau",
+      "command": [
+        "bash",
+        "scripts/run_multiscale_edit_cell.sh",
+        "{python}",
+        "edit_igsm_original_sentence_gar",
+        "0",
+        "train.max_steps=40000",
+        "train.batch_size=256",
+        "train.microbatch_size=256",
+        "train.eval_batch_size=8",
+        "train.num_workers=4",
+        "train.eval_batches=64",
+        "train.log_every=50",
+        "data.train_size=10240000",
+        "data.val_size=4096",
+        "model.sequence_packing=true",
+        "objective.sigreg.weight=0.0",
+        "objective.multiscale_vicreg.weight=0.02"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 2400,
+      "node": 10,
+      "min_gpu_memory_mb": 80000,
+      "cpus": 8,
+      "purpose": "Recover the exact failed process with enough wall time for 40,000 updates and its fixed audit; it is the same scientific condition, not a new experimental cell.",
+      "expected_artifacts": [
+        "model/best.pt",
+        "model/metrics.csv",
+        "metrics.json"
+      ]
+    }
+  ]
+}
