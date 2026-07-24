@@ -22,6 +22,7 @@ class GroupedTrajectoryBatchSampler(Sampler[list[int]]):
             microbatch_size or self.effective_batch_size
         )
         self.epoch = 0
+        self.start = 0
         if min(self.base_size, self.variants, self.bases_per_batch) < 1:
             raise ValueError("grouped trajectory sampler sizes must be positive")
         if self.effective_batch_size % self.microbatch_size:
@@ -36,18 +37,24 @@ class GroupedTrajectoryBatchSampler(Sampler[list[int]]):
     def set_epoch(self, epoch: int) -> None:
         self.epoch = int(epoch)
 
+    def set_start(self, microbatches: int) -> None:
+        self.start = max(0, int(microbatches))
+
     def __iter__(self):
         generator = torch.Generator().manual_seed(self.seed + self.epoch)
         order = torch.randperm(self.base_size, generator=generator).tolist()
         offset = self.epoch * self.base_size if self.fresh_per_epoch else 0
         stop = len(self) * self.bases_per_batch
+        micro_index = 0
         for start in range(0, stop, self.bases_per_batch):
             batch = []
             for base in order[start:start + self.bases_per_batch]:
                 first = (offset + base) * self.variants
                 batch.extend(first + variant for variant in range(self.variants))
             for micro_start in range(0, len(batch), self.microbatch_size):
-                yield batch[micro_start:micro_start + self.microbatch_size]
+                if micro_index >= self.start:
+                    yield batch[micro_start:micro_start + self.microbatch_size]
+                micro_index += 1
 
 
 class FreshEpochSampler(Sampler[int]):
@@ -65,12 +72,16 @@ class FreshEpochSampler(Sampler[int]):
         self.seed = int(seed)
         self.shuffle = shuffle
         self.epoch = 0
+        self.start = 0
 
     def __len__(self) -> int:
         return len(self.data_source)
 
     def set_epoch(self, epoch: int) -> None:
         self.epoch = int(epoch)
+
+    def set_start(self, samples: int) -> None:
+        self.start = max(0, int(samples))
 
     def __iter__(self):
         n = len(self.data_source)
@@ -80,4 +91,4 @@ class FreshEpochSampler(Sampler[int]):
         else:
             order = range(n)
         offset = self.epoch * n
-        return iter(offset + i for i in order)
+        return iter(offset + i for i in order[self.start:])

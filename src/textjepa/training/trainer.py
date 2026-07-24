@@ -61,6 +61,37 @@ class Trainer:
         if self.precision not in {"fp32", "bf16"}:
             raise ValueError(f"unsupported training precision: {self.precision}")
         self.step = 0
+        self.best = float("inf")
+        self.last_val_metrics: dict[str, float] = {}
+        self.start_epoch = 0
+        self.start_micro_step = 0
+        self._epoch_micro_step = 0
+        self.stop_after_steps = tc.get("stop_after_steps")
+        if self.stop_after_steps is not None:
+            self.stop_after_steps = int(self.stop_after_steps)
+            if not 0 < self.stop_after_steps <= self.total_steps:
+                raise ValueError("stop_after_steps must lie in [1, max_steps]")
+        resume = tc.get("resume_from")
+        if resume:
+            payload = torch.load(Path(resume), map_location=self.device,
+                                 weights_only=False)
+            self.model.load_state_dict(payload["model"])
+            self.opt.load_state_dict(payload["optimizer"])
+            self.step = int(payload["step"])
+            self.best = float(payload.get("best", self.best))
+            self.last_val_metrics = dict(payload.get("metrics", {}))
+            self.start_epoch = int(payload["epoch"])
+            self.start_micro_step = int(payload.get("epoch_micro_step", 0))
+            if payload.get("epoch_complete", False):
+                self.start_epoch += 1
+                self.start_micro_step = 0
+            if self.start_micro_step % self.grad_accum_steps:
+                raise ValueError("resume checkpoint is not on an optimizer boundary")
+            print(
+                f"resumed step={self.step} epoch={self.start_epoch} "
+                f"micro_step={self.start_micro_step} from {resume}",
+                flush=True,
+            )
         self._reported_attention_backend = False
 
     def _autocast(self):
@@ -69,24 +100,28 @@ class Trainer:
         return nullcontext()
 
     def fit(self) -> dict[str, float]:
-        best = float("inf")
         val_metrics: dict[str, float] = {}
-        for epoch in range(self.epochs):
-            self._train_epoch(epoch)
+        for epoch in range(self.start_epoch, self.epochs):
+            start_micro_step = self.start_micro_step if epoch == self.start_epoch else 0
+            epoch_complete = self._train_epoch(epoch, start_micro_step)
             val_metrics = self.evaluate()
             self.logger.log(self.step, val_metrics, prefix="val/")
-            self._checkpoint("last.pt", epoch, val_metrics)
-            if val_metrics["loss"] < best:
-                best = val_metrics["loss"]
-                self._checkpoint("best.pt", epoch, val_metrics)
+            self.last_val_metrics = val_metrics
+            self._checkpoint("last.pt", epoch, val_metrics, epoch_complete)
+            if val_metrics["loss"] < self.best:
+                self.best = val_metrics["loss"]
+                self._checkpoint("best.pt", epoch, val_metrics, epoch_complete)
             summary = "  ".join(f"{k}={v:.4f}" for k, v in sorted(val_metrics.items()))
             print(f"[epoch {epoch}] {summary}", flush=True)
-            if self.step >= self.total_steps:
+            if self.step >= self.total_steps or (
+                self.stop_after_steps is not None
+                and self.step >= self.stop_after_steps
+            ):
                 break
         self.logger.close()
         return val_metrics
 
-    def _train_epoch(self, epoch: int) -> None:
+    def _train_epoch(self, epoch: int, start_micro_step: int = 0) -> bool:
         self.model.train()
         dataset = self.train_loader.dataset
         if hasattr(dataset, "set_epoch"):
@@ -95,12 +130,30 @@ class Trainer:
             self.train_loader.sampler.set_epoch(epoch)
         if hasattr(self.train_loader.batch_sampler, "set_epoch"):
             self.train_loader.batch_sampler.set_epoch(epoch)
+        for sampler in (self.train_loader.sampler, self.train_loader.batch_sampler):
+            set_start = getattr(sampler, "set_start", None)
+            if set_start is not None:
+                # Ordinary DataLoader samplers yield individual indices, while
+                # grouped batch samplers yield already formed microbatches.
+                offset = start_micro_step
+                if sampler is self.train_loader.sampler:
+                    offset *= int(self.cfg.train.get(
+                        "microbatch_size", self.cfg.train.batch_size
+                    ))
+                set_start(offset)
         t0 = time.time()
         updates_since_log = 0
         self.opt.zero_grad(set_to_none=True)
-        for micro_step, batch in enumerate(self.train_loader):
-            if self.step >= self.total_steps:
+        epoch_complete = True
+        for local_micro_step, batch in enumerate(self.train_loader):
+            if self.step >= self.total_steps or (
+                self.stop_after_steps is not None
+                and self.step >= self.stop_after_steps
+            ):
+                epoch_complete = False
                 break
+            micro_step = start_micro_step + local_micro_step
+            self._epoch_micro_step = micro_step + 1
             batch = to_device(batch, self.device)
             lr_scale = cosine_warmup(
                 self.step, self.total_steps, self.warmup, self.lr_floor
@@ -162,6 +215,10 @@ class Trainer:
                 updates_since_log = 0
                 self.logger.log(self.step, items, prefix="train/")
             self.step += 1
+            checkpoint_every = int(self.cfg.train.get("checkpoint_every_steps", 0))
+            if checkpoint_every and self.step % checkpoint_every == 0:
+                self._checkpoint("last.pt", epoch, self.last_val_metrics, False)
+        return epoch_complete
 
     @torch.no_grad()
     def evaluate(self) -> dict[str, float]:
@@ -385,13 +442,18 @@ class Trainer:
         )
         return metrics
 
-    def _checkpoint(self, name: str, epoch: int, metrics: dict) -> None:
+    def _checkpoint(self, name: str, epoch: int, metrics: dict,
+                    epoch_complete: bool) -> None:
         torch.save(
             {
                 "model": self.model.state_dict(),
+                "optimizer": self.opt.state_dict(),
                 "cfg": OmegaConf.to_container(self.cfg, resolve=True),
                 "epoch": epoch,
                 "step": self.step,
+                "epoch_micro_step": self._epoch_micro_step,
+                "epoch_complete": epoch_complete,
+                "best": self.best,
                 "metrics": metrics,
             },
             self.out_dir / name,
