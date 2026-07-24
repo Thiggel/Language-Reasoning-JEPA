@@ -211,7 +211,13 @@ def initial_candidate_diagnostics(planner, prompt, current, target):
 def evaluate_jepa(
     model, vocab, dataset, device: str, *, scoring: str = "prior",
     horizon: int = 1, candidate_budget: int = 1, beam_width: int = 1,
+    refinement_multiplier: float = 0.0,
+    stop_on_nonpositive_q: bool = False,
 ):
+    if refinement_multiplier < 0:
+        raise ValueError("refinement_multiplier must be nonnegative")
+    if stop_on_nonpositive_q and scoring != "gar":
+        raise ValueError("Q-based refinement stopping requires GAR scoring")
     planner = make_jepa_planner(
         model, vocab, device, scoring, candidate_budget, beam_width
     )
@@ -224,17 +230,26 @@ def evaluate_jepa(
         diagnostic = initial_candidate_diagnostics(
             planner, item["prompt"], current, target
         )
-        budget = sum(token == mask_id for token in flatten(current))
+        unmask_budget = sum(token == mask_id for token in flatten(current))
+        refinement_budget = round(unmask_budget * refinement_multiplier)
+        budget = unmask_budget + refinement_budget
+        committed_actions = 0
         stopped = "budget"
-        for _ in range(budget):
-            action, _, _ = planner.first_action(
-                item["prompt"], current, horizon=horizon
+        for action_index in range(budget):
+            allow_refinement = action_index >= unmask_budget
+            action, _, root_q = planner.first_action(
+                item["prompt"], current, horizon=horizon,
+                allow_refinement=allow_refinement,
             )
             if action is None:
                 stopped = "no_candidates"
                 break
+            if allow_refinement and stop_on_nonpositive_q and root_q <= 0.0:
+                stopped = "nonpositive_q"
+                break
             from textjepa.data.faithful_token_edits import _apply
             _apply(current, action)
+            committed_actions += 1
         generated = flatten(current)
         gold = flatten(target)
         correct = sum(int(a == b) for a, b in zip(generated, gold))
@@ -248,7 +263,9 @@ def evaluate_jepa(
             "token_accuracy": correct / max(len(gold), 1),
             "normalized_token_error": 1.0 - correct / max(len(gold), 1),
             "target_tokens": len(gold),
-            "committed_actions": budget,
+            "initial_unmask_budget": unmask_budget,
+            "refinement_budget": refinement_budget,
+            "committed_actions": committed_actions,
             "stop_reason": stopped,
             "initial_candidate_diagnostics": diagnostic,
         }
@@ -260,7 +277,8 @@ def evaluate_jepa(
         episodes,
         ("exact_sequence", "exact_final_sentence",
          "answer_final_token_correct", "token_accuracy",
-         "normalized_token_error", "target_tokens", "committed_actions"),
+         "normalized_token_error", "target_tokens", "initial_unmask_budget",
+         "refinement_budget", "committed_actions"),
     )
     summary["no_candidate_rate"] = sum(
         row["stop_reason"] == "no_candidates" for row in episodes
@@ -303,6 +321,8 @@ def main():
     parser.add_argument("--horizon", type=int, default=1)
     parser.add_argument("--candidate-budget", type=int, default=1)
     parser.add_argument("--beam-width", type=int, default=1)
+    parser.add_argument("--refinement-multiplier", type=float, default=0.0)
+    parser.add_argument("--stop-on-nonpositive-q", action="store_true")
     args = parser.parse_args()
 
     if args.method == "mdlm":
@@ -317,6 +337,8 @@ def main():
             scoring=args.planner_scoring, horizon=args.horizon,
             candidate_budget=args.candidate_budget,
             beam_width=args.beam_width,
+            refinement_multiplier=args.refinement_multiplier,
+            stop_on_nonpositive_q=args.stop_on_nonpositive_q,
         )
 
     cells = {}
@@ -367,6 +389,8 @@ def main():
                     "receding_horizon": args.horizon,
                     "candidate_budget": args.candidate_budget,
                     "beam_width": args.beam_width,
+                    "refinement_multiplier": args.refinement_multiplier,
+                    "q_stop_enabled": args.stop_on_nonpositive_q,
                     "proposal_source": "learned base content prior",
                     "position_source": (
                         "structurally enumerated unresolved token slots"

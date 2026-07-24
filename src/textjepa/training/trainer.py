@@ -57,11 +57,33 @@ class Trainer:
         self.ema_range = (tc.ema_start, tc.ema_end)
         self.log_every = tc.log_every
         self.eval_batches = tc.eval_batches
+        self.checkpoint_every_steps = int(tc.get("checkpoint_every_steps", 0))
+        if self.checkpoint_every_steps < 0:
+            raise ValueError("checkpoint_every_steps must be nonnegative")
         self.precision = str(tc.get("precision", "fp32"))
         if self.precision not in {"fp32", "bf16"}:
             raise ValueError(f"unsupported training precision: {self.precision}")
         self.step = 0
+        self.epoch = 0
+        self.micro_step_in_epoch = 0
         self._reported_attention_backend = False
+
+    def resume(self, path: str | Path) -> None:
+        """Resume an interrupted optimization run at an optimizer boundary."""
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        self.model.load_state_dict(payload["model"])
+        optimizer = payload.get("optimizer")
+        if optimizer is None:
+            raise ValueError(f"resume checkpoint has no optimizer state: {path}")
+        self.opt.load_state_dict(optimizer)
+        self.step = int(payload["step"])
+        self.epoch = int(payload.get("epoch", 0))
+        self.micro_step_in_epoch = int(payload.get("micro_step_in_epoch", 0))
+        print(
+            f"resumed {path} at epoch={self.epoch} step={self.step} "
+            f"micro_step={self.micro_step_in_epoch}",
+            flush=True,
+        )
 
     def _autocast(self):
         if self.precision == "bf16" and self.device.type == "cuda":
@@ -71,8 +93,11 @@ class Trainer:
     def fit(self) -> dict[str, float]:
         best = float("inf")
         val_metrics: dict[str, float] = {}
-        for epoch in range(self.epochs):
-            self._train_epoch(epoch)
+        for epoch in range(self.epoch, self.epochs):
+            start_micro_step = self.micro_step_in_epoch if epoch == self.epoch else 0
+            self._train_epoch(epoch, start_micro_step)
+            self.epoch = epoch + 1
+            self.micro_step_in_epoch = 0
             val_metrics = self.evaluate()
             self.logger.log(self.step, val_metrics, prefix="val/")
             self._checkpoint("last.pt", epoch, val_metrics)
@@ -86,7 +111,7 @@ class Trainer:
         self.logger.close()
         return val_metrics
 
-    def _train_epoch(self, epoch: int) -> None:
+    def _train_epoch(self, epoch: int, start_micro_step: int = 0) -> None:
         self.model.train()
         dataset = self.train_loader.dataset
         if hasattr(dataset, "set_epoch"):
@@ -101,6 +126,8 @@ class Trainer:
         for micro_step, batch in enumerate(self.train_loader):
             if self.step >= self.total_steps:
                 break
+            if micro_step < start_micro_step:
+                continue
             batch = to_device(batch, self.device)
             lr_scale = cosine_warmup(
                 self.step, self.total_steps, self.warmup, self.lr_floor
@@ -162,6 +189,16 @@ class Trainer:
                 updates_since_log = 0
                 self.logger.log(self.step, items, prefix="train/")
             self.step += 1
+            self.epoch = epoch
+            self.micro_step_in_epoch = micro_step + 1
+            if (
+                self.checkpoint_every_steps
+                and self.step % self.checkpoint_every_steps == 0
+            ):
+                # This is deliberately an optimizer-boundary checkpoint: an
+                # interrupted long single-epoch run remains evaluable and can
+                # be resumed without replaying updates.
+                self._checkpoint("last.pt", epoch, items)
 
     @torch.no_grad()
     def evaluate(self) -> dict[str, float]:
@@ -392,7 +429,9 @@ class Trainer:
                 "cfg": OmegaConf.to_container(self.cfg, resolve=True),
                 "epoch": epoch,
                 "step": self.step,
+                "micro_step_in_epoch": self.micro_step_in_epoch,
                 "metrics": metrics,
+                "optimizer": self.opt.state_dict(),
             },
             self.out_dir / name,
         )

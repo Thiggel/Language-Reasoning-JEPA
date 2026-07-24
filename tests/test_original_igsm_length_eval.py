@@ -2,6 +2,8 @@ import argparse
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 from textjepa.data.faithful_token_edits import faithful_replacement_vocab
 from textjepa.models.multiscale_edit_jepa import MultiscaleEditJEPA
 
@@ -53,6 +55,15 @@ def test_jepa_planner_modes_share_proposals_but_change_scoring():
     assert prior.action_value_weight == prior.state_value_weight == 0.0
     assert gar.action_value_weight == 1.0
     assert gar.state_value_weight == 0.25
+
+
+def test_prior_mode_refuses_a_q_based_refinement_stop():
+    vocab = faithful_replacement_vocab()
+    with pytest.raises(ValueError, match="requires GAR"):
+        EVAL.evaluate_jepa(
+            _small_model(vocab), vocab, [], "cpu", scoring="prior",
+            stop_on_nonpositive_q=True,
+        )
 
 
 def test_oracle_candidate_diagnostic_does_not_mutate_current_buffer():

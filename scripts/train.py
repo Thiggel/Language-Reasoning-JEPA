@@ -193,6 +193,9 @@ def main(cfg: DictConfig) -> None:
     print(f"model parameters: {n_params / 1e6:.2f}M")
 
     trainer = Trainer(cfg, model, build_objective(cfg), train_loader, val_loader, out_dir)
+    resume_ckpt = cfg.train.get("resume_ckpt")
+    if resume_ckpt:
+        trainer.resume(Path(resume_ckpt))
     trainer.fit()
 
 
