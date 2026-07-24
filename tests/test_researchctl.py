@@ -290,6 +290,27 @@ class ResearchCtlTests(unittest.TestCase):
             self.assertEqual(job["state"], "RUNNING")
             self.assertIn("network unreachable", job["poll_error"])
 
+    def test_refresh_recovers_stale_unknown_slurm_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctl = researchctl.Controller(ROOT / "automation/config.toml")
+            ctl.state_dir = Path(tmp)
+            ctl.state_path = ctl.state_dir / "state.json"
+            ctl.lock_path = ctl.state_dir / "controller.lock"
+            ctl.save_state({
+                "rounds": {"round": {"state": "TERMINAL", "jobs": {"job": {
+                    "backend": "slurm", "backend_id": "123", "cluster": "alex",
+                    "state": "UNKNOWN", "local_dir": str(Path(tmp) / "local"),
+                    "remote_dir": "/remote/run",
+                }}}}
+            })
+            running_query = subprocess.CompletedProcess(
+                args=["ssh"], returncode=0, stdout="RUNNING\n", stderr=""
+            )
+            with mock.patch.object(ctl, "_ssh", return_value=running_query):
+                ctl.refresh()
+            job = ctl.load_state()["rounds"]["round"]["jobs"]["job"]
+            self.assertEqual(job["state"], "RUNNING")
+
     def test_too_many_unread_reports_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             ctl = researchctl.Controller(ROOT / "automation/config.toml")

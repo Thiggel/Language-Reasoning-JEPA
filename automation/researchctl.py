@@ -1155,7 +1155,12 @@ class Controller:
             state = self.load_state()
             for round_id, round_state in state.get("rounds", {}).items():
                 for job_id, job_state in round_state.get("jobs", {}).items():
-                    if job_state.get("state") not in ACTIVE_STATES:
+                    retry_unknown_slurm = (
+                        job_state.get("backend") == "slurm"
+                        and job_state.get("state") == "UNKNOWN"
+                        and not job_state.get("scheduler_state")
+                    )
+                    if job_state.get("state") not in ACTIVE_STATES and not retry_unknown_slurm:
                         # A transient network failure may happen after Slurm has
                         # already reached a terminal state.  Such jobs are no
                         # longer polled, but their bounded artifact retrieval
