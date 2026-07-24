@@ -3,7 +3,7 @@
   "project": "sequence_edit",
   "round_id": "2026-07-24-optimized-sentence-gar-k8-segment1",
   "decision": "First exact segment of the repaired 124M sentence K=8 GAR run. Stop after 20,000 of a fixed 40,000-update schedule, periodically save full optimizer checkpoints, and preserve the deterministic in-epoch sampler position for continuation.",
-  "git_commit": "31f2fc6b6c7f2e4072d79cf35f4d3bd7a38caf18",
+  "git_commit": "31f2fc6ca406cb377caf122a2e234e7aa64ee015",
   "jobs": [
     {
       "id": "edit-optimized-sentence-gar-k8-124m-b256-40k-segment1-s0",
