@@ -111,12 +111,25 @@ case "$kind" in
     ;;
 esac
 
-# Compact final metadata. Expensive generation/planning evaluations are run as
-# separate checkpoint-qualified jobs so training completion is never delayed.
-"$python_bin" - "$model_dir" "$RUN_DIR/metrics.json" "$kind" <<'PY'
+# Compact final metadata. A resume may start from an already complete
+# checkpoint, in which case the training loop has no epoch to execute and does
+# not create a duplicate ``last.pt`` in this new run directory. Reuse the
+# source checkpoint in that narrow case rather than reporting a false failure.
+final_checkpoint="$model_dir/last.pt"
+if [[ ! -s "$final_checkpoint" && -n "${RESUME_FROM:-}" ]]; then
+  final_checkpoint="$RESUME_FROM"
+fi
+if [[ ! -s "$final_checkpoint" ]]; then
+  echo "final checkpoint does not exist or is empty: $final_checkpoint" >&2
+  exit 2
+fi
+
+# Expensive generation/planning evaluations are run as separate
+# checkpoint-qualified jobs so training completion is never delayed.
+"$python_bin" - "$final_checkpoint" "$RUN_DIR/metrics.json" "$kind" <<'PY'
 import json, pathlib, sys, torch
-root, destination, kind = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
-checkpoint = torch.load(root / "last.pt", map_location="cpu", weights_only=False)
+checkpoint_path, destination, kind = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]), sys.argv[3]
+checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 payload = {
     "kind": kind,
     "parameters": checkpoint.get("n_params"),
