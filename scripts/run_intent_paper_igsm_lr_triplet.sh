@@ -23,6 +23,10 @@ family=${2:?model family}
 width=${3:?model width}
 learning_rate=${4:?learning rate}
 device=${DEVICE:-cuda:0}
+# The geometry experiment defaults to two invalid grounded alternatives.  An
+# explicit override is retained solely for the paired validity control below;
+# it is ignored by the LM configurations.
+invalid_counterfactual_k=${INVALID_COUNTERFACTUAL_K:-2}
 
 case "$width" in 128|256|512) ;; *) echo "unsupported width: $width" >&2; exit 2;; esac
 
@@ -123,11 +127,12 @@ for seed in "${seeds[@]}"; do
         "$python_bin" "${TEXTJEPA_ROOT}/scripts/train.py" \
           +experiment=paper_causal_geometry_gar_no_prior \
           "${common[@]}" "seed=$seed" "model.d_model=$width" \
+          "data.invalid_counterfactual_k=$invalid_counterfactual_k" \
           model.max_chunk_len=96 model.max_chunks=96 \
           "hydra.run.dir=$model_dir" hydra.output_subdir=null
         ;;
     esac
-    "$python_bin" - "$completion" "$seed" "$family" "$width" "$learning_rate" <<'PY'
+    "$python_bin" - "$completion" "$seed" "$family" "$width" "$learning_rate" "$invalid_counterfactual_k" <<'PY'
 import json
 import os
 import pathlib
@@ -140,6 +145,7 @@ payload = {
     "model_family": sys.argv[3],
     "width": int(sys.argv[4]),
     "learning_rate": float(sys.argv[5]),
+    "invalid_counterfactual_k": int(sys.argv[6]),
     "status": "completed",
 }
 tmp = path.with_suffix(".tmp")
