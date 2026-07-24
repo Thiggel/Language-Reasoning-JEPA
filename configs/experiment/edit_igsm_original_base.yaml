@@ -98,5 +98,9 @@ train:
   ema_start: 0.999
   ema_end: 0.9999
   log_every: 50
+  # Long single-epoch original-scale runs must leave a recoverable optimizer
+  # boundary checkpoint before the scheduler wall-time limit.
+  checkpoint_every_steps: 0
+  resume_ckpt: null
   eval_batches: 512
   precision: bf16
