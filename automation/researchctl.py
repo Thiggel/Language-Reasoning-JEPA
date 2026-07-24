@@ -1182,8 +1182,23 @@ class Controller:
                             f"sacct -n -P -X -j {jid} -o State | head -1; squeue -h -j {jid} -o '%T' | head -1",
                             check=False,
                         )
+                        if query.returncode:
+                            # Do not turn a live scheduler job into a false
+                            # terminal UNKNOWN state when a transient SSH or
+                            # accounting query fails. Keep the last confirmed
+                            # active state and retry on the next controller
+                            # tick.
+                            job_state["poll_error"] = (
+                                query.stderr or query.stdout or
+                                f"scheduler query exited {query.returncode}"
+                            ).strip()
+                            continue
                         values = [x.strip().split("+")[0] for x in query.stdout.splitlines() if x.strip()]
-                        observed = values[0] if values else "UNKNOWN"
+                        if not values:
+                            job_state["poll_error"] = "scheduler returned no state"
+                            continue
+                        observed = values[0]
+                        job_state.pop("poll_error", None)
                         if observed in TERMINAL_SLURM:
                             job_state["state"] = "COMPLETED" if observed in SUCCESS_SLURM else "FAILED"
                             job_state["scheduler_state"] = observed
