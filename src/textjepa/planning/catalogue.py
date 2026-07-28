@@ -266,6 +266,25 @@ class FaithfulIGSMEnvironment:
         self._candidate_interface = "full"
         self._candidate_order_seed = None
         self.optimal_length = len(problem.necessary)
+        # The public action order is deliberately shuffled, so it cannot be
+        # replayed as a reference trajectory.  Construct a deterministic
+        # topological order over only the necessary definitions instead.  It
+        # is privileged evaluation metadata, never a model input.
+        remaining = set(problem.necessary)
+        resolved = set()
+        expert = []
+        while remaining:
+            ready = [
+                action for action in problem.action_order
+                if action in remaining and set(problem.deps[action]) <= resolved
+            ]
+            if not ready:
+                raise RuntimeError("faithful iGSM necessary actions are cyclic")
+            for action in ready:
+                expert.append(self.environment.action_text(action))
+                resolved.add(action)
+                remaining.remove(action)
+        self.expert_actions = tuple(expert)
         self.invalid_actions = 0
 
     @property

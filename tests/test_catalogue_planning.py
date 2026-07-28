@@ -131,6 +131,22 @@ def test_faithful_igsm_wrapper_exposes_full_catalogue_not_feasible_menu():
     )
 
 
+def test_faithful_igsm_oracle_replay_uses_dependency_valid_expert_order():
+    from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
+
+    dataset = FaithfulDataset(
+        cached_faithful_vocab(), size=1, seed=917, max_op=15,
+        max_edge=20, op_range=(3, 5), distractor_prob=0.0,
+    )
+    problem, _ = dataset.problem(0)
+    result = OracleReplayPolicy().run_episode(
+        environment_from_faithful_problem(problem), excess_actions=0
+    )
+    assert result.solved
+    assert result.steps == result.optimal_length
+    assert result.invalid_actions == 0
+
+
 def test_blocksworld_oracle_feasible_interface_filters_and_updates_catalogue():
     episode = compile_blocksworld_episode(
         parse_blocksworld_pddl(PDDL), "test"
