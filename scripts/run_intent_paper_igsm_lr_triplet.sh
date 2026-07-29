@@ -23,12 +23,17 @@ family=${2:?model family}
 width=${3:?model width}
 learning_rate=${4:?learning rate}
 device=${DEVICE:-cuda:0}
+epochs=${EPOCHS:-10}
 # The geometry experiment defaults to two invalid grounded alternatives.  An
 # explicit override is retained solely for the paired validity control below;
 # it is ignored by the LM configurations.
 invalid_counterfactual_k=${INVALID_COUNTERFACTUAL_K:-2}
 
 case "$width" in 128|256|512) ;; *) echo "unsupported width: $width" >&2; exit 2;; esac
+if ! [[ "$epochs" =~ ^[1-9][0-9]*$ ]]; then
+  echo "EPOCHS must be a positive integer: $epochs" >&2
+  exit 2
+fi
 
 case "$family" in
   token_lm|sentence_lm|sentence_latent_lm|looped_token_lm|\
@@ -40,7 +45,7 @@ common=(
   "data=igsm_real"
   "device=$device"
   "train.lr=$learning_rate"
-  "train.epochs=10"
+  "train.epochs=$epochs"
   "train.batch_size=32"
   "train.num_workers=0"
   "train.warmup_steps=500"
@@ -132,7 +137,7 @@ for seed in "${seeds[@]}"; do
           "hydra.run.dir=$model_dir" hydra.output_subdir=null
         ;;
     esac
-    "$python_bin" - "$completion" "$seed" "$family" "$width" "$learning_rate" "$invalid_counterfactual_k" <<'PY'
+    "$python_bin" - "$completion" "$seed" "$family" "$width" "$learning_rate" "$invalid_counterfactual_k" "$epochs" <<'PY'
 import json
 import os
 import pathlib
@@ -146,6 +151,7 @@ payload = {
     "width": int(sys.argv[4]),
     "learning_rate": float(sys.argv[5]),
     "invalid_counterfactual_k": int(sys.argv[6]),
+    "epochs": int(sys.argv[7]),
     "status": "completed",
 }
 tmp = path.with_suffix(".tmp")
