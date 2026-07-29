@@ -133,6 +133,7 @@ for seed in "${seeds[@]}"; do
           +experiment=paper_causal_geometry_gar_no_prior \
           "${common[@]}" "seed=$seed" "model.d_model=$width" \
           "data.invalid_counterfactual_k=$invalid_counterfactual_k" \
+          data.geo_rank_policy=random \
           model.max_chunk_len=96 model.max_chunks=96 \
           "hydra.run.dir=$model_dir" hydra.output_subdir=null
         ;;

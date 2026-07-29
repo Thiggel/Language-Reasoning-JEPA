@@ -18,3 +18,8 @@ data:
   # current executor consequence is the unchanged-state invalid message.
   invalid_counterfactual_k: 2
   geo_rank_horizon: 4
+  # The online greedy teacher expands every feasible continuation in Python
+  # inside each model update.  It is a planning ablation, not a viable
+  # training target: use the batched sampled-rollout teacher here and vary
+  # greedy/beam search only at evaluation or in a bounded ablation.
+  geo_rank_policy: random
