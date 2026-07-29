@@ -1,0 +1,12 @@
+# @package _global_
+# Matched recovery audit: legacy one-step MLP predictor under the current
+# geometry objective.  Pair only with paper_recovery_causal_geometry.
+defaults: [paper_causal_geometry_gar_no_prior, _self_]
+run_name: paper_recovery_mlp_geometry
+allow_legacy_predictor: true
+model:
+  predictor_kind: concat
+  macro_k: 0
+data:
+  geo_rank_horizon: 2
+  geo_rank_policy: random
