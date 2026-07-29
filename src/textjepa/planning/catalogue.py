@@ -47,7 +47,7 @@ def _ordered_candidates(
 ) -> tuple[str, ...]:
     if interface == "full":
         candidates = full_catalogue
-    elif interface == "oracle_feasible":
+    elif interface in {"feasible_menu", "oracle_feasible"}:
         candidates = tuple(
             action for action in full_catalogue if action in feasible
         )

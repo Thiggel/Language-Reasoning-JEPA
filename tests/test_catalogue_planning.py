@@ -165,6 +165,20 @@ def test_blocksworld_oracle_feasible_interface_filters_and_updates_catalogue():
     assert environment.invalid_actions == 0
 
 
+def test_blocksworld_feasible_menu_is_current_legal_action_set():
+    episode = compile_blocksworld_episode(
+        parse_blocksworld_pddl(PDDL), "test"
+    )
+    environment = environment_from_episode(episode)
+    environment.set_candidate_interface("feasible_menu")
+    before = environment.catalogue
+    assert before
+    assert "stack block a on block b" not in before
+    environment.step(episode.transitions[0].action)
+    assert environment.catalogue
+    assert environment.invalid_actions == 0
+
+
 def test_proofwriter_oracle_feasible_interface_contains_expert_and_no_invalid():
     episode = compile_proofwriter_episode(_record(), "Q1", "test")
     environment = environment_from_episode(episode)

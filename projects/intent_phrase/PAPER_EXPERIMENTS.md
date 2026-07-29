@@ -9,13 +9,13 @@ an observed language action and comparing that predicted state with a goal.
 Its action value is constrained to be
 `Q(s,a,g) = V(F(s,a), g)`: the value loss and ranking loss operate on the same
 predicted-consequence energy. There is no direct action-only policy head,
-action prior, proposal prior, or feasibility prior. JEPA and all language-model
-baselines score the identical full non-oracle action catalogue for the
-headline result. Every final checkpoint is additionally evaluated against the
-current symbolic feasible subset of that same catalogue. This second
-interface is explicitly **candidate-privileged/oracle-feasible**: it diagnoses
-whether failure comes from feasibility recognition or from consequence/value
-reasoning, and never replaces the full-catalogue headline.
+action prior, proposal prior, or learned feasibility prior. JEPA and all
+language-model baselines receive the identical **current symbolic legal-action
+menu** as the headline interface. The menu contains executable actions only;
+it reveals neither the expert action, action values, nor future feasibility.
+Every final checkpoint is additionally evaluated against the full catalogue as
+an explicit feasibility stress diagnostic. It is not a headline reasoning
+metric.
 
 ## Datasets and information boundary
 
@@ -55,8 +55,11 @@ ties choose the lower rate. Seeds `{3,4}` are then trained at that rate, so
 the reported result uses all five seeds `{0,1,2,3,4}`. Test results never
 participate in selection.
 
-This is 2,268 LR-selection trainings and 168 post-selection confirmation
-trainings before ablations. It is a staged campaign, not one controller round.
+LR selection is performed once at width 256 per model--dataset pair, then
+reused for other widths and evaluations. The initial screen uses a compact
+grid `{1e-4,3e-4,1e-3,3e-3}` with one seed; ambiguous winners receive a
+second seed. Five seeds are reserved for final reported rows and plotted
+ablations. This is a staged campaign, not one controller round.
 
 ## Evaluation
 

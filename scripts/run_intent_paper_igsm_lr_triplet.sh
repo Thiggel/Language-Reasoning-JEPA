@@ -184,13 +184,16 @@ PY
       ;;
   esac
 
+  # The paper interface exposes the current symbolic legal-action menu to
+  # every model.  Full-catalogue scoring is retained as an explicit stress
+  # diagnostic, never used to select an LR for the reasoning comparison.
   if [[ ! -s "$seed_dir/metrics.json" ]]; then
-    evaluate "$eval_kind" "$checkpoint" "$seed_dir/metrics.json" full \
+    evaluate "$eval_kind" "$checkpoint" "$seed_dir/metrics.json" feasible_menu \
       "${eval_args[@]}"
   fi
-  if [[ ! -s "$seed_dir/oracle_feasible_metrics.json" ]]; then
+  if [[ ! -s "$seed_dir/full_catalogue_metrics.json" ]]; then
     evaluate "$eval_kind" "$checkpoint" \
-      "$seed_dir/oracle_feasible_metrics.json" oracle_feasible \
+      "$seed_dir/full_catalogue_metrics.json" full \
       "${eval_args[@]}"
   fi
 
@@ -201,12 +204,12 @@ PY
     fi
     if [[ ! -s "$seed_dir/latent_score_metrics.json" ]]; then
       evaluate sentence_lm "$checkpoint" \
-        "$seed_dir/latent_score_metrics.json" full "${latent_args[@]}"
+        "$seed_dir/latent_score_metrics.json" feasible_menu "${latent_args[@]}"
     fi
-    if [[ ! -s "$seed_dir/latent_score_oracle_feasible_metrics.json" ]]; then
+    if [[ ! -s "$seed_dir/latent_score_full_catalogue_metrics.json" ]]; then
       evaluate sentence_lm "$checkpoint" \
-        "$seed_dir/latent_score_oracle_feasible_metrics.json" \
-        oracle_feasible "${latent_args[@]}"
+        "$seed_dir/latent_score_full_catalogue_metrics.json" \
+        full "${latent_args[@]}"
     fi
   fi
 done
@@ -231,7 +234,7 @@ summary = {
     "model_family": sys.argv[2],
     "width": int(sys.argv[3]),
     "learning_rate": float(sys.argv[4]),
-    "selection_metric": "mean full-catalogue validation success over excess-action budgets 0,1,2,4",
+    "selection_metric": "mean shared feasible-menu validation success over excess-action budgets 0,1,2,4",
     "members": members,
     "mean_validation_success_auc": sum(x["validation_success_auc"] for x in members) / len(members),
 }

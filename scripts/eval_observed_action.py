@@ -291,11 +291,13 @@ def main():
         default="full",
     )
     parser.add_argument(
-        "--candidate-interface", choices=("full", "oracle_feasible"),
-        default="full",
+        "--candidate-interface",
+        choices=("full", "feasible_menu", "oracle_feasible"),
+        default="feasible_menu",
         help=(
-            "Action set exposed to every policy. oracle_feasible is a "
-            "candidate-privileged diagnostic and must not be the headline."
+            "Action set exposed to every policy. feasible_menu exposes the "
+            "environment's current symbolic legal-action menu equally to all "
+            "policies. oracle_feasible is a deprecated alias."
         ),
     )
     parser.add_argument("--prior-only", action="store_true")
@@ -335,8 +337,8 @@ def main():
         "candidate_interface": (
             "privileged_expert_replay_over_"
             + (
-                "oracle_feasible_catalogue"
-                if args.candidate_interface == "oracle_feasible"
+                "symbolic_current_feasible_menu"
+                if args.candidate_interface in {"feasible_menu", "oracle_feasible"}
                 else "non_oracle_full_catalogue"
             )
             if args.kind == "oracle" else (
@@ -344,8 +346,8 @@ def main():
                 if args.kind == "jepa"
                 and args.jepa_candidate_mode == "support_top_m"
                 else (
-                    "candidate_privileged_oracle_feasible_catalogue"
-                    if args.candidate_interface == "oracle_feasible"
+                    "shared_symbolic_current_feasible_menu"
+                    if args.candidate_interface in {"feasible_menu", "oracle_feasible"}
                     else "non_oracle_full_catalogue"
                 )
             )
