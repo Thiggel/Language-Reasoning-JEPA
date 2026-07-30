@@ -59,8 +59,13 @@ def main() -> None:
         import matplotlib.pyplot as plt
     except ImportError as error:
         raise RuntimeError("matplotlib is required to render the plot") from error
-    figure, axes = plt.subplots(1, 2, figsize=(12, 4.5), sharex=True)
-    for split in sorted({row["dataset_split"] for row in rows}):
+    from matplotlib.lines import Line2D
+
+    figure, axes = plt.subplots(1, 2, figsize=(14, 5.5), sharex=True)
+    splits = sorted({row["dataset_split"] for row in rows})
+    colors = plt.get_cmap("tab10").colors
+    for split_index, split in enumerate(splits):
+        color = colors[split_index]
         split_rows = [row for row in rows if row["dataset_split"] == split]
         by_effort = defaultdict(list)
         for row in split_rows:
@@ -88,17 +93,34 @@ def main() -> None:
                 ) / sum(item["roots"] for item in by_effort[x])
                 for x in effort
             ]
-            axis.plot(effort, exact, "--", marker="o", label=f"{split} exact")
             axis.plot(
-                effort, predicted, "-", marker="o",
+                effort, exact, "--", marker="o", color=color,
+                label=f"{split} exact",
+            )
+            axis.plot(
+                effort, predicted, "-", marker="o", color=color,
                 label=f"{split} learned",
             )
             axis.set_title(title)
             axis.set_xlabel("Planning effort (candidate token evaluations)")
             axis.set_ylabel("Accuracy")
             axis.grid(alpha=0.25)
-    axes[1].legend(fontsize=7, ncol=2)
-    figure.tight_layout()
+    split_handles = [
+        Line2D([0], [0], color=colors[index], marker="o", label=split)
+        for index, split in enumerate(splits)
+    ]
+    kind_handles = [
+        Line2D([0], [0], color="black", linestyle="--", label="Exact endpoint"),
+        Line2D([0], [0], color="black", linestyle="-", label="Learned rollout"),
+    ]
+    figure.legend(
+        handles=split_handles, loc="upper center", ncol=len(splits),
+        bbox_to_anchor=(0.5, 0.995), frameon=False, fontsize=9,
+    )
+    axes[1].legend(
+        handles=kind_handles, loc="lower left", frameon=True, fontsize=9,
+    )
+    figure.tight_layout(rect=(0, 0, 1, 0.91))
     figure.savefig(args.output_prefix.with_suffix(".png"), dpi=180)
 
 
