@@ -25,11 +25,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--count-scale", type=float, default=0.001)
     parser.add_argument("--pool-per-depth-family", type=int, default=500)
     parser.add_argument("--epochs", type=int, default=3)
+    parser.add_argument("--replay-batch-size", type=int, default=32)
+    parser.add_argument("--multistep-replay-batch-size", type=int, default=4)
     parser.add_argument("--population", type=int, default=64)
     parser.add_argument("--max-eval-roots", type=int, default=16)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dtype", default="bfloat16")
     return parser.parse_args()
+
+
+def replay_batch_size(variant: str, args: argparse.Namespace) -> int:
+    """Use a smaller activation microbatch for recursive rollout training."""
+    return (
+        args.multistep_replay_batch_size
+        if variant == "multistep"
+        else args.replay_batch_size
+    )
 
 
 def _run(command: list[str], log: list[dict]) -> None:
@@ -43,6 +54,8 @@ def _run(command: list[str], log: list[dict]) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.replay_batch_size <= 0 or args.multistep_replay_batch_size <= 0:
+        raise ValueError("replay microbatch sizes must be positive")
     root = args.output_root or Path(os.environ.get("RUN_DIR", ""))
     if not str(root):
         raise ValueError("--output-root or RUN_DIR is required")
@@ -105,7 +118,7 @@ def main() -> None:
             "--output", str(output),
             "--experiment-config", f"configs/experiment/{config}",
             "--epochs", str(args.epochs), "--batch-size", "8",
-            "--replay-batch-size", "32",
+            "--replay-batch-size", str(replay_batch_size(name, args)),
             "--learning-rate", "3e-4",
             "--seed", str(args.seed), "--device", args.device,
         ]

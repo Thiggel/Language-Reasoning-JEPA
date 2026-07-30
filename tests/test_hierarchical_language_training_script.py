@@ -1,3 +1,4 @@
+import argparse
 import json
 import hashlib
 import sys
@@ -6,6 +7,7 @@ import torch
 import pytest
 
 from scripts import evaluate_hierarchical_language_oracles as evaluate
+from scripts.run_hierarchical_language_pilot import replay_batch_size
 from scripts import train_hierarchical_language_jepa as train
 from textjepa.data.language_planning import (
     MODEL_ID,
@@ -285,6 +287,14 @@ def test_flat_oracle_cli_scores_minimal_population(tmp_path, monkeypatch):
     assert json.loads(output.read_text())["rows"][0][
         "predicted_best"
     ] == 0
+
+
+def test_multistep_pilot_uses_independent_replay_microbatch():
+    args = argparse.Namespace(
+        replay_batch_size=32, multistep_replay_batch_size=4,
+    )
+    assert replay_batch_size("counterfactual", args) == 32
+    assert replay_batch_size("multistep", args) == 4
 
 
 def test_evaluation_only_stage_rejects_dense_training(tmp_path, monkeypatch):
