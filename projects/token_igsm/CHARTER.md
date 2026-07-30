@@ -1,3 +1,9 @@
 # Charter
 
-Determine whether token-to-phrase-to-sentence latent prediction induces useful multiscale reasoning abstractions and enables executable, non-symbolic planning. Oracle terminal states may be used only as clearly labelled diagnostics.
+Determine whether action-conditioned token and sentence predictive spaces
+derived from a frozen reasoning LM support executable hierarchical planning.
+The first falsifiable decision is whether token JEPA supports oracle-goal
+planning under exact candidate re-encoding. The second is whether a token
+worker can realize a true future sentence waypoint. Oracle terminal,
+symbolic, candidate-privileged, and cross-project information must be labelled
+explicitly. No remaining-budget input is part of the core system.

@@ -8,6 +8,15 @@ from textjepa.planning.catalogue import (
     environment_from_episode,
     environment_from_faithful_problem,
 )
+from textjepa.planning.hierarchical_language import (
+    exact_endpoint_control,
+    prior_coordinate_cem,
+    receding_horizon_step,
+    score_token_candidates,
+    score_token_space_candidates,
+    oracle_high_level_prefix_cost,
+    value_guided_high_level_prefix_cost,
+)
 
 __all__ = [
     "LatentPlanner",
@@ -19,4 +28,11 @@ __all__ = [
     "environment_from_episode",
     "environment_from_faithful_problem",
     "evaluate_planning",
+    "exact_endpoint_control",
+    "prior_coordinate_cem",
+    "receding_horizon_step",
+    "score_token_candidates",
+    "score_token_space_candidates",
+    "oracle_high_level_prefix_cost",
+    "value_guided_high_level_prefix_cost",
 ]

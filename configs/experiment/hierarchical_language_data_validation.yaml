@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - hierarchical_language_token_jepa
+  - _self_
+
+research:
+  stage: DATA_VALIDATION
+
+loss:
+  token_dynamics: 0.0
+  sentence_dynamics: 0.0
+  variance: 0.0
+  covariance: 0.0
+  macro: 0.0
+  commutation: 0.0

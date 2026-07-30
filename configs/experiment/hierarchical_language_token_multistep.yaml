@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - hierarchical_language_token_counterfactual
+  - _self_
+
+research:
+  stage: TOKEN_JEPA
+  experiment_label: counterfactual_sparse_multistep
+
+loss:
+  token_rollout: 1.0
+
+rollout:
+  probability_n2: 0.25
+  probability_n4: 0.05
+  probability_n8: 0.01

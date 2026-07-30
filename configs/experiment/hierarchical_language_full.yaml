@@ -1,0 +1,29 @@
+# @package _global_
+# Later-stage reference configuration; not an admission plan for current runs.
+defaults:
+  - hierarchical_language_nested_sentence
+  - _self_
+
+model:
+  config:
+    enable_macro_actions: true
+    enable_value: true
+
+research:
+  stage: FULL_HIERARCHY
+  require_oracle_waypoint_gate: true
+  require_oracle_high_level_gate: true
+  symbolic_targets: false
+  terminal_used_offline_only: true
+
+planning:
+  K0: [8, 16, 32, 64]
+  K1: [1, 2, 4, 8]
+  KV: [1, 2, 4, 8]
+  execution_interval: [1, 2, 4]
+  high_population: [128, 256]
+  cem_iterations: [3, 4]
+  elite_fraction: 0.1
+  prior_coordinate_search: true
+  covariance_floor: 0.05
+  trust_region: 3.0

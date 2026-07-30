@@ -7,10 +7,16 @@ from textjepa.models.token_hierarchy import TokenHierarchyJEPA
 from textjepa.models.token_hierarchy_v2 import MultilevelTokenHierarchyJEPA
 from textjepa.models.multiscale_edit_jepa import MultiscaleEditJEPA
 from textjepa.models.masked_diffusion_lm import MaskedDiffusionLM
+from textjepa.models.hierarchical_language_jepa import (
+    HierarchicalLanguageJEPA,
+    HierarchicalLanguageJEPAConfig,
+)
 
 __all__ = [
     "DiscourseJEPA", "DiscourseOutputs", "EditJEPA", "JEPAOutputs",
     "SentenceStreamVJEPA", "DiscourseVJEPA", "TokenHierarchyJEPA",
     "MultilevelTokenHierarchyJEPA", "MultiscaleEditJEPA",
     "MaskedDiffusionLM",
+    "HierarchicalLanguageJEPA",
+    "HierarchicalLanguageJEPAConfig",
 ]

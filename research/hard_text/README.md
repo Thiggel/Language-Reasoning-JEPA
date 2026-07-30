@@ -1,5 +1,12 @@
 # Action-free / harder text JEPA
 
+> Legacy notice (2026-07-30): this directory, all files under `logs/`, the
+> wave notes, plans, completion markers, and historical run-family names are
+> preserved in place after the token-iGSM pivot. The active specification is
+> [`projects/token_igsm/REVISED_PLAN.md`](../../projects/token_igsm/REVISED_PLAN.md).
+> Earlier results remain historical evidence and are not silently reinterpreted
+> as results for the revised architecture.
+
 This project removes annotated intent phrases. The active deterministic
 design treats tokens as primitive actions and projected token spans as macro
 actions. Earlier action-free variational experiments are retained as a

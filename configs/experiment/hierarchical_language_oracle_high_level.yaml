@@ -1,0 +1,14 @@
+# @package _global_
+defaults:
+  - hierarchical_language_macro_action
+  - _self_
+
+research:
+  stage: ORACLE_HIGH_LEVEL
+  require_admission_stage: MACRO_ACTION
+  oracle_terminal: true
+
+planning:
+  K1: [1, 2, 4, 8]
+  population: [128, 256]
+  cem_iterations: [3, 4]

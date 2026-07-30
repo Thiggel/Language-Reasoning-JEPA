@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - hierarchical_language_macro_action
+  - _self_
+
+model:
+  config:
+    enable_value: true
+
+research:
+  stage: VALUE_DISTILLATION
+  require_admission_stage: ORACLE_HIGH_LEVEL
+  terminal_used_offline_only: true
+
+planning:
+  KV: [1, 2, 4, 8]
+
+loss:
+  token_dynamics: 0.0
+  sentence_dynamics: 0.0
+  macro: 0.0

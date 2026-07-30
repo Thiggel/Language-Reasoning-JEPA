@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - hierarchical_language_nested_sentence
+  - _self_
+
+research:
+  stage: DYNAMIC_COMMUTATION
+  require_admission_stage: ORACLE_WAYPOINT
+
+loss:
+  token_dynamics: 0.0
+  sentence_dynamics: 1.0
+  commutation: 1.0

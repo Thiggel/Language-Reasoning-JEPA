@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - hierarchical_language_full
+  - _self_
+
+research:
+  stage: CLOSED_LOOP_REANALYSIS
+  require_admission_stage: FULL_HIERARCHY
+
+replay:
+  require_exact_worker_achievement: true
+  require_candidate_compute_metadata: true

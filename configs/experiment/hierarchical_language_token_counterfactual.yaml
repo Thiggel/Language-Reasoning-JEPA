@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - hierarchical_language_token_jepa
+  - _self_
+
+research:
+  stage: TOKEN_JEPA
+  experiment_label: counterfactual_one_step
+  counterfactual_training: true
+
+loss:
+  token_rollout: 0.0
+
+rollout:
+  probability_n2: 0.0
+  probability_n4: 0.0
+  probability_n8: 0.0

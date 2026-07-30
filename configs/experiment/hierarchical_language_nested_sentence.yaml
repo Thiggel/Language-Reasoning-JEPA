@@ -1,0 +1,23 @@
+# @package _global_
+# Canonical strict nested sentence stage:
+# E_LM -> E0 -> E0_to_1. There is no direct h -> z1 projector.
+defaults:
+  - hierarchical_language_token_jepa
+  - _self_
+
+research:
+  stage: SENTENCE_JEPA
+  architecture: nested_e0_e0_to_1_v2_window_exact
+  freeze_e0: true
+  freeze_p0: true
+  train_e0_to_1: true
+  train_p1: true
+  train_a1: true
+  direct_sentence_teacher: false
+  oracle_terminal: false
+  symbolic_targets: false
+
+loss:
+  token_dynamics: 0.0
+  sentence_dynamics: 1.0
+  commutation: 0.0

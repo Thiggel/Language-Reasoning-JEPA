@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - hierarchical_language_dynamic_commutation
+  - _self_
+
+model:
+  config:
+    enable_macro_actions: true
+
+research:
+  stage: MACRO_ACTION
+  require_admission_stage: DYNAMIC_COMMUTATION
+
+loss:
+  commutation: 0.0
+  macro: 1.0

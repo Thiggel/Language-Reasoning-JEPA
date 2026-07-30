@@ -1,0 +1,42 @@
+# @package _global_
+# Flat token-space oracle endpoint experiment.
+#
+# The frozen LM is run by the offline feature/branch collector.  This learner
+# configuration intentionally contains no value, macro prior, VQ, temporal
+# straightening, LM-logit reconstruction, or backbone optimizer.
+defaults:
+  - hierarchical_language_token_jepa
+  - _self_
+
+research:
+  stage: FLAT_ORACLE_TOKEN
+  oracle_terminal: false
+  symbolic_targets: false
+  candidate_privileged: true
+  cross_project_information: false
+  exact_endpoint_control: true
+  observed_trace_training: false
+  counterfactual_training: false
+
+planning:
+  token_oracle_horizon: [4, 8, 16]
+  initial_token_oracle_horizon: 8
+  candidate_population: [64, 128]
+  exact_reencode_top: 16
+  exact_reencode_random: 16
+  # K0, K1, E0_to_1, P1, Pi1, V, and terminal states do not participate.
+
+loss:
+  token_dynamics: 0.0
+  variance: 0.0
+  covariance: 0.0
+  sentence_dynamics: 0.0
+  macro: 0.0
+  commutation: 0.0
+
+validity_gates:
+  require_base_proposal_coverage: true
+  compare_exact_and_predicted_endpoints: true
+  require_state_and_action_shortcuts: true
+  require_cache_windows: [0, 1, 2, 4, 8, 16, 32, 64]
+  scale_only_if_exact_oracle_improves_symbolic_success: true

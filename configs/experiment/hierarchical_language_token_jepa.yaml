@@ -1,0 +1,49 @@
+# @package _global_
+model:
+  _target_: textjepa.models.hierarchical_language_jepa.HierarchicalLanguageJEPA
+  config:
+    _target_: textjepa.models.hierarchical_language_jepa.HierarchicalLanguageJEPAConfig
+    d_backbone: 1024
+    vocab_size: 248320
+    pad_id: 248044
+    d_token: 256
+    d_sentence: 128
+    d_action: 32
+    d_task: 256
+    predictor_width: 512
+    token_layers: 4
+    sentence_layers: 3
+    n_heads: 8
+    token_context: 64
+    sentence_context: 32
+    cache_dropout: 0.05
+    max_span: 64
+    enable_macro_actions: false
+    enable_value: false
+
+frozen_lm:
+  model_id: Qwen/Qwen3.5-0.8B
+  revision: 2fc06364715b967f1860aea9cf38778875588b17
+  transformers_version: 5.13.0
+  add_bos_token: false
+  pad_token_id: 248044
+  primary_eos_token_id: 248046
+  generation_eos_token_ids: [248046, 248044]
+  step_delimiter: "\n"
+  max_counterfactual_step_tokens: 64
+
+research:
+  stage: TOKEN_JEPA
+  symbolic_targets: false
+  oracle_terminal: false
+  candidate_privileged: false
+  cross_project_information: false
+
+loss:
+  token_dynamics: 1.0
+  token_rollout: 0.0
+  variance: 1.0
+  covariance: 0.04
+  sentence_dynamics: 0.0
+  macro: 0.0
+  commutation: 0.0

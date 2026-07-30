@@ -1,0 +1,20 @@
+# @package _global_
+# Second decisive experiment.  Enabled only after oracle token-goal planning.
+defaults:
+  - hierarchical_language_nested_sentence
+  - _self_
+
+research:
+  stage: ORACLE_WAYPOINT
+  oracle_goal_kind: next_sentence_boundary
+  symbolic_targets: false
+
+planning:
+  K0: [8, 16, 32, 64]
+  candidate_population: [64, 128]
+  waypoint_sources: [true, noised_true, manager_predicted, cem_optimized]
+
+validity_gates:
+  require_oracle_token_gate: true
+  require_exact_symbolic_waypoint_success: true
+  proceed_to_macro_actions_only_on_success: true

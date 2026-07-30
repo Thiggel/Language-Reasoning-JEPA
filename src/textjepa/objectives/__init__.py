@@ -61,6 +61,11 @@ from textjepa.objectives.variational import (
     VariationalLatentPrediction,
 )
 from textjepa.objectives.refinement import RefinementActionPrior
+from textjepa.objectives.hierarchical_language import (
+    EMAShrunkMahalanobis,
+    listwise_value_loss,
+    terminal_set_discrepancy,
+)
 
 __all__ = [
     "ActionFeasibility",
@@ -125,4 +130,7 @@ __all__ = [
     "ObservedActionLDAD",
     "ValueRegression",
     "RefinementActionPrior",
+    "EMAShrunkMahalanobis",
+    "listwise_value_loss",
+    "terminal_set_discrepancy",
 ]
