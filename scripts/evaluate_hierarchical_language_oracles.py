@@ -11,11 +11,6 @@ from time import perf_counter
 
 import torch
 
-from textjepa.models.hierarchical_language_jepa import (
-    HIERARCHICAL_LANGUAGE_ARCHITECTURE,
-    HierarchicalLanguageJEPA,
-    HierarchicalLanguageJEPAConfig,
-)
 from textjepa.data.provenance import artifact_fingerprint, sha256_file
 from textjepa.planning.hierarchical_language import (
     exact_endpoint_control,
@@ -23,9 +18,9 @@ from textjepa.planning.hierarchical_language import (
     score_token_space_candidates,
     value_guided_high_level_prefix_cost,
 )
-from textjepa.training.hierarchical_language import (
-    HierarchicalLanguageLearner,
-    ResearchStage,
+from textjepa.training.hierarchical_language import ResearchStage
+from textjepa.utils.language_planning_runtime import (
+    load_hierarchical_checkpoint,
 )
 
 
@@ -54,18 +49,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def load_checkpoint(path: Path, device: str):
-    checkpoint = torch.load(path, map_location=device, weights_only=True)
-    if checkpoint.get("architecture") != HIERARCHICAL_LANGUAGE_ARCHITECTURE:
-        raise ValueError(
-            "checkpoint does not use the strict nested E0 -> E0_to_1 tower"
-        )
-    config = HierarchicalLanguageJEPAConfig(**checkpoint["config"])
-    model = HierarchicalLanguageJEPA(config).to(device).eval()
-    model.load_state_dict(checkpoint["model"])
-    stage = ResearchStage[checkpoint["stage"]]
-    learner = HierarchicalLanguageLearner(model, stage).to(device).eval()
-    learner.load_state_dict(checkpoint["learner"])
-    return model, learner
+    return load_hierarchical_checkpoint(path, device)
 
 
 def _metric(name: str, mahalanobis):

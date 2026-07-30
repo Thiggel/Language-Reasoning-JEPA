@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 
@@ -20,7 +19,6 @@ import torch
 from textjepa.analysis.compute import (
     ComputeLedger,
     inference_flops,
-    parameter_count,
 )
 from textjepa.data.language_planning import (
     COUNTERFACTUAL_MIXTURE,
@@ -42,6 +40,11 @@ from textjepa.data.language_planning import (
     tokenize_steps,
 )
 from textjepa.data.provenance import artifact_fingerprint, sha256_file
+from textjepa.utils.language_planning_runtime import (
+    backend_metadata as _backend_metadata,
+    load_reference_model,
+    text_parameter_count as _text_parameter_count,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,67 +62,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-shards", type=int, default=1)
     parser.add_argument("--resume", action="store_true")
     return parser.parse_args()
-
-
-def load_reference_model(device: str, dtype_name: str):
-    try:
-        import transformers
-        from transformers import AutoModelForMultimodalLM, AutoTokenizer
-    except ImportError as error:
-        raise RuntimeError(
-            "install textjepa[language-planning] to collect frozen-LM features"
-        ) from error
-    if transformers.__version__ != TRANSFORMERS_VERSION:
-        raise RuntimeError(
-            f"Transformers {TRANSFORMERS_VERSION} is required, got "
-            f"{transformers.__version__}"
-        )
-    dtype = getattr(torch, dtype_name)
-    tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_ID, revision=MODEL_REVISION, use_fast=True
-    )
-    if tokenizer.add_bos_token:
-        raise RuntimeError("pinned Qwen tokenizer unexpectedly adds BOS")
-    if tokenizer.pad_token_id != PAD_TOKEN_ID:
-        raise RuntimeError("pinned Qwen padding ID changed")
-    model = AutoModelForMultimodalLM.from_pretrained(
-        MODEL_ID, revision=MODEL_REVISION, dtype=dtype
-    ).to(device).eval()
-    return tokenizer, model
-
-
-def _text_parameter_count(model) -> int:
-    """Count only modules exercised by a text-only Qwen forward."""
-    if not hasattr(model, "model") or not hasattr(
-        model.model, "language_model"
-    ):
-        return parameter_count(model)
-    modules = [model.model.language_model, model.lm_head]
-    seen: set[int] = set()
-    total = 0
-    for module in modules:
-        for parameter in module.parameters():
-            if id(parameter) not in seen:
-                seen.add(id(parameter))
-                total += parameter.numel()
-    return total
-
-
-def _backend_metadata() -> dict[str, object]:
-    flash = importlib.util.find_spec("fla") is not None
-    causal_conv = importlib.util.find_spec("causal_conv1d") is not None
-    return {
-        "text_backend": (
-            "flash_linear_attention" if flash and causal_conv
-            else "torch_fallback"
-        ),
-        "flash_linear_attention_available": flash,
-        "causal_conv1d_available": causal_conv,
-        "torch_version": str(torch.__version__),
-        "cuda_version": (
-            None if torch.version.cuda is None else str(torch.version.cuda)
-        ),
-    }
 
 
 def _atomic_torch_save(payload: dict, path: Path) -> None:

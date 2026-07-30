@@ -9,12 +9,6 @@ from pathlib import Path
 
 import torch
 
-from scripts.collect_hierarchical_language_features import (
-    _backend_metadata,
-    _text_parameter_count,
-    load_reference_model,
-)
-from scripts.evaluate_hierarchical_language_oracles import load_checkpoint
 from textjepa.analysis.compute import ComputeLedger, inference_flops
 from textjepa.data.language_planning import (
     GENERATION_EOS_TOKEN_IDS,
@@ -29,6 +23,12 @@ from textjepa.models.hierarchical_language_jepa import (
     HIERARCHICAL_LANGUAGE_ARCHITECTURE,
 )
 from textjepa.training.hierarchical_language import ResearchStage
+from textjepa.utils.language_planning_runtime import (
+    backend_metadata as _backend_metadata,
+    load_hierarchical_checkpoint as load_checkpoint,
+    load_reference_model,
+    text_parameter_count as _text_parameter_count,
+)
 
 
 def parse_args() -> argparse.Namespace:
