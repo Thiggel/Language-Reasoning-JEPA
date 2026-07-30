@@ -25,7 +25,9 @@ def _update(digest: "hashlib._Hash", name: str, value: Any) -> None:
         tensor = value.detach().cpu().contiguous()
         digest.update(str(tensor.dtype).encode("ascii"))
         digest.update(json.dumps(list(tensor.shape)).encode("ascii"))
-        digest.update(tensor.numpy().tobytes())
+        # NumPy has no native bfloat16 scalar type. Hash the exact underlying
+        # storage bytes after recording dtype and shape above.
+        digest.update(tensor.view(torch.uint8).numpy().tobytes())
     else:
         digest.update(json.dumps(
             value, sort_keys=True, separators=(",", ":"), default=str

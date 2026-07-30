@@ -12,6 +12,7 @@ from textjepa.data.hierarchical_language import (
     read_replay_jsonl,
     write_replay_jsonl,
 )
+from textjepa.data.provenance import artifact_fingerprint
 
 
 def test_boundary_policy_splits_long_and_merges_tiny_spans():
@@ -79,3 +80,11 @@ def test_replay_requires_candidate_level_compute_metadata():
     )
     with pytest.raises(ValueError, match="compute"):
         record.validate()
+
+
+def test_artifact_fingerprint_preserves_bfloat16_storage_bytes():
+    first = {"hidden": torch.tensor([1.0, 2.0], dtype=torch.bfloat16)}
+    second = {"hidden": torch.tensor([1.0, 3.0], dtype=torch.bfloat16)}
+    assert artifact_fingerprint(first, ("hidden",)) != artifact_fingerprint(
+        second, ("hidden",)
+    )
