@@ -11,6 +11,9 @@ from time import perf_counter
 
 import torch
 
+from textjepa.models.hierarchical_language_jepa import (
+    HIERARCHICAL_LANGUAGE_ARCHITECTURE,
+)
 from textjepa.data.provenance import artifact_fingerprint, sha256_file
 from textjepa.planning.hierarchical_language import (
     exact_endpoint_control,
