@@ -334,6 +334,7 @@ def _record_counterfactual_flops(
     ledger: ComputeLedger,
     model: HierarchicalLanguageJEPA,
     branch: dict[str, torch.Tensor],
+    rollout_horizon: int = 1,
 ) -> None:
     token_items = int(branch["lengths"].sum())
     sentence_mask = branch["sentence_eligible"]
@@ -364,6 +365,29 @@ def _record_counterfactual_flops(
                 estimated_flops=estimated,
                 calls=0,
                 items=items,
+            )
+    if rollout_horizon > 1:
+        eligible = int((branch["lengths"] >= rollout_horizon).sum())
+        rollout_items = eligible * rollout_horizon
+        if rollout_items and any(
+            parameter.requires_grad for parameter in model.p0.parameters()
+        ):
+            ledger.add(
+                "replay_p0_rollout",
+                estimated_flops=training_flops(
+                    parameter_count(model.p0, trainable_only=True),
+                    rollout_items,
+                ),
+                calls=0,
+                items=rollout_items,
+            )
+            ledger.add(
+                "replay_token_action_rollout",
+                estimated_flops=embedding_training_ops(
+                    model.token_action.embedding_dim, rollout_items
+                ),
+                calls=0,
+                items=rollout_items,
             )
 
 
@@ -907,7 +931,9 @@ def main() -> None:
                         cf_loss, optimizer, model, args.ema_momentum
                     )
                     replay_skipped_batches += int(not updated)
-                _record_counterfactual_flops(compute, model, branch)
+                _record_counterfactual_flops(
+                    compute, model, branch, rollout_horizon
+                )
                 replay_examples += len(branch["lengths"])
                 for name, value in cf_losses.items():
                     replay_totals[name] = replay_totals.get(

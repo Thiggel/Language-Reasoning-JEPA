@@ -9,6 +9,7 @@ import pytest
 from scripts import evaluate_hierarchical_language_oracles as evaluate
 from scripts.run_hierarchical_language_pilot import replay_batch_size
 from scripts import train_hierarchical_language_jepa as train
+from textjepa.analysis.compute import ComputeLedger
 from textjepa.data.language_planning import (
     MODEL_ID,
     MODEL_REVISION,
@@ -295,6 +296,26 @@ def test_multistep_pilot_uses_independent_replay_microbatch():
     )
     assert replay_batch_size("counterfactual", args) == 32
     assert replay_batch_size("multistep", args) == 4
+
+
+def test_recursive_replay_records_additional_predictor_flops():
+    config = HierarchicalLanguageJEPAConfig(
+        d_backbone=6, vocab_size=8, d_token=4, d_sentence=3,
+        d_action=2, predictor_width=4, token_layers=1,
+        sentence_layers=1, n_heads=1,
+    )
+    model = HierarchicalLanguageJEPA(config)
+    ledger = ComputeLedger()
+    branch = {
+        "lengths": torch.tensor([4, 2]),
+        "sentence_eligible": torch.tensor([False, False]),
+    }
+    train._record_counterfactual_flops(
+        ledger, model, branch, rollout_horizon=4
+    )
+    summary = ledger.summary()["components"]
+    assert summary["replay_p0_rollout"]["items"] == 4
+    assert summary["replay_p0_rollout"]["estimated_flops"] > 0
 
 
 def test_evaluation_only_stage_rejects_dense_training(tmp_path, monkeypatch):
