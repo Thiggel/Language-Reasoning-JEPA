@@ -262,3 +262,25 @@ def test_faithful_gar_can_include_feasible_and_invalid_counterfactuals():
         "The proposed definition is invalid and nothing changes ."
     )
     assert invalid_tokens in item["ga_alt_steps"]
+
+
+def test_faithful_random_gar_rolls_out_invalid_counterfactuals_without_step_assertion():
+    """Random GAR must render invalid proposals, not execute them."""
+    from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
+
+    dataset = FaithfulDataset(
+        cached_faithful_vocab(), size=16, seed=918, max_op=15,
+        max_edge=20, op_range=(5, 8), distractor_prob=0.0,
+        geo_rank_k=2, geo_rank_horizon=4, geo_rank_policy="random",
+        invalid_counterfactual_k=2,
+    )
+    item = next(dataset[index] for index in range(16) if "ga_t" in dataset[index])
+    invalid_tokens = dataset.vocab.encode(
+        "The proposed definition is invalid and nothing changes ."
+    )
+    assert invalid_tokens in item["ga_alt_steps"]
+    assert any(
+        invalid_tokens in rollout
+        for candidate_rollouts in item["ga_rollout_steps"]
+        for rollout in candidate_rollouts
+    )

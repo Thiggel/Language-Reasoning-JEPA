@@ -379,7 +379,15 @@ class FaithfulDataset(Dataset):
                             roll_env = env2.clone()
                             sequence = list(steps[:t_star])
                             sequence.append(
-                                self.vocab.encode(roll_env.step(candidate))
+                                # ``candidates`` deliberately includes
+                                # infeasible actions when invalid
+                                # counterfactual supervision is enabled.
+                                # Render their executor outcome without
+                                # mutating the rollout state; calling
+                                # ``step`` here asserted before training.
+                                self.vocab.encode(
+                                    roll_env.step_or_invalid(candidate)
+                                )
                             )
                             for _depth in range(1, self.geo_rank_horizon):
                                 if roll_env.solved:
