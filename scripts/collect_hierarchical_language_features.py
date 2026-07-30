@@ -115,8 +115,10 @@ def _backend_metadata() -> dict[str, object]:
         ),
         "flash_linear_attention_available": flash,
         "causal_conv1d_available": causal_conv,
-        "torch_version": torch.__version__,
-        "cuda_version": torch.version.cuda,
+        "torch_version": str(torch.__version__),
+        "cuda_version": (
+            None if torch.version.cuda is None else str(torch.version.cuda)
+        ),
     }
 
 

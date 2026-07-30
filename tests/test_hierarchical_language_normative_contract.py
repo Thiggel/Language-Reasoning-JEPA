@@ -18,6 +18,7 @@ from textjepa.data.language_planning import (
     tokenize_steps,
 )
 from scripts.collect_hierarchical_language_features import (
+    _backend_metadata,
     _trim_generated,
     collect_counterfactuals,
 )
@@ -115,6 +116,14 @@ def test_pinned_reference_constants_and_prompt_contract():
     assert prompt_token_ids(
         NewTransformersFakeTokenizer(), "problem"
     ) == [10, 11, 12]
+
+
+def test_backend_metadata_is_weights_only_serializable(tmp_path):
+    path = tmp_path / "backend.pt"
+    torch.save(_backend_metadata(), path)
+    assert isinstance(
+        torch.load(path, weights_only=True)["torch_version"], str
+    )
 
 
 def test_global_prefix_boundaries_reconstruct_solution_exactly():
