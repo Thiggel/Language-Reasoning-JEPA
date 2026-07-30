@@ -47,6 +47,10 @@ controller rounds under `runs/autonomy/`. This project's conclusions must not
 be transferred to the observed intent-phrase project without an explicit
 experiment.
 
+Current bounded evidence and the readable planning-effort plot are linked from
+[`STATUS.md`](STATUS.md). The run is explicitly candidate-privileged and
+single-seed until the queued Alex replication completes.
+
 ## Figure
 
 - Discourse / Token-JEPA causal sentence-embedding figure:
