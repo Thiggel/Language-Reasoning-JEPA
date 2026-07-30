@@ -12,11 +12,12 @@ learning_rate=${4:-1e-3}
 epochs=${EPOCHS:-10}
 train_size=${TRAIN_SIZE:-30000}
 batch_size=${BATCH_SIZE:-32}
+lm_d_model=${LM_D_MODEL:-256}
 seed=${SEED:-0}
 device=${DEVICE:-cuda:0}
 case "$dataset" in igsm|igsm_real) ;; *) echo "bad dataset: $dataset" >&2; exit 2;; esac
 case "$family" in mlp_jepa|causal_jepa|token_lm) ;; *) echo "bad family: $family" >&2; exit 2;; esac
-case "$epochs:$train_size:$batch_size" in *[!0-9:]*|:*) echo "bad EPOCHS/TRAIN_SIZE/BATCH_SIZE" >&2; exit 2;; esac
+case "$epochs:$train_size:$batch_size:$lm_d_model" in *[!0-9:]*|:*) echo "bad EPOCHS/TRAIN_SIZE/BATCH_SIZE/LM_D_MODEL" >&2; exit 2;; esac
 
 tmp=/tmp/tj-${SLURM_JOB_ID:-$$}
 mkdir -p "$tmp"; chmod 700 "$tmp"
@@ -44,7 +45,7 @@ case "$family" in
     ;;
   token_lm)
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train_lm.py" +experiment=paper_token_lm_faithful \
-      "${common[@]}" model.d_model=256 model.n_layers=8 model.n_heads=8 \
+      "${common[@]}" "model.d_model=$lm_d_model" model.n_layers=8 model.n_heads=8 \
       model.ff_mult=4 model.max_len=1024 model.recurrent=false
     eval_script=plan_lm.py
     ;;
