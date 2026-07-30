@@ -8,7 +8,7 @@ from textjepa.analysis.hierarchical_language import (
     requested_achieved_displacement,
     value_ranking_diagnostics,
 )
-from textjepa.analysis.compute import ComputeLedger
+from textjepa.analysis.compute import ComputeLedger, embedding_training_ops
 
 
 def test_representation_statistics_detect_collapse_and_rank():
@@ -69,3 +69,7 @@ def test_compute_ledger_reports_fractional_flops_and_latency():
     assert summary["components"]["counterfactual_generation"][
         "wall_fraction"
     ] == 0.25
+
+
+def test_embedding_compute_scales_with_width_not_vocabulary_size():
+    assert embedding_training_ops(width=256, processed_items=10) == 5120

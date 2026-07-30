@@ -18,6 +18,7 @@ import torch
 
 from textjepa.analysis.compute import (
     ComputeLedger,
+    embedding_training_ops,
     parameter_count,
     training_flops,
 )
@@ -314,11 +315,16 @@ def _record_dense_flops(
         modules.append(("dense_pi1", model.pi1, sentence_items))
     for name, module, items in modules:
         if any(parameter.requires_grad for parameter in module.parameters()):
+            estimated = (
+                embedding_training_ops(module.embedding_dim, items)
+                if isinstance(module, torch.nn.Embedding)
+                else training_flops(
+                    parameter_count(module, trainable_only=True), items
+                )
+            )
             ledger.add(
                 name,
-                estimated_flops=training_flops(
-                    parameter_count(module, trainable_only=True), items
-                ),
+                estimated_flops=estimated,
                 calls=0,
                 items=items,
             )
@@ -346,11 +352,16 @@ def _record_counterfactual_flops(
         if items and any(
             parameter.requires_grad for parameter in module.parameters()
         ):
+            estimated = (
+                embedding_training_ops(module.embedding_dim, items)
+                if isinstance(module, torch.nn.Embedding)
+                else training_flops(
+                    parameter_count(module, trainable_only=True), items
+                )
+            )
             ledger.add(
                 name,
-                estimated_flops=training_flops(
-                    parameter_count(module, trainable_only=True), items
-                ),
+                estimated_flops=estimated,
                 calls=0,
                 items=items,
             )

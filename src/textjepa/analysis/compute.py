@@ -6,6 +6,10 @@ comparable across additions:
 
 * frozen inference: ``2 * parameters * processed_tokens``;
 * trainable forward+backward: ``6 * parameters * processed_items``.
+
+Embedding tables are an exception: a lookup does not multiply by every row in
+the vocabulary. Their forward/backward operation estimate is instead
+``2 * embedding_width * processed_items``.
 """
 
 from __future__ import annotations
@@ -117,3 +121,10 @@ def training_flops(parameters: int, processed_items: int) -> float:
     if parameters < 0 or processed_items < 0:
         raise ValueError("FLOP inputs must be nonnegative")
     return float(6 * parameters * processed_items)
+
+
+def embedding_training_ops(width: int, processed_items: int) -> float:
+    """Estimate lookup plus sparse-gradient accumulation for embeddings."""
+    if width < 0 or processed_items < 0:
+        raise ValueError("embedding operation inputs must be nonnegative")
+    return float(2 * width * processed_items)
