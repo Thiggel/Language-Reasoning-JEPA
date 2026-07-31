@@ -7,6 +7,7 @@ from textjepa.models.hierarchical_language_jepa import (
 from textjepa.planning.nested_language_runtime import (
     advance_sentence_planning_state,
     contextual_prior_cem,
+    macro_action_log_probability,
     make_sentence_planning_state,
     rollout_prior_noise,
     sentence_pre_action_context,
@@ -141,3 +142,40 @@ def test_contextual_cem_uses_grounded_cost_for_elite_updates():
     )
     assert result.noise[0, 0] > 0
     assert all(row["grounded_candidates"] == 64 for row in result.diagnostics)
+
+
+def test_achieved_macro_action_is_rescored_under_pre_action_prior():
+    model = tiny_model()
+    root = make_sentence_planning_state(
+        model, torch.zeros(1, 1, 4), torch.empty(1, 0, 2)
+    )
+    task = torch.zeros(3)
+    near = macro_action_log_probability(model, root, task, torch.zeros(1, 2))
+    far = macro_action_log_probability(
+        model, root, task, torch.full((1, 2), 20.0)
+    )
+    assert near.shape == (1,)
+    assert near.item() > far.item()
+
+
+def test_grounded_cem_keeps_trust_region_penalty():
+    model = tiny_model()
+    root = make_sentence_planning_state(
+        model, torch.zeros(1, 1, 4), torch.empty(1, 0, 2)
+    )
+
+    def objective(rollout):
+        zeros = torch.zeros(len(rollout.actions))
+        return zeros, zeros.long()
+
+    def ground(noise, rollout, ids):
+        return -100.0 * noise[:, 0].square().mean(-1).sqrt()
+
+    result = contextual_prior_cem(
+        model, root, torch.zeros(3), objective,
+        horizon=1, population=128, iterations=2, elite_fraction=0.1,
+        trust_region=0.25, ground=ground, ground_topn=128,
+        select_grounded=True, generator=torch.Generator().manual_seed(12),
+    )
+    raw = -100.0 * result.noise[0].square().mean().sqrt()
+    assert result.cost > float(raw)

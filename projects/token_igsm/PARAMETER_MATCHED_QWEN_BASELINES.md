@@ -23,16 +23,15 @@ Two controls use exactly that scalar budget:
 
 Both controls use solution-only causal cross-entropy, excluding prompt,
 padding, and terminal special tokens. They see the same deterministic
-tokenized examples and the same 6,000 optimizer updates (batch size eight) as
-the token-JEPA screen. The newly initialized control uses peak LR `1e-3`; the
+tokenized examples and the same 50,000 optimizer updates (batch size eight) as
+the scaled JEPA run. The newly initialized control uses peak LR `1e-3`; the
 pretrained unfreezing control uses `1e-5`. Both use 5% linear warmup followed
-by cosine decay, and save steps 1,500, 3,000, 4,500, and 6,000.
+by cosine decay, and save checkpoints at 25%, 50%, 75%, and 100% of training.
 
-The 6,000-step budget is an initial sufficient-scale gate, not a convergence
-claim: it exposes 48,000 training examples, about 4.8 passes over the
-10,000-example train subset. Checkpoint curves determine whether the models
-are still improving sharply. A larger run is justified only if the final two
-checkpoints have not stabilized.
+The submitted campaign uses one seed and 25% of the reference split counts:
+50,000 train problems plus held-out ID, length-OOD, structural-OOD, and
+paraphrase-OOD subsets. Checkpoint curves diagnose undertraining; multi-seed
+confirmation remains necessary for final small-effect claims.
 
 Qwen final-answer accuracy is a deployable metric. Flat token-JEPA planning is
 an explicitly **candidate-privileged oracle diagnostic** and must not be

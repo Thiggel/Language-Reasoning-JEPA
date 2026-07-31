@@ -1,5 +1,6 @@
 import sys
 
+import pytest
 import torch
 
 import scripts.build_hierarchical_value_teacher as builder
@@ -45,7 +46,10 @@ def test_value_teacher_isolates_metric_and_total_prefix_depth(
         "action_mask": torch.ones(2, 3, dtype=torch.bool),
         "dataset_fingerprint": "data",
         "terminal_set_fingerprint": "terminal",
-        "symbolically_verified": True,
+        "terminal_set_symbolically_verified": True,
+        "rollouts_exactly_grounded": True,
+        "checkpoint_sha256": builder.sha256_file(checkpoint),
+        "oracle_rollout_fingerprint": "rollout-payload",
     }, rollouts)
     for metric, maximum, kind in (
         ("euclidean", 1, "raw_endpoint"),
@@ -66,4 +70,47 @@ def test_value_teacher_isolates_metric_and_total_prefix_depth(
         assert payload["max_total_prefix"] == maximum
         assert payload["teacher_cost"].shape == (2, 3)
         assert payload["architecture"] == HIERARCHICAL_LANGUAGE_ARCHITECTURE
+        assert payload["value_replay_fingerprint"]
 
+
+def test_value_teacher_rejects_latent_or_mismatched_rollouts(tmp_path, monkeypatch):
+    config = HierarchicalLanguageJEPAConfig(
+        d_backbone=8, vocab_size=11, d_token=6, d_sentence=4,
+        d_action=2, d_task=3, predictor_width=8, token_layers=1,
+        sentence_layers=1, n_heads=2, token_context=4,
+        sentence_context=4, max_span=4, enable_macro_actions=True,
+    )
+    model = HierarchicalLanguageJEPA(config)
+    learner = HierarchicalLanguageLearner(model, ResearchStage.MACRO_ACTION)
+    monkeypatch.setattr(builder, "load_checkpoint", lambda path, device: (
+        model, learner
+    ))
+    checkpoint = tmp_path / "checkpoint.pt"
+    checkpoint.write_bytes(b"checkpoint")
+    base = {
+        "rollout_states": torch.randn(1, 2, 1, 1, 4),
+        "rollout_log_probabilities": torch.randn(1, 2, 1, 1),
+        "rollout_mask": torch.ones(1, 2, 1, 1, dtype=torch.bool),
+        "goals": torch.randn(1, 1, 4), "goal_mask": torch.ones(1, 1, dtype=torch.bool),
+        "successor_state": torch.randn(1, 2, 4),
+        "successor_context": torch.randn(1, 2, 8),
+        "task_hidden": torch.randn(1, 8),
+        "first_action_log_probability": torch.randn(1, 2),
+        "action_mask": torch.ones(1, 2, dtype=torch.bool),
+        "dataset_fingerprint": "data", "terminal_set_fingerprint": "terminal",
+        "terminal_set_symbolically_verified": True,
+        "oracle_rollout_fingerprint": "rollout",
+    }
+    for grounded, sha, message in (
+        (False, builder.sha256_file(checkpoint), "exactly re-encoded"),
+        (True, "wrong-checkpoint", "different macro checkpoint"),
+    ):
+        rollouts = tmp_path / f"rollouts-{grounded}-{sha}.pt"
+        torch.save({**base, "rollouts_exactly_grounded": grounded,
+                    "checkpoint_sha256": sha}, rollouts)
+        monkeypatch.setattr(sys, "argv", [
+            "build_hierarchical_value_teacher.py", "--checkpoint", str(checkpoint),
+            "--oracle-rollouts", str(rollouts), "--output", str(tmp_path / "out.pt"),
+        ])
+        with pytest.raises(ValueError, match=message):
+            builder.main()

@@ -184,6 +184,9 @@ def main() -> None:
             validity = batch.get("nested_validity")
             required_metrics = {
                 "heldout_sentence_dynamics",
+                "heldout_sentence_identity",
+                "heldout_sentence_dynamics_gain",
+                "heldout_commutation_error",
                 "sentence_effective_rank",
                 "symbolic_state_purity",
             }

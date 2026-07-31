@@ -136,7 +136,8 @@ def main() -> None:
     candidate_tokens, candidate_lengths, candidate_logp = [], [], []
     predicted_endpoints, exact_endpoints, waypoints = [], [], []
     symbolic_ids, waypoint_ids, metadata = [], [], []
-    true_dynamics, boundary_states = [], []
+    true_dynamics, identity_dynamics, commutation_errors = [], [], []
+    boundary_states = []
     for root_number, (row, boundary_index) in enumerate(roots):
         problem_id = str(features["problem_id"][row])
         if problem_id not in examples:
@@ -217,6 +218,16 @@ def main() -> None:
         true_dynamics.append(float(learner.sentence_metric(
             predicted_true[None], waypoint[None]
         )[0]))
+        identity_dynamics.append(float(learner.sentence_metric(
+            planning_state.state, waypoint[None]
+        )[0]))
+        # Candidate zero is the exact observed reference injected above.
+        predicted_reference_coarse = model.e0_to_1(
+            predicted[0][None]
+        )
+        commutation_errors.append(float(learner.sentence_metric(
+            predicted_reference_coarse, predicted_true[None]
+        )[0]))
         boundary_states.extend([
             model.encode_sentence(hidden[position - 1], target=True).cpu()
             for position in boundaries.tolist()
@@ -250,8 +261,15 @@ def main() -> None:
         symbolic[torch.arange(len(symbolic)), selected]
         == waypoint_symbolic
     ).float().mean())
+    mean_dynamics = sum(true_dynamics) / len(true_dynamics)
+    mean_identity = sum(identity_dynamics) / len(identity_dynamics)
     metrics = {
-        "heldout_sentence_dynamics": sum(true_dynamics) / len(true_dynamics),
+        "heldout_sentence_dynamics": mean_dynamics,
+        "heldout_sentence_identity": mean_identity,
+        "heldout_sentence_dynamics_gain": mean_identity - mean_dynamics,
+        "heldout_commutation_error": (
+            sum(commutation_errors) / len(commutation_errors)
+        ),
         "sentence_effective_rank": _effective_rank(
             torch.stack(boundary_states)
         ),
@@ -259,6 +277,7 @@ def main() -> None:
     }
     passed = (
         all(math.isfinite(value) for value in metrics.values())
+        and metrics["heldout_sentence_dynamics_gain"] > 0.0
         and metrics["sentence_effective_rank"] >= 4.0
         and metrics["symbolic_state_purity"] > 0.0
     )
@@ -304,10 +323,9 @@ def main() -> None:
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     torch.save(payload, args.output)
-    if not passed:
-        raise SystemExit(
-            "nested-state validity gate failed: " + json.dumps(metrics)
-        )
+    # A failed scientific gate is represented in the bound artifact. The
+    # orchestrator decides whether to stop and can therefore write a
+    # structured validity outcome instead of misclassifying this as a crash.
 
 
 if __name__ == "__main__":

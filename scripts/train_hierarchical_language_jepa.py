@@ -43,6 +43,7 @@ from textjepa.data.language_planning import (
     TRANSFORMERS_VERSION,
     collate_counterfactual_records,
 )
+from textjepa.data.provenance import artifact_fingerprint
 from textjepa.data.provenance import sha256_file
 
 
@@ -813,18 +814,37 @@ def main() -> None:
         if args.init_checkpoint is not None else ""
     )
     if value_replay is not None:
+        replay_source_checkpoint = checkpoint_sha256
+        if stage == ResearchStage.CLOSED_LOOP_REANALYSIS:
+            replay_source_checkpoint = initialized_from.get(
+                "initialized_from_sha256"
+            )
+            if not replay_source_checkpoint:
+                raise ValueError(
+                    "value checkpoint lacks its macro-teacher provenance"
+                )
         required_value_provenance = {
             "architecture": HIERARCHICAL_LANGUAGE_ARCHITECTURE,
             "model_revision": MODEL_REVISION,
             "transformers_version": TRANSFORMERS_VERSION,
             "dataset_fingerprint": feature_header.get("dataset_fingerprint"),
-            "source_checkpoint_sha256": checkpoint_sha256,
+            "source_checkpoint_sha256": replay_source_checkpoint,
         }
         if any(
             value_replay.get(name) != value
             for name, value in required_value_provenance.items()
         ):
             raise ValueError("value replay provenance is incompatible")
+        replay_fields = (
+            "successor_state", "successor_context", "task_hidden",
+            "first_action_log_probability", "teacher_cost", "action_mask",
+            "dataset_fingerprint", "terminal_set_fingerprint",
+            "oracle_rollout_fingerprint", "source_checkpoint_sha256",
+        )
+        if value_replay.get("value_replay_fingerprint") != (
+            artifact_fingerprint(value_replay, replay_fields)
+        ):
+            raise ValueError("value replay payload fingerprint is invalid")
     if stage == ResearchStage.CLOSED_LOOP_REANALYSIS:
         validity = (
             experiment_config.get("validity_gates", {})
@@ -903,6 +923,7 @@ def main() -> None:
                 str(args.init_checkpoint)
                 if initialized_from is not None else None
             ),
+            "initialized_from_sha256": checkpoint_sha256 or None,
             "admission": admission,
             "trainable_modules": trainable_modules,
             "frozen_modules": [
@@ -932,6 +953,10 @@ def main() -> None:
                 "input_fingerprint"
             ),
             "source_feature_sha256": sha256_file(args.features),
+            "value_replay_fingerprint": (
+                value_replay.get("value_replay_fingerprint")
+                if value_replay is not None else None
+            ),
         }
 
     def after_optimizer_step() -> None:

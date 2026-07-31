@@ -67,7 +67,7 @@ def test_oracle_rollout_cli_preserves_total_prefix_and_provenance(
         "--features", str(features), "--checkpoint", str(checkpoint),
         "--output", str(output), "--max-roots", "2",
         "--first-actions", "3", "--continuation-samples", "2",
-        "--max-prefix", "4", "--device", "cpu",
+        "--max-prefix", "4", "--device", "cpu", "--latent-diagnostic",
     ])
     builder.main()
     payload = torch.load(output, map_location="cpu", weights_only=True)
@@ -79,4 +79,5 @@ def test_oracle_rollout_cli_preserves_total_prefix_and_provenance(
     assert payload["sampling"]["context_history_preserved"] is True
     assert payload["terminal_set_fingerprint"]
     assert payload["oracle_rollout_fingerprint"]
-
+    assert payload["terminal_set_symbolically_verified"] is True
+    assert payload["rollouts_exactly_grounded"] is False

@@ -99,6 +99,11 @@
   `scancel`, or detached launch commands during an autonomous oversight turn.
   The deterministic interface is `automation/bin/researchctl`; operator usage
   is documented in `docs/AUTONOMOUS_RESEARCH.md`.
+- During an interactive user-directed turn, Codex may use non-interactive SSH
+  for scoped inspection and TextJEPA operations. It may invoke `sbatch` or
+  `scancel` only when the user explicitly authorizes the corresponding
+  submission or cancellation, after resolving the exact target. This exception
+  does not apply to autonomous oversight or unrelated jobs.
 - Inventory before planning GPU work. Slurm owns allocation on Alex, Lise, and
   Grete. On Grünau, require both low allocated memory and low utilization and
   remember that direct observation cannot prevent a race with another user.

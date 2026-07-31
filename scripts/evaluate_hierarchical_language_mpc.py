@@ -24,11 +24,11 @@ from textjepa.planning.nested_language_runtime import (
     rollout_prior_noise,
     sentence_planning_state_from_trace,
 )
-from textjepa.training.hierarchical_language import ResearchStage
-from textjepa.utils.hierarchical_generation import (
-    exact_ground_sentence_candidates,
-    generate_complete_reasoning_candidates,
+from textjepa.planning.grounded_language_worker import (
+    build_worker_bank,
+    realize_macro_action,
 )
+from textjepa.training.hierarchical_language import ResearchStage
 from textjepa.utils.language_planning_runtime import (
     backend_metadata,
     load_hierarchical_checkpoint,
@@ -42,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--examples", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--replay-output", type=Path)
     parser.add_argument("--dataset-split", required=True)
     parser.add_argument("--method-label", default="hierarchical")
     parser.add_argument("--mode", choices=("oracle", "value"), required=True)
@@ -121,7 +122,7 @@ def main() -> None:
         ResearchStage.MACRO_ACTION
         if args.mode == "oracle" else ResearchStage.VALUE_DISTILLATION
     )
-    if learner.stage != required_stage or model.pi1 is None or (
+    if learner.stage < required_stage or model.pi1 is None or (
         args.mode == "value" and model.v is None
     ):
         raise ValueError(f"{args.mode} MPC requires {required_stage.name}")
@@ -134,6 +135,8 @@ def main() -> None:
         generator=torch.Generator().manual_seed(args.seed),
     )[:count]
     rows = []
+    planner_records = []
+    grounded_transitions = []
     for episode, row_tensor in enumerate(order):
         row = int(row_tensor)
         problem_id = str(features["problem_id"][row])
@@ -151,14 +154,23 @@ def main() -> None:
             )
         boundaries = [prompt_len]
         generated_tokens: list[int] = []
-        manager_seconds = worker_seconds = reencode_seconds = 0.0
+        manager_seconds = reencode_seconds = 0.0
+        generation_seconds = candidate_grounding_seconds = 0.0
+        token_rollout_seconds = worker_scoring_seconds = 0.0
+        generated_candidate_tokens = exact_candidate_tensor_tokens = 0
+        token_transition_evaluations = manager_transition_evaluations = 0
+        full_prefix_reencode_tokens = 0
         manager_diagnostics = []
         worker_exact_gaps = []
         failure = None
         started = perf_counter()
         hidden = _encode_prefix(frozen, prefix).to(dtype=dtype)
         reencode_seconds += perf_counter() - started
+        full_prefix_reencode_tokens += len(prefix)
         for step in range(args.max_reasoning_steps):
+            root_prefix = len(prefix)
+            root_hidden_exact = hidden
+            root_boundaries = list(boundaries)
             boundary_tensor = torch.tensor(
                 boundaries, dtype=torch.long, device=args.device
             )
@@ -171,48 +183,26 @@ def main() -> None:
             # Build one supported worker bank at the exact real prefix. The
             # same bank grounds CEM elites/random controls, so comparisons do
             # not confound manager actions with different LM proposal draws.
-            started = perf_counter()
             try:
-                candidates = generate_complete_reasoning_candidates(
-                    frozen, tokenizer, prefix,
-                    population=args.worker_population,
-                    max_tokens=args.k0, temperature=args.temperature,
+                bank = build_worker_bank(
+                    model, frozen, tokenizer, prefix, hidden,
+                    prompt_len=prompt_len, population=args.worker_population,
+                    k0=args.k0, temperature=args.temperature,
                     top_p=args.top_p, top_k=args.top_k,
                     seed=args.seed * 1000003 + episode * 101 + step,
                 )
             except RuntimeError as error:
                 failure = str(error)
-                worker_seconds += perf_counter() - started
                 break
-            grounded = exact_ground_sentence_candidates(
-                frozen, prefix, candidates
+            generation_seconds += bank.generation_seconds
+            candidate_grounding_seconds += bank.exact_grounding_seconds
+            token_rollout_seconds += bank.token_rollout_seconds
+            lengths = [len(tokens) for tokens, _ in bank.candidates]
+            generated_candidate_tokens += sum(lengths)
+            token_transition_evaluations += sum(lengths)
+            exact_candidate_tensor_tokens += len(lengths) * (
+                len(prefix) + max(lengths)
             )
-            root = len(prefix)
-            first = max(prompt_len, root - model.config.token_context + 1)
-            prefix_lengths = torch.arange(first, root + 1, device=args.device)
-            state_history = model.e0(hidden[prefix_lengths - 1])[None]
-            action_history = model.token_action(prefix[first:root])[None]
-            predicted_token = []
-            for candidate, _ in candidates:
-                action = model.token_action(candidate.to(args.device))[None]
-                token_rollout, _ = model.p0.rollout(
-                    state_history[0, -1], action,
-                    state_history=state_history,
-                    action_history=action_history,
-                )
-                predicted_token.append(token_rollout[0, -1])
-            predicted_token = torch.stack(predicted_token)
-            predicted_coarse = model.e0_to_1(predicted_token)
-            exact_coarse = model.e0_to_1(model.e0(
-                grounded.endpoint_hidden.to(dtype=dtype)
-            ))
-            action_width = grounded.tokens.shape[1]
-            worker_actions = model.a1(
-                grounded.tokens,
-                torch.arange(action_width, device=args.device)[None]
-                < grounded.lengths[:, None],
-            )
-            worker_seconds += perf_counter() - started
 
             def objective(rollout: MacroRollout):
                 cumulative = (
@@ -231,27 +221,22 @@ def main() -> None:
                 return (cumulative + continuation).min(-1)
 
             def ground_manager(noise, predicted_rollout, ids):
+                nonlocal worker_scoring_seconds
                 grounded_costs = []
                 for local, manager_id in enumerate(ids.tolist()):
                     waypoint_i = predicted_rollout.states[manager_id, 0]
-                    worker_cost = metric(
-                        predicted_coarse, waypoint_i
-                    ) - args.worker_prior_weight * grounded.log_probabilities
-                    selected_i = int(worker_cost.argmin())
-                    exact_state = append_exact_sentence_transition(
-                        model, planning_state,
-                        worker_actions[selected_i:selected_i + 1],
-                        exact_coarse[selected_i:selected_i + 1],
+                    score_started = perf_counter()
+                    achieved = realize_macro_action(
+                        model, planning_state, task, waypoint_i, bank, metric,
+                        worker_prior_weight=args.worker_prior_weight,
                     )
-                    first_logp = predicted_rollout.log_probabilities[
-                        manager_id, 0:1
-                    ]
-                    states_i = exact_state.state[:, None]
-                    contexts_i = exact_state.context[:, None]
-                    logp_i = first_logp[None]
+                    worker_scoring_seconds += perf_counter() - score_started
+                    states_i = achieved.planning_state.state[:, None]
+                    contexts_i = achieved.planning_state.context[:, None]
+                    logp_i = achieved.prior_log_probability[:, None]
                     if args.k1 > 1:
                         continuation_rollout = rollout_prior_noise(
-                            model, exact_state, task,
+                            model, achieved.planning_state, task,
                             noise[local:local + 1, 1:],
                         )
                         states_i = torch.cat([
@@ -297,29 +282,81 @@ def main() -> None:
             )
             manager_seconds += perf_counter() - started
             manager_diagnostics.extend(manager.diagnostics)
-            waypoint = manager.rollout.states[0, 0]
-            predicted_cost = metric(predicted_coarse, waypoint) - (
-                args.worker_prior_weight * grounded.log_probabilities
+            manager_transition_evaluations += (
+                args.manager_population * args.k1 * args.cem_iterations
+                + args.k1
+                + sum(
+                    int(row["grounded_candidates"]) * max(args.k1 - 1, 0)
+                    for row in manager.diagnostics
+                )
             )
-            exact_cost = metric(exact_coarse, waypoint) - (
-                args.worker_prior_weight * grounded.log_probabilities
+            waypoint = manager.rollout.states[0, 0]
+            predicted_cost = metric(bank.predicted_coarse, waypoint) - (
+                args.worker_prior_weight * bank.lm_log_probability
+            )
+            exact_cost = metric(bank.exact_coarse, waypoint) - (
+                args.worker_prior_weight * bank.lm_log_probability
             )
             selected = int(predicted_cost.argmin())
             worker_exact_gaps.append(float(
                 exact_cost[selected] - exact_cost.min()
             ))
-            selected_tokens, selected_terminal = candidates[selected]
-            started = perf_counter()
+            selected_tokens, selected_terminal = bank.candidates[selected]
             selected_tokens = selected_tokens.to(args.device)
             prefix = torch.cat([prefix, selected_tokens])
             generated_tokens.extend(selected_tokens.tolist())
             boundaries.append(len(prefix))
-            worker_seconds += perf_counter() - started
             # Hierarchical MPC always discards imagined endpoints and rebuilds
             # the exact frozen-LM state/cache after executing real text.
             started = perf_counter()
             hidden = _encode_prefix(frozen, prefix).to(dtype=dtype)
             reencode_seconds += perf_counter() - started
+            full_prefix_reencode_tokens += len(prefix)
+            if args.replay_output is not None:
+                token_begin = max(
+                    prompt_len, root_prefix - model.config.token_context + 1
+                )
+                token_prefix_lengths = torch.arange(
+                    token_begin, root_prefix + 1, device=args.device
+                )
+                sentence_begin = max(
+                    0, len(root_boundaries) - model.config.sentence_context
+                )
+                sentence_positions = root_boundaries[sentence_begin:]
+                planner_records.append({
+                    "source": "sample_t0.8",
+                    "temperature": args.temperature,
+                    "token_ids": selected_tokens.detach().cpu(),
+                    "root_hidden": root_hidden_exact[root_prefix - 1].detach().cpu(),
+                    "suffix_hidden": hidden[root_prefix:].detach().cpu(),
+                    "sentence_eligible": True,
+                    "completed_boundary": True,
+                    "terminal_eos": bool(selected_terminal),
+                    "lm_log_probability": bank.lm_log_probability[selected].detach().cpu(),
+                    "root_token_history_hidden": root_hidden_exact[
+                        token_prefix_lengths - 1
+                    ].detach().cpu(),
+                    "root_token_history_action_ids": prefix[
+                        token_begin:root_prefix
+                    ].detach().cpu(),
+                    "root_sentence_history_hidden": root_hidden_exact[
+                        torch.tensor(sentence_positions, device=args.device) - 1
+                    ].detach().cpu(),
+                    "root_sentence_history_spans": [
+                        prefix[root_boundaries[index]:root_boundaries[index + 1]].detach().cpu()
+                        for index in range(sentence_begin, len(root_boundaries) - 1)
+                    ],
+                })
+                grounded_transitions.append({
+                    "candidate_source": "worker_achieved",
+                    "cem_iteration": max(args.cem_iterations - 1, 0),
+                    "exact_reencoded": True,
+                    "worker_achieved": True,
+                    "predicted_endpoint": bank.predicted_coarse[selected].detach().cpu(),
+                    "achieved_endpoint": bank.exact_coarse[selected].detach().cpu(),
+                    "problem_id": problem_id,
+                    "root_prefix_length": root_prefix,
+                })
             decoded_step = tokenizer.decode(
                 selected_tokens.tolist(), skip_special_tokens=True
             )
@@ -343,8 +380,26 @@ def main() -> None:
             "correct": bool(correct),
             "generated_steps": len(boundaries) - 1,
             "generated_tokens": len(generated_tokens),
+            "mpc_replans": len(boundaries) - 1,
+            "generated_candidate_tokens": generated_candidate_tokens,
+            "exact_candidate_tensor_tokens": exact_candidate_tensor_tokens,
+            "token_transition_evaluations": token_transition_evaluations,
+            "manager_transition_evaluations": manager_transition_evaluations,
+            "full_prefix_reencode_tokens": full_prefix_reencode_tokens,
             "manager_seconds": manager_seconds,
-            "worker_seconds": worker_seconds,
+            "candidate_generation_seconds": generation_seconds,
+            "candidate_exact_grounding_seconds": candidate_grounding_seconds,
+            "token_rollout_seconds": token_rollout_seconds,
+            "worker_scoring_seconds": worker_scoring_seconds,
+            "worker_seconds": (
+                generation_seconds + candidate_grounding_seconds
+                + token_rollout_seconds + worker_scoring_seconds
+            ),
+            "planning_wall_seconds": (
+                manager_seconds + generation_seconds
+                + candidate_grounding_seconds + token_rollout_seconds
+                + worker_scoring_seconds + reencode_seconds
+            ),
             "exact_reencode_seconds": reencode_seconds,
             "mean_worker_exact_gap": (
                 sum(worker_exact_gaps) / len(worker_exact_gaps)
@@ -359,12 +414,21 @@ def main() -> None:
             if key not in {"generated_text", "manager_diagnostics"}
         }, sort_keys=True), flush=True)
     accuracy = sum(row["correct"] for row in rows) / len(rows)
+    # Wilson interval remains meaningful for small pilot cells and does not
+    # pretend a single-seed estimate is asymptotically Gaussian.
+    z = 1.959963984540054
+    n = len(rows)
+    center = (accuracy + z * z / (2 * n)) / (1 + z * z / n)
+    half = z * ((accuracy * (1 - accuracy) / n + z * z / (4 * n * n)) ** 0.5) / (
+        1 + z * z / n
+    )
     output = {
         "checkpoint_sha256": sha256_file(args.checkpoint),
         "dataset_fingerprint": features["dataset_fingerprint"],
         "mode": args.mode,
         "metric_name": args.metric,
         "accuracy": accuracy,
+        "accuracy_ci95": [max(0.0, center - half), min(1.0, center + half)],
         "successful_episodes": sum(row["correct"] for row in rows),
         "episodes": len(rows),
         "generation_failure_rate": sum(
@@ -376,8 +440,38 @@ def main() -> None:
         "mean_worker_seconds": sum(
             row["worker_seconds"] for row in rows
         ) / len(rows),
+        "mean_candidate_generation_seconds": sum(
+            row["candidate_generation_seconds"] for row in rows
+        ) / len(rows),
+        "mean_candidate_exact_grounding_seconds": sum(
+            row["candidate_exact_grounding_seconds"] for row in rows
+        ) / len(rows),
+        "mean_token_rollout_seconds": sum(
+            row["token_rollout_seconds"] for row in rows
+        ) / len(rows),
+        "mean_worker_scoring_seconds": sum(
+            row["worker_scoring_seconds"] for row in rows
+        ) / len(rows),
         "mean_exact_reencode_seconds": sum(
             row["exact_reencode_seconds"] for row in rows
+        ) / len(rows),
+        "mean_planning_wall_seconds": sum(
+            row["planning_wall_seconds"] for row in rows
+        ) / len(rows),
+        "mean_generated_candidate_tokens": sum(
+            row["generated_candidate_tokens"] for row in rows
+        ) / len(rows),
+        "mean_exact_candidate_tensor_tokens": sum(
+            row["exact_candidate_tensor_tokens"] for row in rows
+        ) / len(rows),
+        "mean_token_transition_evaluations": sum(
+            row["token_transition_evaluations"] for row in rows
+        ) / len(rows),
+        "mean_manager_transition_evaluations": sum(
+            row["manager_transition_evaluations"] for row in rows
+        ) / len(rows),
+        "mean_full_prefix_reencode_tokens": sum(
+            row["full_prefix_reencode_tokens"] for row in rows
         ) / len(rows),
         "mean_optimizer_curse_regret": (
             sum(
@@ -407,6 +501,21 @@ def main() -> None:
     args.output.write_text(
         json.dumps(output, indent=2) + "\n", encoding="utf-8"
     )
+    if args.replay_output is not None:
+        replay = {
+            "architecture": torch.load(
+                args.checkpoint, map_location="cpu", weights_only=True
+            )["architecture"],
+            "model_revision": MODEL_REVISION,
+            "transformers_version": TRANSFORMERS_VERSION,
+            "dataset_fingerprint": features["dataset_fingerprint"],
+            "source_checkpoint_sha256": sha256_file(args.checkpoint),
+            "exact_reencoded": True,
+            "grounded_transitions": grounded_transitions,
+            "counterfactual_records": planner_records,
+        }
+        args.replay_output.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(replay, args.replay_output)
 
 
 if __name__ == "__main__":

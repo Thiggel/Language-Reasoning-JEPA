@@ -46,6 +46,13 @@ CEM elites and random controls are grounded through the token worker. Grounded
 costs—not merely model-predicted costs—select subsequent CEM elites. Every
 branch retains its own bounded `P1` state/action history.
 
+Offline value-teacher trajectories obey the same contract. Every requested
+macro action is realized as a complete Qwen sentence, rolled through `P0`,
+exactly re-encoded, converted to `A1(text)`, and rescored under `Pi1` at the
+original pre-action state. Verified terminal sets and achieved rollout
+validity are stored separately. Latent-only `P1` rollouts are diagnostic
+artifacts and are rejected by value training.
+
 ## Isolated 2x2 value ablation
 
 One shared token/sentence/macro checkpoint feeds four value students:
@@ -62,6 +69,11 @@ total prefixes 1--8 plus step and macro-prior costs. Thus “quasimetric” mean
 the prior-constrained Bellman/search closure of the local endpoint discrepancy,
 not Mahalanobis distance itself.
 
+Euclidean and Mahalanobis teachers calibrate terminal and continuation
+temperatures to their held-out empirical distance scale. Their listwise
+ranking temperatures are calibrated to a shared target-entropy fraction.
+Every cell reports target entropy and mean top-one margin.
+
 ## Gates and reporting
 
 Training proceeds only after the preceding held-out gate passes: flat token
@@ -74,8 +86,24 @@ Final evaluation reports complete-solution accuracy on iGSM ID, near/far
 length OOD, structural OOD, and paraphrase OOD. Planning depth varies
 separately over `K0={8,16,32,64}` and `K1={1,2,4,8}`. Plots show accuracy
 against candidate token/transition evaluations, and fixed `K0=32,K1=2` OOD
-accuracy over value-training checkpoints. Candidate generation, manager,
-worker, and exact re-encoding wall times are logged separately.
+accuracy over value-training checkpoints. The depth evaluation is the full
+Cartesian grid. It includes greedy frozen Qwen, an information-matched flat
+token/value planner, and a prior-only manager. Candidate generation, exact
+candidate grounding, token rollout, worker scoring, manager search, and exact
+full-prefix re-encoding times are logged separately. The primary effort axis
+is measured wall time per episode, with component token/transition counts and
+Wilson accuracy intervals retained in the artifacts.
+
+Controlled iGSM anchor/paraphrase/near-miss triplets provide quantitative
+sentence-geometry evidence. Separate logical negation triplets, t-SNE, and
+UMAP are qualitative out-of-domain views; they do not replace effective-rank,
+triplet-accuracy, dynamics, or symbolic-purity gates.
+
+The first submitted campaign uses one seed, 25% of the reference iGSM split
+counts (50,000 training problems), 50,000 optimizer steps for every main
+training stage, 64 examples per full-grid planning cell, and larger 128--256
+example fixed-depth/gate evaluations. It is a
+decision-grade single-seed mechanism run, not a multi-seed paper estimate.
 
 The entry point is
 [`scripts/run_full_hierarchical_language_experiment.py`](../../scripts/run_full_hierarchical_language_experiment.py).

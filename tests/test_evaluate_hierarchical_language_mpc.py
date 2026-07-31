@@ -10,6 +10,11 @@ from textjepa.data.language_planning import (
     MODEL_ID,
     MODEL_REVISION,
     TRANSFORMERS_VERSION,
+    collate_counterfactual_records,
+)
+from textjepa.data.provenance import sha256_file
+from scripts.train_hierarchical_language_jepa import (
+    _validate_grounded_planner_replay,
 )
 from textjepa.models.hierarchical_language_jepa import (
     HIERARCHICAL_LANGUAGE_ARCHITECTURE,
@@ -20,7 +25,7 @@ from textjepa.training.hierarchical_language import (
     HierarchicalLanguageLearner,
     ResearchStage,
 )
-from textjepa.utils.hierarchical_generation import GroundedSentenceCandidates
+from textjepa.planning.grounded_language_worker import WorkerBank
 
 
 class FakeFrozen:
@@ -93,33 +98,28 @@ def test_mpc_cli_executes_worker_and_exactly_reencodes_without_value_leakage(
     def fake_load_reference(device, dtype):
         return FakeTokenizer(), frozen
 
-    def fake_candidates(*args, population, **kwargs):
-        return [(torch.tensor([7]), True) for _ in range(population)]
-
-    def fake_ground(model, prefix, candidates):
+    def fake_bank(model, frozen, tokenizer, prefix, hidden, *, population, **kwargs):
         calls["encode"] += 1
-        count = len(candidates)
-        return GroundedSentenceCandidates(
-            tokens=torch.full((count, 1), 7),
-            mask=torch.ones(count, 1, dtype=torch.bool),
-            lengths=torch.ones(count, dtype=torch.long),
-            log_probabilities=torch.zeros(count),
-            endpoint_hidden=torch.ones(count, 8),
-            terminal=torch.ones(count, dtype=torch.bool),
+        endpoint = model.e0_to_1(model.e0(torch.ones(population, 8)))
+        ids = torch.full((population, 1), 7)
+        return WorkerBank(
+            candidates=[(torch.tensor([7]), True) for _ in range(population)],
+            predicted_coarse=endpoint, exact_coarse=endpoint,
+            actions=model.a1(ids, torch.ones_like(ids, dtype=torch.bool)),
+            lm_log_probability=torch.zeros(population),
+            generation_seconds=0.0, exact_grounding_seconds=0.0,
+            token_rollout_seconds=0.0,
         )
 
     monkeypatch.setattr(evaluator, "load_reference_model", fake_load_reference)
-    monkeypatch.setattr(
-        evaluator, "generate_complete_reasoning_candidates", fake_candidates
-    )
-    monkeypatch.setattr(
-        evaluator, "exact_ground_sentence_candidates", fake_ground
-    )
+    monkeypatch.setattr(evaluator, "build_worker_bank", fake_bank)
     output = tmp_path / "evaluation.json"
+    replay_output = tmp_path / "planner_replay.pt"
     monkeypatch.setattr(sys, "argv", [
         "evaluate_hierarchical_language_mpc.py",
         "--features", str(features), "--examples", str(examples),
         "--checkpoint", str(checkpoint), "--output", str(output),
+        "--replay-output", str(replay_output),
         "--dataset-split", "id_test", "--mode", mode,
         "--metric", "euclidean", "--k0", "8", "--k1", "1",
         "--worker-population", "2", "--manager-population", "4",
@@ -135,3 +135,11 @@ def test_mpc_cli_executes_worker_and_exactly_reencodes_without_value_leakage(
     assert calls["prefix_encode"] == 2
     assert calls["encode"] == 1
     assert result["rows"][0]["exact_reencode_seconds"] >= 0
+    replay = torch.load(replay_output, map_location="cpu", weights_only=True)
+    _validate_grounded_planner_replay(
+        replay, dataset_fingerprint="data",
+        checkpoint_sha256=sha256_file(checkpoint),
+        require_exact_worker_achievement=True,
+    )
+    batch = collate_counterfactual_records(replay["counterfactual_records"])
+    assert batch["sentence_eligible"].all()

@@ -34,8 +34,9 @@ def _run(command: list[str]) -> None:
 
 def main() -> None:
     args = parse_args()
-    root = args.output_root or Path(os.environ.get("RUN_DIR", ""))
-    if not str(root):
+    run_dir = os.environ.get("RUN_DIR")
+    root = args.output_root or (Path(run_dir) if run_dir else None)
+    if root is None:
         raise ValueError("--output-root or RUN_DIR is required")
     root.mkdir(parents=True, exist_ok=True)
     python = sys.executable
@@ -45,6 +46,8 @@ def main() -> None:
     _run([
         python, "scripts/generate_hierarchical_igsm_pool.py",
         "--output", str(pool), "--per-depth-family", "5000",
+        "--normal-per-depth", "12500",
+        "--heldout-per-depth", "1250", "--length-per-depth", "1250",
         "--seed", str(args.seed),
     ])
     _run([
@@ -52,7 +55,7 @@ def main() -> None:
         "--input", str(pool), "--output-dir", str(splits),
         "--held-out-graph-family", "query_op_mul",
         "--held-out-template-family", "paraphrase_v1",
-        "--count-scale", "0.05", "--seed", str(args.seed),
+        "--count-scale", "0.25", "--seed", str(args.seed),
     ])
     for split in SPLITS:
         output = source / "features" / f"{split}.pt"
@@ -69,16 +72,19 @@ def main() -> None:
                 str(source / "features/train_counterfactual.pt"),
                 "--counterfactual-example-limit", "2000",
             ])
+        else:
+            command.extend(["--example-limit", "2048"])
         _run(command)
     full = root / "full"
     _run([
         python, "scripts/run_full_hierarchical_language_experiment.py",
         "--source-root", str(source), "--output-root", str(full),
         "--seed", str(args.seed),
-        "--token-steps", "60000", "--sentence-steps", "60000",
-        "--commutation-steps", "20000", "--macro-steps", "60000",
-        "--value-steps", "30000", "--value-roots", "2048",
-        "--eval-examples", "16", "--device", args.device,
+        "--token-steps", "50000", "--sentence-steps", "50000",
+        "--commutation-steps", "50000", "--macro-steps", "50000",
+        "--value-steps", "50000", "--reanalysis-steps", "50000",
+        "--value-roots", "128",
+        "--eval-examples", "64", "--device", args.device,
         "--dtype", args.dtype,
     ])
     nested_outcome = full / "outcome.json"

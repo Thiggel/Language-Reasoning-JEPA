@@ -22,12 +22,16 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", type=Path)
     parser.add_argument(
+        "--source-root", type=Path,
+        help="Reuse the hierarchy's source/ directory for exact data matching.",
+    )
+    parser.add_argument(
         "--variant", choices=("added_capacity", "unfrozen"), required=True
     )
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--count-scale", type=float, default=0.05)
-    parser.add_argument("--pool-per-depth-family", type=int, default=5_000)
-    parser.add_argument("--steps", type=int, default=6_000)
+    parser.add_argument("--count-scale", type=float, default=0.25)
+    parser.add_argument("--pool-per-depth-family", type=int, default=12_500)
+    parser.add_argument("--steps", type=int, default=50_000)
     parser.add_argument("--max-eval-examples", type=int, default=256)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dtype", default="bfloat16")
@@ -42,28 +46,35 @@ def _run(command: list[str], log: list[dict]) -> None:
 
 def main() -> None:
     args = parse_args()
-    root = args.output_root or Path(os.environ.get("RUN_DIR", ""))
-    if not str(root):
+    run_dir = os.environ.get("RUN_DIR")
+    root = args.output_root or (Path(run_dir) if run_dir else None)
+    if root is None:
         raise ValueError("--output-root or RUN_DIR is required")
     root.mkdir(parents=True, exist_ok=True)
     python = sys.executable
     commands = []
-    pool = root / "igsm_pool.jsonl"
-    splits = root / "splits"
-    _run([
-        python, "scripts/generate_hierarchical_igsm_pool.py",
-        "--output", str(pool),
-        "--per-depth-family", str(args.pool_per_depth_family),
-        "--seed", str(args.seed),
-    ], commands)
-    _run([
-        python, "scripts/build_hierarchical_igsm_splits.py",
-        "--input", str(pool), "--output-dir", str(splits),
-        "--held-out-graph-family", "query_op_mul",
-        "--held-out-template-family", "paraphrase_v1",
-        "--count-scale", str(args.count_scale),
-        "--seed", str(args.seed),
-    ], commands)
+    if args.source_root is not None:
+        splits = args.source_root / "splits"
+        if not (splits / "train.jsonl").exists():
+            raise FileNotFoundError("shared hierarchy splits are incomplete")
+    else:
+        pool = root / "igsm_pool.jsonl"
+        splits = root / "splits"
+        _run([
+            python, "scripts/generate_hierarchical_igsm_pool.py",
+            "--output", str(pool),
+            "--per-depth-family", str(args.pool_per_depth_family),
+            "--normal-per-depth", "12500", "--heldout-per-depth", "1250",
+            "--length-per-depth", "1250", "--seed", str(args.seed),
+        ], commands)
+        _run([
+            python, "scripts/build_hierarchical_igsm_splits.py",
+            "--input", str(pool), "--output-dir", str(splits),
+            "--held-out-graph-family", "query_op_mul",
+            "--held-out-template-family", "paraphrase_v1",
+            "--count-scale", str(args.count_scale),
+            "--seed", str(args.seed),
+        ], commands)
     token_paths = {}
     for split in ("train", *EVAL_SPLITS):
         path = root / "tokens" / f"{split}.pt"
@@ -97,6 +108,7 @@ def main() -> None:
         "seed": args.seed,
         "steps": args.steps,
         "count_scale": args.count_scale,
+        "source_root": str(args.source_root) if args.source_root else None,
         "candidate_privileged": False,
         "symbolic_targets_used_for_model_training": False,
         "commands": commands,

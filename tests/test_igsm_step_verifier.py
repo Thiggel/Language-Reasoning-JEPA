@@ -53,5 +53,5 @@ def test_final_answer_and_achieved_state_are_conservative():
     ) == 5
     assert achieved_next_state_id("red shells equals 8", record, 0) == -1
     assert final_answer_matches("Final answer: \\boxed{8}\n", 8)
+    assert final_answer_matches("Therefore, \\boxed{8}.", 8)
     assert achieved_next_state_id("Final answer: \\boxed{8}\n", record, 1) == 5
-

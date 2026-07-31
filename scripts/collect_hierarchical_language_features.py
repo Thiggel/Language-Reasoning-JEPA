@@ -55,6 +55,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--counterfactual-output", type=Path)
     parser.add_argument("--batch-size", type=int, default=4)
+    parser.add_argument(
+        "--example-limit", type=int, default=0,
+        help="Deterministic post-shard feature limit; zero keeps the shard.",
+    )
     parser.add_argument("--generation-batch-size", type=int, default=32)
     parser.add_argument("--reencode-batch-size", type=int, default=32)
     parser.add_argument(
@@ -802,8 +806,11 @@ def main() -> None:
     counterfactual_example_limit = getattr(
         args, "counterfactual_example_limit", 0
     )
+    example_limit = getattr(args, "example_limit", 0)
     if counterfactual_example_limit < 0:
         raise ValueError("counterfactual example limit must be nonnegative")
+    if example_limit < 0:
+        raise ValueError("example limit must be nonnegative")
     input_fingerprint = sha256_file(args.input)
     if args.resume and args.output.exists() and (
         args.counterfactual_output is None
@@ -821,6 +828,7 @@ def main() -> None:
             "num_shards": args.num_shards,
             "dtype": args.dtype,
             "batch_size": args.batch_size,
+            "example_limit": example_limit,
         }
         if any(existing.get(name) != value for name, value in expected.items()):
             raise ValueError("cannot resume an incompatible feature shard")
@@ -862,6 +870,11 @@ def main() -> None:
             example.problem_id.encode()
         ).digest()[:8], "big") % args.num_shards == args.shard_index
     ]
+    examples.sort(key=lambda example: hashlib.sha256(
+        f"{args.seed}:{example.problem_id}".encode()
+    ).digest())
+    if example_limit:
+        examples = examples[:example_limit]
     if not examples:
         raise ValueError("selected collection shard contains no examples")
     ledger = ComputeLedger()
@@ -873,13 +886,14 @@ def main() -> None:
     payload["num_shards"] = args.num_shards
     payload["dtype"] = args.dtype
     payload["batch_size"] = args.batch_size
+    payload["example_limit"] = example_limit
     payload["input_fingerprint"] = input_fingerprint
     payload["backend"] = _backend_metadata()
     payload["text_model_parameters"] = _text_parameter_count(model)
     payload["dataset_fingerprint"] = artifact_fingerprint(payload, (
         "model_id", "model_revision", "transformers_version",
         "input_fingerprint", "shard_index", "num_shards", "dtype",
-        "batch_size",
+        "batch_size", "example_limit",
         "input_ids", "attention_mask", "prompt_len", "solution_end",
         "boundaries", "reasoning_depth", "canonical_state_ids",
         "problem_id", "template_family", "graph_family",
@@ -921,6 +935,7 @@ def main() -> None:
             "num_shards": args.num_shards,
             "dtype": args.dtype,
             "batch_size": args.batch_size,
+            "example_limit": example_limit,
             "seed": args.seed,
             "generation_batch_size": args.generation_batch_size,
             "reencode_batch_size": args.reencode_batch_size,

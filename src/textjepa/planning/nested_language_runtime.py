@@ -278,6 +278,31 @@ def rollout_prior_noise(
     )
 
 
+def macro_action_log_probability(
+    model: HierarchicalLanguageJEPA,
+    planning_state: SentencePlanningState,
+    task: Tensor,
+    action: Tensor,
+) -> Tensor:
+    """Score an achieved action under ``Pi1`` at its pre-action state."""
+
+    if model.pi1 is None:
+        raise ValueError("macro-action scoring requires Pi1")
+    batch = planning_state.state.shape[0]
+    if task.ndim == 1:
+        task = task[None].expand(batch, -1)
+    if task.shape != (batch, model.config.d_task) or action.shape != (
+        batch, model.config.d_action
+    ):
+        raise ValueError("macro-action score inputs do not align")
+    mean, logvar = model.pi1.prior_params(
+        planning_state.state, planning_state.context, task
+    )
+    standardized = (action - mean) * (-0.5 * logvar).exp()
+    log2pi = action.new_tensor(2 * torch.pi).log()
+    return -0.5 * (standardized.square() + logvar + log2pi).sum(-1)
+
+
 @dataclass(frozen=True)
 class ContextualCEMResult:
     noise: Tensor
@@ -340,7 +365,10 @@ def contextual_prior_cem(
         if cost.shape != (population,) or prefix.shape != (population,):
             raise ValueError("CEM objective must return aligned vectors")
         support_norm = noise.square().mean((-1, -2)).sqrt()
-        cost = cost + (support_norm - trust_region).clamp_min(0).square()
+        support_penalty = (
+            support_norm - trust_region
+        ).clamp_min(0).square()
+        cost = cost + support_penalty
         selection_cost = cost
         grounded_ids = None
         grounded_cost = None
@@ -358,13 +386,16 @@ def contextual_prior_cem(
                 )[:random_count]] if random_count else top[:0]
             )
             grounded_ids = torch.unique(torch.cat([top, random_ids]))
-            grounded_cost = ground(
+            grounded_raw_cost = ground(
                 noise[grounded_ids], rollout, grounded_ids
             )
-            if grounded_cost.shape != (len(grounded_ids),) or not bool(
-                torch.isfinite(grounded_cost).all()
+            if grounded_raw_cost.shape != (len(grounded_ids),) or not bool(
+                torch.isfinite(grounded_raw_cost).all()
             ):
                 raise ValueError("ground callback must return finite scalar costs")
+            grounded_cost = (
+                grounded_raw_cost + support_penalty[grounded_ids]
+            )
             if select_grounded:
                 selection_cost = torch.full_like(cost, torch.inf)
                 selection_cost[grounded_ids] = grounded_cost

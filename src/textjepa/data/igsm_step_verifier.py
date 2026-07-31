@@ -15,10 +15,7 @@ _OPERATION = re.compile(
     r"(?P<result>-?\d+)",
     re.IGNORECASE,
 )
-_FINAL = re.compile(
-    r"final\s+answer\s*:\s*\\boxed\s*\{\s*(-?\d+)\s*\}",
-    re.IGNORECASE,
-)
+_FINAL = re.compile(r"\\boxed\s*\{\s*(-?\d+)\s*\}", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

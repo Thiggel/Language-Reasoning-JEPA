@@ -34,6 +34,9 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--per-depth-family", type=int, default=500)
+    parser.add_argument("--normal-per-depth", type=int)
+    parser.add_argument("--heldout-per-depth", type=int)
+    parser.add_argument("--length-per-depth", type=int)
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()
 
@@ -162,7 +165,12 @@ def _exact_depth_problem(
 
 def main() -> None:
     args = parse_args()
-    if args.per_depth_family < 1:
+    if args.per_depth_family < 1 or any(
+        value is not None and value < 1 for value in (
+            args.normal_per_depth, args.heldout_per_depth,
+            args.length_per_depth,
+        )
+    ):
         raise ValueError("per-depth-family must be positive")
     records = []
     # normal: train/ID/length; structural: held query operation;
@@ -170,19 +178,30 @@ def main() -> None:
     categories = ("normal", "structural", "paraphrase")
     for depth in range(2, 13):
         active = categories if depth <= 6 else ("normal",)
+        targets = {
+            category: (
+                (args.length_per_depth or args.per_depth_family)
+                if depth > 6 else
+                (args.normal_per_depth or args.per_depth_family)
+                if category == "normal" else
+                (args.heldout_per_depth or args.per_depth_family)
+            )
+            for category in active
+        }
         counts = {category: 0 for category in active}
         attempt = 0
-        while any(count < args.per_depth_family for count in counts.values()):
+        while any(counts[name] < targets[name] for name in counts):
             rng = random.Random(f"{args.seed}:{depth}:{attempt}")
             attempt += 1
             if depth > 6:
                 category = "normal"
             else:
-                category = min(counts, key=counts.get)
-            if category not in counts or counts[category] >= (
-                args.per_depth_family
-            ):
-                continue
+                unfinished = [
+                    name for name in counts if counts[name] < targets[name]
+                ]
+                category = min(
+                    unfinished, key=lambda name: counts[name] / targets[name]
+                )
             problem = _exact_depth_problem(
                 rng, depth, held_out=category == "structural"
             )
@@ -207,6 +226,9 @@ def main() -> None:
     manifest = {
         "count": len(records),
         "per_depth_family": args.per_depth_family,
+        "normal_per_depth": args.normal_per_depth,
+        "heldout_per_depth": args.heldout_per_depth,
+        "length_per_depth": args.length_per_depth,
         "seed": args.seed,
         "held_out_graph_family": HELD_OUT_GRAPH_FAMILY,
         "held_out_template_family": HELD_OUT_TEMPLATE_FAMILY,
