@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare the canonical 5% iGSM source then run the full hierarchy."""
+"""Prepare the canonical 25% iGSM source then run the full hierarchy."""
 
 from __future__ import annotations
 
@@ -46,7 +46,12 @@ def main() -> None:
     _run([
         python, "scripts/generate_hierarchical_igsm_pool.py",
         "--output", str(pool), "--per-depth-family", "5000",
-        "--normal-per-depth", "12500",
+        # ID assignment is a deterministic 80/10/10 hash partition.  The
+        # requested manifests need 10k/1.25k/1.25k examples per depth, so an
+        # exactly 12.5k pool can miss a bucket because of ordinary hash
+        # variation.  Keep a fixed margin while preserving exact manifest
+        # sizes in build_hierarchical_igsm_splits.py.
+        "--normal-per-depth", "16000",
         "--heldout-per-depth", "1250", "--length-per-depth", "1250",
         "--seed", str(args.seed),
     ])

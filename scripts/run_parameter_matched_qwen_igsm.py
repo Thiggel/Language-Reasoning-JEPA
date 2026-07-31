@@ -64,7 +64,7 @@ def main() -> None:
             python, "scripts/generate_hierarchical_igsm_pool.py",
             "--output", str(pool),
             "--per-depth-family", str(args.pool_per_depth_family),
-            "--normal-per-depth", "12500", "--heldout-per-depth", "1250",
+            "--normal-per-depth", "16000", "--heldout-per-depth", "1250",
             "--length-per-depth", "1250", "--seed", str(args.seed),
         ], commands)
         _run([

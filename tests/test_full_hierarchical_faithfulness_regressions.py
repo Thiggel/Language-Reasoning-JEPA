@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 import sys
 
 import pytest
@@ -6,6 +7,8 @@ import torch
 
 import scripts.build_hierarchical_oracle_rollouts as rollouts
 import scripts.run_full_hierarchical_language_experiment as runner
+import scripts.run_full_hierarchical_language_from_scratch as from_scratch
+import scripts.run_parameter_matched_qwen_igsm as matched_qwen
 from textjepa.models.hierarchical_language_jepa import (
     HierarchicalLanguageJEPA,
     HierarchicalLanguageJEPAConfig,
@@ -45,6 +48,46 @@ def test_missing_output_root_is_rejected(tmp_path, monkeypatch):
     ])
     with pytest.raises(ValueError, match="output-root"):
         runner.main()
+
+
+def test_scaled_launchers_oversample_hash_partitioned_id_pool(
+    tmp_path, monkeypatch
+):
+    """The 25% split needs margin beyond its 12.5k expected ID total."""
+    hierarchy_commands = []
+
+    def fake_hierarchy_run(command):
+        hierarchy_commands.append(command)
+        if any(
+            item.endswith("run_full_hierarchical_language_experiment.py")
+            for item in command
+        ):
+            output = Path(command[command.index("--output-root") + 1])
+            output.mkdir(parents=True, exist_ok=True)
+            (output / "outcome.json").write_text('{"status":"valid"}\n')
+
+    monkeypatch.setattr(from_scratch, "_run", fake_hierarchy_run)
+    monkeypatch.setattr(sys, "argv", [
+        "run_full_hierarchical_language_from_scratch.py",
+        "--output-root", str(tmp_path / "hierarchy"),
+    ])
+    from_scratch.main()
+    generation = hierarchy_commands[0]
+    assert generation[generation.index("--normal-per-depth") + 1] == "16000"
+
+    baseline_commands = []
+    monkeypatch.setattr(
+        matched_qwen, "_run",
+        lambda command, log: baseline_commands.append(command),
+    )
+    monkeypatch.setattr(sys, "argv", [
+        "run_parameter_matched_qwen_igsm.py",
+        "--output-root", str(tmp_path / "baseline"),
+        "--variant", "added_capacity",
+    ])
+    matched_qwen.main()
+    generation = baseline_commands[0]
+    assert generation[generation.index("--normal-per-depth") + 1] == "16000"
 
 
 def test_grounded_rollout_executes_worker_and_rescores_achieved_action(
