@@ -11,6 +11,8 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import torch
@@ -39,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--examples", type=Path, required=True)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--plot-output-dir", type=Path)
     parser.add_argument("--max-igsm-groups", type=int, default=192)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--device", default="cuda")
@@ -204,6 +207,16 @@ def main() -> None:
     args.output.with_suffix(".metrics.json").write_text(
         json.dumps(metrics, indent=2, sort_keys=True) + "\n"
     )
+    if args.plot_output_dir is not None:
+        subprocess.run([
+            sys.executable,
+            str(Path(__file__).with_name(
+                "plot_hierarchical_sentence_geometry.py"
+            )),
+            "--artifact", str(args.output),
+            "--output-dir", str(args.plot_output_dir),
+            "--method", "tsne",
+        ], check=True)
 
 
 if __name__ == "__main__":
