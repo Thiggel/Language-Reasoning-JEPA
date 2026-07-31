@@ -14,6 +14,8 @@ encoder notation, prefix indexing, causal pre-action context, the three
 oracle goals, stage ordering, pinned Qwen constants, counterfactual policy,
 and iGSM splits. It
 supersedes conflicting ambiguous passages in the earlier plan.
+The exact-capacity and exact-trainable-parameter Qwen controls are fixed in
+[`PARAMETER_MATCHED_QWEN_BASELINES.md`](PARAMETER_MATCHED_QWEN_BASELINES.md).
 
 Canonical records remain under [`research/hard_text/`](../../research/hard_text/README.md)
 to preserve existing links and run provenance. Those records are legacy. New
@@ -24,7 +26,9 @@ distillation.
 Official staged interfaces:
 
 - `collect_hierarchical_language_features.py` for pinned, sharded
-  Qwen3.5-0.8B features and flattened counterfactual batches;
+  Qwen3.5-0.8B features and flattened counterfactual batches; its default
+  shared-cache engine prefills each root once and dynamically prunes finished
+  branches, while retaining independent full exact re-encoding;
 - `train_hierarchical_language_jepa.py --init-checkpoint ... --admission ...`
   for cumulative training stages;
 - `evaluate_hierarchical_language_oracles.py` for evaluation-only gates;

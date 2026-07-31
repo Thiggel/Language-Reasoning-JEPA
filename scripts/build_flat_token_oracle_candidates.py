@@ -37,6 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--dataset-split", required=True)
+    parser.add_argument("--method-label", default="token_jepa")
     parser.add_argument("--horizon", type=int, choices=(4, 8, 16), required=True)
     parser.add_argument("--population", type=int, default=64)
     parser.add_argument("--max-roots", type=int, default=256)
@@ -281,6 +282,7 @@ def main() -> None:
         "planning_effort_candidate_tokens": args.population * args.horizon,
         "problem_id": str(features["problem_id"][item["row"]]),
         "root_prefix_length": item["root"],
+        "method_label": args.method_label,
     } for item in roots]
     payload = {
         "architecture": HIERARCHICAL_LANGUAGE_ARCHITECTURE,

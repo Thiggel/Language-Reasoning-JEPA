@@ -165,10 +165,34 @@ applied. Sampling uses an explicitly seeded device RNG; no unsupported
 criterion stops generation once a complete delimiter is reached after the
 four-token minimum.
 
+The default collector uses a lossless shared-cache execution engine. It
+prefills each real root once, forks the complete hybrid attention/recurrent
+cache across the seven generated slots, and removes completed rows from the
+active decoding batch. A newline before four tokens is retired immediately
+because the stored candidate was already defined by trimming at that first
+delimiter. The legacy `model.generate` engine remains available for matched
+audits. Engine identity and backend availability are stored in provenance.
+The configured generation batch size is a hard upper bound for both root
+prefills and branch-decode forwards, including values smaller than seven.
+Terminal tokens sampled from prefill or prior-step logits are recorded without
+an unnecessary successor forward.
+
 Newline-complete candidates train token and sentence dynamics. EOS candidates
 are terminal sentence actions. Length-truncated candidates train token
 dynamics only. Exact suffix hidden states, candidate source, temperature,
 termination mode, and root state are stored.
+
+Cached autoregressive hidden states are not accepted as exact JEPA targets.
+Qwen's recurrent cached path can differ numerically from a complete
+teacher-forced pass, so every observed and generated branch is independently
+re-encoded with `use_cache=False`. Shared-cache generation is only the
+proposal mechanism.
+
+Feature and counterfactual artifacts bind the numerical dtype and dense
+encoding batch size. Counterfactual artifacts additionally bind the seed,
+generation batch size, re-encoding batch size, and collection engine; resume
+rejects any mismatch. Generation FLOPs count the padded tensor positions
+actually submitted to model forwards, not only attention-valid tokens.
 
 Sparse recursive rollout uses `N=1` always, `N=2` with probability `.25`,
 `N=4` with `.05`, and `N=8` with `.01`; horizons above two truncate BPTT

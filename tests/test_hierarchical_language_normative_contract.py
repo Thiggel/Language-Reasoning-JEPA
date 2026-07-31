@@ -96,6 +96,67 @@ class FakeFrozenLM(torch.nn.Module):
         return SimpleNamespace(hidden_states=(hidden,), logits=logits)
 
 
+class FakeSelectableCache:
+    def __init__(self, state):
+        self.state = state
+
+    def batch_repeat_interleave(self, repeats):
+        self.state = self.state.repeat_interleave(repeats, dim=0)
+
+    def batch_select_indices(self, indices):
+        self.state = self.state.index_select(0, indices)
+
+
+class FakeSharedCacheLM(torch.nn.Module):
+    """Minimal cache model whose only continuation is ``A\\n``."""
+
+    def __init__(self):
+        super().__init__()
+        self.marker = torch.nn.Parameter(torch.zeros(1), requires_grad=False)
+        self.config = SimpleNamespace(model_type="qwen3_5")
+        self.prefill_rows = 0
+        self.prefill_tokens = 0
+        self.decode_rows = 0
+
+    def forward(
+        self, input_ids, output_hidden_states, return_dict,
+        logits_to_keep, use_cache, past_key_values=None, **kwargs
+    ):
+        hidden = input_ids.float()[..., None].expand(
+            *input_ids.shape, 8
+        )
+        keep = min(int(logits_to_keep), input_ids.shape[1])
+        # The pinned EOS IDs must be representable even in this tiny model.
+        logits = torch.full(
+            (len(input_ids), keep, PRIMARY_EOS_TOKEN_ID + 1),
+            -1e4, device=input_ids.device,
+        )
+        if not use_cache:
+            logits.zero_()
+            return SimpleNamespace(
+                hidden_states=(hidden,), logits=logits,
+            )
+        if past_key_values is None:
+            self.prefill_rows += len(input_ids)
+            self.prefill_tokens += int(kwargs["attention_mask"].sum())
+            cache = FakeSelectableCache(torch.zeros(
+                len(input_ids), dtype=torch.long, device=input_ids.device
+            ))
+            logits[..., 65] = 0
+        else:
+            self.decode_rows += len(input_ids)
+            cache = past_key_values
+            cache.state += 1
+            is_first = cache.state == 1
+            logits[is_first, :, 10] = 0
+            logits[~is_first, :, PRIMARY_EOS_TOKEN_ID] = 0
+        return SimpleNamespace(
+            hidden_states=(hidden,) if output_hidden_states else None,
+            logits=logits,
+            past_key_values=cache,
+        )
+
+
 def tiny(*, macro=False, value=False):
     return HierarchicalLanguageJEPA(HierarchicalLanguageJEPAConfig(
         d_backbone=8, vocab_size=200, pad_id=0,
@@ -205,6 +266,78 @@ def test_counterfactual_collector_batches_all_eight_slots():
     assert summary["components"][
         "counterfactual_exact_reencoding"
     ]["estimated_flops"] > 0
+
+
+def test_shared_cache_collector_prefills_once_and_prunes_finished_rows(
+    monkeypatch,
+):
+    tokenizer = FakeTokenizer()
+    prompt = prompt_token_ids(tokenizer, "q")
+    ids, boundaries, end = tokenize_steps(
+        tokenizer, prompt, ["reason\n", "Final answer\n"]
+    )
+    example = LanguagePlanningExample(
+        input_ids=torch.tensor(ids),
+        attention_mask=torch.ones(len(ids), dtype=torch.bool),
+        prompt_len=len(prompt),
+        solution_end=end,
+        step_boundaries=torch.tensor(boundaries),
+        reasoning_depth=1,
+        canonical_state_ids=torch.arange(3),
+        problem_id="p",
+        template_family="t",
+        graph_family="g",
+    )
+    model = FakeSharedCacheLM()
+    ledger = ComputeLedger()
+
+    def controlled_sample(logits, specifications, lengths, generator):
+        del logits, generator
+        return torch.tensor([
+            10 if cell.temperature == 0 or int(length) else 65
+            for cell, length in zip(specifications, lengths)
+        ])
+
+    monkeypatch.setattr(
+        "scripts.collect_hierarchical_language_features."
+        "_sample_supported_tokens",
+        controlled_sample,
+    )
+    records = collect_counterfactuals(
+        [example], tokenizer, model, "cpu", 7, ledger,
+        generation_batch_size=14, reencode_batch_size=8,
+        engine="shared-cache",
+    )
+    assert len(records) == 16
+    assert model.prefill_rows == 2  # two roots, not fourteen branches
+    generated = [
+        record for record in records if record["source"] != "observed"
+    ]
+    assert len(generated) == 14
+    assert {
+        source: sum(record["source"] == source for record in records)
+        for source in {
+            "observed", "greedy", "sample_t0.5", "sample_t0.8",
+            "sample_t1.0", "sample_t1.2",
+        }
+    } == {
+        "observed": 2, "greedy": 2, "sample_t0.5": 4,
+        "sample_t0.8": 4, "sample_t1.0": 2, "sample_t1.2": 2,
+    }
+    assert all(
+        record["token_ids"].tolist() == (
+            [10] if record["source"] == "greedy" else [65, 10]
+        )
+        for record in generated
+    )
+    # The first token comes from prefill logits. Only the twelve nonterminal
+    # sampled tokens require a decode forward.
+    assert model.decode_rows == 12
+    compute = ledger.summary()["components"]
+    assert compute["counterfactual_generation"]["items"] == 14
+    # Cached recurrent decoding is only a proposal mechanism. Every branch
+    # still receives an independent full teacher-forced exact encoding.
+    assert compute["counterfactual_exact_reencoding"]["items"] == 16
 
 
 def test_pinned_qwen_accepts_every_counterfactual_generate_kwarg():

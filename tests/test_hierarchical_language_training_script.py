@@ -77,6 +77,44 @@ def test_offline_training_entrypoint_end_to_end(tmp_path, monkeypatch):
     ] > 0
 
 
+def test_training_step_cap_schedule_and_intermediate_checkpoint(
+    tmp_path, monkeypatch
+):
+    features = tmp_path / "features.pt"
+    output = tmp_path / "run"
+    torch.save({
+        "hidden_states": torch.randn(4, 7, 10),
+        "token_ids": torch.randint(1, 20, (4, 7)),
+        "boundaries": torch.tensor([
+            [0, 3, 6], [0, 2, 6], [0, 3, 6], [0, 2, 6],
+        ]),
+    }, features)
+    monkeypatch.setattr(sys, "argv", [
+        "train_hierarchical_language_jepa.py",
+        "--features", str(features),
+        "--allow-unpinned-features",
+        "--output", str(output),
+        "--vocab-size", "20", "--pad-id", "0",
+        "--d-token", "8", "--d-sentence", "6", "--d-action", "4",
+        "--predictor-width", "16", "--token-layers", "1",
+        "--sentence-layers", "1", "--heads", "2",
+        "--token-context", "4", "--sentence-context", "3",
+        "--max-span", "5", "--epochs", "5", "--batch-size", "2",
+        "--max-optimizer-steps", "3", "--warmup-steps", "1",
+        "--checkpoint-step", "2", "--device", "cpu",
+    ])
+    train.main()
+    intermediate = torch.load(
+        output / "checkpoints" / "step_000002.pt", weights_only=True
+    )
+    final = torch.load(output / "model.pt", weights_only=True)
+    metrics = json.loads((output / "metrics.json").read_text())
+    assert intermediate["optimizer_step"] == 2
+    assert final["optimizer_step"] == 3
+    assert metrics["optimizer_steps"] == 3
+    assert len(metrics["history"]) == 2
+
+
 def test_collector_schema_artifact_is_directly_loadable_by_trainer(tmp_path):
     path = tmp_path / "features.pt"
     torch.save({

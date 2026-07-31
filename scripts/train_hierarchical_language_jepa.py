@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import torch
@@ -34,6 +35,7 @@ from textjepa.training.hierarchical_language import (
     SparseRolloutSchedule,
     value_distillation_loss,
 )
+from textjepa.training.optim import cosine_warmup
 from textjepa.data.language_planning import (
     MODEL_ID,
     MODEL_REVISION,
@@ -85,6 +87,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--replay-batch-size", type=int, default=32)
     parser.add_argument("--learning-rate", type=float, default=3e-4)
+    parser.add_argument("--weight-decay", type=float, default=0.01)
+    parser.add_argument(
+        "--max-optimizer-steps", type=int, default=0,
+        help="Zero means no step cap.",
+    )
+    parser.add_argument(
+        "--warmup-steps", type=int, default=0,
+        help="Linear warmup followed by cosine decay; zero disables warmup.",
+    )
+    parser.add_argument(
+        "--checkpoint-step", type=int, action="append", default=[],
+        help="Optimizer step at which to save checkpoints/step_NNNNNN.pt.",
+    )
+    parser.add_argument(
+        "--max-replay-steps-per-epoch", type=int, default=0,
+        help="Bound counterfactual optimizer steps; zero consumes all replay.",
+    )
     parser.add_argument("--ema-momentum", type=float, default=0.996)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
@@ -597,6 +616,15 @@ def _configure_stage_trainability(
 
 def main() -> None:
     args = parse_args()
+    if (
+        args.max_optimizer_steps < 0
+        or args.warmup_steps < 0
+        or args.max_replay_steps_per_epoch < 0
+        or args.weight_decay < 0
+    ):
+        raise ValueError("step, warmup, replay, and decay controls are invalid")
+    if any(step < 1 for step in args.checkpoint_step):
+        raise ValueError("checkpoint steps must be positive")
     torch.manual_seed(args.seed)
     data = load_features(
         args.features,
@@ -808,8 +836,37 @@ def main() -> None:
         if parameter.requires_grad
     ]
     optimizer = (
-        torch.optim.AdamW(trainable_parameters, lr=args.learning_rate)
+        torch.optim.AdamW(
+            trainable_parameters,
+            lr=args.learning_rate,
+            weight_decay=args.weight_decay,
+        )
         if trainable_parameters else None
+    )
+    dense_steps_per_epoch = math.ceil(
+        len(data["hidden_states"]) / args.batch_size
+    )
+    replay_steps_per_epoch = 0
+    if counterfactual is not None:
+        replay_steps_per_epoch = math.ceil(
+            len(counterfactual["token_ids"]) / args.replay_batch_size
+        )
+        if args.max_replay_steps_per_epoch:
+            replay_steps_per_epoch = min(
+                replay_steps_per_epoch, args.max_replay_steps_per_epoch
+            )
+    estimated_steps = args.epochs * (
+        dense_steps_per_epoch + replay_steps_per_epoch
+    )
+    schedule_steps = args.max_optimizer_steps or max(estimated_steps, 1)
+    scheduler = (
+        torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lambda step: cosine_warmup(
+                step, schedule_steps, args.warmup_steps
+            ),
+        )
+        if optimizer is not None else None
     )
     main_count = len(data["hidden_states"])
     history = []
@@ -823,6 +880,63 @@ def main() -> None:
         if name in rollout_config
     })
     rollout_generator = torch.Generator().manual_seed(args.seed + 17)
+    global_step = 0
+    checkpoint_steps = set(args.checkpoint_step)
+
+    def checkpoint_payload() -> dict:
+        return {
+            "architecture": HIERARCHICAL_LANGUAGE_ARCHITECTURE,
+            "model": model.state_dict(),
+            "learner": learner.state_dict(),
+            "config": config.__dict__,
+            "stage": stage.name,
+            "experiment_config": experiment_config,
+            "initialized_from": (
+                str(args.init_checkpoint)
+                if initialized_from is not None else None
+            ),
+            "admission": admission,
+            "trainable_modules": trainable_modules,
+            "frozen_modules": [
+                name for name in (
+                    "e0", "p0", "token_action", "e0_to_1", "a1", "p1",
+                    "pi1", "v", "task_projection",
+                )
+                if name not in trainable_modules
+            ],
+            "optimizer_step": global_step,
+            "training": {
+                "learning_rate": args.learning_rate,
+                "weight_decay": args.weight_decay,
+                "warmup_steps": args.warmup_steps,
+                "schedule_steps": schedule_steps,
+                "batch_size": args.batch_size,
+                "replay_batch_size": args.replay_batch_size,
+                "max_replay_steps_per_epoch": (
+                    args.max_replay_steps_per_epoch
+                ),
+                "seed": args.seed,
+            },
+        }
+
+    def after_optimizer_step() -> None:
+        nonlocal global_step
+        global_step += 1
+        if scheduler is not None:
+            scheduler.step()
+        if global_step in checkpoint_steps:
+            checkpoint = args.output / "checkpoints" / (
+                f"step_{global_step:06d}.pt"
+            )
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            torch.save(checkpoint_payload(), checkpoint)
+
+    def step_limit_reached() -> bool:
+        return bool(
+            args.max_optimizer_steps
+            and global_step >= args.max_optimizer_steps
+        )
+
     for epoch in range(args.epochs):
         order = (
             torch.randperm(main_count)
@@ -832,6 +946,8 @@ def main() -> None:
         totals: dict[str, float] = {}
         examples = 0
         for start in range(0, len(order), args.batch_size):
+            if step_limit_reached():
+                break
             index = order[start:start + args.batch_size]
             batch = {
                 name: value[index].to(args.device)
@@ -858,6 +974,7 @@ def main() -> None:
                     loss.backward()
                     optimizer.step()
                     model.update_targets(args.ema_momentum)
+                    after_optimizer_step()
             _record_dense_flops(compute, model, stage, batch)
             examples += len(index)
             for name, value in losses.items():
@@ -870,7 +987,14 @@ def main() -> None:
             replay_order = torch.randperm(
                 replay_count, generator=rollout_generator
             )
+            replay_steps_this_epoch = 0
             for replay_start in range(0, replay_count, args.replay_batch_size):
+                if step_limit_reached() or (
+                    args.max_replay_steps_per_epoch
+                    and replay_steps_this_epoch
+                    >= args.max_replay_steps_per_epoch
+                ):
+                    break
                 replay_index = replay_order[
                     replay_start:replay_start + args.replay_batch_size
                 ]
@@ -930,6 +1054,9 @@ def main() -> None:
                     updated = _step_if_trainable(
                         cf_loss, optimizer, model, args.ema_momentum
                     )
+                    if updated:
+                        replay_steps_this_epoch += 1
+                        after_optimizer_step()
                     replay_skipped_batches += int(not updated)
                 _record_counterfactual_flops(
                     compute, model, branch, rollout_horizon
@@ -985,6 +1112,8 @@ def main() -> None:
             for value_start in range(
                 0, root_count, args.replay_batch_size
             ):
+                if step_limit_reached():
+                    break
                 index = value_order[
                     value_start:value_start + args.replay_batch_size
                 ]
@@ -1019,6 +1148,7 @@ def main() -> None:
                     value_loss.backward()
                     optimizer.step()
                     model.update_targets(args.ema_momentum)
+                    after_optimizer_step()
                 for component, module in (
                     ("value_task_projection", model.task_projection),
                     ("value_head", model.v),
@@ -1035,7 +1165,14 @@ def main() -> None:
                 batch_roots = len(index)
                 value_total += float(value_loss.detach()) * batch_roots
                 value_roots += batch_roots
-        row = {"epoch": epoch}
+        row = {
+            "epoch": epoch,
+            "optimizer_step": global_step,
+            "learning_rate": (
+                scheduler.get_last_lr()[0]
+                if scheduler is not None else 0.0
+            ),
+        }
         if examples:
             row.update({
                 name: value / examples for name, value in totals.items()
@@ -1050,31 +1187,16 @@ def main() -> None:
             row["value_distillation"] = value_total / value_roots
         history.append(row)
         print(json.dumps(row, sort_keys=True), flush=True)
+        if step_limit_reached():
+            break
     args.output.mkdir(parents=True, exist_ok=True)
-    torch.save({
-        "architecture": HIERARCHICAL_LANGUAGE_ARCHITECTURE,
-        "model": model.state_dict(),
-        "learner": learner.state_dict(),
-        "config": config.__dict__,
-        "stage": stage.name,
-        "experiment_config": experiment_config,
-        "initialized_from": (
-            str(args.init_checkpoint) if initialized_from is not None else None
-        ),
-        "admission": admission,
-        "trainable_modules": trainable_modules,
-        "frozen_modules": [
-            name for name in (
-                "e0", "p0", "token_action", "e0_to_1", "a1", "p1",
-                "pi1", "v", "task_projection",
-            )
-            if name not in trainable_modules
-        ],
-    }, args.output / "model.pt")
+    torch.save(checkpoint_payload(), args.output / "model.pt")
     (args.output / "metrics.json").write_text(
         json.dumps({
             "history": history,
             "compute": compute.summary(),
+            "optimizer_steps": global_step,
+            "schedule_steps": schedule_steps,
         }, indent=2) + "\n",
         encoding="utf-8",
     )

@@ -28,14 +28,16 @@ def main() -> None:
             effort = int(row["planning_effort_candidate_tokens"])
             split = str(row["dataset_split"])
             depth = int(row["symbolic_depth"])
-            grouped[(split, depth, effort)].append(row)
+            method = str(row.get("method_label", "token_jepa"))
+            grouped[(method, split, depth, effort)].append(row)
     rows = []
     metrics = (
         "predicted_span_accuracy", "exact_span_accuracy",
         "predicted_next_token_accuracy", "exact_next_token_accuracy",
     )
-    for (split, depth, effort), values in sorted(grouped.items()):
+    for (method, split, depth, effort), values in sorted(grouped.items()):
         row = {
+            "method": method,
             "dataset_split": split,
             "symbolic_depth": depth,
             "planning_effort_candidate_tokens": effort,
@@ -63,15 +65,21 @@ def main() -> None:
 
     figure, axes = plt.subplots(1, 2, figsize=(14, 5.5), sharex=True)
     splits = sorted({row["dataset_split"] for row in rows})
+    methods = sorted({row["method"] for row in rows})
     colors = plt.get_cmap("tab10").colors
+    method_styles = ("-", "-.", ":")
     for split_index, split in enumerate(splits):
         color = colors[split_index]
-        split_rows = [row for row in rows if row["dataset_split"] == split]
-        by_effort = defaultdict(list)
-        for row in split_rows:
-            by_effort[row["planning_effort_candidate_tokens"]].append(row)
-        effort = sorted(by_effort)
-        for axis, exact_name, predicted_name, title in (
+        for method_index, method in enumerate(methods):
+          split_rows = [
+              row for row in rows
+              if row["dataset_split"] == split and row["method"] == method
+          ]
+          by_effort = defaultdict(list)
+          for row in split_rows:
+              by_effort[row["planning_effort_candidate_tokens"]].append(row)
+          effort = sorted(by_effort)
+          for axis, exact_name, predicted_name, title in (
             (
                 axes[0], "exact_next_token_accuracy",
                 "predicted_next_token_accuracy", "Next-token accuracy",
@@ -94,12 +102,14 @@ def main() -> None:
                 for x in effort
             ]
             axis.plot(
-                effort, exact, "--", marker="o", color=color,
-                label=f"{split} exact",
+                effort, exact, "--", marker="o", color=color, alpha=0.45,
+                label=f"{method} {split} exact",
             )
             axis.plot(
-                effort, predicted, "-", marker="o", color=color,
-                label=f"{split} learned",
+                effort, predicted,
+                method_styles[method_index % len(method_styles)],
+                marker="o", color=color,
+                label=f"{method} {split} learned",
             )
             axis.set_title(title)
             axis.set_xlabel("Planning effort (candidate token evaluations)")
@@ -113,12 +123,21 @@ def main() -> None:
         Line2D([0], [0], color="black", linestyle="--", label="Exact endpoint"),
         Line2D([0], [0], color="black", linestyle="-", label="Learned rollout"),
     ]
+    method_handles = [
+        Line2D(
+            [0], [0], color="black",
+            linestyle=method_styles[index % len(method_styles)],
+            label=method,
+        )
+        for index, method in enumerate(methods)
+    ]
     figure.legend(
         handles=split_handles, loc="upper center", ncol=len(splits),
         bbox_to_anchor=(0.5, 0.995), frameon=False, fontsize=9,
     )
     axes[1].legend(
-        handles=kind_handles, loc="lower left", frameon=True, fontsize=9,
+        handles=kind_handles + method_handles,
+        loc="lower left", frameon=True, fontsize=8,
     )
     figure.tight_layout(rect=(0, 0, 1, 0.91))
     figure.savefig(args.output_prefix.with_suffix(".png"), dpi=180)
