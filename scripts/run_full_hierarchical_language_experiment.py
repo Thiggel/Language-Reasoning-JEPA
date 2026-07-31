@@ -160,13 +160,15 @@ def main() -> None:
     for path in (train_features, counterfactual):
         if not path.exists():
             raise FileNotFoundError(path)
-    validation_features = root / "features/id_validation.pt"
-    _run([
-        python, "scripts/collect_hierarchical_language_features.py",
-        "--input", str(args.source_root / "splits/id_validation.jsonl"),
-        "--output", str(validation_features), "--device", args.device,
-        "--dtype", args.dtype, "--seed", str(args.seed), "--resume",
-    ], commands)
+    validation_features = args.source_root / "features/id_validation.pt"
+    if not validation_features.exists():
+        validation_features = root / "features/id_validation.pt"
+        _run([
+            python, "scripts/collect_hierarchical_language_features.py",
+            "--input", str(args.source_root / "splits/id_validation.jsonl"),
+            "--output", str(validation_features), "--device", args.device,
+            "--dtype", args.dtype, "--seed", str(args.seed), "--resume",
+        ], commands)
     token_dir = root / "models/token"
     _train(
         python, commands, features=train_features,
