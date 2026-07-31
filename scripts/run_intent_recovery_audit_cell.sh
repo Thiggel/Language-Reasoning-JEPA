@@ -9,6 +9,7 @@ python_bin=${1:?python executable}
 dataset=${2:?igsm or igsm_real}
 family=${3:?mlp_jepa, causal_jepa, or token_lm}
 learning_rate=${4:-1e-3}
+experiment_overrides=("${@:5}")
 epochs=${EPOCHS:-10}
 train_size=${TRAIN_SIZE:-30000}
 batch_size=${BATCH_SIZE:-32}
@@ -33,14 +34,16 @@ case "$family" in
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train.py" +experiment=paper_recovery_mlp_geometry \
       "${common[@]}" model.d_model=256 model.chunk_layers=2 model.chunk_heads=4 \
       model.state_layers=4 model.state_heads=8 model.predictor_layers=2 \
-      model.ff_mult=4 model.d_action=16 model.max_chunk_len=96 model.max_chunks=96
+      model.ff_mult=4 model.d_action=16 model.max_chunk_len=96 model.max_chunks=96 \
+      "${experiment_overrides[@]}"
     eval_script=plan.py
     ;;
   causal_jepa)
     "$python_bin" "$TEXTJEPA_ROOT/scripts/train.py" +experiment=paper_recovery_causal_geometry \
       "${common[@]}" model.d_model=256 model.chunk_layers=2 model.chunk_heads=4 \
       model.state_layers=4 model.state_heads=8 model.predictor_layers=2 \
-      model.predictor_heads=8 model.ff_mult=4 model.d_action=16 model.max_chunk_len=96 model.max_chunks=96
+      model.predictor_heads=8 model.ff_mult=4 model.d_action=16 model.max_chunk_len=96 model.max_chunks=96 \
+      "${experiment_overrides[@]}"
     eval_script=plan.py
     ;;
   token_lm)
