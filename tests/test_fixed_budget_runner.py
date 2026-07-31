@@ -17,6 +17,7 @@ def test_fixed_budget_runner_forwards_optional_jepa_overrides():
     script = Path("scripts/run_intent_fixed_budget_cell.sh").read_text()
     assert 'if [[ -n "${JEPA_OVERRIDES:-}" ]]' in script
     assert '"${jepa_overrides[@]}"' in script
+    assert 'bash "$TEXTJEPA_ROOT/scripts/run_intent_recovery_audit_cell.sh"' in script
 
 
 def test_recovery_runner_passes_extra_arguments_to_both_jepa_trainers():

@@ -12,7 +12,7 @@ export TMPDIR="$tmp_dir" TMP="$tmp_dir" TEMP="$tmp_dir"
 model_dir="$RUN_DIR/model"; common=("seed=$seed" "device=$device" "train.lr=$lr" "train.epochs=$epochs" "train.batch_size=$batch" "train.num_workers=2" "data.train_size=$train_size" "data.val_size=500" "data.test_size=500" "train.warmup_steps=500" "hydra.run.dir=$model_dir" hydra.output_subdir=null)
 case "$family" in
   mlp_jepa|causal_jepa|token_lm)
-    BATCH_SIZE="$batch" EPOCHS="$epochs" TRAIN_SIZE="$train_size" SEED="$seed" LM_D_MODEL="${LM_D_MODEL:-272}" RUN_DIR="$RUN_DIR" TEXTJEPA_ROOT="$TEXTJEPA_ROOT" DEVICE="$device" "$TEXTJEPA_ROOT/scripts/run_intent_recovery_audit_cell.sh" "$py" igsm "$family" "$lr" "${jepa_overrides[@]}"
+    BATCH_SIZE="$batch" EPOCHS="$epochs" TRAIN_SIZE="$train_size" SEED="$seed" LM_D_MODEL="${LM_D_MODEL:-272}" RUN_DIR="$RUN_DIR" TEXTJEPA_ROOT="$TEXTJEPA_ROOT" DEVICE="$device" bash "$TEXTJEPA_ROOT/scripts/run_intent_recovery_audit_cell.sh" "$py" igsm "$family" "$lr" "${jepa_overrides[@]}"
     kind=$([ "$family" = token_lm ] && echo token_lm || echo jepa);;
   sentence_lm|sentence_latent_lm)
     exp=paper_sentence_lm; [ "$family" = sentence_latent_lm ] && exp=paper_sentence_latent_lm
