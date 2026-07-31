@@ -15,7 +15,7 @@ case "$family" in
   sentence_lm|sentence_latent_lm)
     exp=paper_sentence_lm; [ "$family" = sentence_latent_lm ] && exp=paper_sentence_latent_lm
     "$py" "$TEXTJEPA_ROOT/scripts/train_sentlm.py" +experiment="$exp" "${common[@]}"
-    for slack in 0 2; do "$py" "$TEXTJEPA_ROOT/scripts/plan_sentlm.py" "ckpt=$model_dir/best.pt" "device=$device" split=val n_episodes=200 slack=$slack score=decoder "out=$RUN_DIR/metrics_slack${slack}.json"; done
+    for slack in 0 2; do "$py" "$TEXTJEPA_ROOT/scripts/plan_sentlm.py" "ckpt=$model_dir/best.pt" "device=$device" split=val n_episodes=200 slack=$slack +score=decoder "out=$RUN_DIR/metrics_slack${slack}.json"; done
     "$py" - "$RUN_DIR" "$family" "$lr" <<'PY'
 import json, pathlib, sys
 r=pathlib.Path(sys.argv[1]); out={}
