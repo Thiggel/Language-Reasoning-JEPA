@@ -593,9 +593,10 @@ def _configure_stage_trainability(
             ("task_projection", model.task_projection),
         ]
     elif stage == ResearchStage.VALUE_DISTILLATION:
-        active = [
-            ("v", model.v), ("task_projection", model.task_projection)
-        ]
+        # Pi1 and V share e_q. T_q was trained with Pi1 at the macro stage;
+        # moving it while Pi1 is frozen would shift the prior's conditioning
+        # distribution. Value-only distillation therefore trains V only.
+        active = [("v", model.v)]
     elif stage == ResearchStage.CLOSED_LOOP_REANALYSIS:
         active = [
             ("e0", model.e0), ("p0", model.p0),
@@ -684,13 +685,6 @@ def main() -> None:
         args.admission, stage,
         required=stage >= ResearchStage.SENTENCE_JEPA,
     )
-    if admission is not None:
-        if feature_header.get("dataset_fingerprint") != admission[
-            "dataset_fingerprint"
-        ]:
-            raise ValueError(
-                "admission record does not bind the training dataset"
-            )
     model_config = (
         experiment_config.get("model", {}).get("config", {})
         if experiment_config else {}
@@ -800,6 +794,20 @@ def main() -> None:
         required=stage >= ResearchStage.SENTENCE_JEPA,
         admission=admission,
     )
+    if initialized_from is not None:
+        prior_training_fingerprint = initialized_from.get(
+            "training_dataset_fingerprint"
+        )
+        if prior_training_fingerprint is None:
+            raise ValueError(
+                "initial checkpoint lacks training-dataset provenance"
+            )
+        if prior_training_fingerprint != feature_header.get(
+            "dataset_fingerprint"
+        ):
+            raise ValueError(
+                "initial checkpoint was trained on a different dataset"
+            )
     checkpoint_sha256 = (
         sha256_file(args.init_checkpoint)
         if args.init_checkpoint is not None else ""
@@ -917,6 +925,13 @@ def main() -> None:
                 ),
                 "seed": args.seed,
             },
+            "training_dataset_fingerprint": feature_header.get(
+                "dataset_fingerprint"
+            ),
+            "training_input_fingerprint": feature_header.get(
+                "input_fingerprint"
+            ),
+            "source_feature_sha256": sha256_file(args.features),
         }
 
     def after_optimizer_step() -> None:

@@ -265,6 +265,27 @@ def test_value_stage_rejects_token_checkpoint_even_with_later_admission(
         )
 
 
+def test_value_stage_preserves_macro_task_conditioning_distribution():
+    model = HierarchicalLanguageJEPA(
+        HierarchicalLanguageJEPAConfig(
+            d_backbone=6, vocab_size=8, d_token=4, d_sentence=4,
+            d_action=2, d_task=3, predictor_width=4,
+            token_layers=1, sentence_layers=1, n_heads=1,
+            enable_macro_actions=True, enable_value=True,
+        )
+    )
+    active = train._configure_stage_trainability(
+        model, ResearchStage.VALUE_DISTILLATION
+    )
+    assert active == ["v"]
+    assert all(parameter.requires_grad for parameter in model.v.parameters())
+    assert not any(
+        parameter.requires_grad
+        for parameter in model.task_projection.parameters()
+    )
+    assert not any(parameter.requires_grad for parameter in model.pi1.parameters())
+
+
 def test_sentence_stage_accepts_truncation_only_replay_batch():
     model = HierarchicalLanguageJEPA(
         HierarchicalLanguageJEPAConfig(

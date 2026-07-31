@@ -73,6 +73,7 @@ def main() -> None:
         "gate": gate,
         "gate_outcomes": outcomes,
         "dataset_fingerprint": dataset_fingerprint,
+        "evaluation_dataset_fingerprint": dataset_fingerprint,
         "admitted_checkpoint_sha256": checkpoint_digest,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)

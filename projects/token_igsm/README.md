@@ -35,6 +35,9 @@ Official staged interfaces:
 - `write_hierarchical_admission.py` to bind measured thresholds to an exact
   checkpoint and dataset fingerprint;
 - `build_hierarchical_value_teacher.py` for total-prefix oracle value replay;
+- [First full strict-nested language-planning experiment](FULL_HIERARCHICAL_LANGUAGE_EXPERIMENT.md)
+  for the manager-to-worker MPC contract, oracle/no-terminal evaluations, and
+  isolated Euclidean/Mahalanobis × raw/quasimetric ablation;
 - `diagnose_hierarchical_language.py` for representations, probes, shortcuts,
   and counterfactual diagnostics.
 - `generate_hierarchical_igsm_pool.py` and
