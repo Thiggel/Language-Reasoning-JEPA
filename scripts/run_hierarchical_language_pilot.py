@@ -150,6 +150,29 @@ def main() -> None:
             ])
         _run(command, commands)
         checkpoints[name] = output / "model.pt"
+    # Controlled semantic geometry for exact sentence-boundary endpoints.
+    # Stage-1 checkpoints export z0 only; a genuine z1 view is intentionally
+    # deferred until the sentence-JEPA stage has trained E0_to_1.
+    for variant in variants:
+        geometry = root / "sentence_geometry" / f"{variant}.pt"
+        _run([
+            python, "scripts/build_hierarchical_sentence_geometry.py",
+            "--features", str(feature_paths["id_test"]),
+            "--examples", str(splits / "id_test.jsonl"),
+            "--checkpoint", str(checkpoints[variant]),
+            "--output", str(geometry),
+            "--max-igsm-groups", "192",
+            "--batch-size", str(args.reencode_batch_size),
+            "--device", args.device, "--dtype", args.dtype,
+        ], commands)
+        _run([
+            python, "scripts/plot_hierarchical_sentence_geometry.py",
+            "--artifact", str(geometry),
+            "--output-dir", str(
+                root / "figures" / "sentence_geometry" / variant
+            ),
+            "--method", "tsne", "--seed", str(args.seed),
+        ], commands)
     evaluations = []
     # Full ID/OOD effort curves for every final JEPA variant.
     for variant in variants:
@@ -261,6 +284,8 @@ def main() -> None:
             "table": "figures/planning_effort_accuracy.csv",
             "evaluations": "evaluations/",
             "models": "models/",
+            "sentence_geometry": "figures/sentence_geometry/",
+            "sentence_geometry_metrics": "sentence_geometry/",
         },
     }
     (root / "run_summary.json").write_text(

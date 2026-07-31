@@ -23,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest"]
 language-planning = ["transformers==5.13.0"]
+visualization = ["umap-learn"]
 alfworld = [
     "alfworld @ git+https://github.com/alfworld/alfworld.git@aaba6870f86c5be6a08a491f32a50b906227bc3e",
 ]

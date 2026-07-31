@@ -46,6 +46,15 @@ Official staged interfaces:
   pilot, and `plot_hierarchical_planning_effort.py` for accuracy-versus-effort
   plots.
 
+Controlled sentence-endpoint geometry uses matched triplets: the same prefix
+followed by an observed reasoning step, a meaning-preserving paraphrase, or a
+minimally changed incorrect result. Standalone logical triplets (for example,
+“all swans are white” versus “no swan is white”) are reported separately as
+qualitative out-of-domain controls. Stage-1 plots are explicitly labeled
+`z0_sentence_boundary`; `z1_sentence` is not exported until the nested sentence
+encoder has actually been trained. Quantitative triplet distances are
+authoritative, while t-SNE/UMAP coordinates are qualitative views.
+
 Run families are `hard_hier_*`, `text_hier_*`, `deltajepa_text_*`, and the
 controller rounds under `runs/autonomy/`. This project's conclusions must not
 be transferred to the observed intent-phrase project without an explicit

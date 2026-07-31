@@ -16,6 +16,62 @@ HIERARCHICAL_PROBE_TARGETS = (
 
 
 @torch.no_grad()
+def paired_semantic_geometry(
+    states: torch.Tensor,
+    group_ids: torch.Tensor,
+    variant_ids: torch.Tensor,
+) -> dict[str, float]:
+    """Compare paraphrases with meaning-changing controls.
+
+    Every semantic group must contain exactly one anchor (variant 0), one
+    meaning-preserving paraphrase (variant 1), and one matched semantic
+    contrast (variant 2).  The quantitative triplet test is authoritative;
+    nonlinear two-dimensional projections are qualitative views only.
+    """
+    if states.ndim != 2 or len(states) < 3:
+        raise ValueError("states must be a [samples, dimensions] matrix")
+    if group_ids.shape != (len(states),) or variant_ids.shape != (len(states),):
+        raise ValueError("group and variant labels must align with states")
+    if not torch.isfinite(states).all():
+        raise ValueError("states must be finite")
+    positive_euclidean, negative_euclidean = [], []
+    positive_cosine, negative_cosine = [], []
+    for group in torch.unique(group_ids, sorted=True):
+        indices = torch.where(group_ids == group)[0]
+        variants = variant_ids[indices]
+        selected = []
+        for variant in (0, 1, 2):
+            match = indices[variants == variant]
+            if len(match) != 1:
+                raise ValueError(
+                    "each group needs one anchor, paraphrase, and contrast"
+                )
+            selected.append(states[match[0]].float())
+        anchor, paraphrase, contrast = selected
+        positive_euclidean.append(torch.linalg.vector_norm(anchor - paraphrase))
+        negative_euclidean.append(torch.linalg.vector_norm(anchor - contrast))
+        positive_cosine.append(1 - torch.nn.functional.cosine_similarity(
+            anchor[None], paraphrase[None]
+        )[0])
+        negative_cosine.append(1 - torch.nn.functional.cosine_similarity(
+            anchor[None], contrast[None]
+        )[0])
+    pos_e = torch.stack(positive_euclidean)
+    neg_e = torch.stack(negative_euclidean)
+    pos_c = torch.stack(positive_cosine)
+    neg_c = torch.stack(negative_cosine)
+    return {
+        "groups": float(len(pos_e)),
+        "mean_paraphrase_euclidean": float(pos_e.mean()),
+        "mean_contrast_euclidean": float(neg_e.mean()),
+        "euclidean_triplet_accuracy": float((pos_e < neg_e).float().mean()),
+        "mean_paraphrase_cosine": float(pos_c.mean()),
+        "mean_contrast_cosine": float(neg_c.mean()),
+        "cosine_triplet_accuracy": float((pos_c < neg_c).float().mean()),
+    }
+
+
+@torch.no_grad()
 def representation_statistics(states: torch.Tensor) -> dict[str, torch.Tensor | float]:
     """Collapse, redundancy, scale, and spectrum diagnostics for ``[N,D]``."""
     if states.ndim != 2 or len(states) < 2:
