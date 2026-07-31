@@ -25,6 +25,10 @@ DEPTH_PAIRS = (
 )
 
 
+class ValidityGateFailure(RuntimeError):
+    """A scientifically valid early stop, distinct from a runtime failure."""
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", type=Path, required=True)
@@ -77,7 +81,9 @@ def _admit(
     output: Path,
 ) -> None:
     if any(not math.isfinite(float(value)) for value in metrics.values()):
-        raise RuntimeError(f"non-finite {admitted_stage} gate metrics")
+        raise ValidityGateFailure(
+            f"non-finite {admitted_stage} gate metrics"
+        )
     record = {
         "passed": bool(passed),
         "admitted_stage": admitted_stage,
@@ -88,7 +94,7 @@ def _admit(
     }
     _write_json(output, record)
     if not passed:
-        raise RuntimeError(
+        raise ValidityGateFailure(
             f"{admitted_stage} validity gate failed: {metrics}"
         )
 
@@ -455,7 +461,26 @@ def main() -> None:
         "splits": SPLITS,
         "seed": args.seed,
     })
+    _write_json(root / "outcome.json", {
+        "status": "complete", "seed": args.seed,
+        "full_hierarchy_evaluated": True,
+    })
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ValidityGateFailure as error:
+        arguments = parse_args()
+        output_root = arguments.output_root or Path(os.environ.get("RUN_DIR", ""))
+        if not str(output_root):
+            raise
+        _write_json(output_root / "outcome.json", {
+            "status": "validity_gate_stop",
+            "reason": str(error),
+            "seed": arguments.seed,
+            "full_hierarchy_evaluated": False,
+        })
+        print(json.dumps({
+            "status": "validity_gate_stop", "reason": str(error)
+        }), flush=True)
