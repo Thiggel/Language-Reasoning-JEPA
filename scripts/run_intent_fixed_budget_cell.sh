@@ -4,6 +4,9 @@ set -euo pipefail
 [[ -n "${RUN_DIR:-}" && -n "${TEXTJEPA_ROOT:-}" ]] || { echo 'RUN_DIR and TEXTJEPA_ROOT required' >&2; exit 2; }
 py=${1:?python}; family=${2:?mlp_jepa|causal_jepa|token_lm|sentence_lm|sentence_latent_lm}; lr=${3:?lr}
 seed=${SEED:-0}; epochs=${EPOCHS:-10}; train_size=${TRAIN_SIZE:-30000}; batch=${BATCH_SIZE:-32}; device=${DEVICE:-cuda:0}
+tmp_dir=${SLURM_TMPDIR:-/tmp/tj-fixed-${SLURM_JOB_ID:-$$}}
+mkdir -p "$tmp_dir"; chmod 700 "$tmp_dir"
+export TMPDIR="$tmp_dir" TMP="$tmp_dir" TEMP="$tmp_dir"
 model_dir="$RUN_DIR/model"; common=("seed=$seed" "device=$device" "train.lr=$lr" "train.epochs=$epochs" "train.batch_size=$batch" "train.num_workers=2" "data.train_size=$train_size" "data.val_size=500" "data.test_size=500" "train.warmup_steps=500" "hydra.run.dir=$model_dir" hydra.output_subdir=null)
 case "$family" in
   mlp_jepa|causal_jepa|token_lm)
