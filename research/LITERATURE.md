@@ -471,3 +471,65 @@ claim, verify the primary source and current publication status.
     every predeclared depth, including overthinking regressions. Use identical
     feasible-action menus, episodes, candidate ordering, and seeds for JEPA and
     generative controls.
+
+## 2026-08-03 — novelty boundary for GAR planning geometry
+
+- Decision: whether the intent-phrase paper can claim novel JEPA planning or
+  general geometry shaping, and which experiments distinguish GAR from recent
+  planning-aware representation methods.
+- Primary sources:
+  - V-JEPA 2: <https://arxiv.org/abs/2506.09985>
+  - TD-JEPA: <https://arxiv.org/abs/2510.00739>
+  - Value-guided action planning with JEPA world models:
+    <https://arxiv.org/abs/2601.00844>
+  - Temporal Straightening for Latent Planning:
+    <https://arxiv.org/abs/2603.12231>
+  - Temporal-Distance JEPA: <https://arxiv.org/abs/2607.25337>
+  - LLM-JEPA: <https://arxiv.org/abs/2509.14252>
+  - JEPA-Reasoner: <https://arxiv.org/abs/2512.19171>
+  - ICLR 2026 reviewer guide:
+    <https://www.iclr.cc/Conferences/2026/ReviewerGuide>
+- Applicable claims:
+  - V-JEPA 2 already post-trains an action-conditioned latent world model for
+    zero-shot robot planning; TD-JEPA learns long-term policy-conditioned
+    latent-predictive representations for zero-shot RL. We cannot claim the
+    first JEPA planner or the first action-conditioned JEPA.
+  - Value-guided JEPA shapes embedding distance toward a goal-conditioned
+    reaching value; Temporal Straightening regularizes curvature so Euclidean
+    distance better approximates geodesic structure; Temporal-Distance JEPA
+    mines a directed temporal cost from trajectory order, cross-trajectory
+    negatives, and rollout consistency. We cannot claim the first attempt to
+    make JEPA geometry planning-aware.
+  - GAR's narrower distinction is within-state counterfactual ordering over
+    discrete language actions, coupled to an action-conditioned successor
+    predictor and amortized scorer, with controlled comparison to generative
+    candidate selection.
+  - LLM-JEPA and JEPA-Reasoner establish that JEPA objectives and latent
+    reasoning in language are active prior work. The language contribution is
+    therefore the controlled action/consequence/planning interface and the GAR
+    mechanism analysis, not merely applying JEPA to text.
+  - ICLR explicitly says lack of SOTA is not itself grounds for rejection. It
+    also says authors need not compare to arXiv-only or contemporaneous work,
+    but strongly encourages citation when aware; missing such comparison cannot
+    itself justify rejection.
+- Limitations:
+  - V-JEPA 2, value-guided JEPA, straightening, and Temporal-Distance JEPA study
+    continuous visual/control settings with trajectory logs and substantially
+    different planners. Their results motivate attribution tests but are not
+    direct empirical baselines for discrete feasible language actions.
+  - Temporal-Distance JEPA was posted July 28, 2026 and remains an arXiv
+    preprint. Temporal Straightening is marked ICML 2026 camera-ready;
+    value-guided JEPA is a workshop poster/preprint.
+  - Exact continuation cost in stylized iGSM has many ties and often reduces to
+    whether a feasible action adds one excess step; transfer and controlled
+    perturbations are needed before claiming broad planning geometry.
+- Design change:
+  - Frame the paper around viability, insufficiency of latent MSE alone, and
+    causal attribution of GAR—not superiority over generative models.
+  - Prioritize full/detached/geometry-only/direct-ranker controls, local
+    ordering/regret/margin metrics, and correlations with strict success.
+  - Compare GAR with the direct ranker on forced-error recovery, paraphrased
+    actions, operator/negation swaps, entity renaming, OOD length/composition,
+    and data efficiency. Add one small non-arithmetic language-action domain.
+  - Treat effective rank, global probes, reconstruction, PCA/t-SNE/UMAP, and
+    exhaustive FLOP matching as secondary diagnostics rather than core claims.
