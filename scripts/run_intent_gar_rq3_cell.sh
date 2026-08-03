@@ -12,7 +12,7 @@ case "$mode" in distance|direct) ;; *) echo "bad mode: $mode" >&2; exit 2;; esac
 
 export PLANNER_ENERGY=$([[ "$mode" == distance ]] && echo oracle_goal || echo value)
 snapshot_every=${SNAPSHOT_EVERY_STEPS:-3000}
-base_overrides="${JEPA_OVERRIDES:-} model.geo_rank_score_mode=$mode model.value_detach=false train.retain_checkpoint_every_steps=$snapshot_every"
+base_overrides="${JEPA_OVERRIDES:-} model.geo_rank_score_mode=$mode model.value_detach=false +train.retain_checkpoint_every_steps=$snapshot_every"
 export JEPA_OVERRIDES="$base_overrides"
 
 bash "$TEXTJEPA_ROOT/scripts/run_intent_fixed_budget_cell.sh" \
