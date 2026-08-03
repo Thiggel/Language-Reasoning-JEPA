@@ -60,6 +60,13 @@ class Trainer:
         self.checkpoint_every_steps = int(tc.get("checkpoint_every_steps", 0))
         if self.checkpoint_every_steps < 0:
             raise ValueError("checkpoint_every_steps must be nonnegative")
+        self.retain_checkpoint_every_steps = int(
+            tc.get("retain_checkpoint_every_steps", 0)
+        )
+        if self.retain_checkpoint_every_steps < 0:
+            raise ValueError(
+                "retain_checkpoint_every_steps must be nonnegative"
+            )
         self.precision = str(tc.get("precision", "fp32"))
         if self.precision not in {"fp32", "bf16"}:
             raise ValueError(f"unsupported training precision: {self.precision}")
@@ -199,6 +206,13 @@ class Trainer:
                 # interrupted long single-epoch run remains evaluable and can
                 # be resumed without replaying updates.
                 self._checkpoint("last.pt", epoch, items)
+            if (
+                self.retain_checkpoint_every_steps
+                and self.step % self.retain_checkpoint_every_steps == 0
+            ):
+                self._checkpoint(
+                    f"step-{self.step:08d}.pt", epoch, items
+                )
 
     @torch.no_grad()
     def evaluate(self) -> dict[str, float]:

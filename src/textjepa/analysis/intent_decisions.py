@@ -12,7 +12,26 @@ from collections.abc import Iterable
 import numpy as np
 
 
-def rank_metrics(costs: Iterable[float], positive: Iterable[bool]) -> dict:
+def _average_ranks(values: np.ndarray) -> np.ndarray:
+    """Return zero-based average ranks, assigning equal values equal rank."""
+
+    order = np.argsort(values, kind="stable")
+    ranks = np.empty(len(values), dtype=np.float64)
+    start = 0
+    while start < len(values):
+        stop = start + 1
+        while stop < len(values) and values[order[stop]] == values[order[start]]:
+            stop += 1
+        ranks[order[start:stop]] = 0.5 * (start + stop - 1)
+        start = stop
+    return ranks
+
+
+def rank_metrics(
+    costs: Iterable[float],
+    positive: Iterable[bool],
+    target_costs: Iterable[float] | None = None,
+) -> dict:
     """Summarize a lower-is-better candidate ranking.
 
     Multiple actions may be optimal/necessary.  Top-1 is correct if any
@@ -47,7 +66,7 @@ def rank_metrics(costs: Iterable[float], positive: Iterable[bool]) -> dict:
     else:
         pairwise = 1.0
         margin = float("nan")
-    return {
+    metrics = {
         "top1": float(top1),
         "reciprocal_rank": 1.0 / (first_positive + 1),
         "pairwise_accuracy": pairwise,
@@ -55,6 +74,38 @@ def rank_metrics(costs: Iterable[float], positive: Iterable[bool]) -> dict:
         "n_candidates": int(cost.size),
         "n_positive": int(label.sum()),
     }
+    if target_costs is None:
+        target = (~label).astype(np.float64)
+    else:
+        target = np.asarray(list(target_costs), dtype=np.float64)
+        if target.shape != cost.shape or not np.isfinite(target).all():
+            raise ValueError("target_costs must be finite and align with costs")
+    optimal = target == target.min()
+    selected = int(np.argmin(cost))
+    metrics["mean_regret"] = float(target[selected] - target.min())
+    metrics["optimal_top1"] = float((optimal & top_ties).any())
+    metrics["optimal_margin"] = (
+        float(cost[~optimal].min() - cost[optimal].min())
+        if (~optimal).any() else float("nan")
+    )
+    target_diff = target[:, None] - target[None, :]
+    score_diff = cost[:, None] - cost[None, :]
+    informative = target_diff < 0
+    metrics["exact_ordering_accuracy"] = (
+        float(
+            (score_diff[informative] < 0).mean()
+            + 0.5 * (score_diff[informative] == 0).mean()
+        )
+        if informative.any() else float("nan")
+    )
+    target_rank = _average_ranks(target)
+    score_rank = _average_ranks(cost)
+    metrics["spearman"] = (
+        float(np.corrcoef(target_rank, score_rank)[0, 1])
+        if target_rank.std() > 0 and score_rank.std() > 0
+        else float("nan")
+    )
+    return metrics
 
 
 def aggregate_rank_metrics(rows: Iterable[dict]) -> dict:
@@ -76,7 +127,12 @@ def aggregate_rank_metrics(rows: Iterable[dict]) -> dict:
         "competitive_top1": mean("top1", competitive),
         "reciprocal_rank": mean("reciprocal_rank", values),
         "pairwise_accuracy": mean("pairwise_accuracy", competitive),
+        "exact_ordering_accuracy": mean("exact_ordering_accuracy", competitive),
+        "optimal_top1": mean("optimal_top1", values),
+        "mean_regret": mean("mean_regret", values),
+        "spearman": mean("spearman", competitive),
         "margin_mean": mean("margin", competitive),
+        "optimal_margin_mean": mean("optimal_margin", competitive),
         "margin_median": (
             float(np.median([row["margin"] for row in competitive]))
             if competitive else None

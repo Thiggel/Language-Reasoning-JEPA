@@ -22,6 +22,27 @@ def test_rank_metrics_rejects_no_positive_candidate():
         rank_metrics([0.0, 1.0], [False, False])
 
 
+def test_rank_metrics_exact_regret_and_tied_spearman():
+    result = rank_metrics(
+        [0.4, 0.1, 0.3, 0.2],
+        [False, True, False, True],
+        [2.0, 0.0, 2.0, 1.0],
+    )
+    assert result["mean_regret"] == 0.0
+    assert result["optimal_top1"] == 1.0
+    assert result["optimal_margin"] == pytest.approx(0.1)
+    assert result["exact_ordering_accuracy"] == 1.0
+    assert result["spearman"] > 0.94
+
+
+def test_rank_metrics_reports_regret_for_wrong_choice():
+    result = rank_metrics([0.0, 1.0], [False, True], [3.0, 1.0])
+    assert result["mean_regret"] == 2.0
+    assert result["optimal_top1"] == 0.0
+    assert result["exact_ordering_accuracy"] == 0.0
+    assert result["spearman"] == pytest.approx(-1.0)
+
+
 def test_aggregate_excludes_noncompetitive_margins():
     rows = [
         rank_metrics([0.0], [True]),

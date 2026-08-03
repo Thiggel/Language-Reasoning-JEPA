@@ -10,6 +10,8 @@ scores:
 * ``predicted_geometry``: imagined next state to the EMA goal;
 * ``oracle_transition_value``: learned value on the true next state;
 * ``predicted_transition_value``: deployed value on the imagined next state.
+* ``direct_action_score``: behavior-cloning control that scores ``(h,a)``
+  without consuming an imagined successor (only for direct-ranker runs).
 
 The successive gaps separate target geometry, online encoding, transition
 drift, and value readout.  Optional forced-error branches test whether the
@@ -47,6 +49,7 @@ SCORES = (
     "predicted_geometry",
     "oracle_transition_value",
     "predicted_transition_value",
+    "direct_action_score",
 )
 
 
@@ -194,9 +197,15 @@ def _decision_rows(
         planner, prompt_tokens, prompt_mask, [goal_history], teacher=True
     )
     candidate_histories = []
+    exact_continuation_cost = []
     for action in candidates:
         clone = env.clone()
         candidate_histories.append(history + [clone.step(action)])
+        # Exact shortest completion cost after committing to this feasible
+        # action, including the action just taken.  In stylized iGSM this is
+        # computable from the environment and is used only as an evaluation
+        # label, never as model input.
+        exact_continuation_cost.append(1 + clone.remaining_necessary())
     true_online = _encode_last(
         planner, prompt_tokens, prompt_mask, candidate_histories, teacher=False
     )
@@ -212,6 +221,7 @@ def _decision_rows(
     )
     n = len(candidates)
     s0 = planner._s0(prompt_tokens, prompt_mask)
+    action_codes = planner._action_codes(problem, candidates)
     costs = {
         "gar_teacher_geometry": _distance(
             true_teacher, goal_teacher.expand(n, -1)
@@ -229,6 +239,10 @@ def _decision_rows(
             predicted, s0.expand(n, -1)
         ),
     }
+    if getattr(planner.model, "geo_rank_score_mode", "value") == "direct":
+        costs["direct_action_score"] = planner.model.core.direct_action_rank_head(
+            current_online.expand(n, -1), s0.expand(n, -1), action_codes
+        )
     current_distance = float(_distance(current_teacher, goal_teacher).item())
     progress = current_distance - costs["gar_teacher_geometry"]
     true_delta = _ln(true_teacher) - _ln(current_teacher).expand(n, -1)
@@ -247,6 +261,7 @@ def _decision_rows(
             "operation": str(problem.vars[action].op),
             "necessary": bool(positive[index]),
             "remaining_necessary": int(env.remaining_necessary()),
+            "exact_continuation_cost": int(exact_continuation_cost[index]),
             "n_candidates": n,
             "n_positive": int(positive.sum()),
             "current_goal_distance": current_distance,
@@ -280,13 +295,14 @@ def _summarize(rows: list[dict], features: dict[str, np.ndarray]) -> dict:
         selected = [row for row in rows if row["trace"] == trace]
         groups = sorted({row["group"] for row in selected})
         score_summary = {}
-        for score in SCORES:
+        for score in (name for name in SCORES if name in selected[0]):
             metrics = []
             for group in groups:
                 candidates = [row for row in selected if row["group"] == group]
                 metrics.append(rank_metrics(
                     [row[score] for row in candidates],
                     [row["necessary"] for row in candidates],
+                    [row["exact_continuation_cost"] for row in candidates],
                 ))
             score_summary[score] = aggregate_rank_metrics(metrics)
         competitive = [

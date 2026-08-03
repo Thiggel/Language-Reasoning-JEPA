@@ -27,6 +27,32 @@ class ValueHead(nn.Module):
         return self.net(torch.cat([s, s0], dim=-1)).squeeze(-1)
 
 
+class DirectActionRankHead(nn.Module):
+    """Information-matched scorer that bypasses successor prediction.
+
+    This is the behavior-cloning control for GAR: it sees the current history
+    state, prompt/goal state, and candidate action code, but never ``F(s,a)``.
+    Its hidden width matches :class:`ValueHead` closely in parameter count.
+    """
+
+    def __init__(self, d_state: int, d_action: int, hidden_mult: int = 2):
+        super().__init__()
+        width = 2 * d_state + d_action
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], 1),
+        )
+
+    def forward(
+        self, state: torch.Tensor, initial: torch.Tensor, action: torch.Tensor
+    ) -> torch.Tensor:
+        initial = (
+            initial.unsqueeze(-2).expand_as(state)
+            if state.dim() > initial.dim() else initial
+        )
+        return self.net(torch.cat([state, initial, action], dim=-1)).squeeze(-1)
+
+
 class MacroValueHead(nn.Module):
     """Cost/advantage head for a macro action in a problem state."""
 

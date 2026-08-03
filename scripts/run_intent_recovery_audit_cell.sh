@@ -61,9 +61,14 @@ tmp.write_text(json.dumps({'dataset':sys.argv[2], 'family':sys.argv[3], 'epochs'
 os.replace(tmp, p)
 PY
 
+eval_energy=()
+if [[ "$eval_script" == "plan.py" ]]; then
+  eval_energy=("energy=${PLANNER_ENERGY:-value}")
+fi
 for slack in 0 2; do
   "$python_bin" "$TEXTJEPA_ROOT/scripts/$eval_script" "ckpt=$model_dir/best.pt" \
     "device=$device" split=val n_episodes=200 slack=$slack lookahead=1 \
+    "${eval_energy[@]}" \
     "out=$RUN_DIR/metrics_slack${slack}.json"
 done
 "$python_bin" - "$RUN_DIR" "$dataset" "$family" "$learning_rate" <<'PY'

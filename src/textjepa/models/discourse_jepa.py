@@ -105,6 +105,7 @@ class DiscourseJEPA(nn.Module):
         macro_k: int = 3,
         d_macro: int = 8,
         value_detach: bool = True,
+        geo_rank_score_mode: str = "value",
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
@@ -137,6 +138,11 @@ class DiscourseJEPA(nn.Module):
         self.chunk_target = chunk_target
         self.freeze_encoders = freeze_encoders
         self.state_target = state_target
+        if geo_rank_score_mode not in {"value", "distance", "direct"}:
+            raise ValueError(
+                f"unknown GAR score mode: {geo_rank_score_mode}"
+            )
+        self.geo_rank_score_mode = geo_rank_score_mode
         if action_support_states not in {"none", "true", "all"}:
             raise ValueError(
                 f"unknown action-support state mode: {action_support_states}"
@@ -218,6 +224,14 @@ class DiscourseJEPA(nn.Module):
             dense_rollout_depth=dense_rollout_depth,
             high_dense_rollout_depth=high_dense_rollout_depth,
         )
+        # Keep the active policy-head budget information matched.  Inactive
+        # heads remain in the module only for checkpoint compatibility.
+        if geo_rank_score_mode == "direct":
+            self.core.value_head.requires_grad_(False)
+        else:
+            self.core.direct_action_rank_head.requires_grad_(False)
+        if geo_rank_score_mode == "distance":
+            self.core.value_head.requires_grad_(False)
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
         # frozen random-init copy: fixed, informative chunk-embedding targets
@@ -593,10 +607,30 @@ class DiscourseJEPA(nn.Module):
         pe = out.preds[bidx, t]
         if self.core.value_detach:
             pe, preds_alt = pe.detach(), preds_alt.detach()
-        e_exec = self.core.value_head(pe, out.s0)
-        e_alt = self.core.value_head(
-            preds_alt.reshape(B * K, -1), out.s0.repeat_interleave(K, 0)
-        ).reshape(B, K)
+        score_mode = self.geo_rank_score_mode
+        if score_mode == "value":
+            e_exec = self.core.value_head(pe, out.s0)
+            e_alt = self.core.value_head(
+                preds_alt.reshape(B * K, -1), out.s0.repeat_interleave(K, 0)
+            ).reshape(B, K)
+        elif score_mode == "direct":
+            direct_state = s_anchor.detach() if self.core.value_detach else s_anchor
+            direct_exec_action = out.actions[bidx, t]
+            direct_alt_action = (
+                a_alt.detach() if self.core.value_detach else a_alt
+            )
+            if self.core.value_detach:
+                direct_exec_action = direct_exec_action.detach()
+            e_exec = self.core.direct_action_rank_head(
+                direct_state, out.s0, direct_exec_action
+            )
+            e_alt = self.core.direct_action_rank_head(
+                direct_state.unsqueeze(1).expand(-1, K, -1),
+                out.s0,
+                direct_alt_action,
+            )
+        else:
+            e_exec = e_alt = None
         # Geometric labels in EMA space.  For horizon 1 these are true
         # one-step next states.  Longer horizons either use random shooting or
         # an online geometry-greedy feasible-action policy.  Neither variant
@@ -717,6 +751,14 @@ class DiscourseJEPA(nn.Module):
                     [valid_b.unsqueeze(1),
                      batch["ga_valid"] & valid_b.unsqueeze(1)], 1
                 )
+        if score_mode == "distance":
+            # Oracle-terminal geometry control.  The terminal EMA state is a
+            # training/evaluation diagnostic and must never be described as a
+            # deployable action-free planner.
+            e_exec = (ln(pe) - ln(goal)).abs().mean(-1)
+            e_alt = (
+                ln(preds_alt) - ln(goal).unsqueeze(1)
+            ).abs().mean(-1)
         out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
         out.extras["ga_label"] = d
         out.extras["ga_valid"] = candidate_valid

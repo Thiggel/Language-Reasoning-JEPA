@@ -131,6 +131,46 @@ does not fix world-model drift. If the frozen shared readout improves while the
 native value does not, the information is present but the scorer is the
 bottleneck.
 
+## RQ3: does GAR create planning geometry?
+
+Global decodability and effective rank are insufficient for this claim.  The
+local test enumerates the same feasible intent phrases at each aligned state
+and reports exact pairwise ordering accuracy, optimal-action top-1 recall,
+mean action regret, Spearman correlation with exact shortest-continuation
+cost, and the optimal-versus-best-nonoptimal margin.  Exact continuation cost
+is an evaluation-only symbolic label; it is never supplied to a policy.
+
+Across seeds, ablations, and retained optimization checkpoints,
+`scripts/correlate_intent_planning_geometry.py` compares the correlations of
+strict success with those local quantities against one-step latent error,
+within-state successor retrieval, effective rank, and the existing frozen
+necessary-action, operation, and remaining-step probes.  The preregistered
+prediction is that local ordering and margin track strict success materially
+better than global rank, probes, or latent MSE.
+
+Two additional information-matched controls close the behavioral-cloning
+confound:
+
+| Control | GAR scorer | GAR gradient path | Planning status |
+|---|---|---|---|
+| geometry only | raw `LN-L1(F(h,a), z_goal)` | predictor/encoder, no score head | oracle-terminal diagnostic |
+| direct ranker | `D(h, g, a)` | encoder/action encoder/direct head, bypasses `F` | deployable one-step control |
+
+The direct ranker shares histories, candidate actions, positives,
+counterfactual negatives, labels, coefficient weights, and an approximately
+matched scorer parameter budget with full GAR.  It is deliberately a strong
+control: the ordinary JEPA transition objective remains as an auxiliary
+representation loss, but the policy path cannot consume its predicted
+successor.  A direct-ranker win means the predictive factorization is not yet
+justified.  A GAR win must then be localized to data efficiency, forced-error
+recovery, action paraphrases, compositional/OOD length, or novel-goal transfer.
+
+The geometry-only cell uses the encoded solved terminal state as `z_goal`.
+That state is unavailable to a deployed solver, so its planning accuracy is
+always labeled **oracle-terminal/candidate-privileged**.  Its purpose is only
+to test whether shaping raw successor distances is sufficient; it cannot be
+used as a headline non-oracle result.
+
 ## Reproducible entry points
 
 - `scripts/audit_intent_gar_geometry.py`: JEPA five-stage localization and
@@ -140,9 +180,14 @@ bottleneck.
   mechanism comparison.
 - `scripts/compare_intent_policy_decisions.py`: aligned error overlap and
   difficulty strata.
+- `scripts/correlate_intent_planning_geometry.py`: strict-success correlation
+  test across checkpoints, seeds, and ablations.
+- `scripts/run_intent_gar_rq3_cell.sh`: bounded geometry-only/direct-ranker
+  training cell with retained learning-curve checkpoints.
 - `scripts/run_intent_decision_audit_cell.sh`: cluster-safe wrapper.
 - `src/textjepa/analysis/intent_decisions.py`: tested ranking and transition
   metrics.
 
 The submitted round is
-`2026-08-03-intent-decision-and-gar-mechanism-audit-v1`.
+`2026-08-03-intent-decision-and-gar-mechanism-audit-v2`; the two missing RQ3
+controls run in the subsequent RQ3-control round.

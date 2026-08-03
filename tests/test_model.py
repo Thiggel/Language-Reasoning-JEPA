@@ -424,6 +424,51 @@ def test_gar_value_detach_isolates_value_head_from_predictor(
     assert predictor_has_gradient is expect_body_gradient
 
 
+def test_gar_direct_ranker_bypasses_successor_predictor(setup):
+    vocab, _, _ = setup
+    dataset = IGSMDataset(vocab, size=4, seed=31, geo_rank_k=2)
+    batch = collate([dataset[index] for index in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        value_detach=False, geo_rank_score_mode="direct",
+    )
+    output = model(batch)
+    output.extras["ga_energy"].square().sum().backward()
+    assert any(
+        p.grad is not None and p.grad.abs().sum() > 0
+        for p in model.core.direct_action_rank_head.parameters()
+    )
+    assert not any(
+        p.grad is not None and p.grad.abs().sum() > 0
+        for p in model.core.predictor.parameters()
+    )
+    assert not any(p.requires_grad for p in model.core.value_head.parameters())
+
+
+def test_gar_geometry_only_shapes_predictor_without_score_head(setup):
+    vocab, _, _ = setup
+    dataset = IGSMDataset(vocab, size=4, seed=37, geo_rank_k=2)
+    batch = collate([dataset[index] for index in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        value_detach=False, geo_rank_score_mode="distance",
+    )
+    output = model(batch)
+    output.extras["ga_energy"].square().sum().backward()
+    assert any(
+        p.grad is not None and p.grad.abs().sum() > 0
+        for p in model.core.predictor.parameters()
+    )
+    assert not any(p.requires_grad for p in model.core.value_head.parameters())
+    assert not any(
+        p.requires_grad for p in model.core.direct_action_rank_head.parameters()
+    )
+
+
 def test_geometric_advantage_mse_uses_same_state_pair_differences(setup):
     from textjepa.objectives import GeoAdvantageRegression
 

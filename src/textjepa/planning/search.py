@@ -221,6 +221,14 @@ class LatentPlanner:
         goal_state: torch.Tensor | None,
     ) -> torch.Tensor:
         n = cur.shape[0]
+        if (
+            getattr(self.model, "geo_rank_score_mode", "value") == "distance"
+            and goal_state is None
+        ):
+            raise RuntimeError(
+                "geometry-only GAR requires energy=oracle_goal; its terminal "
+                "state is a labeled diagnostic, not a deployable planner"
+            )
         if goal_state is not None:
             geo = getattr(self.model.core, "geo_head", None)
             fin, goal = (geo(cur), geo(goal_state)) if geo is not None else (cur, goal_state)
@@ -256,6 +264,36 @@ class LatentPlanner:
                 future = self._action_codes(problem, flat).reshape(
                     len(selected), length, -1
                 )
+                if getattr(
+                    self.model, "geo_rank_score_mode", "value"
+                ) == "direct":
+                    if length == 1:
+                        direct_state = s.expand(len(selected), -1)
+                    elif hasattr(self.model.predictor, "rollout"):
+                        direct_state = self.model.predictor.rollout(
+                            s.expand(len(selected), -1), future[:, :-1],
+                            state_history=(
+                                state_history.expand(len(selected), -1, -1)
+                                if state_history is not None else None
+                            ),
+                            action_history=(
+                                action_history.expand(len(selected), -1, -1)
+                                if action_history is not None else None
+                            ),
+                        )[:, -1]
+                    else:
+                        direct_state = s.expand(len(selected), -1)
+                        for step in range(length - 1):
+                            direct_state = self.model.predictor(
+                                direct_state, future[:, step]
+                            )
+                    direct_cost = self.model.core.direct_action_rank_head(
+                        direct_state, s0.expand(len(selected), -1), future[:, -1]
+                    )
+                    total[torch.tensor(selected, device=self.device)] = (
+                        float(length) + direct_cost
+                    )
+                    continue
                 if hasattr(self.model.predictor, "rollout"):
                     cur = self.model.predictor.rollout(
                         s.expand(len(selected), -1),
