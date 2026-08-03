@@ -391,6 +391,39 @@ def test_multistep_geometric_rollout_ranking(setup):
     assert any(p.grad is not None for p in model.core.value_head.parameters())
 
 
+@pytest.mark.parametrize("value_detach,expect_body_gradient", [
+    (False, True),
+    (True, False),
+])
+def test_gar_value_detach_isolates_value_head_from_predictor(
+    setup, value_detach, expect_body_gradient
+):
+    """Mechanism audit depends on this being a real gradient intervention."""
+    vocab, _, _ = setup
+    dataset = IGSMDataset(vocab, size=4, seed=29, geo_rank_k=2)
+    batch = collate([dataset[index] for index in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        value_detach=value_detach,
+    )
+    output = model(batch)
+    # Any GAR ranking/regression objective consumes these energies. Summing
+    # them avoids a random hinge already satisfying its margin in this graph
+    # connectivity test.
+    output.extras["ga_energy"].sum().backward()
+    assert any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.core.value_head.parameters()
+    )
+    predictor_has_gradient = any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.core.predictor.parameters()
+    )
+    assert predictor_has_gradient is expect_body_gradient
+
+
 def test_geometric_advantage_mse_uses_same_state_pair_differences(setup):
     from textjepa.objectives import GeoAdvantageRegression
 
