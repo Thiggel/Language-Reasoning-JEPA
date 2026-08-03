@@ -54,3 +54,9 @@ def test_looped_runner_can_reuse_a_completed_training_checkpoint():
     assert 'loop_checkpoint=${LOOPED_CHECKPOINT:-$model_dir/best.pt}' in script
     assert 'if [[ -z "${LOOPED_CHECKPOINT:-}" ]]' in script
     assert '--checkpoint "$loop_checkpoint"' in script
+
+
+def test_fixed_budget_runner_defers_optional_rendering_from_cluster_jobs():
+    script = Path("scripts/run_intent_fixed_budget_cell.sh").read_text()
+    assert "--coordinates-out" in script
+    assert "--figure-out" not in script

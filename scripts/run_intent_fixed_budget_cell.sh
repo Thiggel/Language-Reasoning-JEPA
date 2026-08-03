@@ -101,4 +101,4 @@ PY
 fi
 for split in train val; do "$py" "$TEXTJEPA_ROOT/scripts/export_intent_representations.py" --checkpoint "$model_dir/best.pt" --kind "$kind" --split "$split" --samples 1024 --device "$device" --out "$RUN_DIR/features_${split}.npz"; done
 "$py" "$TEXTJEPA_ROOT/scripts/analyze_intent_representations.py" --train "$RUN_DIR/features_train.npz" --test "$RUN_DIR/features_val.npz" --out "$RUN_DIR/representation_analysis.json" --seed "$seed"
-for label in categorical_necessary categorical_operation; do "$py" "$TEXTJEPA_ROOT/scripts/plot_intent_representations.py" --features "$RUN_DIR/features_val.npz" --label "$label" --method pca --seed "$seed" --coordinates-out "$RUN_DIR/${label}_pca.npz" --figure-out "$RUN_DIR/${label}_pca.png"; done
+for label in categorical_necessary categorical_operation; do "$py" "$TEXTJEPA_ROOT/scripts/plot_intent_representations.py" --features "$RUN_DIR/features_val.npz" --label "$label" --method pca --seed "$seed" --coordinates-out "$RUN_DIR/${label}_pca.npz"; done
