@@ -27,14 +27,17 @@ PY
     kind=sentence_lm;;
   looped_token_lm)
     loop_values=${EVAL_LOOPS:-"1 2 4 8 16 32"}
-    "$py" "$TEXTJEPA_ROOT/scripts/train_lm.py" \
-      +experiment=paper_token_lm_looped "${common[@]}" \
-      model.d_model="${LM_D_MODEL:-272}" model.n_layers=8 \
-      model.n_heads=8 model.ff_mult=4 model.max_len=1024
+    loop_checkpoint=${LOOPED_CHECKPOINT:-$model_dir/best.pt}
+    if [[ -z "${LOOPED_CHECKPOINT:-}" ]]; then
+      "$py" "$TEXTJEPA_ROOT/scripts/train_lm.py" \
+        +experiment=paper_token_lm_looped "${common[@]}" \
+        model.d_model="${LM_D_MODEL:-272}" model.n_layers=8 \
+        model.n_heads=8 model.ff_mult=4 model.max_len=1024
+    fi
     for loops in $loop_values; do
       for slack in 0 2; do
         "$py" "$TEXTJEPA_ROOT/scripts/plan_lm.py" \
-          "ckpt=$model_dir/best.pt" "device=$device" split=val \
+          "ckpt=$loop_checkpoint" "device=$device" split=val \
           n_episodes=200 slack="$slack" +eval_loops="$loops" \
           measure_flops=true \
           "out=$RUN_DIR/metrics_loops${loops}_slack${slack}.json"
@@ -43,15 +46,18 @@ PY
     kind=token_lm;;
   looped_sentence_lm|looped_sentence_latent_lm)
     loop_values=${EVAL_LOOPS:-"1 2 4 8 16"}
+    loop_checkpoint=${LOOPED_CHECKPOINT:-$model_dir/best.pt}
     exp=paper_sentence_lm_looped
     [ "$family" = looped_sentence_latent_lm ] && \
       exp=paper_sentence_latent_lm_looped
-    "$py" "$TEXTJEPA_ROOT/scripts/train_sentlm.py" \
-      +experiment="$exp" "${common[@]}"
+    if [[ -z "${LOOPED_CHECKPOINT:-}" ]]; then
+      "$py" "$TEXTJEPA_ROOT/scripts/train_sentlm.py" \
+        +experiment="$exp" "${common[@]}"
+    fi
     for loops in $loop_values; do
       for slack in 0 2; do
         "$py" "$TEXTJEPA_ROOT/scripts/plan_sentlm.py" \
-          "ckpt=$model_dir/best.pt" "device=$device" split=val \
+          "ckpt=$loop_checkpoint" "device=$device" split=val \
           n_episodes=200 slack="$slack" +score=decoder \
           +eval_loops="$loops" measure_flops=true \
           "out=$RUN_DIR/metrics_loops${loops}_slack${slack}.json"
@@ -61,7 +67,7 @@ PY
   *) echo "unknown family $family" >&2; exit 2;;
 esac
 if [[ -n "${loop_values:-}" ]]; then
-  EVAL_LOOPS="$loop_values" "$py" - "$RUN_DIR" "$family" "$lr" <<'PY'
+  EVAL_LOOPS="$loop_values" "$py" - "$RUN_DIR" "$family" "$lr" "$loop_checkpoint" <<'PY'
 import json, os, pathlib, sys, torch
 r=pathlib.Path(sys.argv[1]); curves={}
 for loops in map(int, os.environ["EVAL_LOOPS"].split()):
@@ -69,8 +75,9 @@ for loops in map(int, os.environ["EVAL_LOOPS"].split()):
     for slack in (0, 2):
         path=r/f"metrics_loops{loops}_slack{slack}.json"
         curves[str(loops)][str(slack)]=next(iter(json.loads(path.read_text()).values()))
-ckpt=torch.load(r/'model/best.pt', map_location='cpu', weights_only=False)
-hist_path=r/'model/loop_histogram.json'
+checkpoint=pathlib.Path(sys.argv[4])
+ckpt=torch.load(checkpoint, map_location='cpu', weights_only=False)
+hist_path=checkpoint.parent/'loop_histogram.json'
 hist=json.loads(hist_path.read_text()) if hist_path.exists() else {}
 (r/'metrics.json').write_text(json.dumps({
     'family':sys.argv[2], 'learning_rate':float(sys.argv[3]),
@@ -81,7 +88,7 @@ PY
   for loops in $loop_values; do
     for split in train val; do
       "$py" "$TEXTJEPA_ROOT/scripts/export_intent_representations.py" \
-        --checkpoint "$model_dir/best.pt" --kind "$kind" --split "$split" \
+        --checkpoint "$loop_checkpoint" --kind "$kind" --split "$split" \
         --samples 1024 --device "$device" --eval-loops "$loops" \
         --out "$RUN_DIR/features_loops${loops}_${split}.npz"
     done

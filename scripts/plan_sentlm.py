@@ -72,9 +72,13 @@ def main(cfg: DictConfig) -> None:
 
     solved = steps_sum = distr = 0
     measure_flops = bool(cfg.get("measure_flops", False))
+    try:
+        from torch.utils.flop_counter import FlopCounterMode
+    except (ImportError, AttributeError):
+        FlopCounterMode = None
     flop_counter = (
-        torch.utils.flop_counter.FlopCounterMode(display=False)
-        if measure_flops else nullcontext()
+        FlopCounterMode(display=False)
+        if measure_flops and FlopCounterMode is not None else nullcontext()
     )
     with torch.no_grad(), flop_counter:
         for ep in range(cfg.n_episodes):
@@ -156,9 +160,10 @@ def main(cfg: DictConfig) -> None:
             ),
         }
     }
-    if measure_flops:
+    key = f"sentlm_{target_kind}_{score}"
+    out[key]["flop_measurement_supported"] = FlopCounterMode is not None
+    if measure_flops and FlopCounterMode is not None:
         total_flops = int(flop_counter.get_total_flops())
-        key = f"sentlm_{target_kind}_{score}"
         out[key].update({
             "measured_eval_flops": total_flops,
             "measured_flops_per_episode": total_flops / cfg.n_episodes,

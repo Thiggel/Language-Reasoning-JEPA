@@ -60,9 +60,13 @@ def main(cfg: DictConfig) -> None:
 
     results = []
     measure_flops = bool(cfg.get("measure_flops", False))
+    try:
+        from torch.utils.flop_counter import FlopCounterMode
+    except (ImportError, AttributeError):
+        FlopCounterMode = None
     flop_counter = (
-        torch.utils.flop_counter.FlopCounterMode(display=False)
-        if measure_flops else nullcontext()
+        FlopCounterMode(display=False)
+        if measure_flops and FlopCounterMode is not None else nullcontext()
     )
     with torch.no_grad(), flop_counter:
         for ep in range(cfg.n_episodes):
@@ -134,7 +138,10 @@ def main(cfg: DictConfig) -> None:
             "length_normalized": bool(cfg.get("length_normalize", True)),
         }
     }
-    if measure_flops:
+    out[f"lm_{score_kind}_policy"]["flop_measurement_supported"] = (
+        FlopCounterMode is not None
+    )
+    if measure_flops and FlopCounterMode is not None:
         total_flops = int(flop_counter.get_total_flops())
         out[f"lm_{score_kind}_policy"].update({
             "measured_eval_flops": total_flops,
