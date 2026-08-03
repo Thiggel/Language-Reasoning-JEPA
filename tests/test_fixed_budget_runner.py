@@ -66,7 +66,9 @@ def test_length_ood_runner_uses_exact_controlled_cells():
     script = Path("scripts/run_intent_length_ood_cell.sh").read_text()
     assert 'EVAL_LENGTHS:-"3 5 7 9 10 11"' in script
     assert 'EVAL_SLACKS:-"0 1 2 4"' in script
-    assert "eval_n_vars_range=[12,12]" in script
+    assert 'N_VARS_MODE:-fixed12' in script
+    assert 'length_plus3) n_vars=$((length + 3))' in script
+    assert 'eval_n_vars_range=[$n_vars,$n_vars]' in script
     assert "eval_strict_steps_range=true" in script
     assert "eval_sample_max_tries=100000" in script
     assert 'split=test' in script

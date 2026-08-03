@@ -9,6 +9,7 @@ py=${1:?python}; family=${2:?model family}; checkpoint=${3:?checkpoint}
 device=${DEVICE:-cuda:0}; episodes=${N_EPISODES:-100}
 lengths=${EVAL_LENGTHS:-"3 5 7 9 10 11"}
 slacks=${EVAL_SLACKS:-"0 1 2 4"}
+n_vars_mode=${N_VARS_MODE:-fixed12}
 mkdir -p "$RUN_DIR/cells"
 
 case "$family" in
@@ -20,24 +21,35 @@ case "$family" in
 esac
 
 for length in $lengths; do
+  case "$n_vars_mode" in
+    fixed12) n_vars=12;;
+    length_plus3) n_vars=$((length + 3));;
+    *) echo "unknown N_VARS_MODE: $n_vars_mode" >&2; exit 2;;
+  esac
   for slack in $slacks; do
     "$py" "$TEXTJEPA_ROOT/$planner" \
       "ckpt=$checkpoint" "device=$device" split=test \
       "n_episodes=$episodes" "slack=$slack" \
       "eval_steps_range=[$length,$length]" \
-      'eval_n_vars_range=[12,12]' eval_leaf_prob=0.35 \
+      "eval_n_vars_range=[$n_vars,$n_vars]" eval_leaf_prob=0.35 \
       eval_sample_max_tries=100000 eval_strict_steps_range=true \
       "out=$RUN_DIR/cells/length${length}_slack${slack}.json" \
       "${extra[@]}"
   done
 done
 
-EVAL_LENGTHS="$lengths" EVAL_SLACKS="$slacks" "$py" - \
+EVAL_LENGTHS="$lengths" EVAL_SLACKS="$slacks" \
+N_VARS_MODE="$n_vars_mode" "$py" - \
   "$RUN_DIR" "$family" "$checkpoint" "$episodes" <<'PY'
 import json, os, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 lengths = [int(x) for x in os.environ["EVAL_LENGTHS"].split()]
 slacks = [int(x) for x in os.environ["EVAL_SLACKS"].split()]
+n_vars_mode = os.environ["N_VARS_MODE"]
+n_vars_by_length = {
+    str(length): (12 if n_vars_mode == "fixed12" else length + 3)
+    for length in lengths
+}
 cells = {}
 for length in lengths:
     cells[str(length)] = {}
@@ -50,7 +62,11 @@ payload = {
     "protocol": {
         "dataset": "stylized_iGSM",
         "checkpoint_training_steps_range": [3, 9],
-        "fixed_n_vars_range": [12, 12],
+        "n_vars_mode": n_vars_mode,
+        "n_vars_by_length": n_vars_by_length,
+        "fixed_irrelevant_variables": (
+            3 if n_vars_mode == "length_plus3" else None
+        ),
         "fixed_leaf_prob": 0.35,
         "id_exact_lengths": [x for x in lengths if x <= 9],
         "ood_exact_lengths": [x for x in lengths if x > 9],
