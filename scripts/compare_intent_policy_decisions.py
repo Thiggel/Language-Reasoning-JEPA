@@ -66,16 +66,38 @@ def main() -> None:
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     models = {}
+    candidate_sets = {}
     payloads = {}
     for specification in args.model:
         label, score, groups, payload = _load(specification)
         models[label] = {
             key: _decision(candidates, score) for key, candidates in groups.items()
         }
+        candidate_sets[label] = {
+            key: tuple(sorted(row["action"] for row in candidates))
+            for key, candidates in groups.items()
+        }
         payloads[label] = payload
-    common = set.intersection(*(set(value) for value in models.values()))
+    state_sets = {label: set(value) for label, value in models.items()}
+    reference_label = next(iter(state_sets))
+    reference_states = state_sets[reference_label]
+    for label, states in state_sets.items():
+        if states != reference_states:
+            raise RuntimeError(
+                f"unaligned decision states: {reference_label} has "
+                f"{len(reference_states)}, {label} has {len(states)}"
+            )
+    common = reference_states
     if not common:
         raise RuntimeError("audits have no aligned decision states")
+    for key in common:
+        reference_candidates = candidate_sets[reference_label][key]
+        for label in candidate_sets:
+            if candidate_sets[label][key] != reference_candidates:
+                raise RuntimeError(
+                    f"unaligned feasible menu at state {key}: "
+                    f"{reference_label} versus {label}"
+                )
     result = {
         "aligned_states": len(common),
         "models": {},
