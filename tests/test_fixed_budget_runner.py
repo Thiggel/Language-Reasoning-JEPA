@@ -34,6 +34,8 @@ def test_fixed_budget_runner_supports_looped_compute_curves():
     assert 'EVAL_LOOPS:-"1 2 4 8 16 32"' in script
     assert '+eval_loops="$loops"' in script
     assert "metrics_by_loop_and_slack" in script
+    assert "train_loop_histogram" in script
+    assert "n_parameters" in script
     assert '--eval-loops "$loops"' in script
     assert script.count("measure_flops=true") == 2
 

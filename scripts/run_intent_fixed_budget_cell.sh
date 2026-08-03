@@ -62,15 +62,19 @@ PY
 esac
 if [[ -n "${loop_values:-}" ]]; then
   EVAL_LOOPS="$loop_values" "$py" - "$RUN_DIR" "$family" "$lr" <<'PY'
-import json, os, pathlib, sys
+import json, os, pathlib, sys, torch
 r=pathlib.Path(sys.argv[1]); curves={}
 for loops in map(int, os.environ["EVAL_LOOPS"].split()):
     curves[str(loops)]={}
     for slack in (0, 2):
         path=r/f"metrics_loops{loops}_slack{slack}.json"
         curves[str(loops)][str(slack)]=next(iter(json.loads(path.read_text()).values()))
+ckpt=torch.load(r/'model/best.pt', map_location='cpu', weights_only=False)
+hist_path=r/'model/loop_histogram.json'
+hist=json.loads(hist_path.read_text()) if hist_path.exists() else {}
 (r/'metrics.json').write_text(json.dumps({
     'family':sys.argv[2], 'learning_rate':float(sys.argv[3]),
+    'n_parameters':int(ckpt['n_params']), 'train_loop_histogram':hist,
     'metrics_by_loop_and_slack':curves,
 }, indent=2)+'\n')
 PY
