@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-08-03-project-state-and-representation-analysis",
+  "project": "intent_phrase",
+  "title": "Can latent prediction support planning with language actions?",
+  "created_at": "2026-08-03T16:45:00+02:00",
+  "status": "interim_evidence_summary",
+  "decision": "Treat GAR as the central supported mechanism, finish distractor-matched length OOD evaluation, and do not claim qualitative geometry differences until controlled paraphrase, negation, reconstruction, and reproducible visualization analyses are complete.",
+  "plain_summary": "JEPA performs competitive intent-phrase planning and maintains high-rank representations, but sentence language models currently lead strict success and encode operation identity more linearly; GAR is essential, while length generalization and qualitative geometry remain open.",
+  "report": "REPORT.md",
+  "review_required": true
+}
