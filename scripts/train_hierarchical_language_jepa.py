@@ -225,6 +225,156 @@ def load_features(
     return result
 
 
+def _manifest_part_path(manifest_path: Path, entry: dict) -> Path:
+    value = entry.get("path")
+    if not isinstance(value, str) or not value:
+        raise ValueError("artifact manifest part path is invalid")
+    path = (manifest_path.parent / value).resolve()
+    if manifest_path.parent.resolve() not in path.parents:
+        raise ValueError("artifact manifest part escapes its directory")
+    return path
+
+
+class FeatureCollection:
+    """Lazily load one bounded observed-feature part at a time."""
+
+    def __init__(self, path: Path, *, require_provenance: bool):
+        self.path = path
+        self.require_provenance = require_provenance
+        self.header = torch.load(path, map_location="cpu", weights_only=True)
+        self._verified: set[int] = set()
+        if self.header.get("artifact_kind") == (
+            "hierarchical_feature_manifest"
+        ):
+            expected = {
+                "model_id": MODEL_ID,
+                "model_revision": MODEL_REVISION,
+                "transformers_version": TRANSFORMERS_VERSION,
+            }
+            if require_provenance and any(
+                self.header.get(name) != value
+                for name, value in expected.items()
+            ):
+                raise ValueError("feature manifest provenance mismatch")
+            parts = self.header.get("parts")
+            if not isinstance(parts, list) or not parts:
+                raise ValueError("feature manifest has no parts")
+            if sum(int(part.get("example_count", -1)) for part in parts) != (
+                self.header.get("example_count")
+            ):
+                raise ValueError("feature manifest example count is invalid")
+            fingerprint = self.header.get("dataset_fingerprint")
+            if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+                raise ValueError("feature manifest fingerprint is invalid")
+            self.parts = parts
+        else:
+            self.parts = [{
+                "path": path.name,
+                "example_count": len(self.header.get("hidden_states", [])),
+            }]
+        self.example_count = sum(
+            int(part["example_count"]) for part in self.parts
+        )
+
+    def load(self, index: int) -> dict[str, torch.Tensor]:
+        entry = self.parts[index]
+        path = (
+            self.path if self.header.get("artifact_kind") !=
+            "hierarchical_feature_manifest"
+            else _manifest_part_path(self.path, entry)
+        )
+        if not path.is_file():
+            raise ValueError(f"feature manifest part is missing: {path}")
+        expected_sha = entry.get("sha256")
+        if index not in self._verified and expected_sha is not None:
+            if sha256_file(path) != expected_sha:
+                raise ValueError("feature manifest part checksum mismatch")
+            self._verified.add(index)
+        data = load_features(
+            path, require_provenance=self.require_provenance
+        )
+        if len(data["hidden_states"]) != int(entry["example_count"]):
+            raise ValueError("feature part example count changed")
+        return data
+
+
+class CounterfactualCollection:
+    """Lazily collate one bounded exact-replay part at a time."""
+
+    def __init__(
+        self, path: Path, *, feature_header: dict, require_provenance: bool,
+    ):
+        self.path = path
+        self.header = torch.load(path, map_location="cpu", weights_only=True)
+        expected = {
+            "model_id": MODEL_ID,
+            "model_revision": MODEL_REVISION,
+            "transformers_version": TRANSFORMERS_VERSION,
+            "dataset_fingerprint": feature_header.get(
+                "dataset_fingerprint"
+            ),
+            "input_fingerprint": feature_header.get("input_fingerprint"),
+            "shard_index": feature_header.get("shard_index"),
+            "num_shards": feature_header.get("num_shards"),
+        }
+        if require_provenance and any(
+            self.header.get(name) != value for name, value in expected.items()
+        ):
+            raise ValueError("counterfactual provenance does not match backbone")
+        accounting = self.header.get("candidate_accounting")
+        if not isinstance(accounting, dict) or accounting.get(
+            "empty_or_failed_slots"
+        ) != 0:
+            raise ValueError(
+                "counterfactual artifact must account for all candidate slots"
+            )
+        if self.header.get("artifact_kind") == (
+            "hierarchical_counterfactual_manifest"
+        ):
+            parts = self.header.get("parts")
+            if not isinstance(parts, list) or not parts:
+                raise ValueError("counterfactual manifest has no parts")
+            if sum(int(part.get("record_count", -1)) for part in parts) != (
+                self.header.get("record_count")
+            ):
+                raise ValueError("counterfactual manifest count is invalid")
+            self.parts = parts
+        else:
+            records = self.header.get("records")
+            if not isinstance(records, list) or not records:
+                raise ValueError("counterfactual artifact has no records")
+            self.parts = [{"path": path.name, "record_count": len(records)}]
+        self.record_count = sum(
+            int(part["record_count"]) for part in self.parts
+        )
+        self._verified: set[int] = set()
+
+    def load(self, index: int) -> dict[str, torch.Tensor]:
+        entry = self.parts[index]
+        path = (
+            self.path if self.header.get("artifact_kind") !=
+            "hierarchical_counterfactual_manifest"
+            else _manifest_part_path(self.path, entry)
+        )
+        if not path.is_file():
+            raise ValueError(f"counterfactual part is missing: {path}")
+        expected_sha = entry.get("sha256")
+        if index not in self._verified and expected_sha is not None:
+            if sha256_file(path) != expected_sha:
+                raise ValueError("counterfactual part checksum mismatch")
+            self._verified.add(index)
+        raw = torch.load(path, map_location="cpu", weights_only=True)
+        accounting = raw.get("candidate_accounting", {})
+        if accounting.get("empty_or_failed_slots") != 0:
+            raise ValueError("counterfactual part is incomplete")
+        records = raw.get("records")
+        if not isinstance(records, list) or len(records) != int(
+            entry["record_count"]
+        ):
+            raise ValueError("counterfactual part record count changed")
+        return collate_counterfactual_records(records)
+
+
 def _step_if_trainable(
     loss: torch.Tensor,
     optimizer: torch.optim.Optimizer,
@@ -628,15 +778,14 @@ def main() -> None:
     if any(step < 1 for step in args.checkpoint_step):
         raise ValueError("checkpoint steps must be positive")
     torch.manual_seed(args.seed)
-    data = load_features(
-        args.features,
-        require_provenance=(
-            args.epochs > 0 and not args.allow_unpinned_features
-        ),
+    require_feature_provenance = (
+        args.epochs > 0 and not args.allow_unpinned_features
     )
-    feature_header = torch.load(
-        args.features, map_location="cpu", weights_only=True
+    features = FeatureCollection(
+        args.features, require_provenance=require_feature_provenance
     )
+    feature_header = features.header
+    data = features.load(0)
     experiment_config = None
     if args.experiment_config is not None:
         from omegaconf import OmegaConf
@@ -705,31 +854,11 @@ def main() -> None:
         raise ValueError("feature hidden width disagrees with experiment config")
     counterfactual = None
     if args.counterfactual_features is not None:
-        raw = torch.load(
-            args.counterfactual_features, map_location="cpu", weights_only=True
+        counterfactual = CounterfactualCollection(
+            args.counterfactual_features,
+            feature_header=feature_header,
+            require_provenance=require_feature_provenance,
         )
-        if (
-            raw.get("model_id") != MODEL_ID
-            or raw.get("model_revision") != MODEL_REVISION
-            or raw.get("transformers_version") != TRANSFORMERS_VERSION
-            or raw.get("dataset_fingerprint") != feature_header.get(
-                "dataset_fingerprint"
-            )
-            or raw.get("input_fingerprint") != feature_header.get(
-                "input_fingerprint"
-            )
-            or raw.get("shard_index") != feature_header.get("shard_index")
-            or raw.get("num_shards") != feature_header.get("num_shards")
-        ):
-            raise ValueError("counterfactual provenance does not match backbone")
-        accounting = raw.get("candidate_accounting")
-        if not isinstance(accounting, dict) or (
-            accounting.get("empty_or_failed_slots") != 0
-        ):
-            raise ValueError(
-                "counterfactual shard must account for all eight candidate slots"
-            )
-        counterfactual = collate_counterfactual_records(raw["records"])
     value_replay = None
     if args.value_replay is not None:
         value_replay = torch.load(
@@ -741,6 +870,8 @@ def main() -> None:
             args.planner_replay, map_location="cpu", weights_only=True
         )
         if counterfactual is None and "counterfactual_records" in replay_payload:
+            # Closed-loop replay remains a bounded, independently validated
+            # artifact rather than masquerading as an offline shard manifest.
             counterfactual = collate_counterfactual_records(
                 replay_payload["counterfactual_records"]
             )
@@ -871,13 +1002,19 @@ def main() -> None:
         )
         if trainable_parameters else None
     )
-    dense_steps_per_epoch = math.ceil(
-        len(data["hidden_states"]) / args.batch_size
+    dense_steps_per_epoch = sum(
+        math.ceil(int(part["example_count"]) / args.batch_size)
+        for part in features.parts
     )
     replay_steps_per_epoch = 0
     if counterfactual is not None:
+        replay_count = (
+            counterfactual.record_count
+            if isinstance(counterfactual, CounterfactualCollection)
+            else len(counterfactual["token_ids"])
+        )
         replay_steps_per_epoch = math.ceil(
-            len(counterfactual["token_ids"]) / args.replay_batch_size
+            replay_count / args.replay_batch_size
         )
         if args.max_replay_steps_per_epoch:
             replay_steps_per_epoch = min(
@@ -896,7 +1033,6 @@ def main() -> None:
         )
         if optimizer is not None else None
     )
-    main_count = len(data["hidden_states"])
     history = []
     compute = ComputeLedger()
     rollout_config = (
@@ -978,134 +1114,170 @@ def main() -> None:
         )
 
     for epoch in range(args.epochs):
-        order = (
-            torch.randperm(main_count)
-            if stage != ResearchStage.VALUE_DISTILLATION
-            else torch.empty(0, dtype=torch.long)
-        )
         totals: dict[str, float] = {}
         examples = 0
-        for start in range(0, len(order), args.batch_size):
+        feature_part_order = (
+            torch.randperm(
+                len(features.parts), generator=rollout_generator
+            ).tolist()
+            if stage != ResearchStage.VALUE_DISTILLATION else []
+        )
+        for part_index in feature_part_order:
+            data = features.load(part_index)
+            order = torch.randperm(
+                len(data["hidden_states"]), generator=rollout_generator
+            )
+            for start in range(0, len(order), args.batch_size):
+                if step_limit_reached():
+                    break
+                index = order[start:start + args.batch_size]
+                batch = {
+                    name: value[index].to(args.device)
+                    for name, value in data.items()
+                }
+                batch["hidden_states"] = batch["hidden_states"].to(
+                    dtype=next(model.parameters()).dtype
+                )
+                with compute.measure(
+                    "dense_training_wall", estimated_flops=0.0,
+                    items=len(index),
+                ):
+                    if optimizer is not None:
+                        optimizer.zero_grad(set_to_none=True)
+                    loss, losses = learner(
+                        batch["hidden_states"], batch["input_ids"],
+                        batch["boundaries"],
+                        attention_mask=batch.get("attention_mask"),
+                        prompt_len=batch.get("prompt_len"),
+                        solution_end=batch.get("solution_end"),
+                    )
+                    if stage != ResearchStage.DATA_VALIDATION:
+                        assert optimizer is not None
+                        loss.backward()
+                        optimizer.step()
+                        model.update_targets(args.ema_momentum)
+                        after_optimizer_step()
+                _record_dense_flops(compute, model, stage, batch)
+                examples += len(index)
+                for name, value in losses.items():
+                    totals[name] = totals.get(name, 0.0) + (
+                        float(value.detach()) * len(index)
+                    )
+            del data
             if step_limit_reached():
                 break
-            index = order[start:start + args.batch_size]
-            batch = {
-                name: value[index].to(args.device)
-                for name, value in data.items()
-            }
-            batch["hidden_states"] = batch["hidden_states"].to(
-                dtype=next(model.parameters()).dtype
-            )
-            with compute.measure(
-                "dense_training_wall", estimated_flops=0.0,
-                items=len(index),
-            ):
-                if optimizer is not None:
-                    optimizer.zero_grad(set_to_none=True)
-                loss, losses = learner(
-                    batch["hidden_states"], batch["input_ids"],
-                    batch["boundaries"],
-                    attention_mask=batch.get("attention_mask"),
-                    prompt_len=batch.get("prompt_len"),
-                    solution_end=batch.get("solution_end"),
-                )
-                if stage != ResearchStage.DATA_VALIDATION:
-                    assert optimizer is not None
-                    loss.backward()
-                    optimizer.step()
-                    model.update_targets(args.ema_momentum)
-                    after_optimizer_step()
-            _record_dense_flops(compute, model, stage, batch)
-            examples += len(index)
-            for name, value in losses.items():
-                totals[name] = totals.get(name, 0.0) + float(value.detach()) * len(index)
         replay_totals: dict[str, float] = {}
         replay_examples = 0
         replay_skipped_batches = 0
         if counterfactual is not None:
-            replay_count = len(counterfactual["token_ids"])
-            replay_order = torch.randperm(
-                replay_count, generator=rollout_generator
-            )
             replay_steps_this_epoch = 0
-            for replay_start in range(0, replay_count, args.replay_batch_size):
+            replay_part_order = (
+                torch.randperm(
+                    len(counterfactual.parts), generator=rollout_generator
+                ).tolist()
+                if isinstance(counterfactual, CounterfactualCollection)
+                else [None]
+            )
+            for replay_part_index in replay_part_order:
+                replay_data = (
+                    counterfactual.load(replay_part_index)
+                    if isinstance(counterfactual, CounterfactualCollection)
+                    else counterfactual
+                )
+                replay_count = len(replay_data["token_ids"])
+                replay_order = torch.randperm(
+                    replay_count, generator=rollout_generator
+                )
+                for replay_start in range(
+                    0, replay_count, args.replay_batch_size
+                ):
+                    if step_limit_reached() or (
+                        args.max_replay_steps_per_epoch
+                        and replay_steps_this_epoch
+                        >= args.max_replay_steps_per_epoch
+                    ):
+                        break
+                    replay_index = replay_order[
+                        replay_start:replay_start + args.replay_batch_size
+                    ]
+                    branch = {
+                        name: value[replay_index].to(args.device)
+                        for name, value in replay_data.items()
+                        if isinstance(value, torch.Tensor)
+                    }
+                    for name in (
+                        "root_hidden", "suffix_hidden",
+                        "root_token_history_hidden",
+                        "root_sentence_history_hidden",
+                    ):
+                        branch[name] = branch[name].to(
+                            dtype=next(model.parameters()).dtype
+                        )
+                    with compute.measure(
+                        "counterfactual_replay_wall",
+                        estimated_flops=0.0,
+                        items=len(branch["lengths"]),
+                    ):
+                        assert optimizer is not None
+                        optimizer.zero_grad(set_to_none=True)
+                        rollout_horizon = rollout_schedule.sample_horizon(
+                            rollout_generator
+                        )
+                        cf_loss, cf_losses = learner.counterfactual_loss(
+                            branch["root_hidden"], branch["suffix_hidden"],
+                            branch["token_ids"], branch["lengths"],
+                            sentence_eligible=branch["sentence_eligible"],
+                            rollout_horizon=rollout_horizon,
+                            rollout_truncate_bptt=(
+                                rollout_schedule.truncate_bptt(
+                                    rollout_horizon
+                                )
+                            ),
+                            root_token_history_hidden=branch[
+                                "root_token_history_hidden"
+                            ],
+                            root_token_history_action_ids=branch[
+                                "root_token_history_action_ids"
+                            ],
+                            root_token_history_lengths=branch[
+                                "root_token_history_lengths"
+                            ],
+                            root_sentence_history_hidden=branch[
+                                "root_sentence_history_hidden"
+                            ],
+                            root_sentence_history_lengths=branch[
+                                "root_sentence_history_lengths"
+                            ],
+                            root_sentence_history_span_ids=branch[
+                                "root_sentence_history_span_ids"
+                            ],
+                            root_sentence_history_span_mask=branch[
+                                "root_sentence_history_span_mask"
+                            ],
+                        )
+                        updated = _step_if_trainable(
+                            cf_loss, optimizer, model, args.ema_momentum
+                        )
+                        if updated:
+                            replay_steps_this_epoch += 1
+                            after_optimizer_step()
+                        replay_skipped_batches += int(not updated)
+                    _record_counterfactual_flops(
+                        compute, model, branch, rollout_horizon
+                    )
+                    replay_examples += len(branch["lengths"])
+                    for name, value in cf_losses.items():
+                        replay_totals[name] = replay_totals.get(
+                            name, 0.0
+                        ) + float(value.detach()) * len(branch["lengths"])
+                if isinstance(counterfactual, CounterfactualCollection):
+                    del replay_data
                 if step_limit_reached() or (
                     args.max_replay_steps_per_epoch
                     and replay_steps_this_epoch
                     >= args.max_replay_steps_per_epoch
                 ):
                     break
-                replay_index = replay_order[
-                    replay_start:replay_start + args.replay_batch_size
-                ]
-                branch = {
-                    name: value[replay_index].to(args.device)
-                    for name, value in counterfactual.items()
-                    if isinstance(value, torch.Tensor)
-                }
-                for name in (
-                    "root_hidden", "suffix_hidden",
-                    "root_token_history_hidden",
-                    "root_sentence_history_hidden",
-                ):
-                    branch[name] = branch[name].to(
-                        dtype=next(model.parameters()).dtype
-                    )
-                with compute.measure(
-                    "counterfactual_replay_wall",
-                    estimated_flops=0.0,
-                    items=len(branch["lengths"]),
-                ):
-                    assert optimizer is not None
-                    optimizer.zero_grad(set_to_none=True)
-                    rollout_horizon = rollout_schedule.sample_horizon(
-                        rollout_generator
-                    )
-                    cf_loss, cf_losses = learner.counterfactual_loss(
-                        branch["root_hidden"], branch["suffix_hidden"],
-                        branch["token_ids"], branch["lengths"],
-                        sentence_eligible=branch["sentence_eligible"],
-                        rollout_horizon=rollout_horizon,
-                        rollout_truncate_bptt=(
-                            rollout_schedule.truncate_bptt(rollout_horizon)
-                        ),
-                        root_token_history_hidden=branch[
-                            "root_token_history_hidden"
-                        ],
-                        root_token_history_action_ids=branch[
-                            "root_token_history_action_ids"
-                        ],
-                        root_token_history_lengths=branch[
-                            "root_token_history_lengths"
-                        ],
-                        root_sentence_history_hidden=branch[
-                            "root_sentence_history_hidden"
-                        ],
-                        root_sentence_history_lengths=branch[
-                            "root_sentence_history_lengths"
-                        ],
-                        root_sentence_history_span_ids=branch[
-                            "root_sentence_history_span_ids"
-                        ],
-                        root_sentence_history_span_mask=branch[
-                            "root_sentence_history_span_mask"
-                        ],
-                    )
-                    updated = _step_if_trainable(
-                        cf_loss, optimizer, model, args.ema_momentum
-                    )
-                    if updated:
-                        replay_steps_this_epoch += 1
-                        after_optimizer_step()
-                    replay_skipped_batches += int(not updated)
-                _record_counterfactual_flops(
-                    compute, model, branch, rollout_horizon
-                )
-                replay_examples += len(branch["lengths"])
-                for name, value in cf_losses.items():
-                    replay_totals[name] = replay_totals.get(
-                        name, 0.0
-                    ) + float(value.detach()) * len(branch["lengths"])
         value_total = 0.0
         value_roots = 0
         if value_replay is not None:

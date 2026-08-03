@@ -194,6 +194,15 @@ generation batch size, re-encoding batch size, and collection engine; resume
 rejects any mismatch. Generation FLOPs count the padded tensor positions
 actually submitted to model forwards, not only attention-valid tokens.
 
+Production-scale collection is a bounded streaming operation. The top-level
+`.pt` artifact is a provenance manifest whose checksummed feature parts contain
+at most 256 observed examples and whose counterfactual parts contain at most 16
+root examples. Parts are atomically committed and may be resumed independently.
+The learner randomizes part order and example order but holds only one part in
+host memory at a time. A manifest fingerprint binds the ordered part hashes and
+counts, so sharding changes storage and scheduling—not the admitted dataset.
+Small tests may retain the backward-compatible monolithic artifact format.
+
 Sparse recursive rollout uses `N=1` always, `N=2` with probability `.25`,
 `N=4` with `.05`, and `N=8` with `.01`; horizons above two truncate BPTT
 every two transitions while preserving the root predictor cache.

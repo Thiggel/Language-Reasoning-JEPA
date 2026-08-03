@@ -73,9 +73,11 @@ def main() -> None:
         ]
         if split == "train":
             command.extend([
+                "--output-shard-size", "256",
                 "--counterfactual-output",
                 str(source / "features/train_counterfactual.pt"),
                 "--counterfactual-example-limit", "2000",
+                "--counterfactual-shard-size", "16",
             ])
         else:
             command.extend(["--example-limit", "2048"])

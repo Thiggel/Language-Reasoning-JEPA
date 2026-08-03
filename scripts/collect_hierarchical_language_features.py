@@ -56,11 +56,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--counterfactual-output", type=Path)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument(
+        "--output-shard-size", type=int, default=0,
+        help=(
+            "Maximum examples retained in RAM per observed-feature part; "
+            "zero preserves the legacy monolithic artifact."
+        ),
+    )
+    parser.add_argument(
         "--example-limit", type=int, default=0,
         help="Deterministic post-shard feature limit; zero keeps the shard.",
     )
     parser.add_argument("--generation-batch-size", type=int, default=32)
     parser.add_argument("--reencode-batch-size", type=int, default=32)
+    parser.add_argument(
+        "--counterfactual-shard-size", type=int, default=0,
+        help=(
+            "Maximum root examples retained per counterfactual part; zero "
+            "preserves the legacy monolithic artifact."
+        ),
+    )
     parser.add_argument(
         "--counterfactual-example-limit", type=int, default=0,
         help=(
@@ -90,6 +104,244 @@ def _atomic_torch_save(payload: dict, path: Path) -> None:
     temporary = path.with_name(path.name + ".partial")
     torch.save(payload, temporary)
     temporary.replace(path)
+
+
+def _parts_directory(path: Path) -> Path:
+    return path.with_name(path.name + ".parts")
+
+
+def _part_path(manifest: Path, kind: str, index: int) -> Path:
+    return _parts_directory(manifest) / f"{kind}-{index:05d}.pt"
+
+
+def _common_metadata(args, input_fingerprint: str) -> dict[str, object]:
+    return {
+        "model_id": MODEL_ID,
+        "model_revision": MODEL_REVISION,
+        "transformers_version": TRANSFORMERS_VERSION,
+        "input_fingerprint": input_fingerprint,
+        "shard_index": args.shard_index,
+        "num_shards": args.num_shards,
+        "dtype": args.dtype,
+        "batch_size": args.batch_size,
+        "example_limit": getattr(args, "example_limit", 0),
+        "output_shard_size": getattr(args, "output_shard_size", 0),
+    }
+
+
+def _merge_compute(ledger: ComputeLedger, summary: dict) -> None:
+    for name, row in summary.get("components", {}).items():
+        ledger.add(
+            name,
+            estimated_flops=float(row.get("estimated_flops", 0.0)),
+            wall_seconds=float(row.get("wall_seconds", 0.0)),
+            calls=int(row.get("calls", 0)),
+            items=int(row.get("items", 0)),
+        )
+
+
+def _feature_fingerprint(payload: dict) -> str:
+    return artifact_fingerprint(payload, (
+        "model_id", "model_revision", "transformers_version",
+        "input_fingerprint", "shard_index", "num_shards", "dtype",
+        "batch_size", "example_limit",
+        "input_ids", "attention_mask", "prompt_len", "solution_end",
+        "boundaries", "reasoning_depth", "canonical_state_ids",
+        "problem_id", "template_family", "graph_family",
+        "symbolically_verified", "hidden_states",
+    ))
+
+
+def _validate_manifest_parts(
+    manifest_path: Path,
+    manifest: dict,
+    *,
+    count_key: str,
+    expected_total: int,
+) -> None:
+    """Reject incomplete, moved, or corrupted completed manifests."""
+    parts = manifest.get("parts")
+    if not isinstance(parts, list) or not parts:
+        raise ValueError("completed manifest contains no parts")
+    total = 0
+    root = manifest_path.parent.resolve()
+    for index, part in enumerate(parts):
+        if not isinstance(part, dict) or int(part.get("part_index", index)) != index:
+            raise ValueError("completed manifest has invalid part ordering")
+        path = (manifest_path.parent / str(part.get("path", ""))).resolve()
+        if root not in path.parents or not path.is_file():
+            raise ValueError("completed manifest references a missing part")
+        if sha256_file(path) != part.get("sha256"):
+            raise ValueError("completed manifest references a corrupted part")
+        total += int(part.get(count_key, -1))
+    if total != int(expected_total):
+        raise ValueError("completed manifest part counts are inconsistent")
+
+
+def _save_observed_feature_parts(
+    examples, model, args, input_fingerprint: str, ledger: ComputeLedger,
+) -> dict:
+    """Encode and commit bounded feature parts, then return their manifest."""
+    shard_size = int(args.output_shard_size)
+    if shard_size < 1:
+        raise ValueError("output shard size must be positive")
+    common = _common_metadata(args, input_fingerprint)
+    parts = []
+    directory = _parts_directory(args.output)
+    directory.mkdir(parents=True, exist_ok=True)
+    for index, start in enumerate(range(0, len(examples), shard_size)):
+        chunk = examples[start:start + shard_size]
+        path = _part_path(args.output, "features", index)
+        expected_ids = [example.problem_id for example in chunk]
+        if args.resume and path.exists():
+            payload = torch.load(path, map_location="cpu", weights_only=True)
+            if (
+                payload.get("artifact_kind") != "hierarchical_feature_part"
+                or payload.get("part_index") != index
+                or payload.get("problem_id") != expected_ids
+                or any(payload.get(name) != value for name, value in common.items())
+            ):
+                raise ValueError("cannot resume an incompatible feature part")
+        else:
+            part_ledger = ComputeLedger()
+            payload = encode_examples(
+                chunk, model, args.device, args.batch_size, part_ledger
+            )
+            payload.update(common)
+            payload.update({
+                "artifact_kind": "hierarchical_feature_part",
+                "part_index": index,
+                "example_count": len(chunk),
+                "backend": _backend_metadata(),
+                "text_model_parameters": _text_parameter_count(model),
+                "compute": part_ledger.summary(),
+            })
+            payload["dataset_fingerprint"] = _feature_fingerprint(payload)
+            _atomic_torch_save(payload, path)
+        _merge_compute(ledger, payload.get("compute", {}))
+        parts.append({
+            "path": str(path.relative_to(args.output.parent)),
+            "sha256": sha256_file(path),
+            "fingerprint": payload["dataset_fingerprint"],
+            "example_count": len(chunk),
+        })
+        del payload
+    manifest = {
+        **common,
+        "artifact_kind": "hierarchical_feature_manifest",
+        "parts": parts,
+        "example_count": len(examples),
+        "output_shard_size": shard_size,
+        "backend": _backend_metadata(),
+        "text_model_parameters": _text_parameter_count(model),
+        "compute": ledger.summary(),
+    }
+    manifest["dataset_fingerprint"] = artifact_fingerprint(manifest, (
+        "artifact_kind", "model_id", "model_revision",
+        "transformers_version", "input_fingerprint", "shard_index",
+        "num_shards", "dtype", "batch_size", "example_limit",
+        "example_count", "output_shard_size", "parts",
+    ))
+    return manifest
+
+
+def _save_counterfactual_parts(
+    examples, tokenizer, model, args, input_fingerprint: str,
+    dataset_fingerprint: str, ledger: ComputeLedger,
+) -> dict:
+    """Collect exact replay in bounded root-example groups."""
+    shard_size = int(args.counterfactual_shard_size)
+    if shard_size < 1:
+        raise ValueError("counterfactual shard size must be positive")
+    common = {
+        **_common_metadata(args, input_fingerprint),
+        "dataset_fingerprint": dataset_fingerprint,
+        "seed": args.seed,
+        "generation_batch_size": args.generation_batch_size,
+        "reencode_batch_size": args.reencode_batch_size,
+        "counterfactual_example_limit": args.counterfactual_example_limit,
+        "counterfactual_engine": args.counterfactual_engine,
+    }
+    parts = []
+    total_expected = 0
+    total_records = 0
+    directory = _parts_directory(args.counterfactual_output)
+    directory.mkdir(parents=True, exist_ok=True)
+    for index, start in enumerate(range(0, len(examples), shard_size)):
+        chunk = examples[start:start + shard_size]
+        path = _part_path(args.counterfactual_output, "counterfactual", index)
+        problem_ids = [example.problem_id for example in chunk]
+        expected = 8 * sum(
+            len(example.step_boundaries) - 1 for example in chunk
+        )
+        if args.resume and path.exists():
+            payload = torch.load(path, map_location="cpu", weights_only=True)
+            if (
+                payload.get("artifact_kind") != "hierarchical_counterfactual_part"
+                or payload.get("part_index") != index
+                or payload.get("counterfactual_problem_ids") != problem_ids
+                or any(payload.get(name) != value for name, value in common.items())
+                or payload.get("candidate_accounting", {}).get(
+                    "empty_or_failed_slots"
+                ) != 0
+            ):
+                raise ValueError(
+                    "cannot resume an incompatible counterfactual part"
+                )
+        else:
+            part_ledger = ComputeLedger()
+            records = collect_counterfactuals(
+                chunk, tokenizer, model, args.device, args.seed + index,
+                part_ledger, args.generation_batch_size,
+                args.reencode_batch_size, args.counterfactual_engine,
+            )
+            payload = {
+                **common,
+                "artifact_kind": "hierarchical_counterfactual_part",
+                "part_index": index,
+                "counterfactual_problem_ids": problem_ids,
+                "records": records,
+                "compute": part_ledger.summary(),
+                "candidate_accounting": {
+                    "expected_slots": expected,
+                    "materialized_nonempty_slots": len(records),
+                    "empty_or_failed_slots": expected - len(records),
+                },
+            }
+            if expected != len(records):
+                raise ValueError("counterfactual part did not fill all slots")
+            _atomic_torch_save(payload, path)
+        _merge_compute(ledger, payload.get("compute", {}))
+        record_count = int(payload["candidate_accounting"][
+            "materialized_nonempty_slots"
+        ])
+        parts.append({
+            "path": str(path.relative_to(args.counterfactual_output.parent)),
+            "sha256": sha256_file(path),
+            "part_index": index,
+            "record_count": record_count,
+            "expected_slots": expected,
+        })
+        total_expected += expected
+        total_records += record_count
+        del payload
+    return {
+        **common,
+        "artifact_kind": "hierarchical_counterfactual_manifest",
+        "parts": parts,
+        "record_count": total_records,
+        "counterfactual_shard_size": shard_size,
+        "counterfactual_problem_ids": [
+            example.problem_id for example in examples
+        ],
+        "backend": _backend_metadata(),
+        "compute": ledger.summary(),
+        "candidate_accounting": {
+            "expected_slots": total_expected,
+            "materialized_nonempty_slots": total_records,
+            "empty_or_failed_slots": total_expected - total_records,
+        },
+    }
 
 
 def read_examples(path: Path, tokenizer) -> list[LanguagePlanningExample]:
@@ -807,10 +1059,18 @@ def main() -> None:
         args, "counterfactual_example_limit", 0
     )
     example_limit = getattr(args, "example_limit", 0)
+    output_shard_size = getattr(args, "output_shard_size", 0)
+    counterfactual_shard_size = getattr(
+        args, "counterfactual_shard_size", 0
+    )
+    args.output_shard_size = output_shard_size
+    args.counterfactual_shard_size = counterfactual_shard_size
     if counterfactual_example_limit < 0:
         raise ValueError("counterfactual example limit must be nonnegative")
     if example_limit < 0:
         raise ValueError("example limit must be nonnegative")
+    if output_shard_size < 0 or counterfactual_shard_size < 0:
+        raise ValueError("artifact shard sizes must be nonnegative")
     input_fingerprint = sha256_file(args.input)
     if args.resume and args.output.exists() and (
         args.counterfactual_output is None
@@ -829,9 +1089,17 @@ def main() -> None:
             "dtype": args.dtype,
             "batch_size": args.batch_size,
             "example_limit": example_limit,
+            "output_shard_size": output_shard_size,
         }
         if any(existing.get(name) != value for name, value in expected.items()):
             raise ValueError("cannot resume an incompatible feature shard")
+        if existing.get("artifact_kind") == "hierarchical_feature_manifest":
+            _validate_manifest_parts(
+                args.output,
+                existing,
+                count_key="example_count",
+                expected_total=int(existing.get("example_count", -1)),
+            )
         if args.counterfactual_output is not None:
             replay = torch.load(
                 args.counterfactual_output,
@@ -847,6 +1115,7 @@ def main() -> None:
                 "counterfactual_example_limit": (
                     counterfactual_example_limit
                 ),
+                "counterfactual_shard_size": counterfactual_shard_size,
             }
             if any(
                 replay.get(name) != value
@@ -860,6 +1129,15 @@ def main() -> None:
             ) or accounting.get("empty_or_failed_slots") != 0:
                 raise ValueError(
                     "counterfactual resume artifact is incomplete or unbound"
+                )
+            if replay.get("artifact_kind") == (
+                "hierarchical_counterfactual_manifest"
+            ):
+                _validate_manifest_parts(
+                    args.counterfactual_output,
+                    replay,
+                    count_key="record_count",
+                    expected_total=int(replay.get("record_count", -1)),
                 )
         return
     tokenizer, model = load_reference_model(args.device, args.dtype)
@@ -878,27 +1156,25 @@ def main() -> None:
     if not examples:
         raise ValueError("selected collection shard contains no examples")
     ledger = ComputeLedger()
-    payload = encode_examples(
-        examples, model, args.device, args.batch_size, ledger
-    )
-    payload["compute"] = ledger.summary()
-    payload["shard_index"] = args.shard_index
-    payload["num_shards"] = args.num_shards
-    payload["dtype"] = args.dtype
-    payload["batch_size"] = args.batch_size
-    payload["example_limit"] = example_limit
-    payload["input_fingerprint"] = input_fingerprint
-    payload["backend"] = _backend_metadata()
-    payload["text_model_parameters"] = _text_parameter_count(model)
-    payload["dataset_fingerprint"] = artifact_fingerprint(payload, (
-        "model_id", "model_revision", "transformers_version",
-        "input_fingerprint", "shard_index", "num_shards", "dtype",
-        "batch_size", "example_limit",
-        "input_ids", "attention_mask", "prompt_len", "solution_end",
-        "boundaries", "reasoning_depth", "canonical_state_ids",
-        "problem_id", "template_family", "graph_family",
-        "symbolically_verified", "hidden_states",
-    ))
+    if output_shard_size:
+        payload = _save_observed_feature_parts(
+            examples, model, args, input_fingerprint, ledger
+        )
+    else:
+        payload = encode_examples(
+            examples, model, args.device, args.batch_size, ledger
+        )
+        payload["compute"] = ledger.summary()
+        payload["shard_index"] = args.shard_index
+        payload["num_shards"] = args.num_shards
+        payload["dtype"] = args.dtype
+        payload["batch_size"] = args.batch_size
+        payload["example_limit"] = example_limit
+        payload["output_shard_size"] = 0
+        payload["input_fingerprint"] = input_fingerprint
+        payload["backend"] = _backend_metadata()
+        payload["text_model_parameters"] = _text_parameter_count(model)
+        payload["dataset_fingerprint"] = _feature_fingerprint(payload)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     _atomic_torch_save(payload, args.output)
     if args.counterfactual_output is not None:
@@ -914,47 +1190,54 @@ def main() -> None:
                     f"{args.seed}:{example.problem_id}".encode()
                 ).digest(),
             )[:counterfactual_example_limit]
-        records = collect_counterfactuals(
-            counterfactual_examples,
-            tokenizer, model, args.device, args.seed, ledger,
-            args.generation_batch_size, args.reencode_batch_size,
-            args.counterfactual_engine,
-        )
-        expected_slots = 8 * sum(
-            len(example.step_boundaries) - 1
-            for example in counterfactual_examples
-        )
         args.counterfactual_output.parent.mkdir(parents=True, exist_ok=True)
-        counterfactual_payload = {
-            "model_id": MODEL_ID,
-            "model_revision": MODEL_REVISION,
-            "transformers_version": TRANSFORMERS_VERSION,
-            "input_fingerprint": input_fingerprint,
-            "dataset_fingerprint": payload["dataset_fingerprint"],
-            "shard_index": args.shard_index,
-            "num_shards": args.num_shards,
-            "dtype": args.dtype,
-            "batch_size": args.batch_size,
-            "example_limit": example_limit,
-            "seed": args.seed,
-            "generation_batch_size": args.generation_batch_size,
-            "reencode_batch_size": args.reencode_batch_size,
-            "counterfactual_example_limit": (
-                counterfactual_example_limit
-            ),
-            "counterfactual_problem_ids": [
-                example.problem_id for example in counterfactual_examples
-            ],
-            "backend": payload["backend"],
-            "counterfactual_engine": args.counterfactual_engine,
-            "records": records,
-            "compute": ledger.summary(),
-            "candidate_accounting": {
-                "expected_slots": expected_slots,
-                "materialized_nonempty_slots": len(records),
-                "empty_or_failed_slots": expected_slots - len(records),
-            },
-        }
+        if counterfactual_shard_size:
+            counterfactual_payload = _save_counterfactual_parts(
+                counterfactual_examples, tokenizer, model, args,
+                input_fingerprint, payload["dataset_fingerprint"], ledger,
+            )
+        else:
+            records = collect_counterfactuals(
+                counterfactual_examples,
+                tokenizer, model, args.device, args.seed, ledger,
+                args.generation_batch_size, args.reencode_batch_size,
+                args.counterfactual_engine,
+            )
+            expected_slots = 8 * sum(
+                len(example.step_boundaries) - 1
+                for example in counterfactual_examples
+            )
+            counterfactual_payload = {
+                "model_id": MODEL_ID,
+                "model_revision": MODEL_REVISION,
+                "transformers_version": TRANSFORMERS_VERSION,
+                "input_fingerprint": input_fingerprint,
+                "dataset_fingerprint": payload["dataset_fingerprint"],
+                "shard_index": args.shard_index,
+                "num_shards": args.num_shards,
+                "dtype": args.dtype,
+                "batch_size": args.batch_size,
+                "example_limit": example_limit,
+                "seed": args.seed,
+                "generation_batch_size": args.generation_batch_size,
+                "reencode_batch_size": args.reencode_batch_size,
+                "counterfactual_example_limit": (
+                    counterfactual_example_limit
+                ),
+                "counterfactual_shard_size": 0,
+                "counterfactual_problem_ids": [
+                    example.problem_id for example in counterfactual_examples
+                ],
+                "backend": payload["backend"],
+                "counterfactual_engine": args.counterfactual_engine,
+                "records": records,
+                "compute": ledger.summary(),
+                "candidate_accounting": {
+                    "expected_slots": expected_slots,
+                    "materialized_nonempty_slots": len(records),
+                    "empty_or_failed_slots": expected_slots - len(records),
+                },
+            }
         _atomic_torch_save(
             counterfactual_payload, args.counterfactual_output
         )
