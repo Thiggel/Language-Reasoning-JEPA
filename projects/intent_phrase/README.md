@@ -49,6 +49,7 @@ information-matched protocol.
   [rendered PDF](figures/intent_jepa_reasoning.pdf),
   [SVG](figures/intent_jepa_reasoning.svg)
 - [Current status](STATUS.md)
+- [GAR geometry and generative-bottleneck audit design](GAR_GEOMETRY_AUDIT.md)
 - [Concise project, empirical, and representation-analysis report](../../research/reports/intent_phrase/2026-08-03-project-state-and-representation-analysis/REPORT.md)
 - [Latest token prerequisite-support report](../../research/reports/intent_phrase/2026-07-21-token-prerequisite-support/REPORT.md)
 - [ALFWorld implementation and admission status](../../research/reports/intent_phrase/2026-07-22-alfworld-admission/REPORT.md)
