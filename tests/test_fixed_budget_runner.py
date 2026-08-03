@@ -25,3 +25,21 @@ def test_recovery_runner_passes_extra_arguments_to_both_jepa_trainers():
     assert 'experiment_overrides=("${@:5}")' in script
     assert script.count('"${experiment_overrides[@]}"') == 2
     assert 'max_chunks=96 \\\n      "${experiment_overrides[@]}"' in script
+
+
+def test_fixed_budget_runner_supports_looped_compute_curves():
+    script = Path("scripts/run_intent_fixed_budget_cell.sh").read_text()
+    assert "looped_token_lm)" in script
+    assert "looped_sentence_lm|looped_sentence_latent_lm)" in script
+    assert 'EVAL_LOOPS:-"1 2 4 8 16 32"' in script
+    assert '+eval_loops="$loops"' in script
+    assert "metrics_by_loop_and_slack" in script
+    assert '--eval-loops "$loops"' in script
+    assert script.count("measure_flops=true") == 2
+
+
+def test_planners_offer_opt_in_measured_compute_accounting():
+    for path in ("scripts/plan_lm.py", "scripts/plan_sentlm.py"):
+        script = Path(path).read_text()
+        assert 'cfg.get("measure_flops", False)' in script
+        assert "measured_flops_per_episode" in script

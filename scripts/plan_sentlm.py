@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import random
+from contextlib import nullcontext
 from pathlib import Path
 
 import hydra
@@ -70,7 +71,12 @@ def main(cfg: DictConfig) -> None:
         return out.to(device)
 
     solved = steps_sum = distr = 0
-    with torch.no_grad():
+    measure_flops = bool(cfg.get("measure_flops", False))
+    flop_counter = (
+        torch.utils.flop_counter.FlopCounterMode(display=False)
+        if measure_flops else nullcontext()
+    )
+    with torch.no_grad(), flop_counter:
         for ep in range(cfg.n_episodes):
             problem, _ = dataset.problem(ep)
             if faithful:
@@ -150,6 +156,13 @@ def main(cfg: DictConfig) -> None:
             ),
         }
     }
+    if measure_flops:
+        total_flops = int(flop_counter.get_total_flops())
+        key = f"sentlm_{target_kind}_{score}"
+        out[key].update({
+            "measured_eval_flops": total_flops,
+            "measured_flops_per_episode": total_flops / cfg.n_episodes,
+        })
     print(json.dumps(out, indent=2))
     split_suffix = "" if split == "val" else f"_{split}"
     dest = Path(

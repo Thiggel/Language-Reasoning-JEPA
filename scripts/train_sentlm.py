@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from functools import partial
+import json
 from pathlib import Path
 
 import hydra
@@ -20,6 +22,7 @@ from textjepa.data.lm import (
 )
 from textjepa.data.sampling import FreshEpochSampler
 from textjepa.models.sent_lm import SentenceLM
+from textjepa.models.layers import LoopedTransformerEncoder
 from textjepa.training.loggers import MetricLogger
 from textjepa.training.optim import build_optimizer, cosine_warmup
 from textjepa.training.trainer import to_device
@@ -75,6 +78,7 @@ def main(cfg: DictConfig) -> None:
     opt = build_optimizer(model, cfg.train.lr, cfg.train.weight_decay)
     total = cfg.train.epochs * len(train_loader)
     logger = MetricLogger(out_dir)
+    loop_counts: Counter[int] = Counter()
     step, best = 0, float("inf")
     for epoch in range(cfg.train.epochs):
         if train_sampler is not None:
@@ -86,6 +90,8 @@ def main(cfg: DictConfig) -> None:
                     step, total, cfg.train.warmup_steps
                 )
             losses = model(to_device(batch, device))
+            if isinstance(model.state_model.encoder, LoopedTransformerEncoder):
+                loop_counts[model.state_model.encoder.last_num_loops] += 1
             loss = sum(losses.values())
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -113,6 +119,11 @@ def main(cfg: DictConfig) -> None:
             best = vloss
             torch.save(ckpt, out_dir / "best.pt")
         print(f"[epoch {epoch}] val_loss={vloss:.4f}", flush=True)
+    if loop_counts:
+        (out_dir / "loop_histogram.json").write_text(
+            json.dumps({str(k): v for k, v in sorted(loop_counts.items())}, indent=2)
+            + "\n"
+        )
     logger.close()
 
 

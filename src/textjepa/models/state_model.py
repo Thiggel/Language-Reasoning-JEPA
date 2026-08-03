@@ -32,6 +32,8 @@ class DiscourseStateModel(nn.Module):
         train_loop_min: int = 1,
         train_loop_max: int = 8,
         eval_loops: int = 4,
+        train_loop_distribution: str = "shifted_poisson",
+        train_loop_sigma: float = 0.5,
     ):
         super().__init__()
         self.n_heads = n_heads
@@ -49,6 +51,8 @@ class DiscourseStateModel(nn.Module):
                 train_loop_min,
                 train_loop_max,
                 eval_loops,
+                train_loop_distribution,
+                train_loop_sigma,
             )
             if recurrent
             else encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)

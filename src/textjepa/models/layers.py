@@ -377,6 +377,8 @@ class LoopedTransformerEncoder(nn.Module):
         train_loop_min: int = 1,
         train_loop_max: int = 8,
         eval_loops: int = 4,
+        train_loop_distribution: str = "shifted_poisson",
+        train_loop_sigma: float = 0.5,
     ):
         super().__init__()
         if dropout != 0.0:
@@ -385,12 +387,20 @@ class LoopedTransformerEncoder(nn.Module):
             raise ValueError("invalid loop-count bounds")
         if train_loop_mean < 1:
             raise ValueError("train_loop_mean must be at least one")
+        if train_loop_distribution not in {
+            "shifted_poisson", "poisson_lognormal"
+        }:
+            raise ValueError("unknown loop-count distribution")
+        if train_loop_sigma < 0:
+            raise ValueError("train_loop_sigma must be non-negative")
         if not train_loop_min <= eval_loops <= train_loop_max:
             raise ValueError("eval_loops must lie inside the training bounds")
         self.train_loop_mean = float(train_loop_mean)
         self.train_loop_min = int(train_loop_min)
         self.train_loop_max = int(train_loop_max)
         self.eval_loops = int(eval_loops)
+        self.train_loop_distribution = train_loop_distribution
+        self.train_loop_sigma = float(train_loop_sigma)
         self.last_num_loops = self.eval_loops
         self.block = nn.TransformerEncoderLayer(
             d_model,
@@ -403,7 +413,19 @@ class LoopedTransformerEncoder(nn.Module):
         )
 
     def sample_num_loops(self) -> int:
-        rate = max(self.train_loop_mean - 1.0, 0.0)
+        target_rate = max(self.train_loop_mean - 1.0, 0.0)
+        if self.train_loop_distribution == "poisson_lognormal" and target_rate:
+            # Geiping et al. (2025), Eq. 1--2: choose the log-normal
+            # location so E[rate] equals the requested pre-shift mean.
+            sigma = self.train_loop_sigma
+            log_rate = (
+                torch.log(torch.tensor(target_rate))
+                - 0.5 * sigma * sigma
+                + sigma * torch.randn(())
+            )
+            rate = float(torch.exp(log_rate).item())
+        else:
+            rate = target_rate
         sampled = 1 + int(torch.poisson(torch.tensor(rate)).item())
         return min(max(sampled, self.train_loop_min), self.train_loop_max)
 

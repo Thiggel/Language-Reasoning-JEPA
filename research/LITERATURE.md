@@ -426,3 +426,48 @@ claim, verify the primary source and current publication status.
     environments, and otherwise require PyTorch fused SDPA. Log the concrete
     backend, peak memory, and optimizer throughput. Vectorize packing and sweep
     the largest fitting microbatch before estimating full training time.
+
+## 2026-08-03 — recurrent-depth training for the intent-phrase compute curve
+
+- Decision: whether the iGSM looped baselines should use a fixed or randomly
+  sampled training depth, and which details are required before calling the
+  resulting curve Geiping-style recurrent-depth scaling.
+- Primary sources:
+  - Geiping et al., *Scaling up Test-Time Compute with Latent Reasoning: A
+    Recurrent Depth Approach* (NeurIPS 2025):
+    <https://arxiv.org/abs/2502.05171>
+  - Official Huginn training/inference implementation:
+    <https://github.com/seal-rg/recurrent-pretraining>
+- Applicable claims:
+  - Huginn uses prelude, recurrent core, and coda blocks, injects the embedded
+    input at every recurrence, and starts the recurrent state from noise.
+  - Training samples one batch-wide recurrent depth from a shifted
+    Poisson-lognormal distribution: draw a log-rate with sigma 0.5, then draw
+    `r = Poisson(rate) + 1`. The large model targets mean recurrence 32 and
+    backpropagates through only the last eight recurrences.
+  - Test depth is an explicit compute axis, but more loops are not guaranteed
+    to help indefinitely; performance must be reported across depths rather
+    than only at the best selected depth.
+- Limitations for TextJEPA:
+  - The existing intent baseline is a simpler tied Transformer layer with a
+    clipped shifted-Poisson schedule. It has no prelude/core/coda separation,
+    random recurrent state, input reinjection, or truncated backpropagation,
+    and therefore must not be described as a faithful Huginn reproduction.
+  - Mean 32 is not portable to a 300k-example, roughly seven-million-parameter
+    toy model. It would change training FLOPs dramatically and confound the
+    fixed-budget comparison.
+  - JEPA planning depth expands counterfactual simulations, whereas LM loops
+    refine a single hidden sequence. Raw loop count and planning depth are not
+    comparable compute units.
+- Design change:
+  - First validate a small-model Poisson-lognormal schedule around the existing
+    mean-four training-compute budget, with dropout disabled and batch-wide
+    locked depth. Label it "Geiping-inspired" unless input reinjection and the
+    prelude/core/coda architecture are also implemented.
+  - Report trainable parameters, realized training-loop histogram, optimizer
+    updates, examples, and measured/analytic FLOPs. Plot performance against
+    FLOPs (and wall-clock as a secondary axis), not raw recurrence count.
+  - Compare depths both inside and outside the training support and retain
+    every predeclared depth, including overthinking regressions. Use identical
+    feasible-action menus, episodes, candidate ordering, and seeds for JEPA and
+    generative controls.

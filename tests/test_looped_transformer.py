@@ -35,11 +35,29 @@ def test_training_loop_samples_are_bounded_and_seeded():
     assert len(set(first)) > 1
 
 
+def test_poisson_lognormal_loop_schedule_is_seeded_heavy_tailed_and_centered():
+    encoder = LoopedTransformerEncoder(
+        8, 2, 2, train_loop_mean=8, train_loop_min=1,
+        train_loop_max=32, eval_loops=8,
+        train_loop_distribution="poisson_lognormal", train_loop_sigma=0.5,
+    ).train()
+    torch.manual_seed(19)
+    first = [encoder.sample_num_loops() for _ in range(4000)]
+    torch.manual_seed(19)
+    second = [encoder.sample_num_loops() for _ in range(4000)]
+    assert first == second
+    assert all(1 <= value <= 32 for value in first)
+    assert 7.5 < sum(first) / len(first) < 8.5
+    assert max(first) >= 20
+
+
 def test_looped_encoder_rejects_dropout_and_bad_bounds():
     with pytest.raises(ValueError, match="dropout=0"):
         LoopedTransformerEncoder(8, 2, 2, dropout=0.1)
     with pytest.raises(ValueError, match="bounds"):
         LoopedTransformerEncoder(8, 2, 2, train_loop_min=0)
+    with pytest.raises(ValueError, match="distribution"):
+        LoopedTransformerEncoder(8, 2, 2, train_loop_distribution="uniform")
 
 
 def test_token_lm_supports_train_and_test_loop_depths():

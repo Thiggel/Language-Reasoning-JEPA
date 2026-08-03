@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import random
+from contextlib import nullcontext
 from pathlib import Path
 
 import hydra
@@ -58,7 +59,12 @@ def main(cfg: DictConfig) -> None:
     dataset = build_dataset(run_cfg, vocab, split=split)
 
     results = []
-    with torch.no_grad():
+    measure_flops = bool(cfg.get("measure_flops", False))
+    flop_counter = (
+        torch.utils.flop_counter.FlopCounterMode(display=False)
+        if measure_flops else nullcontext()
+    )
+    with torch.no_grad(), flop_counter:
         for ep in range(cfg.n_episodes):
             problem, _ = dataset.problem(ep)
             if faithful:
@@ -128,6 +134,12 @@ def main(cfg: DictConfig) -> None:
             "length_normalized": bool(cfg.get("length_normalize", True)),
         }
     }
+    if measure_flops:
+        total_flops = int(flop_counter.get_total_flops())
+        out[f"lm_{score_kind}_policy"].update({
+            "measured_eval_flops": total_flops,
+            "measured_flops_per_episode": total_flops / n,
+        })
     for k, v in out[f"lm_{score_kind}_policy"].items():
         print(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}")
     split_suffix = "" if split == "val" else f"_{split}"

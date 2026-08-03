@@ -5,5 +5,7 @@ model:
   recurrent: true
   train_loop_mean: 4.0
   train_loop_min: 1
-  train_loop_max: 8
+  train_loop_max: 16
   eval_loops: 4
+  train_loop_distribution: poisson_lognormal
+  train_loop_sigma: 0.5

@@ -15,6 +15,7 @@ from textjepa.data.lm import (
 )
 from textjepa.models.discourse_jepa import DiscourseJEPA
 from textjepa.models.lm_baseline import DecoderLM
+from textjepa.models.layers import LoopedTransformerEncoder
 from textjepa.models.sent_lm import SentenceLM
 from omegaconf import OmegaConf
 
@@ -76,6 +77,7 @@ def main() -> None:
     parser.add_argument("--samples", type=int, default=2048)
     parser.add_argument("--token-length", type=int, default=96)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--eval-loops", type=int)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
@@ -97,6 +99,20 @@ def main() -> None:
         ).to(device)
         model.load_state_dict(checkpoint["model"])
         model.eval()
+    if args.eval_loops is not None:
+        if isinstance(model, DecoderLM) and isinstance(
+            model.blocks, LoopedTransformerEncoder
+        ):
+            encoder = model.blocks
+        elif isinstance(model, SentenceLM) and isinstance(
+            model.state_model.encoder, LoopedTransformerEncoder
+        ):
+            encoder = model.state_model.encoder
+        else:
+            raise ValueError("--eval-loops requires a recurrent LM baseline")
+        if not encoder.train_loop_min <= args.eval_loops <= encoder.train_loop_max:
+            raise ValueError("--eval-loops lies outside the configured loop bounds")
+        encoder.eval_loops = args.eval_loops
     dataset = build_dataset(cfg, vocab, split=args.split, size=args.samples)
     features, groups = [], []
     numeric = {name: [] for name in (
