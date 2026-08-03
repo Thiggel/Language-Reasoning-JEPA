@@ -60,3 +60,14 @@ def test_fixed_budget_runner_defers_optional_rendering_from_cluster_jobs():
     script = Path("scripts/run_intent_fixed_budget_cell.sh").read_text()
     assert "--coordinates-out" in script
     assert "--figure-out" not in script
+
+
+def test_length_ood_runner_uses_exact_controlled_cells():
+    script = Path("scripts/run_intent_length_ood_cell.sh").read_text()
+    assert 'EVAL_LENGTHS:-"3 5 7 9 10 11"' in script
+    assert 'EVAL_SLACKS:-"0 1 2 4"' in script
+    assert "eval_n_vars_range=[12,12]" in script
+    assert "eval_strict_steps_range=true" in script
+    assert "eval_sample_max_tries=100000" in script
+    assert 'split=test' in script
+    assert '"candidate_interface": "current symbolic feasible-action menu"' in script

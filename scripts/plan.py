@@ -15,13 +15,18 @@ from omegaconf import DictConfig
 from textjepa.planning import LatentPlanner, evaluate_planning
 from textjepa.planning.edit_search import EditPlanner, evaluate_edit_planning
 from textjepa.utils import seed_everything
-from textjepa.utils.checkpoint import build_dataset, load_run
+from textjepa.utils.checkpoint import (
+    apply_eval_data_overrides,
+    build_dataset,
+    load_run,
+)
 
 
 @hydra.main(config_path="../configs", config_name="plan", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
+    apply_eval_data_overrides(run_cfg, cfg)
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
     device = torch.device(cfg.device)

@@ -25,7 +25,7 @@ from textjepa.data.igsm.render import action_phrase, prompt_sentences, step_sent
 from textjepa.models.lm_baseline import DecoderLM
 from textjepa.planning.search import EpisodeResult
 from textjepa.utils import seed_everything
-from textjepa.utils.checkpoint import build_dataset
+from textjepa.utils.checkpoint import apply_eval_data_overrides, build_dataset
 
 
 @hydra.main(config_path="../configs", config_name="plan", version_base="1.3")
@@ -33,6 +33,7 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     ckpt = torch.load(cfg.ckpt, map_location=cfg.device, weights_only=False)
     run_cfg = OmegaConf.create(ckpt["cfg"])
+    apply_eval_data_overrides(run_cfg, cfg)
     score_kind = cfg.get("score_kind") or run_cfg.train.get(
         "target_kind", "outcome"
     )

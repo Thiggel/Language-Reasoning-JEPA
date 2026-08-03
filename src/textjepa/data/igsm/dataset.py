@@ -108,6 +108,8 @@ class IGSMDataset(Dataset):
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
+        sample_max_tries: int = 50,
+        strict_steps_range: bool = False,
         adjectives: list[str] | None = None,
         nouns: list[str] | None = None,
     ):
@@ -130,6 +132,8 @@ class IGSMDataset(Dataset):
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
+        self.sample_max_tries = max(1, int(sample_max_tries))
+        self.strict_steps_range = bool(strict_steps_range)
         if self.geo_rank_policy not in {"random", "greedy"}:
             raise ValueError(f"unknown geo_rank_policy: {self.geo_rank_policy}")
         self.adjectives = adjectives or DEFAULT_ADJECTIVES
@@ -148,7 +152,18 @@ class IGSMDataset(Dataset):
             self.n_vars_range,
             self.leaf_prob,
             self.steps_range,
+            max_tries=self.sample_max_tries,
         )
+        if self.strict_steps_range and not (
+            self.steps_range[0]
+            <= p.n_necessary_steps
+            <= self.steps_range[1]
+        ):
+            raise RuntimeError(
+                "failed to sample a problem in the requested exact reasoning "
+                f"length range {self.steps_range} after "
+                f"{self.sample_max_tries} attempts"
+            )
         return p, rng
 
     def __getitem__(self, index: int) -> dict:

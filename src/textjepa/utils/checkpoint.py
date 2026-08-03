@@ -10,6 +10,25 @@ from textjepa.data.edits.dataset import EditDataset, collate_edits
 from textjepa.data.igsm.dataset import IGSMDataset, build_vocab, collate
 
 
+def apply_eval_data_overrides(run_cfg, eval_cfg) -> None:
+    """Apply explicit post-hoc dataset shifts to a loaded run config.
+
+    Training checkpoints remain self-describing by default. These overrides
+    are opt-in and intended for controlled OOD evaluation only.
+    """
+    mappings = {
+        "eval_steps_range": "steps_range",
+        "eval_n_vars_range": "n_vars_range",
+        "eval_leaf_prob": "leaf_prob",
+        "eval_sample_max_tries": "sample_max_tries",
+        "eval_strict_steps_range": "strict_steps_range",
+    }
+    for source, destination in mappings.items():
+        value = eval_cfg.get(source)
+        if value is not None:
+            run_cfg.data[destination] = value
+
+
 def build_vocab_for_config(cfg):
     """Build a vocabulary without inspecting validation or test text."""
     name = cfg.data.get("name", "igsm")
@@ -127,6 +146,8 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         macro_alt_k=d.get("macro_alt_k", 0),
         macro_alt_horizon=d.get("macro_alt_horizon", 3),
         all_action_supervision=d.get("all_action_supervision", False),
+        sample_max_tries=d.get("sample_max_tries", 50),
+        strict_steps_range=d.get("strict_steps_range", False),
     )
     if split == "train":
         default_size, seed = d.train_size, d.train_seed

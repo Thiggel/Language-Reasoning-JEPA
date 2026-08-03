@@ -2,6 +2,14 @@ ckpt: ???
 device: cuda:0
 n_episodes: 200
 split: val  # use test only after recipe/model selection is frozen
+# Optional controlled distribution shift. Null preserves the checkpoint's
+# training distribution. Exact-length evaluation should set strict mode and a
+# sufficiently large sampling attempt cap.
+eval_steps_range: null
+eval_n_vars_range: null
+eval_leaf_prob: null
+eval_sample_max_tries: null
+eval_strict_steps_range: null
 slack: 0
 lookahead: 1
 # Depth > 1 uses the reference graph/environment to propose future feasible

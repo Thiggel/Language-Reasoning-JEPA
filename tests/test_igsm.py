@@ -1,5 +1,6 @@
 import random
 
+import pytest
 import torch
 
 from textjepa.data.igsm.dataset import (
@@ -69,6 +70,35 @@ def test_dataset_collate_shapes():
     for b in range(B):
         last = int(batch["step_mask"][b].sum()) - 1
         assert batch["remaining"][b, last] == 0
+
+
+def test_strict_reasoning_length_sampling_never_returns_fallback_length():
+    vocab = build_vocab(23)
+    exact = IGSMDataset(
+        vocab,
+        size=8,
+        seed=711,
+        n_vars_range=(12, 12),
+        steps_range=(3, 3),
+        sample_max_tries=500,
+        strict_steps_range=True,
+    )
+    assert all(exact.problem(i)[0].n_necessary_steps == 3 for i in range(8))
+
+
+def test_strict_reasoning_length_sampling_fails_instead_of_contaminating_cell():
+    vocab = build_vocab(23)
+    impossible = IGSMDataset(
+        vocab,
+        size=1,
+        seed=712,
+        n_vars_range=(6, 6),
+        steps_range=(7, 7),
+        sample_max_tries=1,
+        strict_steps_range=True,
+    )
+    with pytest.raises(RuntimeError, match="exact reasoning length"):
+        impossible.problem(0)
 
 
 def test_macro_counterfactuals_have_exact_outcomes_and_collate():

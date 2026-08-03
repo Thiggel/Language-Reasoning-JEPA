@@ -27,7 +27,7 @@ from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.render import action_phrase, prompt_sentences, step_sentence
 from textjepa.models.sent_lm import SentenceLM
 from textjepa.utils import seed_everything
-from textjepa.utils.checkpoint import build_dataset
+from textjepa.utils.checkpoint import apply_eval_data_overrides, build_dataset
 
 
 @hydra.main(config_path="../configs", config_name="plan", version_base="1.3")
@@ -35,6 +35,7 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     ckpt = torch.load(cfg.ckpt, map_location=cfg.device, weights_only=False)
     run_cfg = OmegaConf.create(ckpt["cfg"])
+    apply_eval_data_overrides(run_cfg, cfg)
     device = torch.device(cfg.device)
     faithful = run_cfg.data.get("name", "igsm") == "igsm_real"
     if faithful:
