@@ -2,6 +2,12 @@
 
 Current concise evidence report: [`2026-08-04-current-findings`](../../research/reports/intent_phrase/2026-08-04-current-findings/REPORT.md) ([compiled PDF](../../research/reports/intent_phrase/2026-08-04-current-findings/REPORT.pdf)). It explicitly labels the symbolic future-action scaling pilot as candidate-privileged and scientifically invalid because terminal path length leaks the solution.
 
+Current anonymous ICLR 2027 paper draft: [LaTeX source](paper/main.tex),
+[compiled PDF](paper/main.pdf), and [reproduction notes](paper/README.md). The
+draft uses the official 2027 style, includes all validated intent-phrase
+results, labels one-seed and candidate-privileged evidence, and leaves missing
+cross-domain and controlled-minimal-pair results visibly incomplete.
+
 This is a first-class subproject for the controlled, small-scale reasoning
 environment in which the available actions are natural-language intent
 phrases. The model never generates the numerical outcome sentence: it selects

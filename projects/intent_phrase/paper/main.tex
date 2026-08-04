@@ -1,0 +1,47 @@
+\documentclass{article}
+\usepackage{iclr2027_conference,times}
+\input{math_commands.tex}
+\usepackage{amsmath,amssymb,booktabs,multirow,graphicx,xcolor}
+\usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{url}
+
+\newcommand{\method}{\textsc{GAR-JEPA}}
+\newcommand{\gar}{\textsc{GAR}}
+\newcommand{\todoresult}{\textcolor{gray}{\textit{pending}}}
+\newcommand{\privileged}{\textsuperscript{\dag}}
+
+\title{Can Joint-Embedding Prediction Support Planning in Language?}
+
+\author{Anonymous authors}
+
+% Keep anonymous for submission.
+% \iclrfinalcopy
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Autoregressive language models select actions by predicting text, although planning only requires a model to preserve the consequences that determine which action should be taken. We study whether an action-conditioned joint-embedding predictive architecture can provide this narrower computational substrate. Our controlled setting presents a reasoning state and a common menu of executable intent phrases. A predictor imagines the latent successor of each phrase, and geometric advantage ranking (GAR) teaches local orderings among factual and counterfactual successors. Across five seeds on stylized iGSM, an MLP-predictor JEPA reaches $43.3\pm1.9\%$ strict success. This is competitive with a token language model at $42.2\pm12.4\%$, but below a sentence language model at $47.1\pm4.6\%$ and a sentence model with latent prediction at $52.1\pm4.7\%$. The central result is mechanistic. Latent prediction alone reaches $18.3\%$, removing GAR reaches $7.6\%$, and ranking without direct advantage regression reaches $35.8\%$. Local action ordering is substantially stronger through the learned transition-value score than through raw goal distance. A direct action ranker matches the full model in one-seed evaluation, which limits the present claim about predictive factorization. Repaired test-time scaling further reveals compounding rollout error rather than improvement. These results establish that non-generative latent consequence prediction can support language-action planning, while showing that useful planning geometry does not follow automatically from next-state prediction. We release a falsifiable analysis protocol for separating world-model quality, local action ordering, representation content, and test-time simulation.
+\end{abstract}
+
+\input{sections/01_introduction}
+\input{sections/02_framework}
+\input{sections/03_method}
+\input{sections/04_experiments}
+\input{sections/05_results}
+\input{sections/06_analysis}
+\input{sections/07_related_work}
+\input{sections/09_conclusion}
+
+\bibliography{references}
+\bibliographystyle{iclr2027_conference}
+
+\appendix
+\input{sections/08_limitations}
+\input{sections/a_protocol}
+\input{sections/b_complete_results}
+\input{sections/c_planned_analyses}
+\input{sections/d_reproducibility}
+
+\end{document}

@@ -1,0 +1,7 @@
+\section{Conclusion}
+
+Action-conditioned joint-embedding prediction can support nontrivial language-action planning without reconstructing the next sentence. The result is competitive under a common feasible-action interface, but it does not surpass the strongest sentence baseline. The scientific contribution lies in the mechanism. Next-state prediction alone does not produce useful action selection. GAR supplies local counterfactual order constraints and a learned transition-value score, and both ranking and successor supervision matter.
+
+The same controls sharpen the open question. Raw goal distance is weak, a direct ranker matches the current JEPA in one seed, and deeper latent rollout amplifies error. A persuasive account of JEPA reasoning must therefore show where predictive factorization helps, connect local ordering geometry to closed-loop behavior, and succeed under semantic and compositional interventions. The draft makes these obligations visible so that later results can strengthen or revise the claim without changing the evaluation contract.
+
+The current claim is limited to conditional planning under a symbolic feasible-action menu on stylized iGSM. Cross-domain evidence and an unrestricted proposal interface remain future work.

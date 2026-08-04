@@ -1,0 +1,48 @@
+\documentclass{article}
+\usepackage{pgfplots}
+\usepackage[active,tightpage]{preview}
+\PreviewEnvironment{tikzpicture}
+\setlength\PreviewBorder{2pt}
+\pgfplotsset{compat=1.17}
+\definecolor{strictblue}{HTML}{2878B5}
+\definecolor{slackorange}{HTML}{F28E2B}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+  width=15.2cm,height=6.7cm,
+  title={JEPA is competitive while the hybrid sentence model leads strict success},
+  title style={font=\small},
+  xbar,
+  bar width=5pt,
+  xmin=0,xmax=.92,
+  xlabel={puzzle success rate, shown as mean and seed standard deviation},
+  symbolic y coords={Causal JEPA,Token LM,MLP JEPA,Sentence LM,Sentence LM + latent},
+  ytick=data,
+  yticklabel style={font=\small},
+  tick label style={font=\scriptsize},
+  label style={font=\small},
+  grid=major,
+  grid style={black!8},
+  legend style={font=\small,draw=none,at={(.98,.05)},anchor=south east},
+  error bars/x dir=both,
+  error bars/x explicit,
+]
+\addplot[strictblue,fill=strictblue] coordinates {
+  (.366,Causal JEPA) += (.047,0) -= (.047,0)
+  (.422,Token LM) += (.124,0) -= (.124,0)
+  (.433,MLP JEPA) += (.019,0) -= (.019,0)
+  (.471,Sentence LM) += (.046,0) -= (.046,0)
+  (.521,Sentence LM + latent) += (.047,0) -= (.047,0)
+};
+\addlegendentry{strict success}
+\addplot[slackorange,fill=slackorange] coordinates {
+  (.778,Causal JEPA) += (.043,0) -= (.043,0)
+  (.836,Token LM) += (.073,0) -= (.073,0)
+  (.796,MLP JEPA) += (.033,0) -= (.033,0)
+  (.813,Sentence LM) += (.023,0) -= (.023,0)
+  (.809,Sentence LM + latent) += (.020,0) -= (.020,0)
+};
+\addlegendentry{success with two excess actions}
+\end{axis}
+\end{tikzpicture}
+\end{document}

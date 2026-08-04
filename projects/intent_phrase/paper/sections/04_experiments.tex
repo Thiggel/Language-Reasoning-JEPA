@@ -1,0 +1,32 @@
+\section{Experimental design}
+\label{sec:experiments}
+
+\subsection{Environment and data}
+
+The completed experiments use a stylized iGSM generator derived from the controlled arithmetic dependency setting of \citet{igsm2025}. Problems contain named quantities, arithmetic relations, distractors, and a target query. Training examples are generated online rather than drawn repeatedly from a fixed corpus. The paper recipe sees 300,000 examples with solution lengths from three to nine actions. Validation uses 200 fresh episodes per seed for the five-seed tables. The decision audit uses 500 episodes and the repaired scaling gate uses 1,000 paired episodes.
+
+At each step, the current feasible menu contains executable intent phrases only. It does not reveal which action is necessary. Candidate order is independently shuffled. The random, token, sentence, and JEPA policies act in closed loop and observe the same environment outcomes. Headline results do not use an oracle solved-state embedding or future feasible-action tree.
+
+The planned final suite includes faithful iGSM, ProofWriter \citep{tafjord2021proofwriter}, PlanBench Blocksworld \citep{valmeekam2023planbench}, and ALFWorld \citep{shridhar2021alfworld}. These domains are not placed in the main result table until their action interfaces pass executor, split, feasibility-recall, and leakage gates. Empty cells record this incomplete scope.
+
+\subsection{Baselines, tuning, and uncertainty}
+
+Each completed headline row uses five training seeds. Hyperparameters were selected on validation data. The current draft reports the sample standard deviation across seed means. The final paper will add paired bootstrap confidence intervals on identical generated puzzles. Random and oracle policies provide environment bounds. The direct ranker receives the same histories, candidates, positive actions, and counterfactual negatives as GAR.
+
+The preregistered final tuning protocol chooses one learning rate per model and dataset at width 256, then reuses it for model ablations unless the loss scale or gradient path changes. Such changes receive a local learning-rate cross-check. Test results never select a learning rate. Parameter counts, training FLOPs, and the complete search ledger remain pending for the final comparison.
+
+\subsection{Evaluation}
+
+The primary metric is strict task success. We also report success with two excess actions because it separates choosing useful actions from choosing them in the shortest order. The final evaluation will include slack zero, one, two, and four, along with area under the success-versus-budget curve, invalid-action rate, and mean excess actions among solved episodes.
+
+Length generalization holds the distractor construction fixed while increasing the number of necessary actions beyond the training range. Only sentence and sentence-plus-latent curves have completed this corrected evaluation. We treat them as preliminary.
+
+\subsection{Representation and decision diagnostics}
+
+Frozen features are sampled immediately before the next action, with no future text. Ridge and logistic probes use problem-grouped splits. Current probes measure operation identity, remaining steps, resolved-variable count, and numerical outcome. Effective rank is computed from the feature covariance. Necessary-action balanced accuracy is exactly chance under the current probe and is excluded as positive evidence.
+
+The decision audit enumerates identical feasible actions at aligned states and includes forced-error histories. For JEPA, it compares the deployed predicted transition-value score with raw predicted geometry. Exact continuation cost is used only as an evaluation label. The planned controlled minimal-pair suite measures paraphrase invariance, negation sensitivity, operator swaps, entity renaming, and matched-step states with different true progress.
+
+\subsection{Test-time-compute validity}
+
+Our first deep-planning evaluator returned terminal action sequences early and included path length in the score. It therefore exposed solved candidates through candidate length. We reject that result. The repair uses fixed-depth continuations, an absorbing no-op after solution, equal first-action candidate budgets, randomized order, and constant path-length offsets. Zero-score and shuffled-score controls must remain near their depth-one random bounds. Depths greater than one still use a reference-graph future feasible-action tree and are labeled candidate privileged.

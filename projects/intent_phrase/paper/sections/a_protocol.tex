@@ -1,0 +1,20 @@
+\section{Detailed protocol}
+\label{app:protocol}
+
+\paragraph{Information boundary.}
+Headline policies observe the problem statement, prior selected intent phrases and outcomes, and a shuffled menu of actions executable at the current state. They do not observe the expert action, exact remaining distance, future action availability, terminal state, or counterfactual outcomes at evaluation. Training uses exact alternative outcomes only for declared counterfactual prediction and GAR targets.
+
+\paragraph{Target encoder.}
+The EMA encoder is updated from the online encoder and kept in evaluation mode at all times. Gradients do not enter EMA targets. Dropout is disabled in the encoder, predictor, action encoder, scorer, and target encoder. These conditions follow earlier validity tests that found stochastic or train-mode targets destabilize dense rollout supervision.
+
+\paragraph{Paired evaluation.}
+Final comparisons will use identical generated puzzle indices, action-order seeds, and budgets across systems. We will report per-seed means, sample standard deviations, paired bootstrap intervals, and paired differences for headline claims. The currently completed five-seed results use 200 fresh validation episodes per seed. The fixed-checkpoint scaling gate uses 1,000 paired episodes.
+
+\paragraph{Scaling controls.}
+The repaired continuation generator allocates equal candidate budget to each root action up to one unavoidable rounding candidate. Every continuation has the requested depth. Solved paths enter an absorbing no-op state. Candidate order is randomized at every decision. The scoring offset is constant across candidates. A score-blind method therefore cannot infer success from path length, count, or order.
+
+\paragraph{Tuning contract.}
+For the final suite, width-256 learning rates are screened on validation and reused within a model-dataset pair. The planned grid is $\{5\mathrm{e}{-5},7\mathrm{e}{-5},10^{-4},3\mathrm{e}{-4},5\mathrm{e}{-4},7\mathrm{e}{-4},10^{-3},3\mathrm{e}{-3},5\mathrm{e}{-3}\}$. The initial stage uses a compact subset. Five seeds are trained only after selecting the validation learning rate. Ablations reuse that rate unless they change gradient routing or loss scale.
+
+\paragraph{Why current and historical numbers differ.}
+Historical reports used different generators, predictor variants, batch sizes, candidate interfaces, and training budgets. This draft includes only the 300,000-example paper family and matched controls retrieved from its run lineage. Older values are retained in the repository but are not combined with the current table.

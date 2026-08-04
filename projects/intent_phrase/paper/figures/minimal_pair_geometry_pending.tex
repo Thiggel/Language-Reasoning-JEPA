@@ -1,0 +1,19 @@
+\documentclass{article}
+\usepackage{tikz}
+\usepackage[active,tightpage]{preview}
+\PreviewEnvironment{tikzpicture}
+\setlength\PreviewBorder{2pt}
+\begin{document}
+\begin{tikzpicture}[font=\sffamily]
+  \foreach \x/\title/\body in {
+    {0}/{UMAP of controlled states}/{Paraphrase pairs\\Negated minimal pairs\\Operator swaps\\Entity renaming},
+    {7.5}/{Consequence-sensitive retrieval}/{same-state paraphrase recall\\negation separation\\action-order invariance\\matched-step progress control}}
+  {
+    \fill[black!4] (\x,0) rectangle +(6.9,4.1);
+    \draw[black!25] (\x,0) rectangle +(6.9,4.1);
+    \node[font=\small\bfseries] at (\x+3.45,3.72) {\title};
+    \node[font=\small\bfseries,text=black!55] at (\x+3.45,2.55) {RESULT PENDING};
+    \node[font=\scriptsize,text=black!60,align=center] at (\x+3.45,1.35) {\body};
+  }
+\end{tikzpicture}
+\end{document}

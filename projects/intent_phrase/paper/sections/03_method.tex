@@ -1,0 +1,32 @@
+\section{Geometric advantage ranking}
+\label{sec:method}
+
+\subsection{Objective}
+
+GAR trains the deployed score on within-state counterfactual comparisons. For an ordered pair $(a^+,a^-)$, define $q^+=Q(s,a^+)$ and $q^-=Q(s,a^-)$. We minimize
+\begin{equation}
+  \mathcal{L}_{\mathrm{rank}}=\log\left(1+\exp[-(q^+-q^-)]\right).
+\end{equation}
+We also regress the exact $N$-step advantage target $A_N(s,a)$,
+\begin{equation}
+  \mathcal{L}_{\mathrm{adv}}=\left(Q(s,a)-A_N(s,a)\right)^2.
+\end{equation}
+The full objective is
+\begin{equation}
+  \mathcal{L}=\mathcal{L}_{\mathrm{pred}}+lambda_{\mathrm{cf}}\mathcal{L}_{\mathrm{cf}}
+  +\lambda_{\mathrm{rank}}\mathcal{L}_{\mathrm{rank}}
+  +\lambda_{\mathrm{adv}}\mathcal{L}_{\mathrm{adv}}.
+\end{equation}
+Unless stated otherwise, the current recipe uses horizon $N=2$, two counterfactual alternatives, and direct-advantage weight $0.25$. Gradients from both GAR terms reach the scorer, predictor, action encoder, and online state encoder. The EMA encoder follows the online encoder slowly and never receives gradients.
+
+\subsection{What GAR can and cannot establish}
+
+GAR has two possible roles. Its gradients can reshape the predictive representation, and its score head can learn a useful supervised readout. We separate these with four controls. \emph{Detached geometry} blocks GAR gradients into the encoder and predictor. \emph{Geometry only} plans with raw predicted successor distance to an encoded solved state. This is an oracle-terminal diagnostic. \emph{Direct ranker} learns $D(s,a)$ from the same positive and counterfactual actions while bypassing the predicted successor at decision time. \emph{Counterfactual-only} adds exact alternative-transition prediction but removes GAR.
+
+An additional shuffled-label control retains the number and form of counterfactual examples while randomizing their action-quality correspondence. A pure direct ranker without successor auxiliaries tests whether the counterfactual data can support ordinary supervised action selection. Together these controls separate additional data, meaningful ordering labels, a useful score head, and predictive factorization.
+
+\subsection{Models used in the comparison}
+
+The MLP JEPA uses a 256-dimensional state and action representation with an MLP predictor. The causal JEPA replaces this predictor with a causal Transformer over the encoded history. The token language model scores candidate phrases through token likelihood. The sentence language model predicts the next intent as a sentence-level class. The sentence-plus-latent model adds an auxiliary next-sentence representation loss and still selects by its generative score. All systems receive the same shuffled current feasible-action menu.
+
+We also train weight-shared recurrent token and sentence models. Their number of loops is sampled during training following the recurrent-depth test-time-compute setting of \citet{geiping2025recurrent}. Current loop curves are exploratory because their measured FLOPs are not yet calibrated to fixed work across policies.

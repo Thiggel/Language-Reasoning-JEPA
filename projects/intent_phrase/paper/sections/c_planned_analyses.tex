@@ -1,0 +1,33 @@
+\section{Predeclared analyses and decision rules}
+
+\paragraph{Does GAR create planning geometry?}
+For every feasible action pair at aligned states, report pairwise ranking accuracy, top-1 optimal recall, mean action regret, Spearman correlation with exact continuation advantage, and the positive-versus-best-negative margin. Across seeds and retained checkpoints, correlate each quantity with strict planning success. Compare those correlations with one-step latent error, successor retrieval, effective rank, and global probe scores. The planning-geometry account is supported only if local ordering and margin track success materially better.
+
+\paragraph{Does GAR merely add counterfactual data?}
+Compare full GAR, counterfactual latent prediction without ranking, shuffled GAR labels, a pure direct ranker without successor loss, a direct ranker with successor auxiliaries, and full GAR at matched counterfactual exposure. The completed shuffled-label and pure-direct pilots already reject the strongest data-volume explanation. Five-seed completion is required for the final claim.
+
+\paragraph{Does predictive factorization help?}
+Compare full GAR and the direct ranker on training-data fractions, held-out reasoning lengths, novel lexical templates, action paraphrases, negated minimal pairs, entity renaming, and novel goals. The predictive factorization is useful only if it improves at least one preregistered generalization or compute axis with uncertainty that excludes a negligible effect.
+
+\paragraph{Why do generative models lead strict success?}
+At identical aligned states, decompose errors into candidate ranking, transition prediction, recovery after a forced distractor, calibration by action type, and lexical-template sensitivity. Score sentence-plus-latent both by token likelihood and latent distance. If likelihood is strong while latent selection is weak, its advantage lies in generative readout. If both are strong, its sentence representation is a better state estimator.
+
+\paragraph{Controlled geometry.}
+Construct paired states for semantic paraphrase, action paraphrase, negation, operator swap, irrelevant entity renaming, and matched elapsed step with different progress. Report full-space retrieval and pairwise distances first. Report UMAP and t-SNE only as illustrations. Use identical frozen checkpoints, feature boundaries, projection hyperparameters, and point sets across models.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{figures/minimal_pair_geometry_pending.pdf}
+\caption{Reserved controlled minimal-pair analysis. No empirical points are shown because paraphrase and negation features have not yet been collected. The final visualization will be regenerated from frozen checkpoints and paired semantic interventions.}
+\label{fig:minimal-pairs}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=.78\linewidth]{figures/length_ood.pdf}
+\caption{Preliminary length generalization for two sentence families. These one-seed curves are incomplete and do not support a cross-method conclusion.}
+\label{fig:length}
+\end{figure}
+
+\paragraph{Test-time scaling.}
+First diagnose recursive drift at each horizon, including transition error, nearest-successor retrieval, score calibration on imagined versus true states, and action-ranking degradation. Train with dense multi-step latent supervision only after this localization. Compare against Poisson-loop-trained token and sentence models on paired puzzles, with inference FLOPs measured under fixed candidate work. Plot every tested depth rather than only the best point.

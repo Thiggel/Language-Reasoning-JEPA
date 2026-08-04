@@ -1,0 +1,21 @@
+\section{Introduction}
+
+Language reasoning is usually studied through generation. A model emits the next token or sentence, and the resulting text becomes both its computation and its observable answer. This design is powerful, but it binds reasoning to reconstruction. An agent that chooses among language actions needs a more specific capability. It must predict how each action changes the problem, retain the aspects of that change that affect future choices, and rank the resulting alternatives.
+
+Joint-embedding predictive architectures offer a direct way to test this possibility \citep{lecun2022path}. A JEPA predicts the representation of a target from a context instead of reconstructing every target token \citep{assran2023ijepa}. Feature prediction has also been extended to video \citep{bardes2024vjepa}. Action-conditioned variants can serve as latent world models and can support planning in physical environments \citep{assran2025vjepa2}. Yet accurate latent prediction does not guarantee that distances or scores in the learned space order actions by their usefulness. A representation can preserve the next observation while arranging successor states poorly for planning. This gap becomes especially clear for discrete language actions, where several phrases can be executable but only some advance the current proof or computation.
+
+We isolate this issue in a controlled language-action setting. Each episode is a stylized iGSM arithmetic dependency problem. At every step, all learned systems receive the same prompt, observed history, and shuffled symbolic menu of currently executable intent phrases. The environment executes the selected phrase and reveals its textual consequence. This interface is candidate privileged relative to unrestricted text generation, but it is information matched across methods and exposes the planning mechanism without conflating it with action proposal or syntax validity.
+
+Our model predicts a latent successor for every candidate action. We introduce geometric advantage ranking (GAR), which uses factual and counterfactual continuations to train local action orderings and a direct advantage regression term. The deployed score factors through the predicted successor. This construction permits targeted controls that remove latent prediction, remove ranking, detach ranking gradients from the predictive body, or bypass the successor with a direct action ranker.
+
+The experiments answer four questions. First, can latent consequence prediction support closed-loop language planning? Second, is next-latent prediction sufficient? Third, does GAR create action-ordering structure that matters for planning? Fourth, what information do JEPA states retain relative to generative baselines? We also ask whether deeper latent simulation yields useful test-time scaling. The current answer to the last question is negative under a repaired leakage-free protocol.
+
+Our contributions are as follows.
+
+\begin{itemize}
+\item We give a controlled formulation of language reasoning as action-conditioned latent prediction followed by local successor ranking.
+\item We show across five seeds that JEPA planning is viable and stable, although a sentence model with a hybrid generative and latent objective remains strongest in strict success.
+\item We identify GAR as the main source of planning performance. Next-state prediction alone is inadequate, and meaningful counterfactual labels matter more than additional counterfactual exposure by itself.
+\item We separate raw geometry, learned transition value, gradient routing, and direct discrimination. The present direct-ranker result prevents a stronger claim that predictive factorization is uniquely responsible for in-distribution performance.
+\item We provide frozen-feature and local-ordering analyses, then state the remaining controlled minimal-pair and cross-domain tests as explicit empirical obligations.
+\end{itemize}

@@ -1,0 +1,24 @@
+\section{What the representations encode}
+\label{sec:analysis}
+
+\subsection{Global rank does not explain planning}
+
+Both JEPA variants are non-collapsed. Their effective ranks are $198.7$ and $215.3$ in a 256-dimensional space. The token LM has effective rank $3.5$ and remains competitive in closed-loop success. Sentence and sentence-plus-latent models have ranks $79.6$ and $71.4$. Effective rank is therefore a representation health check, not a planning metric.
+
+The same caution applies to global probes. The sentence-plus-latent model makes operation identity highly linearly accessible at $.807$ balanced accuracy. MLP JEPA reaches $.406$. MLP JEPA nevertheless exposes resolved-variable count with $R^2=.895$. Remaining-step prediction reaches $R^2=.346$ for MLP JEPA, compared with $.439$ for the token LM and $.429$ for sentence plus latent. Numerical outcomes are weakly decoded across all systems. The current necessary-action probe has $.500$ balanced accuracy and provides no positive evidence.
+
+Figure~\ref{fig:representations} in the appendix summarizes these frozen-feature diagnostics.
+
+\subsection{The planning claim is local}
+
+GAR asserts that successor differences within the same state order actions. The strongest current evidence is the gap between the deployed transition-value score and raw predicted geometry. The final analysis will report pairwise feasible-action ranking accuracy, top-1 optimal recall, mean regret, Spearman correlation with exact continuation advantage, and the positive-versus-best-negative margin at every retained checkpoint. Across seeds and checkpoints, we will compare their correlation with strict success against latent MSE, effective rank, and the global probes.
+
+This test can falsify the proposed account. If one-step prediction error or global probe scores track planning better than local margins, then GAR should not be described as creating planning geometry. If local action ordering predicts success while global rank does not, then the representation supports planning through a low-dimensional local structure even when its full covariance retains many other factors.
+
+\subsection{Controlled semantic geometry is still missing}
+
+Ordinary t-SNE or UMAP plots cannot establish semantic invariance. The required data must hold the environment state fixed while changing wording, or hold lexical overlap fixed while changing consequence. Figure~\ref{fig:minimal-pairs} in the appendix is intentionally empty in this draft. The completed version will juxtapose JEPA, token LM, sentence LM, sentence-plus-latent, no-GAR JEPA, and direct-ranker features on the same controlled pairs. Quantitative retrieval, distance, and action-ranking changes will accompany every projection.
+
+\subsection{Preliminary length generalization}
+
+The corrected distractor-matched length evaluation is complete only for the two sentence families and one seed. Both degrade beyond the training range. We do not compare methods from this partial figure. Figure~\ref{fig:length} is placed in the appendix. The final plot requires all headline families on identical generated instances, five seeds, and confidence intervals for paired differences.

@@ -8,6 +8,61 @@ Existing conceptual anchors are I-JEPA, HWM, Delta-JEPA, variational JEPA,
 VICReg, and SIGReg. Before using a method as a baseline or making a novelty
 claim, verify the primary source and current publication status.
 
+## 2026-08-04 — planning geometry, language JEPA, and paper positioning
+
+- Query: which recent JEPA methods explicitly shape representations for
+  planning, which language JEPA systems overlap with latent reasoning, and
+  whether each method requires an empirical baseline in the intent-phrase
+  paper?
+- Primary sources:
+  - I-JEPA: <https://arxiv.org/abs/2301.08243>
+  - V-JEPA 2: <https://arxiv.org/abs/2506.09985>
+  - LLM-JEPA: <https://arxiv.org/abs/2509.14252>
+  - JEPA-Reasoner: <https://arxiv.org/abs/2512.19171>
+  - Value-guided action planning with JEPA world models:
+    <https://arxiv.org/abs/2601.00844>
+  - Temporal Straightening for Latent Planning:
+    <https://arxiv.org/abs/2603.12231>
+  - Temporal-Distance JEPA: <https://arxiv.org/abs/2607.25337>
+  - Recurrent-depth test-time compute:
+    <https://arxiv.org/abs/2502.05171>
+- Applicable claims:
+  - V-JEPA 2 already establishes action-conditioned latent planning in visual
+    robotics. This project cannot claim to introduce JEPA planning.
+  - Value-guided JEPA, temporal straightening, and Temporal-Distance JEPA all
+    address the gap between short-horizon latent prediction and a geometry or
+    cost useful for planning. GAR's narrower contribution is within-state
+    counterfactual ordering over discrete language actions, combined with an
+    amortized score that factors through a predicted successor.
+  - LLM-JEPA and JEPA-Reasoner establish that latent prediction for language
+    and latent reasoning are active topics. The paper's language contribution
+    is therefore controlled consequence prediction and candidate selection,
+    not the first language JEPA.
+  - Recurrent-depth Transformers are the appropriate generative control for a
+    test-time-compute claim. Raw loop count and JEPA rollout depth are not
+    comparable without measured fixed-work FLOPs.
+- Limitations:
+  - The three planning-geometry papers study visual continuous control. A
+    direct task score comparison with discrete intent selection would conflate
+    action spaces, observations, supervision, and planners.
+  - Temporal-Distance JEPA was posted on 2026-07-28 and is concurrent recent
+    work. Its publication status is a preprint at the time of this search.
+  - JEPA-Reasoner contains a separate text generator and addresses a different
+    end-to-end task. It is related work, not an information-matched baseline.
+- Design change:
+  - State the novelty as local action-level counterfactual ordering and a
+    predictive successor bottleneck. Do not claim first JEPA planning or first
+    language JEPA.
+  - Keep raw goal distance, detached geometry, direct action ranking, and
+    counterfactual-only controls in the central experiment. These are matched
+    conceptual tests of the overlap with planning-geometry work.
+  - Do not reimplement every visual planner. Add an iGSM temporal-order or
+    straightening-style objective only if the paper makes an empirical
+    superiority claim over those objectives.
+  - Treat calibrated JEPA-versus-recurrent-LM accuracy against measured FLOPs
+    as a main research question. The repaired negative rollout curve remains
+    reportable mechanism evidence rather than a scaling result.
+
 ## 2026-07-21 — recurrent-depth baselines and a three-domain reasoning suite
 
 - Query: which recurrent-depth training protocol fairly tests latent
