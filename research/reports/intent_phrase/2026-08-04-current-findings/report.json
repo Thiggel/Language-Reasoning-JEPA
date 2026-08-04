@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "2026-08-04-current-findings",
+  "project": "intent_phrase",
+  "title": "Intent-phrase JEPA for planning: current evidence and failure-aware roadmap",
+  "created_at": "2026-08-04T09:40:00+02:00",
+  "status": "current_evidence_summary",
+  "decision": "Treat GAR as the central supported mechanism, report JEPA as competitive rather than superior, invalidate the current deep symbolic-lookahead curve because terminal paths leak through candidate length, and repair that protocol before any five-seed test-time-scaling campaign.",
+  "plain_summary": "MLP JEPA reaches 0.433 strict success over five seeds and GAR is essential, but sentence-plus-latent prediction leads at 0.521, a one-seed direct ranker matches JEPA, and the apparent deep-planning gain is an evaluation artifact rather than valid test-time scaling.",
+  "report": "REPORT.md",
+  "latex": "REPORT.tex",
+  "pdf": "REPORT.pdf",
+  "data": "report_data.json",
+  "review_required": true
+}
