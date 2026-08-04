@@ -124,6 +124,35 @@ def test_counterfactual_joint_step_regularizes_both_levels():
     )
 
 
+def test_counterfactual_sentence_replay_accepts_initial_boundary_history():
+    """The first solution boundary has a state but zero prior macro-actions."""
+    torch.manual_seed(17)
+    model = _model()
+    learner = HierarchicalLanguageLearner(
+        model,
+        ResearchStage.SENTENCE_JEPA,
+        dynamics_geometry="euclidean",
+        normalize_dynamics=True,
+        joint_token_sentence=True,
+    )
+    root = torch.randn(2, 8)
+    total, losses = learner.counterfactual_loss(
+        root,
+        torch.randn(2, 3, 8),
+        torch.randint(1, 17, (2, 3)),
+        torch.full((2,), 3),
+        sentence_eligible=torch.ones(2, dtype=torch.bool),
+        root_sentence_history_hidden=root[:, None],
+        root_sentence_history_lengths=torch.ones(2, dtype=torch.long),
+        root_sentence_history_span_ids=torch.empty(2, 0, 4, dtype=torch.long),
+        root_sentence_history_span_mask=torch.empty(2, 0, 4, dtype=torch.bool),
+    )
+    assert total.isfinite()
+    assert "counterfactual_sentence" in losses
+    total.backward()
+    assert any(parameter.grad is not None for parameter in model.p1.parameters())
+
+
 def test_joint_stage_trainability_includes_both_predictive_levels():
     model = _model()
     active = train._configure_stage_trainability(

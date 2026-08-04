@@ -623,14 +623,21 @@ class HierarchicalLanguageLearner(nn.Module):
                     history_hidden = root_sentence_history_hidden[
                         row, :history_length
                     ]
-                    prior_action = self.model.a1(
-                        root_sentence_history_span_ids[
-                            row, :history_length - 1
-                        ],
-                        root_sentence_history_span_mask[
-                            row, :history_length - 1
-                        ],
-                    )
+                    if history_length == 1:
+                        # A branch rooted at the initial solution boundary has
+                        # one state and no preceding sentence actions.  Avoid
+                        # sending a zero-sized batch through TransformerEncoder,
+                        # which PyTorch cannot reshape in multi-head attention.
+                        prior_action = action.new_empty(0, action.shape[-1])
+                    else:
+                        prior_action = self.model.a1(
+                            root_sentence_history_span_ids[
+                                row, :history_length - 1
+                            ],
+                            root_sentence_history_span_mask[
+                                row, :history_length - 1
+                            ],
+                        )
                 history_state = self.model.encode_sentence(history_hidden)
                 all_actions = torch.cat(
                     [prior_action, action[local:local + 1]], 0
