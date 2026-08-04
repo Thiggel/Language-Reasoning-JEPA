@@ -448,6 +448,8 @@ def _record_dense_flops(
     model: HierarchicalLanguageJEPA,
     stage: ResearchStage,
     batch: dict[str, torch.Tensor],
+    *,
+    joint_token_sentence: bool = False,
 ) -> None:
     prompt = batch.get("prompt_len")
     end = batch.get("solution_end")
@@ -463,7 +465,7 @@ def _record_dense_flops(
         if boundaries is not None else 0
     )
     modules: list[tuple[str, torch.nn.Module, int]] = []
-    if stage in {
+    if joint_token_sentence or stage in {
         ResearchStage.TOKEN_JEPA, ResearchStage.CLOSED_LOOP_REANALYSIS
     }:
         modules.extend([
@@ -722,7 +724,10 @@ def _initialize_from_checkpoint(
 
 
 def _configure_stage_trainability(
-    model: HierarchicalLanguageJEPA, stage: ResearchStage
+    model: HierarchicalLanguageJEPA,
+    stage: ResearchStage,
+    *,
+    joint_token_sentence: bool = False,
 ) -> list[str]:
     model.requires_grad_(False)
     active: list[tuple[str, torch.nn.Module | None]]
@@ -736,6 +741,12 @@ def _configure_stage_trainability(
             ("e0_to_1", model.e0_to_1), ("a1", model.a1),
             ("p1", model.p1),
         ]
+        if joint_token_sentence:
+            active = [
+                ("e0", model.e0), ("p0", model.p0),
+                ("token_action", model.token_action),
+                *active,
+            ]
     elif stage == ResearchStage.DYNAMIC_COMMUTATION:
         active = [("e0_to_1", model.e0_to_1), ("p1", model.p1)]
     elif stage == ResearchStage.MACRO_ACTION:
@@ -820,6 +831,16 @@ def main() -> None:
     stage = ResearchStage[
         args.stage or configured_stage or ResearchStage.TOKEN_JEPA.name
     ]
+    research_config = (
+        experiment_config.get("research", {}) if experiment_config else {}
+    )
+    joint_token_sentence = bool(
+        research_config.get("joint_token_sentence", False)
+    )
+    if joint_token_sentence and stage != ResearchStage.SENTENCE_JEPA:
+        raise ValueError(
+            "joint token/sentence training requires the SENTENCE_JEPA stage"
+        )
     evaluation_only = {
         ResearchStage.FLAT_ORACLE_TOKEN,
         ResearchStage.ORACLE_WAYPOINT,
@@ -833,7 +854,10 @@ def main() -> None:
         )
     admission = _load_admission(
         args.admission, stage,
-        required=stage >= ResearchStage.SENTENCE_JEPA,
+        required=(
+            stage >= ResearchStage.SENTENCE_JEPA
+            and not joint_token_sentence
+        ),
     )
     model_config = (
         experiment_config.get("model", {}).get("config", {})
@@ -919,11 +943,25 @@ def main() -> None:
         if name in loss_config
     })
     learner = HierarchicalLanguageLearner(
-        model, stage, weights=weights
+        model,
+        stage,
+        weights=weights,
+        dynamics_geometry=loss_config.get(
+            "dynamics_geometry", "mahalanobis"
+        ),
+        normalize_dynamics=bool(loss_config.get(
+            "normalize_dynamics", False
+        )),
+        anti_collapse=loss_config.get("anti_collapse", "vicreg"),
+        sigreg_slices=int(loss_config.get("sigreg_slices", 256)),
+        joint_token_sentence=joint_token_sentence,
     ).to(args.device)
     initialized_from = _initialize_from_checkpoint(
         model, learner, args.init_checkpoint, stage,
-        required=stage >= ResearchStage.SENTENCE_JEPA,
+        required=(
+            stage >= ResearchStage.SENTENCE_JEPA
+            and not joint_token_sentence
+        ),
         admission=admission,
     )
     if initialized_from is not None:
@@ -989,7 +1027,11 @@ def main() -> None:
                 validity.get("require_exact_worker_achievement", True)
             ),
         )
-    trainable_modules = _configure_stage_trainability(model, stage)
+    trainable_modules = _configure_stage_trainability(
+        model,
+        stage,
+        joint_token_sentence=joint_token_sentence,
+    )
     trainable_parameters = [
         parameter for parameter in model.parameters()
         if parameter.requires_grad
@@ -1157,7 +1199,13 @@ def main() -> None:
                         optimizer.step()
                         model.update_targets(args.ema_momentum)
                         after_optimizer_step()
-                _record_dense_flops(compute, model, stage, batch)
+                _record_dense_flops(
+                    compute,
+                    model,
+                    stage,
+                    batch,
+                    joint_token_sentence=joint_token_sentence,
+                )
                 examples += len(index)
                 for name, value in losses.items():
                     totals[name] = totals.get(name, 0.0) + (

@@ -207,6 +207,31 @@ Sparse recursive rollout uses `N=1` always, `N=2` with probability `.25`,
 `N=4` with `.05`, and `N=8` with `.01`; horizons above two truncate BPTT
 every two transitions while preserving the root predictor cache.
 
+## Joint two-level training and collapse control
+
+The token-only model remains an information-matched diagnostic and control; it
+is not the initialization path for the primary two-level model. The primary
+strict-nested model starts from scratch and jointly updates `E0`, `P0`,
+`E0_to_1`, `A1`, and `P1`. Its targets remain the fully nested EMA path and are
+stop-gradient. This joint objective is the intended source of both local token
+control information and reasoning-step temporal abstraction.
+
+Every optimizer step that updates an online encoder also applies anti-collapse
+regularization to the states produced on that step. This includes dense traces
+and counterfactual replay. Joint replay applies the regularizer to both token
+states and sentence-boundary states; counterfactual sampling is not exempt from
+the representation objective merely because it provides additional actions.
+
+The clean collapse-repair reference uses coordinate-mean squared Euclidean
+prediction, with VICReg weights scaled consistently with that reduction
+(`prediction=25`, `variance=25`, `covariance=1`) at both levels. Normalized
+Mahalanobis is a separate geometry ablation rather than the default training
+loss. A SIGReg cell uses the official sliced Epps--Pulley statistic (17
+integration points and 256 random projections) with a `0.95/0.05`
+prediction/regularization mixture; it retains EMA and stop-gradient for matched
+architecture and is therefore labelled a SIGReg regularizer ablation, not a
+complete LeJEPA reproduction.
+
 ## iGSM and transfer splits
 
 Depth is verified symbolic operation count excluding final-answer emission:
@@ -238,11 +263,15 @@ Every stage after the flat-token diagnostic requires both an earlier
 checkpoint and a machine-readable passed admission record containing measured
 metrics. Evaluation-only stages are rejected by the trainer.
 
-Training checkpoint inheritance is exact: sentence JEPA loads token JEPA,
-commutation loads sentence JEPA, macro-action training loads commutation,
-value distillation loads macro-action training, and closed-loop reanalysis
-loads value distillation. Intervening evaluation admissions bind those exact
-training checkpoints rather than becoming checkpoint-producing trainer stages.
+For the staged baseline, checkpoint inheritance remains exact: sentence JEPA
+loads token JEPA, commutation loads sentence JEPA, macro-action training loads
+commutation, value distillation loads macro-action training, and closed-loop
+reanalysis loads value distillation. The primary jointly trained token/sentence
+model is the explicit exception: it starts from scratch, is labelled as joint
+training in its checkpoint, and becomes the sentence checkpoint consumed by
+subsequent worker and commutation gates. Intervening evaluation admissions bind
+those exact training checkpoints rather than becoming checkpoint-producing
+trainer stages.
 
 Feature fingerprints cover tokenized problem and solution contents,
 boundaries, symbolic metadata, frozen hidden states, model execution version,

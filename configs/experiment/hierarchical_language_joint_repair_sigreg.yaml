@@ -1,0 +1,18 @@
+# @package _global_
+defaults:
+  - hierarchical_language_joint_repair_euclidean
+  - _self_
+
+research:
+  experiment_label: collapse_repair_joint_euclidean_sigreg
+
+loss:
+  dynamics_geometry: euclidean
+  anti_collapse: sigreg
+  token_dynamics: 0.95
+  sentence_dynamics: 0.95
+  variance: 0.0
+  covariance: 0.0
+  sigreg: 0.05
+  sigreg_slices: 256
+  token_rollout: 0.95

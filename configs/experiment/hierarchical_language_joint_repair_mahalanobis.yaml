@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - hierarchical_language_joint_repair_euclidean
+  - _self_
+
+research:
+  experiment_label: collapse_repair_joint_mahalanobis_vicreg
+
+loss:
+  dynamics_geometry: mahalanobis

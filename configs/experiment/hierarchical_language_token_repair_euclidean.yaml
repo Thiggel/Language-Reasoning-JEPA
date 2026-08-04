@@ -1,0 +1,20 @@
+# @package _global_
+defaults:
+  - hierarchical_language_token_multistep
+  - _self_
+
+research:
+  stage: TOKEN_JEPA
+  experiment_label: collapse_repair_token_euclidean_vicreg
+  joint_token_sentence: false
+
+loss:
+  dynamics_geometry: euclidean
+  normalize_dynamics: true
+  anti_collapse: vicreg
+  token_dynamics: 25.0
+  sentence_dynamics: 0.0
+  variance: 25.0
+  covariance: 1.0
+  sigreg: 0.0
+  token_rollout: 25.0

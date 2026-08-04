@@ -104,6 +104,19 @@ def load_hierarchical_checkpoint(path: Path, device: str):
     model = HierarchicalLanguageJEPA(config).to(device).eval()
     model.load_state_dict(checkpoint["model"])
     stage = ResearchStage[checkpoint["stage"]]
-    learner = HierarchicalLanguageLearner(model, stage).to(device).eval()
+    experiment = checkpoint.get("experiment_config") or {}
+    loss = experiment.get("loss", {})
+    research = experiment.get("research", {})
+    learner = HierarchicalLanguageLearner(
+        model,
+        stage,
+        dynamics_geometry=loss.get("dynamics_geometry", "mahalanobis"),
+        normalize_dynamics=bool(loss.get("normalize_dynamics", False)),
+        anti_collapse=loss.get("anti_collapse", "vicreg"),
+        sigreg_slices=int(loss.get("sigreg_slices", 256)),
+        joint_token_sentence=bool(
+            research.get("joint_token_sentence", False)
+        ),
+    ).to(device).eval()
     learner.load_state_dict(checkpoint["learner"])
     return model, learner

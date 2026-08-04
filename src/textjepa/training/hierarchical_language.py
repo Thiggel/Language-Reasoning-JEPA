@@ -10,6 +10,8 @@ from torch import nn
 
 from textjepa.objectives.hierarchical_language import (
     EMAShrunkMahalanobis,
+    SketchedIsotropicGaussianRegularizer,
+    SquaredEuclideanMetric,
     commutation_loss,
     diagonal_gaussian_kl,
     dynamics_loss,
@@ -44,6 +46,7 @@ class DenseLossWeights:
     sentence_dynamics: float = 1.0
     variance: float = 1.0
     covariance: float = 0.04
+    sigreg: float = 1.0
     macro: float = 1.0
     commutation: float = 0.0
     token_rollout: float = 1.0
@@ -100,6 +103,11 @@ class HierarchicalLanguageLearner(nn.Module):
         covariance_shrinkage: float = 0.1,
         macro_beta: float = 1.0,
         macro_free_bits: float = 0.0,
+        dynamics_geometry: str = "mahalanobis",
+        normalize_dynamics: bool = False,
+        anti_collapse: str = "vicreg",
+        sigreg_slices: int = 256,
+        joint_token_sentence: bool = False,
     ):
         super().__init__()
         self.model = model
@@ -107,12 +115,22 @@ class HierarchicalLanguageLearner(nn.Module):
         self.weights = weights
         self.macro_beta = float(macro_beta)
         self.macro_free_bits = float(macro_free_bits)
+        self.dynamics_geometry = str(dynamics_geometry)
+        self.normalize_dynamics = bool(normalize_dynamics)
+        self.anti_collapse = str(anti_collapse)
+        self.joint_token_sentence = bool(joint_token_sentence)
         if not 0 <= covariance_momentum < 1:
             raise ValueError("covariance momentum must be in [0, 1)")
         if not 0 <= covariance_shrinkage <= 1:
             raise ValueError("covariance shrinkage must be in [0, 1]")
         if macro_beta < 0 or macro_free_bits < 0:
             raise ValueError("macro beta and free bits must be nonnegative")
+        if self.dynamics_geometry not in {"euclidean", "mahalanobis"}:
+            raise ValueError("unknown dynamics geometry")
+        if self.anti_collapse not in {"vicreg", "sigreg"}:
+            raise ValueError("unknown anti-collapse regularizer")
+        if weights.commutation and self.stage < ResearchStage.CROSS_LEVEL:
+            raise ValueError("commutation is gated until cross-level prediction")
         config = model.config
         if self.stage >= ResearchStage.MACRO_ACTION and model.macro_actions is None:
             raise ValueError(
@@ -120,15 +138,43 @@ class HierarchicalLanguageLearner(nn.Module):
             )
         if self.stage >= ResearchStage.VALUE_DISTILLATION and model.value is None:
             raise ValueError("value stages require enable_value=True")
-        self.token_metric = EMAShrunkMahalanobis(
-            config.d_token, covariance_momentum, covariance_shrinkage
+        def metric(dimension: int) -> nn.Module:
+            if self.dynamics_geometry == "mahalanobis":
+                return EMAShrunkMahalanobis(
+                    dimension,
+                    covariance_momentum,
+                    covariance_shrinkage,
+                    normalized=self.normalize_dynamics,
+                )
+            return SquaredEuclideanMetric(
+                dimension, normalized=self.normalize_dynamics
+            )
+        self.token_metric = metric(config.d_token)
+        self.sentence_metric = metric(config.d_sentence)
+        self.token_sigreg = SketchedIsotropicGaussianRegularizer(
+            config.d_token, num_slices=sigreg_slices
         )
-        self.sentence_metric = EMAShrunkMahalanobis(
-            config.d_sentence, covariance_momentum, covariance_shrinkage
+        self.sentence_sigreg = SketchedIsotropicGaussianRegularizer(
+            config.d_sentence, num_slices=sigreg_slices
         )
-        if weights.commutation and self.stage < ResearchStage.CROSS_LEVEL:
-            raise ValueError("commutation is gated until cross-level prediction")
 
+    def _anti_collapse_losses(
+        self,
+        prefix: str,
+        states: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        if self.anti_collapse == "sigreg":
+            regularizer = (
+                self.token_sigreg if prefix == "token"
+                else self.sentence_sigreg
+            )
+            return {f"{prefix}_sigreg": regularizer(states, mask)}
+        variance, covariance = vicreg_floor_and_covariance(states, mask)
+        return {
+            f"{prefix}_variance": variance,
+            f"{prefix}_covariance": covariance,
+        }
     def forward(
         self,
         hidden: torch.Tensor,
@@ -171,7 +217,7 @@ class HierarchicalLanguageLearner(nn.Module):
             <= self.stage
             < ResearchStage.VALUE_DISTILLATION
         ) or self.stage == ResearchStage.CLOSED_LOOP_REANALYSIS
-        include_token_dynamics = self.stage in {
+        include_token_dynamics = self.joint_token_sentence or self.stage in {
             ResearchStage.TOKEN_JEPA,
             ResearchStage.CLOSED_LOOP_REANALYSIS,
         }
@@ -199,11 +245,9 @@ class HierarchicalLanguageLearner(nn.Module):
                 output["token_predictions"], output["token_targets"],
                 output["token_valid"], self.token_metric,
             )
-            token_var, token_cov = vicreg_floor_and_covariance(
-                output["token_states"], output["token_valid"]
-            )
-            losses["token_variance"] = token_var
-            losses["token_covariance"] = token_cov
+            losses.update(self._anti_collapse_losses(
+                "token", output["token_states"], output["token_valid"]
+            ))
         if token_rollout_actions is not None:
             if self.stage < ResearchStage.TOKEN_JEPA:
                 raise ValueError("recursive rollout is gated by counterfactual stage")
@@ -233,11 +277,10 @@ class HierarchicalLanguageLearner(nn.Module):
                 output["sentence_predictions"], output["sentence_targets"],
                 output["sentence_valid"], self.sentence_metric,
             )
-            sentence_var, sentence_cov = vicreg_floor_and_covariance(
-                output["sentence_states"], output["sentence_valid"]
-            )
-            losses["sentence_variance"] = sentence_var
-            losses["sentence_covariance"] = sentence_cov
+            losses.update(self._anti_collapse_losses(
+                "sentence", output["sentence_states"],
+                output["sentence_valid"],
+            ))
 
         if self.weights.commutation:
             if self.stage < ResearchStage.DYNAMIC_COMMUTATION:
@@ -327,19 +370,31 @@ class HierarchicalLanguageLearner(nn.Module):
 
         total = hidden.sum() * 0
         if "token_dynamics" in losses:
-            total = (
-                total
-                + self.weights.token_dynamics * losses["token_dynamics"]
-                + self.weights.variance * losses["token_variance"]
-                + self.weights.covariance * losses["token_covariance"]
-            )
+            total = total + self.weights.token_dynamics * losses[
+                "token_dynamics"
+            ]
+            if self.anti_collapse == "vicreg":
+                total = (
+                    total
+                    + self.weights.variance * losses["token_variance"]
+                    + self.weights.covariance * losses["token_covariance"]
+                )
+            else:
+                total = total + self.weights.sigreg * losses["token_sigreg"]
         if "sentence_dynamics" in losses:
-            total = (
-                total
-                + self.weights.sentence_dynamics * losses["sentence_dynamics"]
-                + self.weights.variance * losses["sentence_variance"]
-                + self.weights.covariance * losses["sentence_covariance"]
-            )
+            total = total + self.weights.sentence_dynamics * losses[
+                "sentence_dynamics"
+            ]
+            if self.anti_collapse == "vicreg":
+                total = (
+                    total
+                    + self.weights.variance * losses["sentence_variance"]
+                    + self.weights.covariance * losses["sentence_covariance"]
+                )
+            else:
+                total = total + self.weights.sigreg * losses[
+                    "sentence_sigreg"
+                ]
         if "macro" in losses:
             total = total + self.weights.macro * losses["macro"]
         if "commutation" in losses:
@@ -462,7 +517,27 @@ class HierarchicalLanguageLearner(nn.Module):
             prediction, target, valid, self.token_metric
         )
         losses = {"counterfactual_token": token_loss}
-        total = token_loss
+        total = self.weights.token_dynamics * token_loss
+        replay_regularization = self._anti_collapse_losses(
+            "token", suffix, valid
+        )
+        replay_regularization = {
+            f"counterfactual_{name}": value
+            for name, value in replay_regularization.items()
+        }
+        losses.update(replay_regularization)
+        if self.anti_collapse == "vicreg":
+            total = (
+                total
+                + self.weights.variance
+                * losses["counterfactual_token_variance"]
+                + self.weights.covariance
+                * losses["counterfactual_token_covariance"]
+            )
+        else:
+            total = total + self.weights.sigreg * losses[
+                "counterfactual_token_sigreg"
+            ]
         if rollout_horizon not in {1, 2, 4, 8}:
             raise ValueError("counterfactual rollout horizon must be 1/2/4/8")
         if rollout_horizon > 1:
@@ -569,7 +644,38 @@ class HierarchicalLanguageLearner(nn.Module):
                 sentence_prediction, target_state
             ).mean()
             losses["counterfactual_sentence"] = sentence_loss
-            total = total + sentence_loss
+            total = total + self.weights.sentence_dynamics * sentence_loss
+            last = lengths[indices] - 1
+            achieved_online = self.model.encode_sentence(
+                rows[torch.arange(len(indices), device=rows.device), last]
+            )
+            root_online = self.model.encode_sentence(root_hidden[indices])
+            sentence_states = torch.stack([root_online, achieved_online], 1)
+            sentence_mask = torch.ones(
+                sentence_states.shape[:2],
+                dtype=torch.bool,
+                device=sentence_states.device,
+            )
+            replay_sentence_regularization = self._anti_collapse_losses(
+                "sentence", sentence_states, sentence_mask
+            )
+            replay_sentence_regularization = {
+                f"counterfactual_{name}": value
+                for name, value in replay_sentence_regularization.items()
+            }
+            losses.update(replay_sentence_regularization)
+            if self.anti_collapse == "vicreg":
+                total = (
+                    total
+                    + self.weights.variance
+                    * losses["counterfactual_sentence_variance"]
+                    + self.weights.covariance
+                    * losses["counterfactual_sentence_covariance"]
+                )
+            else:
+                total = total + self.weights.sigreg * losses[
+                    "counterfactual_sentence_sigreg"
+                ]
         losses["total"] = total
         return total, losses
 

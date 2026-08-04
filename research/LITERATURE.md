@@ -533,3 +533,39 @@ claim, verify the primary source and current publication status.
     and data efficiency. Add one small non-arithmetic language-action domain.
   - Treat effective rank, global probes, reconstruction, PCA/t-SNE/UMAP, and
     exhaustive FLOP matching as secondary diagnostics rather than core claims.
+
+## 2026-08-04 — anti-collapse regularizer for nested language JEPA
+
+- Decision: whether SIGReg should replace VICReg in the immediate token-versus-
+  joint nested collapse-repair experiment.
+- Primary sources:
+  - LeJEPA paper: <https://arxiv.org/abs/2511.08544>
+  - Official LeJEPA implementation: <https://github.com/galilai-group/lejepa>
+  - VICReg paper and code: <https://arxiv.org/abs/2105.04906> and
+    <https://github.com/facebookresearch/vicreg>
+- Applicable claims:
+  - LeJEPA constrains embeddings toward an isotropic Gaussian with SIGReg by
+    applying an Epps--Pulley normality test along random one-dimensional
+    projections. The official example uses 17 test points and 1024 slices.
+  - The method is presented as a replacement for EMA/stop-gradient heuristics,
+    but its distributional regularizer can still be evaluated inside our
+    fixed EMA/stop-gradient architecture as an explicitly labelled ablation.
+  - Standard VICReg gives the variance and covariance terms materially larger
+    scale than our failed recipe did after accounting for whether predictive
+    error is summed or averaged over representation coordinates.
+- Limitations:
+  - LeJEPA's evidence is primarily image representation learning with multiple
+    augmented views, not causal token and reasoning-step transitions.
+  - Its batch distribution and projector conventions do not establish that an
+    isotropic Gaussian is the best controllable planning geometry for language.
+  - Changing regularizer, prediction geometry, and hierarchy simultaneously
+    would make the collapse-repair result uninterpretable.
+- Design change:
+  - Use dimension-normalized Euclidean prediction with VICReg as the primary
+    matched token-only versus joint two-level comparison.
+  - Apply anti-collapse regularization at every optimizer step that updates an
+    online encoder, including counterfactual replay, and at both nested levels.
+  - Run joint Mahalanobis plus VICReg as a geometry ablation and joint
+    normalized-Euclidean plus SIGReg as a separately labelled regularizer
+    ablation. Retain EMA and stop-gradient in every cell for architecture
+    matching; do not call the SIGReg cell a faithful reproduction of LeJEPA.

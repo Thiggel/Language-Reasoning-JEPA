@@ -27,6 +27,7 @@ class EMAShrunkMahalanobis(nn.Module):
         momentum: float = 0.99,
         shrinkage: float = 0.1,
         epsilon: float = 1e-4,
+        normalized: bool = False,
     ):
         super().__init__()
         if dimension < 1:
@@ -37,6 +38,7 @@ class EMAShrunkMahalanobis(nn.Module):
         self.momentum = float(momentum)
         self.shrinkage = float(shrinkage)
         self.epsilon = float(epsilon)
+        self.normalized = bool(normalized)
         self.register_buffer("mean", torch.zeros(dimension))
         self.register_buffer("covariance", torch.eye(dimension))
         self.register_buffer("updates", torch.zeros((), dtype=torch.long))
@@ -89,7 +91,33 @@ class EMAShrunkMahalanobis(nn.Module):
     def forward(self, left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
         difference = left - right
         whitened = self.whiten(difference)
-        return whitened.square().sum(-1)
+        distance = whitened.square().sum(-1)
+        return distance / self.dimension if self.normalized else distance
+
+
+class SquaredEuclideanMetric(nn.Module):
+    """Squared Euclidean discrepancy with optional coordinate averaging."""
+
+    def __init__(self, dimension: int, normalized: bool = True):
+        super().__init__()
+        if dimension < 1:
+            raise ValueError("dimension must be positive")
+        self.dimension = int(dimension)
+        self.normalized = bool(normalized)
+        self.register_buffer("identity", torch.eye(self.dimension))
+
+    def update(
+        self, states: torch.Tensor, mask: torch.Tensor | None = None
+    ) -> None:
+        del states, mask
+
+    def matrix(self) -> torch.Tensor:
+        scale = 1.0 / self.dimension if self.normalized else 1.0
+        return self.identity * scale
+
+    def forward(self, left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
+        distance = (left - right).square().sum(-1)
+        return distance / self.dimension if self.normalized else distance
 
 
 def terminal_set_discrepancy(
@@ -136,6 +164,63 @@ def vicreg_floor_and_covariance(
     off_diagonal = covariance - covariance.diag().diag()
     decorrelation = off_diagonal.square().sum() / states.shape[-1]
     return variance, decorrelation
+
+
+class SketchedIsotropicGaussianRegularizer(nn.Module):
+    """SIGReg using the official sliced Epps--Pulley construction.
+
+    The statistic follows LeJEPA's reference implementation: unit Gaussian
+    directions, 17 trapezoidal characteristic-function points on [0, 3], and
+    a deterministic new sketch at each call. This project retains its EMA and
+    stop-gradient target path, so this is a regularizer ablation rather than a
+    claim to reproduce the complete LeJEPA recipe.
+    """
+
+    def __init__(
+        self,
+        dimension: int,
+        num_slices: int = 256,
+        t_max: float = 3.0,
+        num_points: int = 17,
+    ):
+        super().__init__()
+        if dimension < 1 or num_slices < 1:
+            raise ValueError("SIGReg dimensions and slices must be positive")
+        if num_points < 3 or num_points % 2 != 1 or t_max <= 0:
+            raise ValueError("invalid Epps--Pulley integration grid")
+        self.dimension = int(dimension)
+        self.num_slices = int(num_slices)
+        t = torch.linspace(0, t_max, num_points, dtype=torch.float32)
+        delta = t_max / (num_points - 1)
+        weights = torch.full((num_points,), 2 * delta, dtype=torch.float32)
+        weights[[0, -1]] = delta
+        phi = torch.exp(-0.5 * t.square())
+        self.register_buffer("t", t)
+        self.register_buffer("phi", phi)
+        self.register_buffer("weights", weights * phi)
+        self.register_buffer("global_step", torch.zeros((), dtype=torch.long))
+
+    def forward(self, states: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+        samples = states.reshape(-1, states.shape[-1])[mask.reshape(-1)]
+        if len(samples) < 2:
+            return states.sum() * 0
+        generator = torch.Generator(device=samples.device)
+        generator.manual_seed(int(self.global_step))
+        directions = torch.randn(
+            self.dimension,
+            self.num_slices,
+            device=samples.device,
+            dtype=samples.dtype,
+            generator=generator,
+        )
+        directions = directions / directions.norm(dim=0).clamp_min(1e-12)
+        self.global_step.add_(1)
+        projected = (samples @ directions).float()
+        phase = projected.unsqueeze(-1) * self.t
+        cosine = phase.cos().mean(0)
+        sine = phase.sin().mean(0)
+        error = (cosine - self.phi).square() + sine.square()
+        return ((error @ self.weights) * len(samples)).mean()
 
 
 def dynamics_loss(
