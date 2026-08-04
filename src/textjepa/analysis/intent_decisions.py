@@ -149,6 +149,81 @@ def aggregate_rank_metrics(rows: Iterable[dict]) -> dict:
     }
 
 
+def spearman_tied(left: Iterable[float], right: Iterable[float]) -> float | None:
+    """Spearman correlation with deterministic average ranks for ties."""
+
+    left_array = np.asarray(list(left), dtype=np.float64)
+    right_array = np.asarray(list(right), dtype=np.float64)
+    if left_array.shape != right_array.shape or left_array.ndim != 1:
+        raise ValueError("Spearman inputs must be aligned vectors")
+    left_rank, right_rank = _average_ranks(left_array), _average_ranks(right_array)
+    if left_rank.std() == 0 or right_rank.std() == 0:
+        return None
+    return float(np.corrcoef(left_rank, right_rank)[0, 1])
+
+
+def summarize_depth_decision(
+    sequences: list[list[int | None]],
+    sequence_costs: Iterable[float],
+    endpoint_remaining: Iterable[float],
+    root_exact_cost: dict[int, int],
+    root_is_necessary: dict[int, bool],
+    one_step_cost: dict[int, float],
+) -> tuple[dict, list[dict]]:
+    """Summarize sequence selection and root-action ordering for one state."""
+
+    costs = np.asarray(list(sequence_costs), dtype=np.float64)
+    remaining = np.asarray(list(endpoint_remaining), dtype=np.float64)
+    if len(sequences) != len(costs) or costs.shape != remaining.shape:
+        raise ValueError("sequences, costs, and endpoint labels must align")
+    roots = sorted(root_exact_cost)
+    rows = []
+    deployed_root_costs = []
+    root_only_costs = []
+    oracle_endpoint_costs = []
+    labels = []
+    exact = []
+    for root in roots:
+        indices = np.asarray(
+            [index for index, sequence in enumerate(sequences) if sequence[0] == root]
+        )
+        selected = int(indices[np.argmin(costs[indices])])
+        deployed = float(costs[selected])
+        endpoint = float(remaining[selected])
+        best_endpoint = float(remaining[indices].min())
+        deployed_root_costs.append(deployed)
+        root_only_costs.append(float(one_step_cost[root]))
+        oracle_endpoint_costs.append(best_endpoint)
+        labels.append(root_is_necessary[root])
+        exact.append(float(root_exact_cost[root]))
+        rows.append({
+            "root": int(root),
+            "rollouts": int(len(indices)),
+            "deployed_root_score": deployed,
+            "one_step_root_score": float(one_step_cost[root]),
+            "selected_endpoint_remaining": endpoint,
+            "best_endpoint_remaining": best_endpoint,
+            "within_root_endpoint_regret": endpoint - best_endpoint,
+            "score_min": float(costs[indices].min()),
+            "score_mean": float(costs[indices].mean()),
+            "score_std": float(costs[indices].std()),
+            "selection_optimism": float(costs[indices].mean() - costs[indices].min()),
+            "necessary": bool(root_is_necessary[root]),
+            "root_exact_cost": int(root_exact_cost[root]),
+        })
+    metrics = {
+        "deployed_terminal_score": rank_metrics(deployed_root_costs, labels, exact),
+        "one_step_root_score": rank_metrics(root_only_costs, labels, exact),
+        "oracle_endpoint_score": rank_metrics(oracle_endpoint_costs, labels, exact),
+        "sequence_score_endpoint_spearman": spearman_tied(costs, remaining),
+        "selected_sequence_endpoint_regret": float(
+            remaining[int(np.argmin(costs))] - remaining.min()
+        ),
+        "selection_optimism": float(costs.mean() - costs.min()),
+    }
+    return metrics, rows
+
+
 def transition_metrics(
     predicted: np.ndarray,
     target: np.ndarray,

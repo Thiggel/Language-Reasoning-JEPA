@@ -62,7 +62,7 @@ summary = {
     "protocol": "balanced-fixed-depth-absorbing-v2",
     "candidate_privilege": {
         "depth_1": "common currently feasible action menu",
-        "depth_gt_1": "seeded reference-graph future feasible rollouts",
+        "depth_gt_1": "symbolic-future-action-tree: seeded reference-graph future feasible rollouts",
     },
     "validity_controls": controls,
     "invariants": {
