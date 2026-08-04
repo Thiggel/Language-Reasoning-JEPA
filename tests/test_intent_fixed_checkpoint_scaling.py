@@ -9,6 +9,9 @@ def test_scaling_runner_keeps_checkpoint_fixed_and_labels_privilege():
     assert "symbolic-future-action-tree" in script
     assert 'measure_flops=true' in script
     assert 'compute_out=${stem}_compute.json' in script
+    assert "symbolic_oracle_goal" in script
+    assert "symbolic_exact_distance" in script
+    assert '"energy=$energy"' in script
 
 
 def test_plan_compute_metadata_is_a_sidecar():
@@ -17,5 +20,6 @@ def test_plan_compute_metadata_is_a_sidecar():
     assert "compute_out: null" in config
     assert '"checkpoint_sha256": digest' in plan
     assert '"oracle_future_action_tree"' in plan
+    assert '"energy": str(cfg.get("energy", "value"))' in plan
     assert "measured_flops_per_episode" in plan
     assert "results[" not in plan

@@ -100,7 +100,7 @@ class LatentPlanner:
         device: torch.device,
         lookahead: int = 1,
         max_expand: int = 64,
-        energy: str = "value",  # "value" | "oracle_goal"
+        energy: str = "value",  # value | oracle_goal | symbolic_distance
         hierarchy: bool = False,  # score K-step sequences with F_hi jumps
         simulator: str = "latent",  # "latent" (F rollouts) | "symbolic"
         allow_oracle_future_actions: bool = False,
@@ -121,6 +121,13 @@ class LatentPlanner:
         self.hierarchy = hierarchy
         self.simulator = simulator
         self.allow_oracle_future_actions = allow_oracle_future_actions
+        if energy == "symbolic_distance" and simulator != "symbolic":
+            raise ValueError(
+                "symbolic_distance is an oracle diagnostic and requires "
+                "simulator=symbolic"
+            )
+        if energy not in {"value", "oracle_goal", "symbolic_distance"}:
+            raise ValueError(f"unknown energy: {energy}")
         if score_control not in {"model", "shuffle", "zero"}:
             raise ValueError(f"unknown score control: {score_control}")
         self.score_control = score_control
@@ -260,6 +267,10 @@ class LatentPlanner:
         goal_state: torch.Tensor | None,
     ) -> torch.Tensor:
         n = cur.shape[0]
+        if self.energy == "symbolic_distance":
+            raise RuntimeError(
+                "symbolic_distance must be evaluated from exact environment states"
+            )
         if (
             getattr(self.model, "geo_rank_score_mode", "value") == "distance"
             and goal_state is None
@@ -404,6 +415,16 @@ class LatentPlanner:
         learned energy — no latent imagination at all."""
         active = [[action for action in sequence if action is not None]
                   for sequence in seqs]
+        if self.energy == "symbolic_distance":
+            # Perfect cost-to-go control. It uses the hidden symbolic state and
+            # is therefore never a deployable model score.
+            costs = []
+            for actions in active:
+                clone = env.clone()
+                for action in actions:
+                    clone.step(action)
+                costs.append(float(clone.remaining_necessary()))
+            return torch.tensor(costs, device=self.device)
         if getattr(self.model, "geo_rank_score_mode", "value") == "direct":
             # The direct scorer consumes the exact predecessor state and the
             # final action. Using value_head here would silently evaluate an

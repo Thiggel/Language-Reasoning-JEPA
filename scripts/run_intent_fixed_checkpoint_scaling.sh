@@ -23,9 +23,15 @@ sha256sum "$checkpoint" > "$RUN_DIR/checkpoint.sha256"
 for control in $controls; do
   simulator=latent
   score_control=$control
+  energy=value
   case "$control" in
     model|zero|shuffle) ;;
     symbolic) simulator=symbolic; score_control=model ;;
+    oracle_goal) score_control=model; energy=oracle_goal ;;
+    symbolic_oracle_goal)
+      simulator=symbolic; score_control=model; energy=oracle_goal ;;
+    symbolic_exact_distance)
+      simulator=symbolic; score_control=model; energy=symbolic_distance ;;
     *) echo "invalid scaling control: $control" >&2; exit 2;;
   esac
   for cell in $cells; do
@@ -44,7 +50,7 @@ for control in $controls; do
         "n_episodes=$episodes" "seed=$seed" "slack=$slack" \
         "lookahead=$depth" "max_expand=$cap" \
         "allow_oracle_future_actions=$oracle" energy=value \
-        "score_control=$score_control" "simulator=$simulator" \
+        "score_control=$score_control" "simulator=$simulator" "energy=$energy" \
         measure_flops=true "out=${stem}.json" "compute_out=${stem}_compute.json"
     done
   done

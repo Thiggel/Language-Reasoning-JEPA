@@ -141,6 +141,25 @@ def test_multistep_search_requires_oracle_action_opt_in():
     assert planner.allow_oracle_future_actions is True
 
 
+def test_symbolic_distance_is_an_explicit_exact_cost_to_go_control():
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=61).problem(0)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+    ).eval()
+    with pytest.raises(ValueError, match="requires simulator=symbolic"):
+        LatentPlanner(model, vocab, torch.device("cpu"), energy="symbolic_distance")
+    planner = LatentPlanner(
+        model, vocab, torch.device("cpu"), lookahead=1,
+        simulator="symbolic", energy="symbolic_distance",
+    )
+    result = planner.plan_episode(problem, slack=0, seed=23)
+    assert result.solved
+    assert result.n_distractor == 0
+
+
 def test_hierarchical_low_horizon_requires_oracle_action_opt_in():
     with pytest.raises(ValueError, match="hierarchy diagnostic"):
         HierarchicalLatentPlanner(

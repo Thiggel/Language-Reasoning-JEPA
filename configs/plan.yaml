@@ -17,7 +17,10 @@ lookahead: 1
 # an explicitly labeled oracle-action diagnostic.
 allow_oracle_future_actions: false
 max_expand: 64
-energy: value  # value | oracle_goal (oracle diagnostic, uses the solution)
+# oracle_goal encodes the solved trajectory and scores representation distance.
+# symbolic_distance reads exact remaining steps from the environment and also
+# requires simulator=symbolic. Both are explicitly oracle diagnostics.
+energy: value  # value | oracle_goal | symbolic_distance
 score_control: model  # model | shuffle | zero (candidate-leakage controls)
 simulator: latent  # latent | symbolic (true environment outcomes; diagnostic)
 seed: 321

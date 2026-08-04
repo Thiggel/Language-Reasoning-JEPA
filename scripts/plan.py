@@ -108,6 +108,7 @@ def main(cfg: DictConfig) -> None:
             "oracle_future_action_tree": bool(cfg.allow_oracle_future_actions),
             "score_control": str(cfg.get("score_control", "model")),
             "simulator": str(cfg.get("simulator", "latent")),
+            "energy": str(cfg.get("energy", "value")),
             "candidate_protocol": "balanced-fixed-depth-absorbing-v2",
             "flop_measurement_requested": measure_flops,
             "flop_measurement_supported": FlopCounterMode is not None,
