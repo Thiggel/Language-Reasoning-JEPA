@@ -389,8 +389,10 @@ class LatentPlanner:
 
     def _symbolic_costs(
         self,
+        problem: Problem,
         env,
         step_texts: list[str],
+        s: torch.Tensor,
         s0: torch.Tensor,
         prompt_tokens: torch.Tensor,
         prompt_mask: torch.Tensor,
@@ -400,12 +402,63 @@ class LatentPlanner:
         """Upper-bound control: execute each candidate sequence in the
         SYMBOLIC environment, encode the true resulting state, apply the
         learned energy — no latent imagination at all."""
-        all_texts = []
-        for q in seqs:
-            c = env.clone()
-            all_texts.append(
-                step_texts + [c.step(i) for i in q if i is not None]
+        active = [[action for action in sequence if action is not None]
+                  for sequence in seqs]
+        if getattr(self.model, "geo_rank_score_mode", "value") == "direct":
+            # The direct scorer consumes the exact predecessor state and the
+            # final action. Using value_head here would silently evaluate an
+            # untrained module for direct-ranker checkpoints.
+            predecessor_texts = []
+            final_actions = []
+            for actions in active:
+                clone = env.clone()
+                predecessor_texts.append(
+                    step_texts + [clone.step(action) for action in actions[:-1]]
+                )
+                final_actions.append(actions[-1])
+            n = len(predecessor_texts)
+            nonempty = [index for index, text in enumerate(predecessor_texts) if text]
+            predecessor = s.expand(n, -1).clone()
+            if nonempty:
+                selected_texts = [predecessor_texts[index] for index in nonempty]
+                C = max(len(text) for text in selected_texts)
+                L = max(
+                    len(self.vocab.encode(sentence))
+                    for text in selected_texts for sentence in text
+                )
+                tokens = torch.full(
+                    (len(nonempty), C, L), self.vocab.pad_id,
+                    dtype=torch.long, device=self.device,
+                )
+                mask = torch.zeros(
+                    len(nonempty), C, dtype=torch.bool, device=self.device
+                )
+                for row, text in enumerate(selected_texts):
+                    for column, sentence in enumerate(text):
+                        ids = self.vocab.encode(sentence)
+                        tokens[row, column, :len(ids)] = torch.tensor(
+                            ids, device=self.device
+                        )
+                        mask[row, column] = True
+                _, states = self.model.encode_states(
+                    prompt_tokens.expand(len(nonempty), -1, -1),
+                    prompt_mask.expand(len(nonempty), -1), tokens, mask,
+                )
+                rows = torch.tensor(nonempty, device=self.device)
+                predecessor[rows] = states[
+                    torch.arange(len(nonempty), device=self.device),
+                    mask.sum(1) - 1,
+                ]
+            action_codes = self._action_codes(problem, final_actions)
+            score = self.model.core.direct_action_rank_head(
+                predecessor, s0.expand(n, -1), action_codes
             )
+            return float(self.lookahead) + score
+
+        all_texts = []
+        for q in active:
+            c = env.clone()
+            all_texts.append(step_texts + [c.step(i) for i in q])
         n = len(all_texts)
         C = max(len(t) for t in all_texts)
         L = max(
@@ -446,7 +499,7 @@ class LatentPlanner:
         if self.simulator == "symbolic" and sym_ctx is not None:
             env, step_texts, pt, pm = sym_ctx
             total = self._symbolic_costs(
-                env, step_texts, s0, pt, pm, seqs, goal_state
+                problem, env, step_texts, s, s0, pt, pm, seqs, goal_state
             )
             return seqs[self._controlled_argmin(total, score_seed)]
         K = max(int(self.model.core.macro_k), 1)

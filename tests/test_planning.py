@@ -94,6 +94,25 @@ def test_score_controls_are_deterministic_and_reject_unknown_values():
         LatentPlanner(None, None, torch.device("cpu"), score_control="bad")
 
 
+def test_symbolic_direct_control_uses_direct_head_end_to_end():
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=53).problem(0)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        geo_rank_score_mode="direct",
+    ).eval()
+    planner = LatentPlanner(
+        model, vocab, torch.device("cpu"), lookahead=2,
+        max_expand=8, simulator="symbolic",
+        allow_oracle_future_actions=True,
+    )
+    result = planner.plan_episode(problem, slack=0, seed=17)
+    assert isinstance(result.solved, bool)
+    assert result.steps == problem.n_necessary_steps
+
+
 def test_planner_runs_end_to_end():
     vocab = build_vocab(23)
     ds = IGSMDataset(vocab, size=3, seed=0)
