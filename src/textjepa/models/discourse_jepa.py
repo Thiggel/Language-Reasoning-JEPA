@@ -106,6 +106,7 @@ class DiscourseJEPA(nn.Module):
         d_macro: int = 8,
         value_detach: bool = True,
         geo_rank_score_mode: str = "value",
+        geo_rank_label_control: str = "true",
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
@@ -143,6 +144,11 @@ class DiscourseJEPA(nn.Module):
                 f"unknown GAR score mode: {geo_rank_score_mode}"
             )
         self.geo_rank_score_mode = geo_rank_score_mode
+        if geo_rank_label_control not in {"true", "cyclic_shuffle"}:
+            raise ValueError(
+                f"unknown GAR label control: {geo_rank_label_control}"
+            )
+        self.geo_rank_label_control = geo_rank_label_control
         if action_support_states not in {"none", "true", "all"}:
             raise ValueError(
                 f"unknown action-support state mode: {action_support_states}"
@@ -759,12 +765,41 @@ class DiscourseJEPA(nn.Module):
             e_alt = (
                 ln(preds_alt) - ln(goal).unsqueeze(1)
             ).abs().mean(-1)
+        # Negative control for the information-content claim. It preserves
+        # the exact candidate set, counterfactual transitions, label marginal,
+        # objective weights, and compute, while destroying only the within-
+        # state mapping from an action to its continuation quality. Apply it
+        # only while training: audits must use the real continuation ordering.
+        ga_label = d
+        if self.training and self.geo_rank_label_control == "cyclic_shuffle":
+            ga_label = self._cyclic_shuffle_valid_labels(d, candidate_valid)
         out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
-        out.extras["ga_label"] = d
+        out.extras["ga_label"] = ga_label
         out.extras["ga_valid"] = candidate_valid
         out.extras["ga_cf_pred"] = cf_preds_alt
         out.extras["ga_cf_target"] = s_alt_true
         out.extras["ga_cf_valid"] = ga_valid
+
+    @staticmethod
+    def _cyclic_shuffle_valid_labels(
+        labels: torch.Tensor, valid: torch.Tensor
+    ) -> torch.Tensor:
+        """Randomly rotate valid candidate labels within each example.
+
+        A non-zero rotation is used whenever at least two candidates are
+        valid, so this cannot silently become an identity control. Invalid
+        padding positions are untouched. The global torch RNG makes the
+        operation seed-reproducible with the rest of training.
+        """
+        shuffled = labels.clone()
+        for row in range(labels.shape[0]):
+            indices = valid[row].nonzero(as_tuple=False).flatten()
+            count = int(indices.numel())
+            if count < 2:
+                continue
+            shift = int(torch.randint(1, count, (), device=labels.device))
+            shuffled[row, indices] = labels[row, indices.roll(shift)]
+        return shuffled
 
     @torch.no_grad()
     def _greedy_geo_labels(

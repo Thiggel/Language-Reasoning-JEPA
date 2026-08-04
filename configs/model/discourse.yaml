@@ -29,6 +29,7 @@ dense_rollout_depth: 0
 high_dense_rollout_depth: 0
 value_detach: true
 geo_rank_score_mode: value  # value | distance (oracle terminal) | direct
+geo_rank_label_control: "true"  # true | cyclic_shuffle (training-only control)
 dropout: 0.0
 geo_proj: false
 state_target: ema

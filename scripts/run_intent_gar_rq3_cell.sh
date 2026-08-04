@@ -7,8 +7,8 @@ set -euo pipefail
 }
 py=${1:?python executable}
 lr=${2:?learning rate}
-mode=${3:?distance or direct}
-case "$mode" in distance|direct) ;; *) echo "bad mode: $mode" >&2; exit 2;; esac
+mode=${3:?value, distance, or direct}
+case "$mode" in value|distance|direct) ;; *) echo "bad mode: $mode" >&2; exit 2;; esac
 
 export PLANNER_ENERGY=$([[ "$mode" == distance ]] && echo oracle_goal || echo value)
 snapshot_every=${SNAPSHOT_EVERY_STEPS:-3000}

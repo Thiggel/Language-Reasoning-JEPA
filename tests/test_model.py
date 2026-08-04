@@ -447,6 +447,42 @@ def test_gar_direct_ranker_bypasses_successor_predictor(setup):
     assert not any(p.requires_grad for p in model.core.value_head.parameters())
 
 
+def test_gar_cyclic_label_control_preserves_only_label_marginals():
+    labels = torch.tensor([
+        [1.0, 2.0, 3.0, 99.0],
+        [4.0, 5.0, 88.0, 77.0],
+        [6.0, 66.0, 55.0, 44.0],
+    ])
+    valid = torch.tensor([
+        [True, True, True, False],
+        [True, True, False, False],
+        [True, False, False, False],
+    ])
+    torch.manual_seed(7)
+    shuffled = DiscourseJEPA._cyclic_shuffle_valid_labels(labels, valid)
+
+    assert torch.equal(shuffled[~valid], labels[~valid])
+    for row in range(labels.shape[0]):
+        assert torch.equal(
+            shuffled[row, valid[row]].sort().values,
+            labels[row, valid[row]].sort().values,
+        )
+    assert not torch.equal(shuffled[0, valid[0]], labels[0, valid[0]])
+    assert not torch.equal(shuffled[1, valid[1]], labels[1, valid[1]])
+    assert torch.equal(shuffled[2], labels[2])
+
+
+def test_gar_rejects_unknown_label_control(setup):
+    vocab, _, _ = setup
+    with pytest.raises(ValueError, match="unknown GAR label control"):
+        DiscourseJEPA(
+            vocab_size=len(vocab), pad_id=vocab.pad_id,
+            d_model=64, chunk_layers=1, chunk_heads=2,
+            state_layers=2, state_heads=2, d_action=8, d_macro=4,
+            geo_rank_label_control="not-a-control",
+        )
+
+
 def test_gar_geometry_only_shapes_predictor_without_score_head(setup):
     vocab, _, _ = setup
     dataset = IGSMDataset(vocab, size=4, seed=37, geo_rank_k=2)
