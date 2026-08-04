@@ -29,6 +29,9 @@ length_normalize: true
 # Count the actual tensor FLOPs used by the full candidate-scoring evaluator.
 # Disabled by default because dispatcher tracing adds evaluation overhead.
 measure_flops: false
+# Optional sidecar for compute metadata. Keeping this separate from ``out``
+# preserves the long-standing planning-metrics JSON schema.
+compute_out: null
 
 hydra:
   run:

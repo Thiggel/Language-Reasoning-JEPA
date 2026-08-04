@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+import hashlib
 import json
 from pathlib import Path
 
@@ -30,35 +32,46 @@ def main(cfg: DictConfig) -> None:
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
     device = torch.device(cfg.device)
-    if run_cfg.data.get("name", "igsm") == "igsm_real":
-        from textjepa.planning.faithful_search import (
-            FaithfulPlanner, evaluate_faithful_planning,
-        )
+    measure_flops = bool(cfg.get("measure_flops", False))
+    try:
+        from torch.utils.flop_counter import FlopCounterMode
+    except ImportError:  # pragma: no cover - depends on the cluster torch build
+        FlopCounterMode = None
+    flop_counter = (
+        FlopCounterMode(display=False)
+        if measure_flops and FlopCounterMode is not None
+        else nullcontext()
+    )
+    with flop_counter:
+        if run_cfg.data.get("name", "igsm") == "igsm_real":
+            from textjepa.planning.faithful_search import (
+                FaithfulPlanner, evaluate_faithful_planning,
+            )
 
-        planner = FaithfulPlanner(
-            model, vocab, device, lookahead=cfg.lookahead,
-            max_expand=cfg.max_expand,
-            allow_oracle_future_actions=cfg.allow_oracle_future_actions,
-        )
-        results = evaluate_faithful_planning(
-            planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
-        )
-    elif run_cfg.data.get("name", "igsm") == "igsm_edit":
-        planner = EditPlanner(model, vocab, device, energy=cfg.energy)
-        results = evaluate_edit_planning(
-            planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
-        )
-    else:
-        planner = LatentPlanner(
-            model, vocab, device, lookahead=cfg.lookahead,
-            max_expand=cfg.max_expand, energy=cfg.energy,
-            hierarchy=cfg.get("hierarchy", False),
-            simulator=cfg.get("simulator", "latent"),
-            allow_oracle_future_actions=cfg.allow_oracle_future_actions,
-        )
-        results = evaluate_planning(
-            planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
-        )
+            planner = FaithfulPlanner(
+                model, vocab, device, lookahead=cfg.lookahead,
+                max_expand=cfg.max_expand,
+                allow_oracle_future_actions=cfg.allow_oracle_future_actions,
+            )
+            results = evaluate_faithful_planning(
+                planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
+            )
+        elif run_cfg.data.get("name", "igsm") == "igsm_edit":
+            planner = EditPlanner(model, vocab, device, energy=cfg.energy)
+            results = evaluate_edit_planning(
+                planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
+            )
+        else:
+            planner = LatentPlanner(
+                model, vocab, device, lookahead=cfg.lookahead,
+                max_expand=cfg.max_expand, energy=cfg.energy,
+                hierarchy=cfg.get("hierarchy", False),
+                simulator=cfg.get("simulator", "latent"),
+                allow_oracle_future_actions=cfg.allow_oracle_future_actions,
+            )
+            results = evaluate_planning(
+                planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
+            )
     for name, metrics in results.items():
         line = "  ".join(f"{k}={v:.3f}" for k, v in metrics.items())
         print(f"{name:16s} {line}")
@@ -76,6 +89,33 @@ def main(cfg: DictConfig) -> None:
     )
     out.write_text(json.dumps(results, indent=2))
     print(f"saved to {out}")
+    if cfg.get("compute_out"):
+        total_flops = (
+            int(flop_counter.get_total_flops())
+            if measure_flops and FlopCounterMode is not None
+            else None
+        )
+        checkpoint = Path(cfg.ckpt)
+        digest = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+        compute = {
+            "checkpoint": str(checkpoint),
+            "checkpoint_sha256": digest,
+            "lookahead": int(cfg.lookahead),
+            "max_expand": int(cfg.max_expand),
+            "n_episodes": int(cfg.n_episodes),
+            "slack": int(cfg.slack),
+            "oracle_future_action_tree": bool(cfg.allow_oracle_future_actions),
+            "flop_measurement_requested": measure_flops,
+            "flop_measurement_supported": FlopCounterMode is not None,
+            "measured_eval_flops": total_flops,
+            "measured_flops_per_episode": (
+                total_flops / int(cfg.n_episodes) if total_flops is not None else None
+            ),
+        }
+        compute_path = Path(cfg.compute_out)
+        compute_path.parent.mkdir(parents=True, exist_ok=True)
+        compute_path.write_text(json.dumps(compute, indent=2) + "\n")
+        print(f"saved compute metadata to {compute_path}")
 
 
 if __name__ == "__main__":
