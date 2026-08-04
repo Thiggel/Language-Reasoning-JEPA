@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -19,7 +20,7 @@ def _run(command: list[str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", type=Path, required=True)
-    parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--output-root", type=Path)
     parser.add_argument("--config", required=True)
     parser.add_argument("--label", required=True)
     parser.add_argument("--steps", type=int, default=50000)
@@ -27,6 +28,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args()
+    if args.output_root is None:
+        run_dir = os.environ.get("RUN_DIR")
+        if not run_dir:
+            raise ValueError("--output-root or RUN_DIR is required")
+        args.output_root = Path(run_dir) / "repair"
     if args.steps < 3 or args.learning_rate <= 0:
         raise ValueError("repair training scale is invalid")
     train_features = args.source_root / "features/train.pt"
