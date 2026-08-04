@@ -1,7 +1,7 @@
 # Internal reviewer audit
 
-This audit records criticism applied during the 2026-08-04 narrative rewrite.
-It is not part of the submitted manuscript.
+The audit records criticism applied during the 2026-08-04 narrative rewrite and
+is not part of the submitted manuscript.
 
 ## Round 1: theory and accessibility
 
@@ -15,8 +15,9 @@ Likely objections:
 
 Revisions:
 
-- The paper introduces the general controlled process, then immediately states
-  the deterministic finite-horizon specialization and point-predictor caveat.
+- The paper begins with concrete paraphrase and negation examples, defines the
+  controlled process and predictive quotient, and then states the deterministic
+  finite-horizon specialization and point-predictor caveat.
 - Proposition 1 is described as standard in spirit. Its role is to define the
   required state.
 - Proposition 2 excludes settings with additional identifiability assumptions.
@@ -94,3 +95,42 @@ Revisions:
    paired episode set with paired confidence intervals.
 6. Admit test-time scaling only after fixed-work FLOP tracing and stable
    recursive prediction pass.
+
+## Round 4: adversarial submission forecast
+
+The revised narrative is coherent, but the current evidence package is not yet
+reviewer-proof. A skeptical ICLR reviewer would probably recognize a clear
+mechanism question and a useful five-seed ablation, then score the draft near
+the borderline because several claims stop at one seed and external validity is
+limited to candidate-privileged stylized iGSM.
+
+Likely strengths:
+
+- The title and abstract no longer imply a failed attempt to beat a language
+  model leaderboard.
+- The theoretical argument predicts the largest empirical ablation: exact
+  transition prediction does not identify an action-ordering metric.
+- The feasible-action interface is declared as candidate privileged and shared
+  across every model.
+- GAR names a supervision principle rather than one score-head architecture.
+- The direct-GAR and counterfactual-information controls expose the strongest
+  alternative explanation instead of avoiding it.
+
+Likely decisive objections in the current draft:
+
+- The central representation-shaping claim is not yet separated from supervised
+  readout. Detached-body, direct-GAR, and checkpoint-correlation results need
+  five seeds.
+- A single synthetic arithmetic domain cannot support a broad reasoning claim.
+- Two hundred evaluation episodes per seed leave headline differences too
+  noisy, especially for the token model. Paired confidence intervals are absent.
+- The random baseline is not complete.
+- Controlled paraphrase and negation data have not been collected, so the
+  quotient-space account lacks its most direct semantic test.
+- Test-time scaling remains a motivation rather than evidence.
+
+No change in prose can remove those objections. The manuscript now confines its
+claims to the evidence already available and leaves missing plots out rather
+than presenting decorative projections. Submission readiness requires the six
+blockers above. A second domain, paired evaluation, and the five-seed mechanism
+controls have the highest effect on the likely score.

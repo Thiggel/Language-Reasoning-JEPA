@@ -26,7 +26,7 @@ Advantage MSE weight $.50$ & $.402\pm.039$ & $.783\pm.026$ \\
 \end{table}
 
 \begin{table}[h]
-\caption{One-seed mechanism controls. These rows are exploratory. Raw distance uses an oracle-terminal embedding and is candidate privileged. GAR names the supervision. TV and direct name the scoring factorization.}
+\caption{Exploratory one-seed mechanism controls. Raw distance uses an oracle-terminal embedding and is candidate privileged. GAR names the supervision. TV and direct name the scoring factorization.}
 \label{tab:mechanism}
 \centering
 \small
@@ -63,7 +63,7 @@ Sentence LM + latent & $71.44$ & $.807$ & $.429$ & $.886$ & $-.029$ \\
 \end{table}
 
 \begin{table}[h]
-\caption{One-seed information controls across a local learning-rate screen. These controls separate meaningful counterfactual ordering from counterfactual exposure alone.}
+\caption{One-seed information controls across a local learning-rate screen, separating meaningful counterfactual ordering from counterfactual exposure alone.}
 \label{tab:information-controls}
 \centering
 \small
@@ -77,25 +77,6 @@ Direct GAR without successor auxiliaries & $7\times10^{-4}$ & $.150$ & $.560$ \\
 GAR with shuffled quality labels & $10^{-4}$ & $.015$ & $.170$ \\
 GAR with shuffled quality labels & $3\times10^{-4}$ & $.015$ & $.175$ \\
 GAR with shuffled quality labels & $7\times10^{-4}$ & $.015$ & $.175$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[h]
-\caption{Paper-suite completion matrix. Empty entries are intentional.}
-\label{tab:completion}
-\centering
-\small
-\begin{tabular}{lcccc}
-\toprule
-Experiment family & Stylized iGSM & Faithful iGSM & ProofWriter & Blocksworld / ALFWorld \\
-\midrule
-Five-seed headline & complete & \todoresult & \todoresult & \todoresult \\
-Five-seed GAR ablation & complete & \todoresult & \todoresult & \todoresult \\
-Local ordering audit & one seed & \todoresult & \todoresult & \todoresult \\
-Length OOD & partial & \todoresult & \todoresult & \todoresult \\
-Controlled minimal pairs & \todoresult & \todoresult & \todoresult & \todoresult \\
-Test-time FLOP scaling & invalid pilot & \todoresult & \todoresult & \todoresult \\
 \bottomrule
 \end{tabular}
 \end{table}

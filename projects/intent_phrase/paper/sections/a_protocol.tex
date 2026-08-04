@@ -5,16 +5,13 @@
 Headline policies observe the problem statement, prior selected intent phrases and outcomes, and a shuffled menu of actions executable at the current state. They do not observe the expert action, exact remaining distance, future action availability, terminal state, or counterfactual outcomes at evaluation. Training uses exact alternative outcomes only for declared counterfactual prediction and GAR targets.
 
 \paragraph{Target encoder.}
-The EMA encoder is updated from the online encoder and kept in evaluation mode at all times. Gradients do not enter EMA targets. Dropout is disabled in the encoder, predictor, action encoder, scorer, and target encoder. These conditions follow earlier validity tests that found stochastic or train-mode targets destabilize dense rollout supervision.
+The EMA encoder is updated from the online encoder and kept in evaluation mode at all times. Gradients do not enter EMA targets. Dropout is disabled in the encoder, predictor, action encoder, scorer, and target encoder. Earlier validity tests found that stochastic or train-mode targets destabilized dense rollout supervision.
 
-\paragraph{Paired evaluation.}
-Final comparisons will use identical generated puzzle indices, action-order seeds, and budgets across systems. We will report per-seed means, sample standard deviations, paired bootstrap intervals, and paired differences for headline claims. The currently completed five-seed results use 200 fresh validation episodes per seed. The fixed-checkpoint scaling gate uses 1,000 paired episodes.
-
-\paragraph{Test-time scaling admission.}
-A scaling figure will enter the paper only when every point uses the same paired puzzles and a fixed, measured work definition. Candidate proposal, branching, and terminal handling must not expose solution status. Recursive transition error and action ranking must be audited at each depth. Recurrent LM baselines must use the same candidate work and independently measured FLOPs. The existing pilot does not meet the complete admission rule and is excluded.
+\paragraph{Evaluation samples.}
+The completed five-seed results use 200 fresh episodes per seed. Generated puzzle indices and candidate-order seeds were not paired across methods. We therefore report sample standard deviations across seed-level rates and do not report paired confidence intervals or paired model differences.
 
 \paragraph{Tuning contract.}
-For the final suite, width-256 learning rates are screened on validation and reused within a model-dataset pair. The planned grid is $\{5\mathrm{e}{-5},7\mathrm{e}{-5},10^{-4},3\mathrm{e}{-4},5\mathrm{e}{-4},7\mathrm{e}{-4},10^{-3},3\mathrm{e}{-3},5\mathrm{e}{-3}\}$. The initial stage uses a compact subset. Five seeds are trained only after selecting the validation learning rate. Ablations reuse that rate unless they change gradient routing or loss scale.
+Width-256 learning rates are screened on validation and reused within a model-dataset pair. The grid is $\{5\mathrm{e}{-5},7\mathrm{e}{-5},10^{-4},3\mathrm{e}{-4},5\mathrm{e}{-4},7\mathrm{e}{-4},10^{-3},3\mathrm{e}{-3},5\mathrm{e}{-3}\}$. Five seeds are trained after selecting the validation learning rate. Ablations reuse that rate unless they change gradient routing or loss scale.
 
-\paragraph{Why current and historical numbers differ.}
-Historical reports used different generators, predictor variants, batch sizes, candidate interfaces, and training budgets. This draft includes only the 300,000-example paper family and matched controls retrieved from its run lineage. Older values are retained in the repository but are not combined with the current table.
+\paragraph{Historical comparability.}
+Historical reports used different generators, predictor variants, batch sizes, candidate interfaces, and training budgets. The manuscript includes only the 300,000-example paper family and matched controls retrieved from its run lineage. Older values remain in the repository but are not combined with the current table.

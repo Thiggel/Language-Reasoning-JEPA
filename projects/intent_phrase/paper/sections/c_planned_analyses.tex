@@ -7,7 +7,7 @@ For every feasible action pair at aligned histories, report pairwise ranking acc
 Compare transition-value GAR, detached-body GAR, raw-distance GAR, and direct GAR. All learned scorers receive the same histories, candidate phrases, counterfactual outcomes, ordering labels, and tuning budget. Full geometry shaping requires a gain over detached GAR in head-free local geometry. Predictive factorization requires a gain over direct GAR on at least one preregistered axis: data efficiency, compositional length, action paraphrase, altered goals, forced-error recovery, or valid multi-step simulation.
 
 \paragraph{Counterfactual information.}
-Compare full predictive GAR, counterfactual successor prediction without GAR, shuffled GAR labels, direct GAR without successor auxiliaries, and direct GAR with the same auxiliaries. This factorial separates alternative-transition coverage, meaningful quality labels, auxiliary representation learning, and successor-mediated scoring.
+Compare full predictive GAR, counterfactual successor prediction without GAR, shuffled GAR labels, direct GAR without successor auxiliaries, and direct GAR with the same auxiliaries. The factorial separates alternative-transition coverage, meaningful quality labels, auxiliary representation learning, and successor-mediated scoring.
 
 \paragraph{Controlled semantic geometry.}
 Construct paired histories for state paraphrase, action paraphrase, negation, operator swap, irrelevant entity renaming, and matched elapsed step with different true progress. Report full-space retrieval, normalized pairwise distances, and action-order preservation before any projection. Produce t-SNE and UMAP from the same frozen point set with shared hyperparameters across models. The projections are illustrations, not primary statistics.
@@ -15,8 +15,8 @@ Construct paired histories for state paraphrase, action paraphrase, negation, op
 \paragraph{Progress and residual structure.}
 Predict remaining distance from raw goal distance, GAR energy, the full latent state, and the residual after removing the estimated progress direction. A radial-progress account requires local action ordering to degrade after removal while successor retrieval and non-progress probes remain comparatively intact.
 
-\paragraph{Why sentence models lead.}
-At aligned histories, decompose errors into candidate ranking, recovery after a forced distractor, action-type calibration, and lexical-template sensitivity. Score the sentence-plus-latent model through both its generative readout and its latent readout. This localizes whether its advantage lies in state encoding, next-phrase generation, or their combination.
+\paragraph{Sentence-model errors.}
+At aligned histories, decompose errors into candidate ranking, recovery after a forced distractor, action-type calibration, and lexical-template sensitivity. Score the sentence-plus-latent model through both its generative readout and its latent readout. The comparison localizes whether its advantage lies in state encoding, next-phrase generation, or their combination.
 
 \paragraph{Test-time computation.}
 The scaling experiment is admitted only after a fixed-work evaluator, stable recursive transition audit, and calibrated recurrent baselines pass. Report every tested compute point on paired puzzles. A decrease with depth must first be localized to transition drift, score calibration, proposal breadth, or terminal handling. It is not presented as a test-time-scaling result by itself.

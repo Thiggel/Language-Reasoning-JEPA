@@ -1,33 +1,42 @@
 \begin{tikzpicture}[
     x=1cm,y=1cm,
-    state/.style={circle,draw=black!70,fill=white,minimum size=5.2mm,inner sep=0pt},
-    goal/.style={star,star points=5,draw=black!80,fill=green!20,minimum size=7mm,inner sep=0pt},
-    action/.style={-{Latex[length=2mm]},thick},
-    preference/.style={-{Latex[length=2mm]},very thick,blue!65!black},
-    note/.style={font=\scriptsize,align=center}
+    state/.style={circle,draw=black!65,fill=white,minimum size=7mm,inner sep=0pt,font=\scriptsize},
+    positive/.style={circle,draw=blue!65!black,fill=blue!9,minimum size=7mm,inner sep=0pt,font=\scriptsize},
+    negative/.style={circle,draw=orange!75!black,fill=orange!12,minimum size=7mm,inner sep=0pt,font=\scriptsize},
+    goal/.style={star,star points=5,draw=green!45!black,fill=green!14,minimum size=7.5mm,inner sep=0pt,font=\scriptsize},
+    transition/.style={-{Latex[length=2mm]},thick,black!75},
+    distline/.style={densely dashed,thick,black!35},
+    label/.style={font=\scriptsize,align=center}
 ]
-\node[state,label=below:{\scriptsize $z_h$}] (h1) at (0.5,1.45) {};
-\node[state,label=above:{\scriptsize $z_{a^+}$}] (p1) at (2.0,2.25) {};
-\node[state,label=below:{\scriptsize $z_{a^-}$}] (n1) at (2.0,0.65) {};
-\node[goal,label=right:{\scriptsize $z_g$}] (g1) at (3.55,2.45) {};
-\draw[action] (h1) -- node[above left,font=\scriptsize] {$a^+$} (p1);
-\draw[action] (h1) -- node[below left,font=\scriptsize] {$a^-$} (n1);
-\draw[blue!65!black,densely dashed] (p1) -- (g1);
-\draw[black!40,densely dashed] (n1) -- (g1);
+% Equal panel frames
+\draw[rounded corners=2mm,black!18,fill=black!1] (-1.65,-0.05) rectangle (1.65,3.25);
+\draw[rounded corners=2mm,black!18,fill=black!1] (3.35,-0.05) rectangle (6.65,3.25);
 
-\draw[black!25,thick] (4.25,0.15) -- (4.25,2.9);
+% Left coordinate system
+\node[label] at (0,2.98) {$\mathcal L_{\mathrm{pred}}=0$};
+\node[state] (h1) at (0,2.48) {$z_h$};
+\node[positive] (p1) at (-0.78,1.42) {$z_+$};
+\node[negative] (n1) at (0.78,1.42) {$z_-$};
+\node[goal] (g1) at (-0.78,0.48) {$g$};
+\draw[transition] (h1) -- node[left,font=\scriptsize] {$a^+$} (p1);
+\draw[transition] (h1) -- node[right,font=\scriptsize] {$a^-$} (n1);
+\draw[distline,blue!55!black] (p1) -- (g1);
+\draw[distline] (n1) -- (g1);
+\node[label,blue!65!black] at (0,-0.13) {$d(z_+,z_g)<d(z_-,z_g)$};
 
-\node[state,label=below:{\scriptsize $\tilde z_h$}] (h2) at (4.75,1.45) {};
-\node[state,label=above:{\scriptsize $\tilde z_{a^+}$}] (p2) at (6.0,2.55) {};
-\node[state,label=below:{\scriptsize $\tilde z_{a^-}$}] (n2) at (7.15,0.85) {};
-\node[goal,label=right:{\scriptsize $\tilde z_g$}] (g2) at (7.9,0.45) {};
-\draw[action] (h2) -- node[above left,font=\scriptsize] {$a^+$} (p2);
-\draw[action] (h2) -- node[below,font=\scriptsize] {$a^-$} (n2);
-\draw[black!40,densely dashed] (p2) -- (g2);
-\draw[red!65!black,densely dashed] (n2) -- (g2);
+% Right coordinate system, mirrored goal geometry
+\node[label] at (5,2.98) {$\mathcal L_{\mathrm{pred}}=0$};
+\node[state] (h2) at (5,2.48) {$\tilde z_h$};
+\node[positive] (p2) at (4.22,1.42) {$\tilde z_+$};
+\node[negative] (n2) at (5.78,1.42) {$\tilde z_-$};
+\node[goal] (g2) at (5.78,0.48) {$g$};
+\draw[transition] (h2) -- node[left,font=\scriptsize] {$a^+$} (p2);
+\draw[transition] (h2) -- node[right,font=\scriptsize] {$a^-$} (n2);
+\draw[distline] (p2) -- (g2);
+\draw[distline,orange!75!black] (n2) -- (g2);
+\node[label,orange!80!black] at (5,-0.13) {$d(\tilde z_+,\tilde z_g)>d(\tilde z_-,\tilde z_g)$};
 
-\node[note,blue!65!black] at (2.75,0.05) {$d(z_{a^+},z_g)<d(z_{a^-},z_g)$};
-\node[note,red!65!black] at (6.35,0.05) {$d(\tilde z_{a^+},\tilde z_g)>d(\tilde z_{a^-},\tilde z_g)$};
-\node[note,draw=blue!55!black,rounded corners=1.5pt,fill=blue!4,inner sep=3pt] at (4.25,-0.72)
-{GAR requires $E(h,a^+)<E(h,a^-)$};
+% One shared constraint, centered between panels
+\node[draw=blue!55!black,fill=blue!4,rounded corners=1.5mm,inner xsep=6mm,inner ysep=1.8mm,font=\scriptsize]
+at (2.5,-0.82) {GAR requires $E(h,a^+)<E(h,a^-)$};
 \end{tikzpicture}

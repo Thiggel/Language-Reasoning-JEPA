@@ -1,7 +1,9 @@
 \section{Conclusion}
 
-Predictive learning and planning impose different constraints on a representation. Controlled-future equivalence identifies which language histories may share a state. Transition prediction preserves how actions move between those states. Neither condition fixes a goal-directed metric. GAR adds the missing local order supervision by comparing counterfactual action consequences.
+Controlled-future equivalence specifies which language histories may share a planning state. Action-conditioned prediction models transitions between such states, but does not determine how their consequences should be ordered. GAR supplies that local order supervision.
 
-The experiments support this mechanism-level account. A non-generative JEPA is a viable conditional planner, although the strongest sentence model performs better. Latent prediction alone is substantially weaker than predictive GAR. Counterfactual successor prediction and counterfactual ordering are complementary. Raw distance is weaker than the learned GAR energy, while a matched direct GAR scorer remains competitive in the current in-distribution test.
+On stylized iGSM, predictive GAR turns a weak latent-prediction policy into a viable conditional planner. Counterfactual ordering contributes the larger gain, and successor prediction adds a further improvement. The strongest sentence model remains better in strict success. Raw distance also remains much weaker than the learned GAR energy.
 
-The final point is as important as the positive result. The evidence supports GAR supervision, but does not yet show that successor factorization is uniquely valuable. Controlled semantic interventions, local geometry correlations, matched generalization tests, a non-arithmetic domain, and a valid test-time scaling protocol determine whether the stronger representation claim survives.
+Direct GAR matches the predictive policy in the current one-seed comparison. The experiments therefore do not yet show that a policy must factor through its predicted successor. They support the narrower claim that successor prediction supplies useful auxiliary training under matched order supervision.
+
+The present evidence concerns conditional planning under a supplied feasible-action menu on a synthetic arithmetic domain. It does not yet support claims about unrestricted language agents or general-purpose reasoning.

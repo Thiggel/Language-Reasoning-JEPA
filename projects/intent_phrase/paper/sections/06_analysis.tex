@@ -1,22 +1,20 @@
-\section{What geometry is learned?}
+\section{Representation Analysis}
 \label{sec:analysis}
 
-\subsection{The current evidence is local and incomplete}
+\paragraph{Local action order.}
+RQ3 concerns within-state action ordering rather than global cluster structure. In a one-seed aligned-history audit, the deployed transition-value energy attains $.826$ pairwise accuracy and $.786$ top-1 optimal-action recall. Raw predicted successor distance attains $.603$ and $.549$. The learned energy orders actions far better than uncalibrated latent distance in that checkpoint.
 
-GAR makes a local action-ordering claim. In a one-seed aligned-state audit, the deployed transition-value energy attains $.826$ pairwise ranking accuracy and $.786$ top-1 optimal-action recall. Raw predicted successor distance attains $.603$ and $.549$. The learned energy is therefore more decision useful than uncalibrated latent distance in this checkpoint.
+The audit does not yet isolate representation shaping from supervised readout. Full predictive GAR reaches $.435$ strict success in the matched seed. Detaching GAR gradients from the predictive body reaches $.375$, raw-distance selection reaches $.190$, and direct GAR with successor auxiliaries reaches $.440$. Five-seed completion and checkpoint-level local metrics are needed before assigning the full gap to changes in the predictive representation.
 
-This result does not yet prove that GAR reshapes the representation. The transition-value head may learn a supervised readout while the underlying geometry changes little. The one-seed gradient-routing controls are consistent with both effects. Full predictive GAR reaches $.435$ strict success, while detaching GAR gradients from the predictive body reaches $.375$. Raw-distance selection reaches $.190$. Direct GAR with successor auxiliaries reaches $.440$. Five-seed completion and checkpoint-level local metrics are needed before attributing the gap to geometry shaping.
+Because the audit covers one seed, it does not establish whether local ordering tracks planning across checkpoints or runs. It also does not establish that GAR reshapes the predictor rather than training a stronger readout.
 
-The decisive analysis will measure pairwise ranking accuracy, top-1 recall, mean regret, Spearman correlation with exact continuation cost, and the optimal-versus-best-suboptimal margin for every retained checkpoint and seed. It will then correlate each quantity with strict success. The theoretical account predicts that local ranking and margin will track planning more closely than one-step latent error, successor retrieval, effective rank, or global probe scores.
+\paragraph{Global decodability.}
+Table~\ref{tab:probes-main} reports the completed frozen-feature diagnostics for RQ4. Both JEPA spaces are non-collapsed, with effective ranks near 200 in 256 dimensions. Token-LM features have effective rank $3.55$ while supporting competitive planning. Effective rank is therefore a health check rather than an explanation of control performance.
 
-\subsection{Global rank is not a planning explanation}
-
-Table~\ref{tab:probes-main} reports the completed frozen-feature diagnostics. Both JEPA spaces are non-collapsed, with effective ranks near 200 in 256 dimensions. The token LM has effective rank $3.55$ and remains competitive in planning. Effective rank is therefore a health check, not a control metric.
-
-Sentence representations make operation identity much more linearly accessible than the JEPA states. MLP JEPA strongly exposes resolved-variable count. That variable is confounded with elapsed step index, so it cannot yet be interpreted as semantic progress. Remaining distance is moderately decodable across all systems. Numerical outcomes are weakly decoded. The existing necessary-action probe is at chance and is not used as positive evidence.
+Sentence representations make operation identity substantially more linearly accessible than JEPA representations. MLP JEPA strongly exposes resolved-variable count, but resolved count is confounded with elapsed step index. Remaining distance is moderately decodable across all systems. Numerical outcomes are weakly decoded. The existing necessary-action probe is at chance and provides no positive evidence.
 
 \begin{table}[t]
-\caption{Five-seed frozen-feature diagnostics. Probe scores are means over seeds. Effective rank measures non-collapse. It does not track strict planning performance.}
+\caption{Five-seed frozen-feature diagnostics. Probe scores are means over seeds. Effective rank measures non-collapse and does not track strict planning performance.}
 \label{tab:probes-main}
 \centering
 \scriptsize
@@ -33,16 +31,4 @@ Sentence LM + latent & $71.44$ & $.807$ & $.429$ & $.886$ & $-.029$ \\
 \end{tabular}
 \end{table}
 
-\subsection{A progress-plus-residual hypothesis}
-
-A representation may decompose as
-\begin{equation}
-    z=z_{\mathrm{progress}}+z_{\mathrm{residual}}.
-\end{equation}
-A small goal-relative component can govern local action ordering while many tangential directions retain predictive detail. This would reconcile high JEPA rank with a simple planning readout. We will test the hypothesis by predicting remaining distance from the scalar goal distance, the GAR energy, the full state, and the residual after removing the estimated goal-progress direction. The hypothesis is supported only if removing that direction selectively damages action ordering while leaving other predictive probes intact.
-
-\subsection{Controlled semantic interventions}
-
-An ordinary t-SNE or UMAP cloud cannot establish the quotient account. The required plot must use controlled pairs. We will encode identical semantic states under paraphrase, identical actions under paraphrase, high-overlap negations with changed consequences, operator swaps, irrelevant entity renaming, and histories matched on step index but not true progress. Full-space retrieval, pairwise distance, and action-order preservation are primary. A shared UMAP and t-SNE projection will illustrate the same frozen points and use identical hyperparameters across JEPA and LM representations.
-
-These paired features have not yet been collected. We therefore omit a manifold plot rather than presenting an uncontrolled projection as evidence. The required outcome is clear: semantic paraphrases should retrieve one another, while a negation should separate only when it changes the controlled future. Failure on either side would contradict the quotient interpretation.
+The quotient account also predicts invariance to surface paraphrase and sensitivity to meaning-changing edits. The available probes do not test those predictions. We therefore omit t-SNE and UMAP projections, which would be difficult to interpret without controlled semantic pairs and corresponding full-space statistics.

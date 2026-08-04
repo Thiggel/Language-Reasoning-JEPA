@@ -1,36 +1,26 @@
-\section{Controlled experiments}
+\section{Experimental Design}
 \label{sec:experiments}
 
-\subsection{A laboratory for conditional planning}
+\paragraph{Domain and interface.}
+Stylized iGSM generates arithmetic dependency problems with named quantities, distractor relations, and a target query \citep{igsm2025}. Training instances are generated online. The paper models receive 300,000 examples with shortest solutions ranging from three to nine actions.
 
-We use a stylized iGSM generator with named quantities, arithmetic dependencies, distractors, and a target query \citep{igsm2025}. Training instances are generated online. The paper models see 300,000 examples with solution lengths from three to nine actions. Each completed headline result averages five seeds, and each seed is evaluated on 200 fresh episodes.
+At each decision point, the environment supplies a shuffled set of executable intent phrases. It reveals neither the useful action nor the outcomes of unchosen candidates. All learned policies receive the same set and observe the textual consequence of their choice before acting again. The supplied menu is candidate-privileged relative to unrestricted generation. Holding it fixed isolates consequence evaluation from proposal recall and syntax validity.
 
-At a decision point, the environment supplies a shuffled set of executable intent phrases. It does not mark necessary actions, reveal their outcomes, or expose future menus. Every learned policy receives the same current set. This interface is candidate privileged relative to unrestricted language generation. It is appropriate for the present question because it removes proposal recall and malformed actions from the comparison. The claim is conditional planning among executable language actions.
+\paragraph{Models.}
+The main JEPA uses 256-dimensional history and action representations and an MLP successor predictor. A second JEPA uses a causal Transformer over encoded history states. The token LM scores candidate phrases by token likelihood. The sentence LM predicts the next intent phrase as a sentence-level target. The sentence-plus-latent model adds next-sentence latent prediction to the sentence objective. Each policy selects from the same current menu.
 
-Strict success requires solving a puzzle in the minimum number of actions. Success with $k$ excess actions permits at most $k$ additional decisions. We report strict and $+2$ results for the completed suite. The final evaluation will add the full budget curve at $k\in\{0,1,2,4\}$, invalid-action rate for unrestricted controls, and paired confidence intervals.
+The main GAR model uses the transition-value factorization from Section~\ref{sec:method}. Objective controls remove ranking, remove pairwise calibration, or remove counterfactual latent prediction. Architecture controls detach GAR gradients from the predictive body, replace the learned energy with raw successor distance, or apply GAR to a direct scorer that bypasses the successor in the policy path. A shuffled-label control retains the candidate sets and counterfactual transitions while destroying their within-state quality correspondence.
 
-\subsection{Models}
+\paragraph{Training and selection.}
+Every completed learned headline row and primary ablation uses five training seeds. Hyperparameters are selected on validation data. Each model-dataset pair receives its own learning-rate search budget. Ablations reuse the selected rate unless their loss scale or gradient route changes, in which case they receive a local learning-rate check. Test results never select hyperparameters.
 
-The main JEPA uses 256-dimensional history and action representations with an MLP successor predictor. The causal JEPA replaces the successor predictor with a causal Transformer over encoded history states. The token LM scores each candidate by its token likelihood. The sentence LM predicts the next intent phrase as a sentence-level target. The sentence-plus-latent model adds next-sentence latent prediction to the sentence objective. All policies select from the same shuffled current menu.
+\paragraph{Evaluation.}
+Strict success requires the shortest possible solution. Success at $+2$ allows at most two excess actions. Each completed seed is evaluated on 200 newly generated episodes. Tables report the mean and sample standard deviation across seed-level success rates. Episodes were not paired across methods, so the current estimates do not support paired model-difference claims.
 
-The main GAR realization is the transition-value factorization in Section~\ref{sec:method}. We compare it with factual and counterfactual latent prediction without GAR, ranking without regression, GAR without counterfactual latent prediction, detached GAR gradients, raw successor distance, and direct GAR. A shuffled-label control preserves the candidate sets and counterfactual transitions while destroying only the within-state quality correspondence.
+\paragraph{Diagnostics.}
+The local decision audit enumerates the same feasible actions at aligned histories. It records pairwise ranking accuracy, top-1 optimal-action recall, mean regret, rank correlation with exact continuation cost, and the optimal-versus-best-suboptimal margin. Exact continuation cost is an evaluation label and is never available to the policy.
 
-\subsection{Tuning and uncertainty}
+Frozen-feature probes measure operation identity, remaining actions, resolved quantities, and numerical outcomes. Effective rank checks for collapse. The current feature set does not contain controlled paraphrase, negation, operator-swap, or entity-renaming pairs, so no claim about semantic invariance is made.
 
-Completed learned headline and primary ablation rows use five training seeds. Hyperparameters are chosen on validation data. The present tables report mean and sample standard deviation across seed-level success rates. The random policy is not yet reported because it has not been rerun on the paired headline episodes. Before submission, headline claims will use identical puzzle indices across methods, more validation episodes per seed, paired bootstrap intervals, and paired intervals for model differences.
-
-Each model-dataset pair receives its own learning-rate search budget. Ablations reuse the selected rate unless they change loss scale or gradient routing. Such changes receive a local cross-check. No test result selects a hyperparameter.
-
-\subsection{Four empirical questions}
-
-\textbf{RQ1: Can latent prediction support planning?} We compare predictive and generative candidate scorers under the common menu.
-
-\textbf{RQ2: Is prediction sufficient?} We remove GAR, remove successor losses, vary the ranking and regression terms, vary the number of counterfactuals, and vary the target horizon.
-
-\textbf{RQ3: Does GAR create decision-relevant geometry?} At aligned histories, we measure pairwise feasible-action ranking, top-1 optimal recall, mean regret, rank correlation with exact continuation cost, and the optimal-versus-best-suboptimal margin. Exact continuation cost is used only for evaluation. We compare transition-value GAR, raw distance, detached gradients, and direct GAR.
-
-\textbf{RQ4: What is preserved and discarded?} Frozen-feature probes measure operation identity, remaining actions, resolved quantities, and numerical outcomes. Effective rank checks collapse. Controlled paraphrase, negation, operator-swap, and entity-renaming interventions are required to test the quotient account directly.
-
-\subsection{Evidence boundary}
-
-Only stylized iGSM has a complete five-seed headline comparison. Faithful iGSM and non-arithmetic domains remain outside the current main claims. Test-time scaling is also outside the evidence table. The existing deep-rollout evaluator and FLOP accounting do not yet support an interpretable comparison. We will include scaling only after fixed-work evaluation, stable recursive prediction, and matched recurrent baselines pass their validity checks.
+\paragraph{Scope.}
+Only stylized iGSM currently has a complete five-seed headline comparison. Faithful iGSM and non-arithmetic domains remain outside the main claims. Test-time scaling is also excluded. The current evaluator and FLOP accounting do not yet isolate the effect of added inference computation.
