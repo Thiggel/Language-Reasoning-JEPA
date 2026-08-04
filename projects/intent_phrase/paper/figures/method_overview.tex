@@ -1,0 +1,45 @@
+\begin{tikzpicture}[
+    x=1cm,y=1cm,
+    box/.style={draw=black!65,rounded corners=2pt,fill=white,minimum height=7mm,align=center,font=\scriptsize,inner xsep=5pt},
+    latent/.style={circle,draw=blue!60!black,fill=blue!7,minimum size=7mm,font=\scriptsize},
+    target/.style={circle,draw=green!50!black,fill=green!8,minimum size=7mm,font=\scriptsize},
+    arrow/.style={-{Latex[length=2mm]},thick},
+    targetarrow/.style={-{Latex[length=2mm]},thick,green!45!black,dashed},
+    control/.style={-{Latex[length=2mm]},thick,black!55,densely dashed}
+]
+% Deployed predictive policy path
+\node[box] (history) at (0,2.15) {history $h_t$\\problem anchor $x$};
+\node[box] (encoder) at (1.75,2.15) {online encoder\\$\phi_\theta$};
+\node[latent] (state) at (3.05,2.15) {$z_t$};
+\node[box] (actions) at (0,0.95) {feasible phrases\\$a_1,\ldots,a_K$};
+\node[box] (aenc) at (1.75,0.95) {action encoder\\$e_\theta$};
+\node[box] (pred) at (4.45,1.55) {predict successor\\$\hat z_i=F_\theta(z_t,e(a_i))$};
+\node[box] (value) at (6.65,1.55) {score consequence\\$E_i=V_\psi(\hat z_i,z_x)$};
+\node[box] (choice) at (8.55,1.55) {select phrase\\$\arg\min_i E_i$};
+\draw[arrow] (history) -- (encoder);
+\draw[arrow] (encoder) -- (state);
+\draw[arrow] (state) -- (pred);
+\draw[arrow] (actions) -- (aenc);
+\draw[arrow] (aenc) -- (pred);
+\draw[arrow] (pred) -- (value);
+\draw[arrow] (value) -- (choice);
+
+% Training target path
+\node[box] (outcomes) at (0,-0.55) {observed alternative\\outcomes};
+\node[box] (ema) at (1.75,-0.55) {EMA encoder\\$\bar\phi$};
+\node[target] (next) at (3.05,-0.55) {$\bar z_i$};
+\node[target] (goal) at (4.05,-0.55) {$\bar z_g$};
+\node[box,draw=red!60!black,fill=red!3] (gar) at (5.6,-0.55) {GAR target\\order + gap};
+\node[box,draw=red!60!black,fill=red!3] (loss) at (7.35,-0.55) {$\mathcal L_{\rm rank}$\\$+\mathcal L_{\rm reg}$};
+\draw[arrow] (outcomes) -- (ema);
+\draw[targetarrow] (ema) -- node[above,font=\tiny] {stop grad.} (next);
+\draw[targetarrow] (next) -- (gar);
+\draw[targetarrow] (goal) -- (gar);
+\draw[arrow,red!65!black] (gar) -- (loss);
+\draw[arrow,red!65!black] (value) -- (loss);
+
+% Information-matched architectural control
+\node[box,draw=black!45,fill=black!2] (direct) at (9.15,-0.55) {direct GAR\\$D_\psi(z_t,e(a_i),z_x)$};
+\draw[control] (gar) -- (direct);
+\draw[control] (direct) -- (choice);
+\end{tikzpicture}

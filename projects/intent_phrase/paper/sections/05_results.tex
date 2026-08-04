@@ -1,14 +1,14 @@
-\section{Planning results}
+\section{Can latent prediction plan?}
 \label{sec:results}
 
-\subsection{Latent prediction supports competitive planning}
+\subsection{Viability under a common action interface}
 
-Table~\ref{tab:headline} and Figure~\ref{fig:headline} report the completed five-seed comparison. MLP JEPA reaches $43.3\%$ strict success and has the smallest seed variability among learned models. Its mean is close to the token LM at $42.2\%$ and below the sentence LM at $47.1\%$. The sentence-plus-latent model leads strict success at $52.1\%$. The causal JEPA reaches $36.6\%$, so replacing the MLP predictor with the present causal Transformer does not improve the recipe.
+Table~\ref{tab:headline} answers RQ1. The MLP JEPA with GAR attains $.433$ strict success. Its mean is close to the token LM at $.422$, below the sentence LM at $.471$, and below the sentence-plus-latent model at $.521$. The causal JEPA attains $.366$. The MLP JEPA has the smallest seed standard deviation among the learned methods, although five seeds do not establish a general stability advantage.
 
-These results support viability rather than superiority. They also suggest that generative and latent-predictive objectives can be complementary. The best strict result comes from a sentence model that combines them.
+The result establishes that a non-generative latent consequence model can support nontrivial closed-loop planning. It does not establish that JEPA is better than language modeling. The leading sentence-plus-latent row instead suggests that generative and predictive objectives can provide complementary biases.
 
 \begin{table}[t]
-\caption{Closed-loop planning on stylized iGSM. Values are mean $\pm$ sample standard deviation over five seeds. Every model receives the same shuffled menu of currently feasible actions.}
+\caption{Closed-loop planning on stylized iGSM. Values are mean $\pm$ sample standard deviation over five seeds. Every method scores the same shuffled current feasible-action menu.}
 \label{tab:headline}
 \centering
 \small
@@ -21,48 +21,39 @@ Sentence LM & $.471\pm.046$ & $.813\pm.023$ \\
 MLP JEPA + GAR & $.433\pm.019$ & $.796\pm.033$ \\
 Token LM & $.422\pm.124$ & $\mathbf{.836\pm.073}$ \\
 Causal JEPA + GAR & $.366\pm.047$ & $.778\pm.043$ \\
-Random & \todoresult & \todoresult \\
+Random policy & \todoresult & \todoresult \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure}[t]
+\subsection{Prediction alone is not sufficient}
+
+Table~\ref{tab:central-ablation} gives the central empirical result. Factual and counterfactual latent MSE without GAR attains $.183$ strict success. The full predictive GAR model attains $.433$. A factual-prediction-only configuration, labeled no GAR in the run ledger, attains $.076$. Ranking without pairwise regression attains $.358$. Removing the counterfactual latent loss while retaining GAR attains $.345$.
+
+These rows support two conclusions. Same-state action ordering accounts for the larger part of the planning gain. Counterfactual successor prediction adds information beyond the ordering labels. The full gain is not explained by additional alternative transitions alone.
+
+\begin{table}[t]
+\caption{Five-seed mechanism ablations. Rank is the GAR pairwise hinge. Reg. calibrates pairwise energy differences to geometric target differences. CF pred. predicts counterfactual successor states.}
+\label{tab:central-ablation}
 \centering
-\includegraphics[width=\linewidth]{figures/headline_models.pdf}
-\caption{Five-seed planning comparison. The MLP JEPA is competitive and stable, while sentence prediction with a latent auxiliary has the strongest strict mean.}
-\label{fig:headline}
-\end{figure}
+\small
+\begin{tabular}{lccccl}
+\toprule
+Configuration & Rank & Reg. & CF pred. & Strict & $+2$ \\
+\midrule
+Full predictive GAR & yes & yes & yes & $.433\pm.019$ & $.796\pm.033$ \\
+GAR ranking only & yes & no & yes & $.358\pm.045$ & $.750\pm.018$ \\
+GAR without CF prediction & yes & yes & no & $.345\pm.049$ & $.734\pm.017$ \\
+Latent prediction only & no & no & yes & $.183\pm.016$ & $.628\pm.031$ \\
+Factual prediction only & no & no & no & $.076\pm.013$ & $.422\pm.022$ \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\subsection{Next-state prediction is not enough}
+The target horizon is not monotonic. Horizons one, two, and four attain $.161$, $.433$, and $.181$ strict success. This is a property of the present geometric reference-continuation target, not a general claim that two-step supervision is optimal. Increasing counterfactual breadth from one to four changes strict success from $.403$ to $.439$. Pairwise-regression weights $.10$ and $.50$ attain $.443$ and $.402$. Nearby coefficients therefore preserve much of the effect.
 
-GAR is the clearest causal result. Removing GAR reduces strict success from $.433$ to $.076$. Training only factual and counterfactual latent MSE reaches $.183$. Ranking without direct advantage regression reaches $.358$. Removing counterfactual latent prediction while retaining GAR reaches $.345$. Thus ordering supervision and successor prediction provide complementary gains, with ordering responsible for the larger share.
+\subsection{Information-matched controls}
 
-The advantage horizon is not monotonic. Horizon two reaches $.433$, while horizons one and four reach $.161$ and $.181$. This result concerns the current reference-continuation target and does not establish a general optimal horizon. Increasing the number of counterfactual alternatives from one to four yields a modest change from $.403$ to $.439$. Direct advantage weights of $.10$ and $.50$ reach $.443$ and $.402$, which argues against a single fragile coefficient accounting for the full effect.
+Shuffling the geometric quality labels while retaining counterfactual transitions gives $.015$ strict success at each of three screened learning rates. A direct GAR scorer without successor auxiliaries reaches $.150$ to $.185$. The same direct GAR policy path with JEPA successor auxiliaries reaches $.440$ in one seed, compared with $.435$ for transition-value GAR in that seed. These controls show that the useful signal is not simply the number of counterfactual examples. They also prevent a stronger conclusion. In-distribution performance does not yet show that routing the policy through a predicted successor is better than direct GAR scoring.
 
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{figures/gar_mechanism.pdf}
-\caption{Left: five-seed GAR ablations. Right: one-seed mechanism controls, shown as exploratory evidence. Raw goal distance is weak, and a direct ranker matches full GAR in this in-distribution test.}
-\label{fig:gar}
-\end{figure}
-
-\subsection{Meaningful counterfactual labels matter}
-
-A shuffled-GAR control preserves the counterfactual examples but randomizes their quality labels. Across three learning rates it reaches $.015$ strict success. A direct ranker without successor auxiliaries reaches $.150$ to $.185$ across the same local learning-rate screen. By comparison, the matched full GAR seed reaches $.435$, and the direct ranker with JEPA successor auxiliaries reaches $.440$. These controls rule out the simple explanation that GAR works only because it supplies more alternative transitions. They also show that successor auxiliaries improve a direct scorer even when the predicted successor is not its decision bottleneck.
-
-\subsection{Current predictive factorization claim is limited}
-
-One-seed controls localize the mechanism but do not settle it. Detached GAR gradients reach $.375$ strict success, compared with $.435$ for full GAR. Geometry-only planning reaches $.190$. The direct ranker reaches $.440$. The predictive transition-value score attains $.786$ top-1 optimal-action recall and $.826$ pairwise accuracy. Raw predicted geometry reaches $.549$ and $.603$.
-
-The learned score is therefore much more useful than Euclidean goal distance. GAR gradients into the predictive body appear helpful in one seed, but a direct discriminative path remains equally strong on in-distribution iGSM. A unique benefit of predictive factorization must be demonstrated through data efficiency, compositional length, action paraphrases, goal transfer, or test-time simulation.
-
-\subsection{Deeper simulation currently amplifies error}
-
-Figure~\ref{fig:ttc} presents the repaired fixed-checkpoint gate. MLP JEPA falls from $.471$ at depth one to $.106$ at depth two and $.135$ at depth four. The direct ranker falls from $.432$ to $.122$ and $.085$. Zero and shuffled controls remain close to the random-policy rate, so the repaired evaluator removes the earlier terminal-path artifact. Additional computation does not improve the current models. The result instead identifies rollout drift or off-distribution score calibration as the next mechanism to solve.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=\linewidth]{figures/test_time_scaling_repaired.pdf}
-\caption{Repaired one-seed test-time-compute gate on 1,000 paired episodes. Depths greater than one use a candidate-privileged future feasible-action tree. Measured FLOPs increase, but learned performance falls. This curve is a diagnostic, not a final method comparison.}
-\label{fig:ttc}
-\end{figure}
+The appropriate next test is not another leaderboard comparison. It is a matched comparison under data scarcity, longer compositions, action paraphrases, altered goals, and stable multi-step simulation. A benefit on one of these axes would support the predictive factorization rather than GAR supervision alone.

@@ -1,7 +1,9 @@
 \documentclass{article}
 \usepackage{iclr2027_conference,times}
 \input{math_commands.tex}
-\usepackage{amsmath,amssymb,booktabs,multirow,graphicx,xcolor}
+\usepackage{amsmath,amssymb,amsthm,booktabs,multirow,graphicx,xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,fit,positioning,shapes.geometric}
 \usepackage{microtype}
 \usepackage{hyperref}
 \usepackage{url}
@@ -10,8 +12,10 @@
 \newcommand{\gar}{\textsc{GAR}}
 \newcommand{\todoresult}{\textcolor{gray}{\textit{pending}}}
 \newcommand{\privileged}{\textsuperscript{\dag}}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
 
-\title{Can Joint-Embedding Prediction Support Planning in Language?}
+\title{Prediction Is Not Planning:\\Geometric Advantage Ranking for Language-Action JEPAs}
 
 \author{Anonymous authors}
 
@@ -22,7 +26,7 @@
 \maketitle
 
 \begin{abstract}
-Autoregressive language models select actions by predicting text, although planning only requires a model to preserve the consequences that determine which action should be taken. We study whether an action-conditioned joint-embedding predictive architecture can provide this narrower computational substrate. Our controlled setting presents a reasoning state and a common menu of executable intent phrases. A predictor imagines the latent successor of each phrase, and geometric advantage ranking (GAR) teaches local orderings among factual and counterfactual successors. Across five seeds on stylized iGSM, an MLP-predictor JEPA reaches $43.3\pm1.9\%$ strict success. This is competitive with a token language model at $42.2\pm12.4\%$, but below a sentence language model at $47.1\pm4.6\%$ and a sentence model with latent prediction at $52.1\pm4.7\%$. The central result is mechanistic. Latent prediction alone reaches $18.3\%$, removing GAR reaches $7.6\%$, and ranking without direct advantage regression reaches $35.8\%$. Local action ordering is substantially stronger through the learned transition-value score than through raw goal distance. A direct action ranker matches the full model in one-seed evaluation, which limits the present claim about predictive factorization. Repaired test-time scaling further reveals compounding rollout error rather than improvement. These results establish that non-generative latent consequence prediction can support language-action planning, while showing that useful planning geometry does not follow automatically from next-state prediction. We release a falsifiable analysis protocol for separating world-model quality, local action ordering, representation content, and test-time simulation.
+Agents that act through language must compare consequences, not only generate plausible text. We study action-conditioned joint-embedding prediction in a controlled language-mediated planning environment. We first formalize a planning state as an equivalence class of histories with identical controlled futures. This predictive state is sufficient for control, but its geometry is not identified by transition prediction. Equally predictive re-embeddings can reverse which successor appears closest to a goal. We introduce Geometric Advantage Ranking (GAR), a training objective that imposes within-state order constraints on counterfactual action consequences. GAR can supervise a scorer that factors through a predicted successor or a matched direct scorer. On stylized arithmetic dependency puzzles, a non-generative JEPA solves $43.3\%$ of episodes in the minimum number of actions under a common feasible-action interface. The strongest sentence model reaches $52.1\%$, so our result establishes viability rather than superiority. The central finding concerns mechanism. Latent prediction alone reaches $18.3\%$, while the complete predictive GAR model reaches $43.3\%$. Five-seed ablations show that counterfactual ordering and successor prediction contribute complementary information. Local action-order diagnostics are more favorable for the learned GAR score than for raw latent distance, while global effective rank does not explain planning. These results support a narrow conclusion: prediction can supply a useful state, but planning requires additional structure that orders action consequences.
 \end{abstract}
 
 \input{sections/01_introduction}

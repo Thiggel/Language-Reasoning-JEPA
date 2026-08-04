@@ -624,3 +624,75 @@ claim, verify the primary source and current publication status.
     normalized-Euclidean plus SIGReg as a separately labelled regularizer
     ablation. Retain EMA and stop-gradient in every cell for architecture
     matching; do not call the SIGReg cell a faithful reproduction of LeJEPA.
+
+## 2026-08-04 — predictive state, metric identifiability, and GAR theory
+
+- Decision: whether a quotient-space and identifiability argument can provide
+  the mathematical spine of the intent-phrase paper without overstating what
+  the implemented GAR objective proves.
+- Queries: controlled predictive state representation; bisimulation metric
+  value continuity; controlled world-model identifiability; information
+  bottleneck; potential-based reward shaping; ICLR reviewer evidence standard.
+- Primary sources:
+  - Littman, Sutton, and Singh, Predictive Representations of State:
+    <https://papers.nips.cc/paper_files/paper/2001/hash/1e4d36177d71bbb3558e43af9577d70e-Abstract.html>
+  - Ferns, Panangaden, and Precup, Bisimulation Metrics for Continuous MDPs:
+    <https://www.cs.mcgill.ca/~prakash/Pubs/siamFP11.pdf>
+  - Zhang et al., On the Identifiability of Controlled World Models:
+    <https://arxiv.org/html/2607.22430v1>
+  - Tishby, Pereira, and Bialek, The Information Bottleneck Method:
+    <https://arxiv.org/abs/physics/0004057>
+  - Ng, Harada, and Russell, Policy Invariance Under Reward Transformations:
+    <https://people.eecs.berkeley.edu/~russell/papers/icml99-shaping.pdf>
+  - ICLR 2026 Reviewer Guide:
+    <https://iclr.cc/Conferences/2026/ReviewerGuide>
+- Applicable claims:
+  - A predictive state can be defined through multi-step, action-conditioned
+    future predictions rather than recovery of a privileged hidden state.
+  - Equality of future task outcomes and costs under every policy immediately
+    implies equality of every policy value. This justifies a control-sufficient
+    quotient of language histories, but is standard in spirit rather than a
+    new theorem about the implemented network.
+  - Exact latent transitions remain invariant under a bijective change of
+    realized coordinates. Without a metric-preserving restriction, this can
+    reverse successor-to-goal distance order. Transition prediction therefore
+    does not identify a planning metric by itself.
+  - Strong assumptions can restrict controlled-world-model ambiguity. Zhang et
+    al. obtain identification up to a common orthogonal map under Gaussian
+    state structure, spectral separation, and conditional action excitation.
+    The paper's re-embedding proposition must explicitly exclude such added
+    assumptions rather than claim universal non-identifiability.
+  - Classical potential shaping uses a fixed potential difference and studies
+    policy invariance. GAR jointly learns representation, dynamics, geometric
+    targets, and energy, so the connection is conceptual rather than an
+    application of the shaping theorem.
+  - The information bottleneck motivates compression that preserves target
+    information. The current model has no rate term, so quotient minimality is
+    central and IB is background only.
+  - ICLR review guidance does not require SOTA performance. It does require
+    claims to follow from rigorous evidence, clear motivation, and appropriate
+    placement in prior work.
+- Limitations:
+  - The experimental process is deterministic and finite horizon. A point-MSE
+    predictor in a stochastic POMDP generally represents a conditional mean,
+    not the full controlled future law.
+  - Implemented GAR labels are EMA-space goal-distance differences, optionally
+    after a bounded reference continuation. They are geometric progress
+    surrogates, not Bellman-consistent advantages or exact shortest-path values.
+  - GAR is the ordering supervision. The transition-value, direct, and raw
+    distance versions are architectural realizations of that supervision.
+  - Local correct ordering is sufficient for strict planning, but the current
+    one-seed audit does not yet establish that GAR gradients reshape the body
+    rather than mostly training a useful score head.
+- Design change:
+  - Organize the paper around three results: predictive quotient sufficiency,
+    metric non-identifiability under prediction alone, and local ordering
+    sufficiency for strict planning.
+  - Describe the actual target as a geometric progress surrogate and reserve
+    true advantage notation for the exact control quantity used in analysis.
+  - Treat direct GAR as an information-matched factorization control inside
+    GAR. Use detached GAR and raw distance to separate geometry shaping from
+    supervised readout.
+  - Remove invalid test-time FLOP curves and uncontrolled manifold plots. Add
+    t-SNE or UMAP only after controlled paraphrase and negation features exist,
+    with full-space statistics as the primary evidence.

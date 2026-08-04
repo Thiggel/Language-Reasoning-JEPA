@@ -1,32 +1,99 @@
-\section{Geometric advantage ranking}
+\section{From predictive state to planning geometry}
 \label{sec:method}
 
-\subsection{Objective}
+\subsection{Prediction leaves the metric underdetermined}
 
-GAR trains the deployed score on within-state counterfactual comparisons. For an ordered pair $(a^+,a^-)$, define $q^+=Q(s,a^+)$ and $q^-=Q(s,a^-)$. We minimize
+Let an encoder $\phi$ map a history to $z_h$, let $e(a)$ encode a language action, and let $F$ predict the deterministic successor:
 \begin{equation}
-  \mathcal{L}_{\mathrm{rank}}=\log\left(1+\exp[-(q^+-q^-)]\right).
+    F(\phi(h),e(a))=\phi(T(h,a)).
 \end{equation}
-We also regress the exact $N$-step advantage target $A_N(s,a)$,
+
+\begin{proposition}[Exact prediction does not identify planning geometry]
+Suppose $(\phi,F)$ predicts every realized transition exactly. Let $b$ be any bijection on the realized latent states. Define $\widetilde\phi=b\circ\phi$ and
 \begin{equation}
-  \mathcal{L}_{\mathrm{adv}}=\left(Q(s,a)-A_N(s,a)\right)^2.
+    \widetilde F(b(z),e(a))=b(F(z,e(a))).
 \end{equation}
-The full objective is
+Then $(\widetilde\phi,\widetilde F)$ is also prediction perfect. Unless $b$ preserves the chosen metric, it need not preserve the order of successor distances to a goal. On a finite realized state set, a bijection can reverse the goal-distance ordering of two successors while retaining every transition.
+\end{proposition}
+\begin{proof}
+Substitution gives $\widetilde F(\widetilde\phi(h),e(a))=b(\phi(T(h,a)))=\widetilde\phi(T(h,a))$. For two distinct successor states and a goal, assign their images to any three distinct points. Choosing the first successor farther from the goal than the second reverses their metric order without changing the transition identity.
+\end{proof}
+
+Figure~\ref{fig:nonidentifiability} shows the consequence. This proposition applies without extra identifiability assumptions or planning-aware constraints. Controlled world models can be identifiable up to more restricted maps, including orthogonal transformations, under strong structural and excitation assumptions \citep{song2026identifiability}.
+
+\begin{figure}[t]
+    \centering
+    \input{figures/nonidentifiability.tex}
+    \caption{Transition prediction fixes which successor follows each action, but not how successors are arranged relative to the goal. Both embeddings have zero transition error. GAR adds an order constraint that excludes the right-hand arrangement for the illustrated preference.}
+    \label{fig:nonidentifiability}
+\end{figure}
+
+\subsection{Action-conditioned joint-embedding prediction}
+
+The online encoder produces $z_h=\phi_\theta(h)$ and the action encoder produces $e_\theta(a)$. The predictor gives
 \begin{equation}
-  \mathcal{L}=\mathcal{L}_{\mathrm{pred}}+lambda_{\mathrm{cf}}\mathcal{L}_{\mathrm{cf}}
-  +\lambda_{\mathrm{rank}}\mathcal{L}_{\mathrm{rank}}
-  +\lambda_{\mathrm{adv}}\mathcal{L}_{\mathrm{adv}}.
+    \widehat z_{h,a}=F_\theta(z_h,e_\theta(a)).
 \end{equation}
-Unless stated otherwise, the current recipe uses horizon $N=2$, two counterfactual alternatives, and direct-advantage weight $0.25$. Gradients from both GAR terms reach the scorer, predictor, action encoder, and online state encoder. The EMA encoder follows the online encoder slowly and never receives gradients.
+An exponential-moving-average encoder produces a stopped-gradient target $\bar z_{T(h,a)}$. The factual and counterfactual prediction terms minimize normalized latent error for observed successor histories. The target encoder is always in evaluation mode and all dropout is disabled.
 
-\subsection{What GAR can and cannot establish}
+\begin{figure}[t]
+    \centering
+    \resizebox{\linewidth}{!}{\input{figures/method_overview.tex}}
+    \caption{The predictive GAR factorization. The model encodes a language history, predicts one successor for each feasible phrase, and applies same-state GAR supervision. The transition-value realization scores predicted successors. A matched direct GAR realization bypasses the successor only in the policy path.}
+    \label{fig:method}
+\end{figure}
 
-GAR has two possible roles. Its gradients can reshape the predictive representation, and its score head can learn a useful supervised readout. We separate these with four controls. \emph{Detached geometry} blocks GAR gradients into the encoder and predictor. \emph{Geometry only} plans with raw predicted successor distance to an encoded solved state. This is an oracle-terminal diagnostic. \emph{Direct ranker} learns $D(s,a)$ from the same positive and counterfactual actions while bypassing the predicted successor at decision time. \emph{Counterfactual-only} adds exact alternative-transition prediction but removes GAR.
+\subsection{Geometric Advantage Ranking}
 
-An additional shuffled-label control retains the number and form of counterfactual examples while randomizing their action-quality correspondence. A pure direct ranker without successor auxiliaries tests whether the counterfactual data can support ordinary supervised action selection. Together these controls separate additional data, meaningful ordering labels, a useful score head, and predictive factorization.
+Let $z_g$ denote a target representation and define a latent potential $\Phi_g(z)=-d(z,z_g)$. The geometric progress of an action is
+\begin{equation}
+    \Delta_\theta(h,a;g)=d(z_h,z_g)-d(\widehat z_{h,a},z_g).
+\end{equation}
+For candidates $a_i$ and $a_j$, GAR uses observed counterfactual outcomes to derive a stopped-gradient preference label. In the implemented geometric target, each true successor is encoded by the EMA network and compared with the episode's terminal EMA state. The default horizon-two target extends this comparison with a bounded reference continuation. It is a geometric progress surrogate, not a Bellman-consistent advantage. No theorem guarantees that this surrogate orders the true control advantage. That alignment is an empirical hypothesis tested by the local action audits.
 
-\subsection{Models used in the comparison}
+At deployment the terminal representation is unavailable. The prompt and query are encoded as a problem anchor $z_x$. Let $E_\psi(h,a,x)$ be a lower-is-better action energy. The main transition-value realization is
+\begin{equation}
+    E^{\mathrm{TV}}_\psi(h,a,x)
+    =V_\psi(\widehat z_{h,a},z_x).
+\end{equation}
+The direct realization uses $E^{\mathrm{direct}}_\psi(h,a,x)=D_\psi(z_h,e(a),z_x)$ and does not consume $\widehat z_{h,a}$ in its policy path. Both are trained by GAR. Raw-distance GAR uses $d(\widehat z_{h,a},z_g)$ and has no learned scoring head. This last diagnostic receives the encoded terminal state and is not a deployable policy.
 
-The MLP JEPA uses a 256-dimensional state and action representation with an MLP predictor. The causal JEPA replaces this predictor with a causal Transformer over the encoded history. The token language model scores candidate phrases through token likelihood. The sentence language model predicts the next intent as a sentence-level class. The sentence-plus-latent model adds an auxiliary next-sentence representation loss and still selects by its generative score. All systems receive the same shuffled current feasible-action menu.
+For each pair whose target distances satisfy $\bar d_i+\epsilon<\bar d_j$, the ranking loss is
+\begin{equation}
+    \mathcal{L}_{\mathrm{rank}}
+    =\sum_{i\succ j}\left[m+E_\psi(h,a_i,x)-E_\psi(h,a_j,x)\right]_+.
+\end{equation}
+A pairwise regression term calibrates energy differences to target-distance differences:
+\begin{equation}
+    \mathcal{L}_{\mathrm{reg}}
+    =\sum_{i<j}\left[(E_j-E_i)-\beta(\bar d_j-\bar d_i)\right]^2.
+\end{equation}
+The complete objective is
+\begin{equation}
+    \mathcal{L}=\mathcal{L}_{\mathrm{factual}}
+    +\lambda_{\mathrm{cf}}\mathcal{L}_{\mathrm{cf}}
+    +\lambda_{\mathrm{rank}}\mathcal{L}_{\mathrm{rank}}
+    +\lambda_{\mathrm{reg}}\mathcal{L}_{\mathrm{reg}}.
+\end{equation}
+The default transition-value model allows the GAR gradients to reach the scorer, predictor, action encoder, and online state encoder. The target geometry changes only through slow EMA tracking. GAR is related to potential-based reward shaping \citep{ng1999policy}, but it does not add a fixed shaping reward to a known MDP. It jointly learns the representation, transition model, and action energy.
 
-We also train weight-shared recurrent token and sentence models. Their number of loops is sampled during training following the recurrent-depth test-time-compute setting of \citet{geiping2025recurrent}. Current loop curves are exploratory because their measured FLOPs are not yet calibrated to fixed work across policies.
+\subsection{Why local ordering is enough}
+
+Let $D^\star(h)$ be the minimum remaining action count in a deterministic unit-cost puzzle. Define
+\begin{equation}
+    A^\star(h,a)=D^\star(h)-1-D^\star(T(h,a)).
+\end{equation}
+An action on a shortest solution has value zero. An action that consumes a step without reducing the remaining distance has value $-1$.
+
+\begin{proposition}[Local ordering suffices for strict planning]
+If a learned score ranks every optimal action above every suboptimal action at every reachable history, greedy selection reaches the goal in exactly $D^\star(h_0)$ actions.
+\end{proposition}
+\begin{proof}
+At a history with distance $d>0$, the selected action is optimal and reaches a history with distance $d-1$. Repeating this argument reaches distance zero after exactly $d$ actions.
+\end{proof}
+
+\begin{corollary}[Robust ordering]
+If the smallest true action gap is $\gamma>0$ and $\sup_{h,a}|\widehat A(h,a)-A^\star(h,a)|<\gamma/2$, greedy selection preserves the optimal ordering.
+\end{corollary}
+
+GAR does not receive $A^\star$ in the main experiment. The proposition states the control condition that its geometric surrogate should approximate. It predicts that same-state ranking accuracy and margin should track strict success more closely than global effective rank or one-step prediction error.

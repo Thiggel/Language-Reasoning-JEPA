@@ -12,11 +12,11 @@ bash make_figures.sh
 latexmk -pdf -interaction=nonstopmode -halt-on-error main.tex
 ```
 
-The headline, GAR, representation, and preliminary length figures are copied
-from the current machine-readable evidence report. The repaired test-time
-compute figure is generated from the latest leakage-free fixed-checkpoint
-gate. The minimal-pair figure is an intentionally blank draft panel. It must
-not be interpreted as a result.
+The two conceptual figures are native TikZ sources. Empirical claims use
+tables until an analysis has a meaningful quantitative axis and a validated
+source artifact. The old bar charts, preliminary length plot, invalid scaling
+curve, and blank minimal-pair panel remain as historical files but are not
+included in the manuscript.
 
 Evidence tiers used in the manuscript:
 
@@ -26,6 +26,6 @@ Evidence tiers used in the manuscript:
    captions.
 4. Missing experiments remain `pending` rather than receiving inferred values.
 
-The completed controlled paraphrase, negation, and operator-swap analysis
-should replace `figures/minimal_pair_geometry_pending.pdf`. The old
-terminal-length-leaking planning curve is excluded from positive evidence.
+The controlled paraphrase, negation, and operator-swap analysis must retain its
+full-space statistics and frozen feature source before its shared t-SNE and
+UMAP illustrations enter the paper. The current scaling pilots are excluded.

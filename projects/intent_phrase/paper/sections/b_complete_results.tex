@@ -26,7 +26,7 @@ Advantage MSE weight $.50$ & $.402\pm.039$ & $.783\pm.026$ \\
 \end{table}
 
 \begin{table}[h]
-\caption{One-seed mechanism controls. These rows are exploratory. Geometry-only uses an oracle-terminal embedding and is candidate privileged.}
+\caption{One-seed mechanism controls. These rows are exploratory. Raw distance uses an oracle-terminal embedding and is candidate privileged. GAR names the supervision. TV and direct name the scoring factorization.}
 \label{tab:mechanism}
 \centering
 \small
@@ -34,12 +34,12 @@ Advantage MSE weight $.50$ & $.402\pm.039$ & $.783\pm.026$ \\
 \toprule
 Variant & Strict & $+2$ actions \\
 \midrule
-Full GAR & $.435$ & $.820$ \\
+Transition-value GAR & $.435$ & $.820$ \\
 Detached GAR body & $.375$ & $.775$ \\
 GAR without counterfactual latent loss & $.255$ & $.695$ \\
 Counterfactual latent only & $.080$ & $.410$ \\
-Direct ranker with successor auxiliaries & $.440$ & $.820$ \\
-Raw geometry only\privileged & $.190$ & $.625$ \\
+Direct GAR with successor auxiliaries & $.440$ & $.820$ \\
+Raw successor distance\privileged & $.190$ & $.625$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -71,59 +71,15 @@ Sentence LM + latent & $71.44$ & $.807$ & $.429$ & $.886$ & $-.029$ \\
 \toprule
 Control & Learning rate & Strict & $+2$ actions \\
 \midrule
-Direct ranker without successor auxiliaries & $10^{-4}$ & $.180$ & $.590$ \\
-Direct ranker without successor auxiliaries & $3\times10^{-4}$ & $.185$ & $.635$ \\
-Direct ranker without successor auxiliaries & $7\times10^{-4}$ & $.150$ & $.560$ \\
+Direct GAR without successor auxiliaries & $10^{-4}$ & $.180$ & $.590$ \\
+Direct GAR without successor auxiliaries & $3\times10^{-4}$ & $.185$ & $.635$ \\
+Direct GAR without successor auxiliaries & $7\times10^{-4}$ & $.150$ & $.560$ \\
 GAR with shuffled quality labels & $10^{-4}$ & $.015$ & $.170$ \\
 GAR with shuffled quality labels & $3\times10^{-4}$ & $.015$ & $.175$ \\
 GAR with shuffled quality labels & $7\times10^{-4}$ & $.015$ & $.175$ \\
 \bottomrule
 \end{tabular}
 \end{table}
-
-\begin{table}[h]
-\caption{Exploratory recurrent-depth language-model curves. These are raw one-seed loop results. FLOP calibration under fixed candidate work is pending.}
-\label{tab:looped}
-\centering
-\scriptsize
-\begin{tabular}{llrrrrrr}
-\toprule
-Model & Metric & 1 loop & 2 loops & 4 loops & 8 loops & 16 loops & 32 loops \\
-\midrule
-Token LM & Strict & $.065$ & $.140$ & $.155$ & $.170$ & $.170$ & $.140$ \\
-Token LM & $+2$ & $.550$ & $.700$ & $.705$ & $.725$ & $.695$ & $.650$ \\
-Sentence LM & Strict & $.290$ & $.430$ & $.475$ & $.450$ & $.395$ & \todoresult \\
-Sentence LM & $+2$ & $.700$ & $.800$ & $.800$ & $.740$ & $.735$ & \todoresult \\
-Sentence LM + latent & Strict & $.315$ & $.340$ & $.360$ & $.385$ & $.355$ & \todoresult \\
-Sentence LM + latent & $+2$ & $.705$ & $.770$ & $.770$ & $.795$ & $.785$ & \todoresult \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[h]
-\caption{Leakage-free one-seed scaling gate on 1,000 paired episodes. Depth greater than one uses a candidate-privileged future action tree.}
-\label{tab:scaling-gate}
-\centering
-\small
-\begin{tabular}{lrrr}
-\toprule
-Score & Depth 1 & Depth 2 & Depth 4 \\
-\midrule
-JEPA + GAR & $.471$ & $.106$ & $.135$ \\
-Direct ranker with successor auxiliaries & $.432$ & $.122$ & $.085$ \\
-Zero score & $.068$ & $.078$ & $.076$ \\
-Shuffled JEPA score & $.071$ & $.075$ & $.070$ \\
-Exact symbolic transition + direct score\privileged & $.432$ & $.141$ & $.087$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{figure}[h]
-\centering
-\includegraphics[width=\linewidth]{figures/representation_diagnostics.pdf}
-\caption{Five-seed frozen-feature diagnostics. Effective rank is not aligned with planning success. Sentence objectives make operation identity more accessible, while all systems expose progress-related variables. Resolved count remains confounded with elapsed step index.}
-\label{fig:representations}
-\end{figure}
 
 \begin{table}[h]
 \caption{Paper-suite completion matrix. Empty entries are intentional.}
@@ -139,7 +95,7 @@ Five-seed GAR ablation & complete & \todoresult & \todoresult & \todoresult \\
 Local ordering audit & one seed & \todoresult & \todoresult & \todoresult \\
 Length OOD & partial & \todoresult & \todoresult & \todoresult \\
 Controlled minimal pairs & \todoresult & \todoresult & \todoresult & \todoresult \\
-Test-time FLOP scaling & repaired pilot & \todoresult & \todoresult & \todoresult \\
+Test-time FLOP scaling & invalid pilot & \todoresult & \todoresult & \todoresult \\
 \bottomrule
 \end{tabular}
 \end{table}
