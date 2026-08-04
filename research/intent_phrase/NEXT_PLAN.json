@@ -1,41 +1,165 @@
 {
   "schema_version": 2,
-  "round_id": "2026-08-04-intent-oracle-distance-depth-controls-v1",
+  "round_id": "2026-08-04-intent-gar-energy-beam-ablation-v1",
   "project": "intent_phrase",
-  "git_commit": "2c236d6c916271144f1d6720365c9b595c82a76a",
-  "decision": "Test whether the candidate tree and first-action extraction support beneficial lookahead when the sequence evaluator is correct. Evaluate the same full-GAR checkpoint and paired validation puzzles with three increasingly privileged terminal criteria: predicted latent distance to an encoded oracle goal, exact-transition encoded distance to that goal, and exact symbolic remaining-step distance. Sweep depth 1, 2, and 4 and narrow versus wide continuation budgets. If exact remaining distance improves or remains optimal with depth while learned goal distance degrades, sequence evaluation rather than root extraction is the failure. If exact distance also degrades, candidate sampling or tie handling is responsible.",
+  "git_commit": "1edc9105ed0b970809a4d7b18c97387d88ed247d",
+  "decision": "Determine which calibrated JEPA-derived Energy supports receding-horizon planning. The anchor is a one-step transition Energy trained on predicted successors with GAR ranking and 0.25 absolute advantage MSE. Each cell changes one factor: direct versus predicted state input, absolute-MSE weight, transition advantage versus transition distance versus state distance, or the geometry-only continuation-teacher horizon. Every checkpoint is evaluated on identical feasible-action interfaces with true global beam search at depths 1, 4, 8, and 16. Advance only cells that improve strict success consistently or explain the prior negative depth curve; then repeat decision-grade cells over five seeds.",
   "jobs": [
     {
-      "id": "intent-oracle-distance-depth-controls-s0-v1",
+      "id": "energy-default-h1-seed0-v1",
       "cluster": "gruenau",
+      "gpus": 1,
+      "min_gpu_memory_mb": 40000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "default", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Reference: H1 transition Energy, predicted state, advantage target, rank plus MSE 0.25.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-teacher-h4-seed0-v1",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "min_gpu_memory_mb": 40000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "h4", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Isolated H4 geometry-only continuation-teacher ablation.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-teacher-h8-seed0-v1",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "min_gpu_memory_mb": 40000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "h8", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Isolated H8 geometry-only continuation-teacher ablation.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-teacher-h16-seed0-v1",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "min_gpu_memory_mb": 40000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "h16", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Isolated H16 geometry-only continuation-teacher ablation.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-true-state-seed0-v1",
+      "cluster": "Lise",
       "gpus": 1,
       "min_gpu_memory_mb": 20000,
       "cpus": 4,
-      "walltime_minutes": 360,
-      "command": [
-        "bash",
-        "scripts/run_intent_oracle_distance_controls.sh",
-        "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-31-intent-paper300k-jepa-and-ablation-recovery-v2/intent-paper300k-mlp-jepa-s0-v1-recovery-v2/model/best.pt"
-      ],
-      "env": {
-        "DEVICE": "cuda:0",
-        "N_EPISODES": "500",
-        "SEED": "7321",
-        "ORACLE_CELLS": "1:64 2:8 2:64 4:8 4:64"
-      },
-      "purpose": "Closed-loop oracle-distance controls separating candidate-tree validity, learned representation geometry, latent rollout drift, and terminal score quality. Depth above one uses the labeled candidate-privileged future feasible-action tree.",
-      "expected_artifacts": [
-        "scaling_summary.json",
-        "checkpoint.sha256",
-        "control_oracle_goal_depth1_cap64_slack0.json",
-        "control_oracle_goal_depth2_cap64_slack0.json",
-        "control_oracle_goal_depth4_cap64_slack0.json",
-        "control_symbolic_oracle_goal_depth4_cap64_slack0.json",
-        "control_symbolic_exact_distance_depth4_cap64_slack0.json",
-        "stdout.log",
-        "stderr.log"
-      ]
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "true_state", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Detach the Energy from imagined successors by training it on EMA true states.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-mse0-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "mse0", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Ranking-only Energy calibration control.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-mse01-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "mse01", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Absolute advantage MSE weight 0.1.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-mse05-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "mse05", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Absolute advantage MSE weight 0.5.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-mse1-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "mse1", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Absolute advantage MSE weight 1.0.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-action-distance-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "action_distance", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Transition Energy calibrated to absolute endpoint goal distance rather than advantage.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-state-distance-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "state_distance", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "State Energy baseline calibrated to endpoint goal distance.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-teacher-h2-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "h2", "3e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Isolated H2 geometry-only continuation-teacher ablation.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "energy-default-h1-lr7e4-seed0-v1",
+      "cluster": "Lise",
+      "gpus": 1,
+      "min_gpu_memory_mb": 20000,
+      "cpus": 4,
+      "walltime_minutes": 720,
+      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "default", "7e-4"],
+      "env": {"DEVICE": "cuda:0", "SEED": "0"},
+      "purpose": "Learning-rate cross-check for the new absolute Energy calibration scale.",
+      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
     }
   ]
 }
