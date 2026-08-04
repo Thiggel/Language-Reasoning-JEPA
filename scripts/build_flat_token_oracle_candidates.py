@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def require_flat_oracle_stage(stage: ResearchStage) -> None:
+    """Flat token diagnostics remain valid after higher modules are added."""
+    if stage < ResearchStage.TOKEN_JEPA:
+        raise ValueError("flat oracle requires at least a TOKEN_JEPA checkpoint")
+
+
 def _root_records(features: dict, horizon: int, maximum: int) -> list[dict]:
     roots = []
     for row in range(len(features["hidden_states"])):
@@ -169,8 +175,7 @@ def main() -> None:
     ):
         raise ValueError("feature provenance is incompatible")
     planning_model, learner = load_checkpoint(args.checkpoint, args.device)
-    if learner.stage != ResearchStage.TOKEN_JEPA:
-        raise ValueError("flat oracle requires a TOKEN_JEPA checkpoint")
+    require_flat_oracle_stage(learner.stage)
     tokenizer, frozen_model = load_reference_model(args.device, args.dtype)
     del tokenizer
     roots = _root_records(features, args.horizon, args.max_roots)
