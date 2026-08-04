@@ -53,6 +53,31 @@ class DirectActionRankHead(nn.Module):
         return self.net(torch.cat([state, initial, action], dim=-1)).squeeze(-1)
 
 
+class TransitionEnergyHead(nn.Module):
+    """Lower-is-better Energy of a predicted state transition."""
+
+    def __init__(self, d_state: int, hidden_mult: int = 2):
+        super().__init__()
+        width = 3 * d_state
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], 1),
+        )
+
+    def forward(
+        self,
+        state: torch.Tensor,
+        successor: torch.Tensor,
+        initial: torch.Tensor,
+    ) -> torch.Tensor:
+        while initial.dim() < state.dim():
+            initial = initial.unsqueeze(-2)
+        initial = initial.expand_as(state)
+        return self.net(
+            torch.cat([state, successor, initial], dim=-1)
+        ).squeeze(-1)
+
+
 class MacroValueHead(nn.Module):
     """Cost/advantage head for a macro action in a problem state."""
 

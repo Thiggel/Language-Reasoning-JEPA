@@ -69,6 +69,7 @@ def main(cfg: DictConfig) -> None:
                 simulator=cfg.get("simulator", "latent"),
                 allow_oracle_future_actions=cfg.allow_oracle_future_actions,
                 score_control=cfg.get("score_control", "model"),
+                search_algorithm=cfg.get("search_algorithm", "shooting"),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -107,9 +108,14 @@ def main(cfg: DictConfig) -> None:
             "slack": int(cfg.slack),
             "oracle_future_action_tree": bool(cfg.allow_oracle_future_actions),
             "score_control": str(cfg.get("score_control", "model")),
+            "search_algorithm": str(cfg.get("search_algorithm", "shooting")),
             "simulator": str(cfg.get("simulator", "latent")),
             "energy": str(cfg.get("energy", "value")),
-            "candidate_protocol": "balanced-fixed-depth-absorbing-v2",
+            "candidate_protocol": (
+                "global-beam-v1"
+                if cfg.get("search_algorithm", "shooting") == "beam"
+                else "balanced-fixed-depth-absorbing-v2"
+            ),
             "flop_measurement_requested": measure_flops,
             "flop_measurement_supported": FlopCounterMode is not None,
             "measured_eval_flops": total_flops,

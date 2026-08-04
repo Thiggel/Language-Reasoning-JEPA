@@ -570,6 +570,93 @@ def test_geometry_greedy_rollout_ranking(setup):
     assert torch.isfinite(loss) and loss >= 0
 
 
+def test_latent_beam_teacher_and_transition_energy_backpropagate():
+    from textjepa.objectives import GeoEnergyRegression
+
+    vocab = build_vocab(23)
+    ds = IGSMDataset(
+        vocab, size=3, seed=83, geo_rank_k=2,
+        geo_rank_horizon=3, geo_rank_policy="latent_beam",
+        geo_rank_beam_width=2,
+    )
+    batch = collate([ds[i] for i in range(3)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_layers=1, predictor_heads=2,
+        geo_rank_score_mode="transition",
+        geo_energy_target="advantage",
+        geo_energy_state_source="predicted", value_detach=False,
+    ).train()
+    assert not model.predictor_teacher.training
+    assert not model.predictor_teacher.module.training
+    out = model(batch)
+    assert out.extras["ga_latent_beam_distance"].shape == (3, 3)
+    assert torch.isfinite(
+        out.extras["ga_label"][out.extras["ga_valid"]]
+    ).all()
+    current = out.extras["prev_states_tgt"][
+        torch.arange(3), batch["ga_t"]
+    ]
+    goal = out.step_states_tgt[
+        torch.arange(3), out.step_mask.sum(1) - 1
+    ]
+    ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
+    current_distance = (ln(current) - ln(goal)).abs().mean(-1, keepdim=True)
+    expected = out.extras["ga_label"] - current_distance
+    torch.testing.assert_close(
+        out.extras["ga_energy_target"][out.extras["ga_valid"]],
+        expected[out.extras["ga_valid"]],
+    )
+    GeoEnergyRegression()(out, batch).backward()
+    assert any(
+        p.grad is not None for p in model.core.transition_energy_head.parameters()
+    )
+    assert any(p.grad is not None for p in model.core.predictor.parameters())
+    assert all(
+        p.grad is None for p in model.predictor_teacher.parameters()
+    )
+
+
+def test_true_state_energy_ablation_blocks_energy_gradient_from_predictor():
+    from textjepa.objectives import GeoEnergyRegression
+
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=2, seed=91, geo_rank_k=2)
+    batch = collate([ds[i] for i in range(2)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="transition",
+        geo_energy_state_source="true", value_detach=False,
+    )
+    out = model(batch)
+    GeoEnergyRegression()(out, batch).backward()
+    assert not any(p.grad is not None for p in model.core.predictor.parameters())
+    assert any(
+        p.grad is not None for p in model.core.transition_energy_head.parameters()
+    )
+
+
+def test_absolute_energy_mse_masks_invalid_candidates(setup):
+    from textjepa.objectives import GeoEnergyRegression
+
+    _, batch, model = setup
+    out = model(batch)
+    energy = torch.tensor([[1.0, 2.0, 99.0]], requires_grad=True)
+    out.extras.update(
+        ga_energy=energy,
+        ga_energy_target=torch.tensor([[1.0, 3.0, float("inf")]]),
+        ga_valid=torch.tensor([[True, True, False]]),
+    )
+    loss = GeoEnergyRegression()(out, batch)
+    assert loss.item() == pytest.approx(0.5)
+    loss.backward()
+    assert energy.grad[0, 2].item() == 0.0
+
+
 def test_observed_action_ldad_reconstructs_raw_tokens(setup):
     from textjepa.objectives import ObservedActionLDAD
 

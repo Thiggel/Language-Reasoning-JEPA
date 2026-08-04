@@ -345,6 +345,21 @@ def test_geometry_greedy_metadata_collates_without_symbolic_quality_labels():
     assert len(batch["ga_traces"]) == 6
 
 
+def test_geometry_latent_beam_metadata_has_no_rendered_rollouts():
+    vocab = build_vocab(23)
+    ds = IGSMDataset(
+        vocab, size=6, seed=117, geo_rank_k=2,
+        geo_rank_horizon=4, geo_rank_policy="latent_beam",
+        geo_rank_beam_width=3,
+    )
+    batch = collate([ds[i] for i in range(6)], vocab.pad_id)
+    assert batch["ga_latent_beam"] is True
+    assert batch["ga_greedy"] is False
+    assert batch["ga_horizon"] == 4
+    assert "ga_rollout_step_tokens" not in batch
+    assert len(batch["ga_problems"]) == 6
+
+
 def test_faithful_geometry_greedy_uses_reference_environment():
     from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
 

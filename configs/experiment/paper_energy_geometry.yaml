@@ -1,0 +1,21 @@
+# @package _global_
+# Anchored GAR Energy study.  The reference is a one-step transition Energy,
+# trained on predicted successors with pairwise ranking plus 0.25 absolute
+# advantage regression.  Runner variants change one field at a time.
+defaults: [paper_recovery_mlp_geometry, _self_]
+run_name: paper_energy_geometry
+model:
+  geo_rank_score_mode: transition
+  geo_energy_target: advantage
+  geo_energy_state_source: predicted
+  value_detach: false
+objective:
+  geo_rank: {weight: 1.0, margin: 0.5, label_gap: 0.02}
+  geo_advantage_mse: {weight: 0.0, target_scale: 1.0}
+  geo_energy_mse: {weight: 0.25}
+  counterfactual_state: {weight: 1.0}
+data:
+  geo_rank_k: 2
+  geo_rank_horizon: 1
+  geo_rank_policy: latent_beam
+  geo_rank_beam_width: 4

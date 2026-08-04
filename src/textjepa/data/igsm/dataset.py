@@ -134,7 +134,7 @@ class IGSMDataset(Dataset):
         self.all_action_supervision = bool(all_action_supervision)
         self.sample_max_tries = max(1, int(sample_max_tries))
         self.strict_steps_range = bool(strict_steps_range)
-        if self.geo_rank_policy not in {"random", "greedy"}:
+        if self.geo_rank_policy not in {"random", "greedy", "latent_beam"}:
             raise ValueError(f"unknown geo_rank_policy: {self.geo_rank_policy}")
         self.adjectives = adjectives or DEFAULT_ADJECTIVES
         self.nouns = nouns or DEFAULT_NOUNS
@@ -237,13 +237,17 @@ class IGSMDataset(Dataset):
                         self.vocab.encode(env2.clone().step(a)) for a in alts
                     ],
                 }
-                if self.geo_rank_horizon > 1 and self.geo_rank_policy == "greedy":
+                if (
+                    self.geo_rank_horizon > 1
+                    and self.geo_rank_policy in {"greedy", "latent_beam"}
+                ):
                     # The model follows the greedy continuation online because
                     # the policy depends on the current EMA geometry.  Keep the
                     # symbolic problem only as an interaction interface; no
                     # ancestor, remaining-step, or preference labels are used.
                     ga.update(
-                        ga_greedy=True,
+                        ga_greedy=self.geo_rank_policy == "greedy",
+                        ga_latent_beam=self.geo_rank_policy == "latent_beam",
                         ga_problem=p,
                         ga_trace=list(trace),
                         ga_vocab=self.vocab,
@@ -558,7 +562,10 @@ def collate(batch: list[dict], pad_id: int) -> dict:
                      ga_candidate_ids=gac,
                      ga_alt_action_tokens=gaa,
                      ga_alt_step_tokens=gas, ga_valid=gav)
-        if any(b.get("ga_greedy", False) for b in batch):
+        if any(
+            b.get("ga_greedy", False) or b.get("ga_latent_beam", False)
+            for b in batch
+        ):
             candidate_objects = [
                 list(b.get("ga_candidate_objects", [])) for b in batch
             ]
@@ -568,7 +575,10 @@ def collate(batch: list[dict], pad_id: int) -> dict:
                 for row in candidate_objects
             ]
             extra.update(
-                ga_greedy=True,
+                ga_greedy=any(b.get("ga_greedy", False) for b in batch),
+                ga_latent_beam=any(
+                    b.get("ga_latent_beam", False) for b in batch
+                ),
                 ga_problems=[b.get("ga_problem") for b in batch],
                 ga_traces=[b.get("ga_trace") for b in batch],
                 ga_candidate_objects=candidate_objects,

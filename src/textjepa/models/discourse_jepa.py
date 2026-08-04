@@ -106,6 +106,8 @@ class DiscourseJEPA(nn.Module):
         d_macro: int = 8,
         value_detach: bool = True,
         geo_rank_score_mode: str = "value",
+        geo_energy_target: str = "advantage",
+        geo_energy_state_source: str = "predicted",
         geo_rank_label_control: str = "true",
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
@@ -139,11 +141,21 @@ class DiscourseJEPA(nn.Module):
         self.chunk_target = chunk_target
         self.freeze_encoders = freeze_encoders
         self.state_target = state_target
-        if geo_rank_score_mode not in {"value", "distance", "direct"}:
+        if geo_rank_score_mode not in {
+            "transition", "value", "distance", "direct"
+        }:
             raise ValueError(
                 f"unknown GAR score mode: {geo_rank_score_mode}"
             )
         self.geo_rank_score_mode = geo_rank_score_mode
+        if geo_energy_target not in {"advantage", "distance"}:
+            raise ValueError(f"unknown GAR Energy target: {geo_energy_target}")
+        if geo_energy_state_source not in {"predicted", "true"}:
+            raise ValueError(
+                f"unknown GAR Energy state source: {geo_energy_state_source}"
+            )
+        self.geo_energy_target = geo_energy_target
+        self.geo_energy_state_source = geo_energy_state_source
         if geo_rank_label_control not in {"true", "cyclic_shuffle"}:
             raise ValueError(
                 f"unknown GAR label control: {geo_rank_label_control}"
@@ -232,14 +244,16 @@ class DiscourseJEPA(nn.Module):
         )
         # Keep the active policy-head budget information matched.  Inactive
         # heads remain in the module only for checkpoint compatibility.
-        if geo_rank_score_mode == "direct":
-            self.core.value_head.requires_grad_(False)
-        else:
-            self.core.direct_action_rank_head.requires_grad_(False)
-        if geo_rank_score_mode == "distance":
-            self.core.value_head.requires_grad_(False)
+        self.core.value_head.requires_grad_(geo_rank_score_mode == "value")
+        self.core.transition_energy_head.requires_grad_(
+            geo_rank_score_mode == "transition"
+        )
+        self.core.direct_action_rank_head.requires_grad_(
+            geo_rank_score_mode == "direct"
+        )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
+        self.predictor_teacher = EMATeacher(self.core.predictor)
         # frozen random-init copy: fixed, informative chunk-embedding targets
         # (never updated; random features provably retain surface content)
         self.chunk_anchor = EMATeacher(self.chunk_encoder)
@@ -302,6 +316,7 @@ class DiscourseJEPA(nn.Module):
     def update_teachers(self, momentum: float) -> None:
         self.chunk_teacher.update(self.chunk_encoder, momentum)
         self.state_teacher.update(self.state_model, momentum)
+        self.predictor_teacher.update(self.core.predictor, momentum)
 
     # ------------------------------------------------------------------ #
     def forward(self, batch: dict) -> JEPAOutputs:
@@ -311,13 +326,15 @@ class DiscourseJEPA(nn.Module):
         )
         if self.state_target == "ema":
             with torch.no_grad():
-                _, step_states_tgt = self.encode_states(
+                s0_tgt, step_states_tgt = self.encode_states(
                     batch["prompt_tokens"], batch["prompt_mask"],
                     batch["step_tokens"], batch["step_mask"], teacher=True,
                 )
         elif self.state_target == "online":
+            s0_tgt = s0.detach()
             step_states_tgt = step_states.detach()
         else:  # online_nosg: gradients flow through the target side too
+            s0_tgt = s0
             step_states_tgt = step_states
         with torch.no_grad():
             action_emb_tgt = self.encode_chunks(batch["action_tokens"], teacher=True)
@@ -352,6 +369,10 @@ class DiscourseJEPA(nn.Module):
             s0, step_states, step_states_tgt, actions, action_emb_tgt,
             batch["step_mask"], step_emb_tgt=step_emb_tgt,
             alt_actions=alt_actions,
+        )
+        out.extras["s0_tgt"] = s0_tgt
+        out.extras["prev_states_tgt"] = torch.cat(
+            [s0_tgt.unsqueeze(1), step_states_tgt[:, :-1]], dim=1
         )
         if out.hi_preds is not None:
             K = self.core.macro_k
@@ -614,12 +635,7 @@ class DiscourseJEPA(nn.Module):
         if self.core.value_detach:
             pe, preds_alt = pe.detach(), preds_alt.detach()
         score_mode = self.geo_rank_score_mode
-        if score_mode == "value":
-            e_exec = self.core.value_head(pe, out.s0)
-            e_alt = self.core.value_head(
-                preds_alt.reshape(B * K, -1), out.s0.repeat_interleave(K, 0)
-            ).reshape(B, K)
-        elif score_mode == "direct":
+        if score_mode == "direct":
             direct_state = s_anchor.detach() if self.core.value_detach else s_anchor
             direct_exec_action = out.actions[bidx, t]
             direct_alt_action = (
@@ -674,7 +690,12 @@ class DiscourseJEPA(nn.Module):
             s_alt_true = alt_next_states[
                 torch.arange(B * K, device=device), next_index
             ].reshape(B, K, -1)
-            if batch.get("ga_greedy", False):
+            if batch.get("ga_latent_beam", False):
+                d, candidate_valid = self._latent_beam_geo_labels(
+                    batch, out, goal
+                )
+                out.extras["ga_latent_beam_distance"] = d
+            elif batch.get("ga_greedy", False):
                 d, candidate_valid = self._greedy_geo_labels(batch, goal)
                 out.extras["ga_greedy_distance"] = d
             elif "ga_rollout_step_tokens" in batch:
@@ -757,7 +778,34 @@ class DiscourseJEPA(nn.Module):
                     [valid_b.unsqueeze(1),
                      batch["ga_valid"] & valid_b.unsqueeze(1)], 1
                 )
-        if score_mode == "distance":
+        predicted_successors = torch.cat(
+            [pe.unsqueeze(1), preds_alt], dim=1
+        )
+        true_successors = torch.cat(
+            [out.step_states_tgt[bidx, t].unsqueeze(1), s_alt_true], dim=1
+        )
+        if score_mode in {"transition", "value"}:
+            use_true = self.geo_energy_state_source == "true"
+            successors = true_successors if use_true else predicted_successors
+            current = (
+                out.extras["prev_states_tgt"][bidx, t]
+                if use_true else s_anchor
+            )
+            initial = out.extras["s0_tgt"] if use_true else out.s0
+            if self.core.value_detach:
+                successors = successors.detach()
+                current = current.detach()
+                initial = initial.detach()
+            if score_mode == "transition":
+                energies = self.core.transition_energy_head(
+                    current.unsqueeze(1).expand_as(successors),
+                    successors,
+                    initial,
+                )
+            else:
+                energies = self.core.value_head(successors, initial)
+            e_exec, e_alt = energies[:, 0], energies[:, 1:]
+        elif score_mode == "distance":
             # Oracle-terminal geometry control.  The terminal EMA state is a
             # training/evaluation diagnostic and must never be described as a
             # deployable action-free planner.
@@ -776,6 +824,16 @@ class DiscourseJEPA(nn.Module):
         out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
         out.extras["ga_label"] = ga_label
         out.extras["ga_valid"] = candidate_valid
+        current_true = out.extras["prev_states_tgt"][bidx, t]
+        current_distance = (
+            ln(current_true) - ln(goal)
+        ).abs().mean(-1, keepdim=True)
+        target = d
+        if self.geo_energy_target == "advantage":
+            target = d - current_distance
+        out.extras["ga_energy_target"] = target.masked_fill(
+            ~candidate_valid, 0.0
+        )
         out.extras["ga_cf_pred"] = cf_preds_alt
         out.extras["ga_cf_target"] = s_alt_true
         out.extras["ga_cf_valid"] = ga_valid
@@ -800,6 +858,159 @@ class DiscourseJEPA(nn.Module):
             shift = int(torch.randint(1, count, (), device=labels.device))
             shuffled[row, indices] = labels[row, indices.roll(shift)]
         return shuffled
+
+    @torch.no_grad()
+    def _latent_beam_geo_labels(
+        self, batch: dict, out, goal: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """N-step geometry teacher using only EMA JEPA imagination.
+
+        The environment supplies candidate availability.  It never supplies
+        an outcome, relevance label, remaining-step count, or transition to
+        the teacher.  Each root receives its own beam budget, preventing a
+        strong first action from suppressing the alternatives it is meant to
+        be compared against.  Action phrases are encoded once and all paths
+        of a common observed-prefix length are predicted in one call.
+        """
+        import torch.nn.functional as Fn
+        from textjepa.data.igsm.render import action_phrase
+
+        device = goal.device
+        objects = batch["ga_candidate_objects"]
+        B, C = len(objects), len(objects[0])
+        valid = torch.tensor(
+            [[action is not None for action in row] for row in objects],
+            dtype=torch.bool, device=device,
+        )
+        labels = goal.new_full((B, C), float("inf"))
+        horizon = int(batch.get("ga_horizon", 1))
+        width = max(1, int(batch.get("ga_beam_width", 1)))
+
+        # Encode every intent phrase once.  The action encoder is not an EMA
+        # target, so its detached current code is the teacher's action input.
+        entries: list[tuple[int, int]] = []
+        phrases: list[list[int]] = []
+        vocab = batch["ga_vocab"]
+        for b, problem in enumerate(batch["ga_problems"]):
+            if problem is None:
+                continue
+            for action in range(len(problem.vars)):
+                entries.append((b, action))
+                phrases.append(vocab.encode(action_phrase(problem, action)))
+        code_cache: dict[tuple[int, int], torch.Tensor] = {}
+        if phrases:
+            L = max(map(len, phrases))
+            tokens = torch.full(
+                (len(phrases), 1, L), self.chunk_encoder.pad_id,
+                dtype=torch.long, device=device,
+            )
+            for row, ids in enumerate(phrases):
+                tokens[row, 0, :len(ids)] = torch.tensor(ids, device=device)
+            codes = self.encode_actions(tokens).squeeze(1).detach()
+            code_cache = {key: codes[i] for i, key in enumerate(entries)}
+
+        paths: list[dict] = []
+        for b, row in enumerate(objects):
+            if int(batch["ga_t"][b]) < 0:
+                continue
+            t = int(batch["ga_t"][b])
+            resolved = frozenset(batch["ga_traces"][b][:t])
+            for c, action in enumerate(row):
+                if action is not None:
+                    paths.append({
+                        "b": b, "c": c, "seq": [int(action)],
+                        "resolved": resolved | {int(action)},
+                    })
+
+        def predict(path_rows: list[dict]) -> torch.Tensor:
+            if not path_rows:
+                return goal.new_empty((0, goal.shape[-1]))
+            leaves = goal.new_empty((len(path_rows), goal.shape[-1]))
+            by_t: dict[tuple[int, int], list[int]] = {}
+            for i, path in enumerate(path_rows):
+                key = (int(batch["ga_t"][path["b"]]), len(path["seq"]))
+                by_t.setdefault(key, []).append(i)
+            predictor = self.predictor_teacher.module
+            for (t, _length), indices in by_t.items():
+                bsel = torch.tensor(
+                    [path_rows[i]["b"] for i in indices], device=device
+                )
+                seq_codes = torch.stack([
+                    torch.stack([
+                        code_cache[(path_rows[i]["b"], action)]
+                        for action in path_rows[i]["seq"]
+                    ]) for i in indices
+                ])
+                start = out.extras["prev_states_tgt"][bsel, t]
+                if getattr(predictor, "causal_sequence", False):
+                    history = torch.cat([
+                        out.extras["s0_tgt"][bsel].unsqueeze(1),
+                        out.step_states_tgt[bsel, :t],
+                    ], dim=1)
+                    action_history = out.actions[bsel, :t].detach()
+                    pred = predictor.rollout(
+                        start, seq_codes,
+                        state_history=history,
+                        action_history=action_history,
+                    )[:, -1]
+                else:
+                    cur = start
+                    for step in range(seq_codes.shape[1]):
+                        cur = predictor(cur, seq_codes[:, step])
+                    pred = cur
+                leaves[torch.tensor(indices, device=device)] = pred
+            return leaves
+
+        leaves = predict(paths)
+        ln = lambda x: Fn.layer_norm(x, x.shape[-1:])
+        for _ in range(1, horizon):
+            options: list[dict] = []
+            for path in paths:
+                problem = batch["ga_problems"][path["b"]]
+                if problem.query in path["resolved"]:
+                    options.append(path)
+                    continue
+                feasible = [
+                    v.idx for v in problem.vars
+                    if v.idx not in path["resolved"]
+                    and all(p in path["resolved"] for p in v.parents)
+                ]
+                for action in feasible:
+                    options.append({
+                        "b": path["b"], "c": path["c"],
+                        "seq": path["seq"] + [action],
+                        "resolved": path["resolved"] | {action},
+                    })
+            if not options:
+                break
+            option_leaves = predict(options)
+            option_b = torch.tensor(
+                [p["b"] for p in options], device=device
+            )
+            distance = (
+                ln(option_leaves) - ln(goal.index_select(0, option_b))
+            ).abs().mean(-1)
+            grouped: dict[tuple[int, int], list[int]] = {}
+            for i, path in enumerate(options):
+                grouped.setdefault((path["b"], path["c"]), []).append(i)
+            selected: list[int] = []
+            for indices in grouped.values():
+                selected.extend(sorted(
+                    indices, key=lambda i: float(distance[i])
+                )[:width])
+            paths = [options[i] for i in selected]
+            leaves = option_leaves[torch.tensor(selected, device=device)]
+
+        if paths:
+            path_b = torch.tensor([p["b"] for p in paths], device=device)
+            distance = (
+                ln(leaves) - ln(goal.index_select(0, path_b))
+            ).abs().mean(-1)
+            for i, path in enumerate(paths):
+                labels[path["b"], path["c"]] = torch.minimum(
+                    labels[path["b"], path["c"]], distance[i]
+                )
+        return labels, valid & torch.isfinite(labels)
 
     @torch.no_grad()
     def _greedy_geo_labels(

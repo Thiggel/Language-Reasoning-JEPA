@@ -16,7 +16,7 @@ n_alt: 0
 geo_rank_k: 0
 geo_rank_horizon: 1
 geo_rank_rollouts: 1
-geo_rank_policy: random  # random | greedy; greedy is selected online in EMA geometry
+geo_rank_policy: random  # random | greedy (true outcomes) | latent_beam (EMA predictor)
 geo_rank_beam_width: 1   # bounded geometry-greedy continuation; 1 = ordinary greedy
 macro_alt_k: 0
 macro_alt_horizon: 3

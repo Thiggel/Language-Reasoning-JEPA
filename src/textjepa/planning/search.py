@@ -105,6 +105,7 @@ class LatentPlanner:
         simulator: str = "latent",  # "latent" (F rollouts) | "symbolic"
         allow_oracle_future_actions: bool = False,
         score_control: str = "model",  # model | shuffle | zero
+        search_algorithm: str = "shooting",  # shooting | beam
     ):
         if lookahead > 1 and not allow_oracle_future_actions:
             raise ValueError(
@@ -131,6 +132,9 @@ class LatentPlanner:
         if score_control not in {"model", "shuffle", "zero"}:
             raise ValueError(f"unknown score control: {score_control}")
         self.score_control = score_control
+        if search_algorithm not in {"shooting", "beam"}:
+            raise ValueError(f"unknown search algorithm: {search_algorithm}")
+        self.search_algorithm = search_algorithm
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -167,20 +171,27 @@ class LatentPlanner:
                 problem,
                 action_history,
             )
-            seqs = _sequences(
-                problem,
-                frozenset(env.resolved_set),
-                self.lookahead,
-                self.max_expand,
-                random.Random(f"{seed}:{len(step_texts)}:candidates"),
-            )
-            best = self._best_sequence(
-                s, s0, problem, seqs, goal_state,
-                state_history=state_history,
-                action_history=action_codes,
-                sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
-                score_seed=f"{seed}:{len(step_texts)}:scores",
-            )
+            if self.search_algorithm == "beam":
+                best = self._beam_search(
+                    s, s0, problem, frozenset(env.resolved_set), goal_state,
+                    state_history, action_codes,
+                    score_seed=f"{seed}:{len(step_texts)}:scores",
+                )
+            else:
+                seqs = _sequences(
+                    problem,
+                    frozenset(env.resolved_set),
+                    self.lookahead,
+                    self.max_expand,
+                    random.Random(f"{seed}:{len(step_texts)}:candidates"),
+                )
+                best = self._best_sequence(
+                    s, s0, problem, seqs, goal_state,
+                    state_history=state_history,
+                    action_history=action_codes,
+                    sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
+                    score_seed=f"{seed}:{len(step_texts)}:scores",
+                )
             chosen = best[0]
             n_distractor += int(chosen not in problem.query_ancestors)
             step_texts.append(env.step(chosen))
@@ -347,7 +358,7 @@ class LatentPlanner:
                     )
                     continue
                 if hasattr(self.model.predictor, "rollout"):
-                    cur = self.model.predictor.rollout(
+                    rollout_states = self.model.predictor.rollout(
                         s.expand(len(selected), -1),
                         future,
                         state_history=(
@@ -358,11 +369,33 @@ class LatentPlanner:
                             action_history.expand(len(selected), -1, -1)
                             if action_history is not None else None
                         ),
-                    )[:, -1]
+                    )
+                    cur = rollout_states[:, -1]
                 else:
                     cur = s.expand(len(selected), -1)
+                    rollout = []
                     for step in range(length):
                         cur = self.model.predictor(cur, future[:, step])
+                        rollout.append(cur)
+                    rollout_states = torch.stack(rollout, dim=1)
+            if (
+                getattr(self.model, "geo_rank_score_mode", "value")
+                == "transition" and length > 0
+            ):
+                previous = torch.cat([
+                    s.expand(len(selected), -1).unsqueeze(1),
+                    rollout_states[:, :-1],
+                ], dim=1)
+                step_energy = self.model.core.transition_energy_head(
+                    previous, rollout_states, s0.expand(len(selected), -1)
+                )
+                total[torch.tensor(selected, device=self.device)] = (
+                    step_energy.sum(dim=1)
+                    if getattr(self.model, "geo_energy_target", "advantage")
+                    == "advantage"
+                    else step_energy[:, -1]
+                )
+                continue
             steps = torch.full(
                 (len(selected),), float(self.lookahead), device=self.device
             )
@@ -370,6 +403,47 @@ class LatentPlanner:
                 cur, s0, steps, goal_state
             )
         return total
+
+    def _beam_search(
+        self,
+        s: torch.Tensor,
+        s0: torch.Tensor,
+        problem: Problem,
+        resolved: frozenset[int],
+        goal_state: torch.Tensor | None,
+        state_history: torch.Tensor,
+        action_history: torch.Tensor,
+        score_seed: str,
+    ) -> list[int | None]:
+        """True global beam search over JEPA-imagined continuations."""
+        beam = [[action] for action in _feasible(problem, resolved)]
+        if not beam:
+            return [None]
+        for depth in range(1, self.lookahead + 1):
+            if depth > 1:
+                expanded: list[list[int | None]] = []
+                for sequence in beam:
+                    reached = resolved | {
+                        a for a in sequence if a is not None
+                    }
+                    if problem.query in reached:
+                        expanded.append(sequence + [None])
+                        continue
+                    actions = _feasible(problem, frozenset(reached))
+                    expanded.extend(sequence + [a] for a in actions)
+                beam = expanded
+            costs = self._flat_costs(
+                s, s0, problem, beam, goal_state,
+                state_history, action_history,
+            )
+            keep = min(self.max_expand, len(beam))
+            indices = torch.argsort(costs, stable=True)[:keep].tolist()
+            beam = [beam[i] for i in indices]
+        costs = self._flat_costs(
+            s, s0, problem, beam, goal_state,
+            state_history, action_history,
+        )
+        return beam[self._controlled_argmin(costs, score_seed)]
 
     def _macro_costs(
         self,

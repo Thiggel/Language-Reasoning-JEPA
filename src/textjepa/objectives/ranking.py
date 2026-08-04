@@ -139,3 +139,17 @@ class GeoAdvantageRegression(Objective):
         )
         squared_error = (predicted_advantage - target_advantage).square()
         return squared_error[pair_valid].sum() / pair_valid.sum().clamp(min=1)
+
+
+class GeoEnergyRegression(Objective):
+    """Calibrate each lower-is-better Energy to its absolute teacher target."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "ga_energy_target" not in out.extras:
+            return out.step_states.sum() * 0.0
+        energy = out.extras["ga_energy"]
+        target = out.extras["ga_energy_target"].detach()
+        valid = out.extras["ga_valid"] & torch.isfinite(target)
+        safe_target = target.masked_fill(~valid, 0.0)
+        error = (energy - safe_target).square()
+        return error[valid].sum() / valid.sum().clamp(min=1)

@@ -92,6 +92,70 @@ def test_score_controls_are_deterministic_and_reject_unknown_values():
     )
     with pytest.raises(ValueError, match="unknown score control"):
         LatentPlanner(None, None, torch.device("cpu"), score_control="bad")
+    with pytest.raises(ValueError, match="unknown search algorithm"):
+        LatentPlanner(None, None, torch.device("cpu"), search_algorithm="bad")
+
+
+def test_transition_advantage_energy_is_summed_across_rollout():
+    from types import SimpleNamespace
+    from torch import nn
+
+    class Predictor(nn.Module):
+        def forward(self, state, action):
+            return state + action
+
+    class Energy(nn.Module):
+        def forward(self, state, successor, initial):
+            return successor[..., 0]
+
+    model = SimpleNamespace(
+        predictor=Predictor(), geo_rank_score_mode="transition",
+        geo_energy_target="advantage",
+        core=SimpleNamespace(
+            macro_k=0, d_action=1, transition_energy_head=Energy()
+        ),
+    )
+    planner = LatentPlanner(
+        model, None, torch.device("cpu"), lookahead=2,
+        allow_oracle_future_actions=True,
+    )
+    planner._action_codes = lambda _problem, actions: torch.tensor(
+        actions, dtype=torch.float32
+    ).unsqueeze(-1)
+    costs = planner._flat_costs(
+        torch.zeros(1, 1), torch.zeros(1, 1), None, [[1, 2]], None
+    )
+    # Predicted states are 1 then 3, so cumulative Energy is 1 + 3.
+    torch.testing.assert_close(costs, torch.tensor([4.0]))
+
+
+def test_genuine_beam_returns_root_of_best_complete_sequence(monkeypatch):
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=121).problem(0)
+    roots = _feasible(problem, frozenset())
+    assert len(roots) >= 2
+    planner = LatentPlanner(
+        None, vocab, torch.device("cpu"), lookahead=2, max_expand=len(roots),
+        allow_oracle_future_actions=True, search_algorithm="beam",
+    )
+
+    def costs(_s, _s0, _problem, sequences, *_args):
+        values = []
+        for sequence in sequences:
+            # Root 0 is initially attractive. A continuation under root 1 is
+            # the best complete beam, so receding-horizon choice must use 1.
+            if len(sequence) == 1:
+                values.append(float(0 if sequence[0] == roots[0] else 1))
+            else:
+                values.append(float(-10 if sequence[0] == roots[1] else 0))
+        return torch.tensor(values)
+
+    monkeypatch.setattr(planner, "_flat_costs", costs)
+    best = planner._beam_search(
+        torch.zeros(1, 1), torch.zeros(1, 1), problem, frozenset(), None,
+        torch.zeros(1, 1, 1), torch.zeros(1, 0, 1), "seed",
+    )
+    assert best[0] == roots[1]
 
 
 def test_symbolic_direct_control_uses_direct_head_end_to_end():

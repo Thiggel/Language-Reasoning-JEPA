@@ -17,6 +17,7 @@ lookahead: 1
 # an explicitly labeled oracle-action diagnostic.
 allow_oracle_future_actions: false
 max_expand: 64
+search_algorithm: shooting  # shooting | beam
 # oracle_goal encodes the solved trajectory and scores representation distance.
 # symbolic_distance reads exact remaining steps from the environment and also
 # requires simulator=symbolic. Both are explicitly oracle diagnostics.
