@@ -38,7 +38,7 @@ model_dir="$RUN_DIR/model"
   model.state_layers=4 model.state_heads=8 model.predictor_layers=2 \
   model.ff_mult=4 model.d_action=16 model.max_chunk_len=96 model.max_chunks=96 \
   model.geo_rank_score_mode="$head" model.geo_energy_target="$target" \
-  model.geo_energy_state_source="$source" \
+  "model.geo_energy_state_source='$source'" \
   objective.geo_energy_mse.weight="$mse" \
   data.geo_rank_horizon="$horizon" data.geo_rank_policy=latent_beam \
   data.geo_rank_beam_width=4 hydra.run.dir="$model_dir" hydra.output_subdir=null
