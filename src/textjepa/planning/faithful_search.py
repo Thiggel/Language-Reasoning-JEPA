@@ -55,24 +55,38 @@ class FaithfulPlanner:
         sm = torch.ones(1, st.shape[1], dtype=torch.bool, device=self.device)
         return self.model.encode_states(pt, pm, st, sm)[1][:, -1]
 
-    def _sequences(self, env: FaithfulEnv) -> list[list]:
-        seqs, frontier = [], [([], env)]
-        for _ in range(self.lookahead):
-            nxt = []
-            for prefix, e in frontier:
-                for q in e.feasible_actions():
-                    c = e.clone()
-                    c.resolved.append(q)  # feasibility-only step (no render)
-                    nxt.append((prefix + [q], c))
-                    if len(nxt) >= self.max_expand:
-                        break
-                if len(nxt) >= self.max_expand:
-                    break
-            frontier = nxt
-            seqs += [p for p, _ in frontier]
-        # keep deepest-first unique prefixes, cap
-        seqs = sorted(seqs, key=len, reverse=True)[: self.max_expand * 4]
-        return seqs or [[]]
+    def _sequences(
+        self, env: FaithfulEnv, rng: random.Random
+    ) -> list[list]:
+        """Balanced fixed-depth rollouts with absorbing terminal padding."""
+        roots = list(env.feasible_actions())
+        rng.shuffle(roots)
+        if not roots:
+            return [[None] * self.lookahead]
+        if self.lookahead == 1:
+            return [[root] for root in roots]
+        total = max(self.max_expand, len(roots))
+        quotient, remainder = divmod(total, len(roots))
+        sequences = []
+        for root_index, root in enumerate(roots):
+            for _ in range(quotient + int(root_index < remainder)):
+                candidate = env.clone()
+                candidate.resolved.append(root)  # feasibility-only transition
+                sequence = [root]
+                for _step in range(1, self.lookahead):
+                    if candidate.solved:
+                        sequence.append(None)
+                        continue
+                    feasible = list(candidate.feasible_actions())
+                    if not feasible:
+                        sequence.append(None)
+                        continue
+                    action = rng.choice(feasible)
+                    candidate.resolved.append(action)
+                    sequence.append(action)
+                sequences.append(sequence)
+        rng.shuffle(sequences)
+        return sequences
 
     @torch.no_grad()
     def plan_episode(self, fp, slack: int = 0, seed: int = 0) -> EpisodeResult:
@@ -85,11 +99,17 @@ class FaithfulPlanner:
         s0 = self._state(pt, pm, [])
         while not env.solved and len(step_texts) < budget:
             s = self._state(pt, pm, step_texts) if step_texts else s0
-            seqs = self._sequences(env)
+            seqs = self._sequences(
+                env, random.Random(f"{seed}:{len(step_texts)}:candidates")
+            )
             n = len(seqs)
             depth = max(len(q) for q in seqs)
             cur = s.expand(n, -1).clone()
-            cost = torch.zeros(n, device=self.device)
+            # Constant across candidates; unlike the historical accumulated
+            # path length, it cannot disclose which rollout solved early.
+            cost = torch.full(
+                (n,), float(self.lookahead), device=self.device
+            )
             for d in range(depth):
                 texts, alive = [], []
                 for q in seqs:
@@ -105,7 +125,6 @@ class FaithfulPlanner:
                 alive_t = torch.tensor(alive, device=self.device)
                 nxt = self.model.predictor(cur, a)
                 cur = torch.where(alive_t.unsqueeze(1), nxt, cur)
-                cost = cost + alive_t.float()
             total = cost + self.model.value_head(cur, s0.expand(n, -1))
             best = seqs[int(total.argmin().item())]
             q = best[0]

@@ -68,6 +68,7 @@ def main(cfg: DictConfig) -> None:
                 hierarchy=cfg.get("hierarchy", False),
                 simulator=cfg.get("simulator", "latent"),
                 allow_oracle_future_actions=cfg.allow_oracle_future_actions,
+                score_control=cfg.get("score_control", "model"),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -105,6 +106,9 @@ def main(cfg: DictConfig) -> None:
             "n_episodes": int(cfg.n_episodes),
             "slack": int(cfg.slack),
             "oracle_future_action_tree": bool(cfg.allow_oracle_future_actions),
+            "score_control": str(cfg.get("score_control", "model")),
+            "simulator": str(cfg.get("simulator", "latent")),
+            "candidate_protocol": "balanced-fixed-depth-absorbing-v2",
             "flop_measurement_requested": measure_flops,
             "flop_measurement_supported": FlopCounterMode is not None,
             "measured_eval_flops": total_flops,

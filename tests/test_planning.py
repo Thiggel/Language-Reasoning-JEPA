@@ -1,5 +1,6 @@
 import pytest
 import torch
+from collections import Counter
 
 from textjepa.data.igsm.dataset import IGSMDataset, build_vocab
 from textjepa.models import DiscourseJEPA
@@ -8,6 +9,89 @@ from textjepa.planning import (
     LatentPlanner,
     evaluate_planning,
 )
+from textjepa.planning.search import _feasible, _sequences
+
+
+def test_multistep_candidates_are_balanced_fixed_depth_and_absorbing():
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(vocab, size=1, seed=41)
+    problem, _ = dataset.problem(0)
+    # Put the query itself on the current feasible menu. Choosing it must
+    # create an absorbing rollout rather than a shorter candidate.
+    resolved = frozenset(problem.query_ancestors - {problem.query})
+    roots = set(_feasible(problem, resolved))
+    sequences = _sequences(
+        problem, resolved, depth=4, cap=64,
+        rng=__import__("random").Random(19),
+    )
+
+    assert {sequence[0] for sequence in sequences} == roots
+    assert all(len(sequence) == 4 for sequence in sequences)
+    counts = Counter(sequence[0] for sequence in sequences)
+    assert max(counts.values()) - min(counts.values()) <= 1
+    for sequence in sequences:
+        if sequence[0] == problem.query:
+            assert sequence[1:] == [None, None, None]
+        if None in sequence:
+            first = sequence.index(None)
+            assert all(action is None for action in sequence[first:])
+
+
+def test_multistep_candidate_sampling_and_order_are_seed_reproducible():
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=43).problem(0)
+    resolved = frozenset()
+    import random
+
+    first = _sequences(problem, resolved, 4, 64, random.Random(7))
+    replay = _sequences(problem, resolved, 4, 64, random.Random(7))
+    second = _sequences(problem, resolved, 4, 64, random.Random(8))
+    assert first == replay
+    assert first != second
+
+
+def test_absorbing_candidates_receive_constant_horizon_offset(monkeypatch):
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=47).problem(0)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat",
+    ).eval()
+    planner = LatentPlanner(
+        model, vocab, torch.device("cpu"), lookahead=3,
+        allow_oracle_future_actions=True,
+    )
+    monkeypatch.setattr(
+        planner, "_action_codes",
+        lambda _problem, actions: torch.zeros(len(actions), 8),
+    )
+    monkeypatch.setattr(
+        planner, "_energy",
+        lambda _cur, _s0, steps, _goal: steps,
+    )
+    feasible = _feasible(problem, frozenset())
+    costs = planner._flat_costs(
+        torch.zeros(1, 64), torch.zeros(1, 64), problem,
+        [[feasible[0], None, None], [feasible[0], feasible[0], feasible[0]]],
+        None,
+    )
+    assert torch.equal(costs, torch.tensor([3.0, 3.0]))
+
+
+def test_score_controls_are_deterministic_and_reject_unknown_values():
+    zero = LatentPlanner(None, None, torch.device("cpu"), score_control="zero")
+    assert zero._controlled_argmin(torch.tensor([4.0, 1.0, 2.0]), "x") == 0
+    shuffled = LatentPlanner(
+        None, None, torch.device("cpu"), score_control="shuffle"
+    )
+    first = shuffled._controlled_argmin(torch.tensor([4.0, 1.0, 2.0]), "x")
+    assert first == shuffled._controlled_argmin(
+        torch.tensor([4.0, 1.0, 2.0]), "x"
+    )
+    with pytest.raises(ValueError, match="unknown score control"):
+        LatentPlanner(None, None, torch.device("cpu"), score_control="bad")
 
 
 def test_planner_runs_end_to_end():
@@ -235,3 +319,37 @@ def test_discrete_hierarchy_runs_on_faithful_igsm():
     results = evaluate_planning(planner, dataset, n_episodes=1, slack=0)
     assert results["oracle"]["success"] == 1.0
     assert 0.0 <= results["latent_planner"]["success"] <= 1.0
+
+
+def test_faithful_multistep_candidates_are_balanced_and_absorbing():
+    import random
+    from textjepa.data.faithful import (
+        FaithfulDataset, FaithfulEnv, cached_faithful_vocab,
+    )
+    from textjepa.planning.faithful_search import FaithfulPlanner
+
+    vocab = cached_faithful_vocab()
+    problem, _ = FaithfulDataset(
+        vocab, size=1, seed=59, max_op=8, max_edge=10,
+        op_range=(3, 5), distractor_prob=0.2, max_distractors=1,
+    ).problem(0)
+    environment = FaithfulEnv(problem)
+    while problem.query not in environment.feasible_actions():
+        necessary = [
+            action for action in environment.feasible_actions()
+            if action in problem.necessary
+        ]
+        environment.step(necessary[0])
+    roots = set(environment.feasible_actions())
+    planner = FaithfulPlanner(
+        None, None, torch.device("cpu"), lookahead=4, max_expand=64,
+        allow_oracle_future_actions=True,
+    )
+    sequences = planner._sequences(environment, random.Random(23))
+    counts = Counter(sequence[0] for sequence in sequences)
+    assert set(counts) == roots
+    assert max(counts.values()) - min(counts.values()) <= 1
+    assert all(len(sequence) == 4 for sequence in sequences)
+    for sequence in sequences:
+        if sequence[0] == problem.query:
+            assert sequence[1:] == [None, None, None]

@@ -41,25 +41,55 @@ def _feasible(problem: Problem, resolved: frozenset[int]) -> list[int]:
 
 
 def _sequences(
-    problem: Problem, resolved: frozenset[int], depth: int, cap: int
-) -> list[list[int]]:
-    """All feasible action sequences up to ``depth`` (stop early if solved)."""
-    seqs: list[list[int]] = []
-    frontier: list[tuple[list[int], frozenset[int]]] = [([], resolved)]
-    for _ in range(depth):
-        nxt = []
-        for seq, res in frontier:
-            for a in _feasible(problem, res):
-                new = (seq + [a], res | {a})
-                if problem.query in new[1]:
-                    seqs.append(new[0])
-                else:
-                    nxt.append(new)
-        frontier = nxt[:cap]
-        if not frontier:
-            break
-    seqs.extend(seq for seq, _ in frontier)
-    return seqs[: cap * 4] if seqs else [[]]
+    problem: Problem,
+    resolved: frozenset[int],
+    depth: int,
+    cap: int,
+    rng: random.Random | None = None,
+) -> list[list[int | None]]:
+    """Balanced fixed-depth oracle-action rollouts.
+
+    Every currently feasible first action receives the same continuation
+    budget (up to one rollout of rounding error). Future feasible actions are
+    sampled with a seeded RNG, and candidates are shuffled before scoring.
+    Once the query is solved, ``None`` denotes an absorbing no-op for every
+    remaining depth. Thus candidate shape, count, and score offset cannot
+    reveal how early a rollout reached the goal.
+    """
+    if depth < 1 or cap < 1:
+        raise ValueError("depth and cap must be positive")
+    rng = rng or random.Random(0)
+    roots = _feasible(problem, resolved)
+    rng.shuffle(roots)
+    if not roots:
+        return [[None] * depth]
+    if depth == 1:
+        return [[action] for action in roots]
+
+    # Never discard a currently feasible action merely because the rollout
+    # budget is narrow. Extra budget is divided as evenly as possible.
+    total = max(cap, len(roots))
+    quotient, remainder = divmod(total, len(roots))
+    sequences: list[list[int | None]] = []
+    for root_index, root in enumerate(roots):
+        n_rollouts = quotient + int(root_index < remainder)
+        for _ in range(n_rollouts):
+            sequence: list[int | None] = [root]
+            rollout_resolved = resolved | {root}
+            for _step in range(1, depth):
+                if problem.query in rollout_resolved:
+                    sequence.append(None)
+                    continue
+                feasible = _feasible(problem, rollout_resolved)
+                if not feasible:
+                    sequence.append(None)
+                    continue
+                action = rng.choice(feasible)
+                sequence.append(action)
+                rollout_resolved = rollout_resolved | {action}
+            sequences.append(sequence)
+    rng.shuffle(sequences)
+    return sequences
 
 
 class LatentPlanner:
@@ -74,6 +104,7 @@ class LatentPlanner:
         hierarchy: bool = False,  # score K-step sequences with F_hi jumps
         simulator: str = "latent",  # "latent" (F rollouts) | "symbolic"
         allow_oracle_future_actions: bool = False,
+        score_control: str = "model",  # model | shuffle | zero
     ):
         if lookahead > 1 and not allow_oracle_future_actions:
             raise ValueError(
@@ -90,6 +121,9 @@ class LatentPlanner:
         self.hierarchy = hierarchy
         self.simulator = simulator
         self.allow_oracle_future_actions = allow_oracle_future_actions
+        if score_control not in {"model", "shuffle", "zero"}:
+            raise ValueError(f"unknown score control: {score_control}")
+        self.score_control = score_control
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -127,13 +161,18 @@ class LatentPlanner:
                 action_history,
             )
             seqs = _sequences(
-                problem, frozenset(env.resolved_set), self.lookahead, self.max_expand
+                problem,
+                frozenset(env.resolved_set),
+                self.lookahead,
+                self.max_expand,
+                random.Random(f"{seed}:{len(step_texts)}:candidates"),
             )
             best = self._best_sequence(
                 s, s0, problem, seqs, goal_state,
                 state_history=state_history,
                 action_history=action_codes,
                 sym_ctx=(env, step_texts, prompt_tokens, prompt_mask),
+                score_seed=f"{seed}:{len(step_texts)}:scores",
             )
             chosen = best[0]
             n_distractor += int(chosen not in problem.query_ancestors)
@@ -248,19 +287,21 @@ class LatentPlanner:
         s: torch.Tensor,
         s0: torch.Tensor,
         problem: Problem,
-        seqs: list[list[int]],
+        seqs: list[list[int | None]],
         goal_state: torch.Tensor | None,
         state_history: torch.Tensor | None = None,
         action_history: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        n = len(seqs)
+        active = [[action for action in sequence if action is not None]
+                  for sequence in seqs]
+        n = len(active)
         total = torch.empty(n, device=self.device)
-        for length in sorted({len(q) for q in seqs}):
-            selected = [i for i, q in enumerate(seqs) if len(q) == length]
+        for length in sorted({len(q) for q in active}):
+            selected = [i for i, q in enumerate(active) if len(q) == length]
             if length == 0:
                 cur = s.expand(len(selected), -1)
             else:
-                flat = [a for i in selected for a in seqs[i]]
+                flat = [a for i in selected for a in active[i]]
                 future = self._action_codes(problem, flat).reshape(
                     len(selected), length, -1
                 )
@@ -291,7 +332,7 @@ class LatentPlanner:
                         direct_state, s0.expand(len(selected), -1), future[:, -1]
                     )
                     total[torch.tensor(selected, device=self.device)] = (
-                        float(length) + direct_cost
+                        float(self.lookahead) + direct_cost
                     )
                     continue
                 if hasattr(self.model.predictor, "rollout"):
@@ -312,7 +353,7 @@ class LatentPlanner:
                     for step in range(length):
                         cur = self.model.predictor(cur, future[:, step])
             steps = torch.full(
-                (len(selected),), float(length), device=self.device
+                (len(selected),), float(self.lookahead), device=self.device
             )
             total[torch.tensor(selected, device=self.device)] = self._energy(
                 cur, s0, steps, goal_state
@@ -324,7 +365,7 @@ class LatentPlanner:
         s: torch.Tensor,
         s0: torch.Tensor,
         problem: Problem,
-        seqs: list[list[int]],
+        seqs: list[list[int | None]],
         goal_state: torch.Tensor | None,
     ) -> torch.Tensor:
         """Score (m*K)-step sequences with chained F_hi macro jumps (HWM)."""
@@ -332,10 +373,12 @@ class LatentPlanner:
         # modules are absent/frozen. They must still pass through the ordinary
         # flat planner without a division-by-zero in this hierarchy gate.
         K = max(int(self.model.core.macro_k), 1)
+        if any(any(action is None for action in sequence) for sequence in seqs):
+            raise ValueError("absorbing-padded sequences require flat scoring")
         L = len(seqs[0])
         n = len(seqs)
         a = self._action_codes(
-            problem, [i for q in seqs for i in q]
+            problem, [i for q in seqs for i in q if i is not None]
         ).reshape(n, L, -1)
         cur = s.expand(n, -1)
         for w in range(L // K):
@@ -351,7 +394,7 @@ class LatentPlanner:
         s0: torch.Tensor,
         prompt_tokens: torch.Tensor,
         prompt_mask: torch.Tensor,
-        seqs: list[list[int]],
+        seqs: list[list[int | None]],
         goal_state: torch.Tensor | None,
     ) -> torch.Tensor:
         """Upper-bound control: execute each candidate sequence in the
@@ -360,7 +403,9 @@ class LatentPlanner:
         all_texts = []
         for q in seqs:
             c = env.clone()
-            all_texts.append(step_texts + [c.step(i) for i in q])
+            all_texts.append(
+                step_texts + [c.step(i) for i in q if i is not None]
+            )
         n = len(all_texts)
         C = max(len(t) for t in all_texts)
         L = max(
@@ -382,7 +427,7 @@ class LatentPlanner:
         last = mask.sum(dim=1) - 1
         cur = states[torch.arange(n, device=self.device), last]
         steps = torch.tensor(
-            [float(len(q)) for q in seqs], device=self.device
+            [float(self.lookahead) for _ in seqs], device=self.device
         )
         return self._energy(cur, s0, steps, goal_state)
 
@@ -391,27 +436,30 @@ class LatentPlanner:
         s: torch.Tensor,
         s0: torch.Tensor,
         problem: Problem,
-        seqs: list[list[int]],
+        seqs: list[list[int | None]],
         goal_state: torch.Tensor | None = None,
         state_history: torch.Tensor | None = None,
         action_history: torch.Tensor | None = None,
         sym_ctx: tuple | None = None,  # (env, step_texts, prompt_t, prompt_m)
-    ) -> list[int]:
+        score_seed: str = "0",
+    ) -> list[int | None]:
         if self.simulator == "symbolic" and sym_ctx is not None:
             env, step_texts, pt, pm = sym_ctx
             total = self._symbolic_costs(
                 env, step_texts, s0, pt, pm, seqs, goal_state
             )
-            return seqs[int(total.argmin().item())]
+            return seqs[self._controlled_argmin(total, score_seed)]
         K = max(int(self.model.core.macro_k), 1)
-        full_len = (max(len(q) for q in seqs) // K) * K
+        active_lengths = [sum(action is not None for action in q) for q in seqs]
+        full_len = (max(active_lengths) // K) * K
         full = (
-            [q for q in seqs if len(q) == full_len]
+            [q for q, length in zip(seqs, active_lengths)
+             if length == full_len and all(action is not None for action in q)]
             if self.hierarchy and full_len >= K
             else []
         )
         if full:
-            rest = [q for q in seqs if len(q) != full_len]
+            rest = [q for q in seqs if q not in full]
             costs = [self._macro_costs(s, s0, problem, full, goal_state)]
             cands = list(full)
             if rest:
@@ -421,9 +469,20 @@ class LatentPlanner:
                 ))
                 cands += rest
             total = torch.cat(costs)
-            return cands[int(total.argmin().item())]
+            return cands[self._controlled_argmin(total, score_seed)]
         total = self._flat_costs(
             s, s0, problem, seqs, goal_state,
             state_history, action_history,
         )
-        return seqs[int(total.argmin().item())]
+        return seqs[self._controlled_argmin(total, score_seed)]
+
+    def _controlled_argmin(self, costs: torch.Tensor, seed: str) -> int:
+        """Apply an enumeration-leakage control before candidate selection."""
+        if self.score_control == "zero":
+            return 0
+        if self.score_control == "shuffle":
+            permutation = list(range(len(costs)))
+            random.Random(seed).shuffle(permutation)
+            index = torch.tensor(permutation, device=costs.device)
+            return int(costs[index].argmin().item())
+        return int(costs.argmin().item())
