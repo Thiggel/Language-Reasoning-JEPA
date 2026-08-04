@@ -1,45 +1,38 @@
 {
   "schema_version": 2,
-  "round_id": "2026-08-04-intent-depth-failure-causal-audit-v1",
+  "round_id": "2026-08-04-intent-oracle-distance-depth-controls-v1",
   "project": "intent_phrase",
-  "git_commit": "d6cc7b11604fea8b4b48307c8f2cde9ff4ee10a1",
-  "decision": "Determine why fixed-checkpoint planning success falls with depth. On identical balanced future-action trees, compare the deployed terminal-only score against the checkpoint's one-step root ordering and an oracle endpoint ordering, under both learned latent and exact symbolic transitions, while sweeping continuation count. If symbolic terminal scoring degrades while one-step and oracle endpoint ordering remain sound, the primary cause is score-composition or calibration mismatch. If only latent scoring degrades, rollout drift is primary. If degradation grows with continuation count and selection optimism, extreme-value selection contributes. After these causal audits, complete missing full-GAR seed-level local geometry audits for cross-seed planning correlations.",
+  "git_commit": "2c236d6c916271144f1d6720365c9b595c82a76a",
+  "decision": "Test whether the candidate tree and first-action extraction support beneficial lookahead when the sequence evaluator is correct. Evaluate the same full-GAR checkpoint and paired validation puzzles with three increasingly privileged terminal criteria: predicted latent distance to an encoded oracle goal, exact-transition encoded distance to that goal, and exact symbolic remaining-step distance. Sweep depth 1, 2, and 4 and narrow versus wide continuation budgets. If exact remaining distance improves or remains optimal with depth while learned goal distance degrades, sequence evaluation rather than root extraction is the failure. If exact distance also degrades, candidate sampling or tie handling is responsible.",
   "jobs": [
     {
-      "id": "intent-depth-failure-and-geometry-bundle-v1",
+      "id": "intent-oracle-distance-depth-controls-s0-v1",
       "cluster": "gruenau",
       "gpus": 1,
       "min_gpu_memory_mb": 20000,
       "cpus": 4,
-      "walltime_minutes": 480,
+      "walltime_minutes": 360,
       "command": [
         "bash",
-        "scripts/run_intent_depth_analysis_bundle.sh",
+        "scripts/run_intent_oracle_distance_controls.sh",
         "{python}",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-31-intent-paper300k-jepa-and-ablation-recovery-v2/intent-paper300k-mlp-jepa-s0-v1-recovery-v2/model/best.pt",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-03-intent-gar-rq3-controls-v2/intent-rq3-direct-ranker-lr7e4-s1-v2/model/best.pt",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-31-intent-paper300k-jepa-and-ablation-recovery-v2/intent-paper300k-mlp-jepa-s0-v1-recovery-v2/model/best.pt",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-31-intent-paper300k-jepa-and-ablation-recovery-v2/intent-paper300k-mlp-jepa-s2-v1-recovery-v2/model/best.pt",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-31-intent-paper300k-jepa-and-ablation-recovery-v2/intent-paper300k-mlp-jepa-s3-v1-recovery-v2/model/best.pt",
-        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-31-intent-paper300k-jepa-and-ablation-recovery-v2/intent-paper300k-mlp-jepa-s4-v1-recovery-v2/model/best.pt"
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-31-intent-paper300k-jepa-and-ablation-recovery-v2/intent-paper300k-mlp-jepa-s0-v1-recovery-v2/model/best.pt"
       ],
       "env": {
         "DEVICE": "cuda:0",
-        "DEPTH_EPISODES": "150",
-        "GEOMETRY_EPISODES": "200",
-        "DEPTH_AUDIT_CELLS": "1:64 2:4 2:8 2:16 2:32 2:64 4:4 4:8 4:16 4:32 4:64"
+        "N_EPISODES": "500",
+        "SEED": "7321",
+        "ORACLE_CELLS": "1:64 2:8 2:64 4:8 4:64"
       },
-      "purpose": "Causal fixed-checkpoint diagnosis of planning-depth degradation, followed by the missing seed-level local GAR geometry measurements. Depth above one is explicitly candidate-privileged and symbolic labels remain post-hoc diagnostics.",
+      "purpose": "Closed-loop oracle-distance controls separating candidate-tree validity, learned representation geometry, latent rollout drift, and terminal score quality. Depth above one uses the labeled candidate-privileged future feasible-action tree.",
       "expected_artifacts": [
-        "depth_full/depth_audit.json",
-        "depth_full/checkpoint.sha256",
-        "depth_direct/depth_audit.json",
-        "depth_direct/checkpoint.sha256",
-        "geometry_0/val_audit.json",
-        "geometry_0/val_features.npz",
-        "geometry_1/val_audit.json",
-        "geometry_2/val_audit.json",
-        "geometry_3/val_audit.json",
+        "scaling_summary.json",
+        "checkpoint.sha256",
+        "control_oracle_goal_depth1_cap64_slack0.json",
+        "control_oracle_goal_depth2_cap64_slack0.json",
+        "control_oracle_goal_depth4_cap64_slack0.json",
+        "control_symbolic_oracle_goal_depth4_cap64_slack0.json",
+        "control_symbolic_exact_distance_depth4_cap64_slack0.json",
         "stdout.log",
         "stderr.log"
       ]
