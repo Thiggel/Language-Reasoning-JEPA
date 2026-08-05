@@ -106,6 +106,7 @@ class LatentPlanner:
         allow_oracle_future_actions: bool = False,
         score_control: str = "model",  # model | shuffle | zero
         search_algorithm: str = "shooting",  # shooting | beam
+        transition_energy_composition: str = "terminal",
     ):
         if lookahead > 1 and not allow_oracle_future_actions:
             raise ValueError(
@@ -135,6 +136,14 @@ class LatentPlanner:
         if search_algorithm not in {"shooting", "beam"}:
             raise ValueError(f"unknown search algorithm: {search_algorithm}")
         self.search_algorithm = search_algorithm
+        if transition_energy_composition not in {
+            "cumulative", "terminal", "root"
+        }:
+            raise ValueError(
+                "unknown transition Energy composition: "
+                f"{transition_energy_composition}"
+            )
+        self.transition_energy_composition = transition_energy_composition
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -389,11 +398,14 @@ class LatentPlanner:
                 step_energy = self.model.core.transition_energy_head(
                     previous, rollout_states, s0.expand(len(selected), -1)
                 )
+                if self.transition_energy_composition == "cumulative":
+                    sequence_energy = step_energy.sum(dim=1)
+                elif self.transition_energy_composition == "terminal":
+                    sequence_energy = step_energy[:, -1]
+                else:
+                    sequence_energy = step_energy[:, 0]
                 total[torch.tensor(selected, device=self.device)] = (
-                    step_energy.sum(dim=1)
-                    if getattr(self.model, "geo_energy_target", "advantage")
-                    == "advantage"
-                    else step_energy[:, -1]
+                    sequence_energy
                 )
                 continue
             steps = torch.full(

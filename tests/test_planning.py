@@ -118,6 +118,7 @@ def test_transition_advantage_energy_is_summed_across_rollout():
     planner = LatentPlanner(
         model, None, torch.device("cpu"), lookahead=2,
         allow_oracle_future_actions=True,
+        transition_energy_composition="cumulative",
     )
     planner._action_codes = lambda _problem, actions: torch.tensor(
         actions, dtype=torch.float32
@@ -127,6 +128,50 @@ def test_transition_advantage_energy_is_summed_across_rollout():
     )
     # Predicted states are 1 then 3, so cumulative Energy is 1 + 3.
     torch.testing.assert_close(costs, torch.tensor([4.0]))
+
+
+def test_transition_energy_can_score_only_terminal_or_root_edge():
+    from types import SimpleNamespace
+    from torch import nn
+
+    class Predictor(nn.Module):
+        def forward(self, state, action):
+            return state + action
+
+    class Energy(nn.Module):
+        def forward(self, state, successor, initial):
+            return successor[..., 0]
+
+    model = SimpleNamespace(
+        predictor=Predictor(), geo_rank_score_mode="transition",
+        geo_energy_target="advantage",
+        core=SimpleNamespace(
+            macro_k=0, d_action=1, transition_energy_head=Energy()
+        ),
+    )
+    common = dict(
+        model=model, vocab=None, device=torch.device("cpu"), lookahead=2,
+        allow_oracle_future_actions=True,
+    )
+    terminal = LatentPlanner(
+        **common, transition_energy_composition="terminal"
+    )
+    root = LatentPlanner(**common, transition_energy_composition="root")
+    for planner in (terminal, root):
+        planner._action_codes = lambda _problem, actions: torch.tensor(
+            actions, dtype=torch.float32
+        ).unsqueeze(-1)
+    args = (torch.zeros(1, 1), torch.zeros(1, 1), None, [[1, 2]], None)
+    torch.testing.assert_close(terminal._flat_costs(*args), torch.tensor([3.0]))
+    torch.testing.assert_close(root._flat_costs(*args), torch.tensor([1.0]))
+
+
+def test_unknown_transition_energy_composition_is_rejected():
+    with pytest.raises(ValueError, match="unknown transition Energy composition"):
+        LatentPlanner(
+            None, None, torch.device("cpu"),
+            transition_energy_composition="bad",
+        )
 
 
 def test_genuine_beam_returns_root_of_best_complete_sequence(monkeypatch):
