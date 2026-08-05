@@ -1,0 +1,21 @@
+# Cluster jobs run from immutable source snapshots.  Keep research history,
+# reports, tests, controller code, and UI assets in Git while excluding them
+# from runtime archives; jobs require only src/, scripts/, configs/, and the
+# package metadata.  This also makes snapshot transfer resilient on slow HPC
+# login links without changing the committed scientific source.
+/.agents export-ignore
+/.codex export-ignore
+/automation export-ignore
+/docs export-ignore
+/projects export-ignore
+/reports export-ignore
+/research export-ignore
+/tests export-ignore
+/third_party export-ignore
+/ui export-ignore
+/AGENTS.md export-ignore
+/HANDOFF.md export-ignore
+/README.md export-ignore
+/RESULTS.md export-ignore
+/compile2.log export-ignore
+/texput.log export-ignore
