@@ -38,6 +38,54 @@ distance between the EMA encoding of the true one-step successor and the EMA
 goal. For H>1, `d_i` is obtained by the multi-step teacher described in the
 next document.
 
+## Horizon-conditioned GAR targets
+
+GAR requires an ordering target for every candidate action. That target can be
+one-step or multi-step, so the teacher horizon `H` is an essential parameter of
+the current GAR method even though it is not part of the pairwise loss formula.
+
+For a candidate first action `a_i` and horizon `H=N`:
+
+```text
+1. Fix a_i as the first action.
+2. Take a_i in the teacher rollout.
+3. Follow the teacher's approximately best continuation for N-1 steps.
+4. Call the resulting endpoint leaf_N(a_i).
+5. Measure leaf_N(a_i) against the EMA goal.
+6. Compare that target with the targets of the other first actions.
+```
+
+The horizon-conditioned distance and progress targets are:
+
+```text
+distance_H(a_i) = d(leaf_H(a_i), goal)
+
+progress_H(a_i)
+  = d(leaf_H(a_i), goal) - d(current_state, goal)
+```
+
+GAR then ranks the *first actions* using these H-step targets. It does not
+attach a separate GAR decision to every action in the selected continuation.
+The training signal says which action should be taken now, assuming a good
+bounded continuation afterward.
+
+The phrase “follow the optimal policy” requires care. In the current
+implementation, the continuation is not selected using exact environment
+distance or the ground-truth optimal policy. It is the best continuation found
+by a root-balanced beam under EMA JEPA goal distance, with symbolic future
+feasible-action menus. It is therefore approximately optimal under the learned
+teacher geometry and is candidate-privileged.
+
+`H=1` is still GAR: it ranks candidates by one-step geometric consequences.
+`H>1` is multi-step GAR: it ranks candidates by the endpoints reached after a
+bounded geometry-selected continuation. Thus multi-step continuation is
+central to the horizon-conditioned GAR variant, but GAR as an ordering
+principle does not require `H>1`.
+
+The complete search algorithm, its H=1 endpoint caveat, and its computational
+controls are specified in
+[04_multistep_energy_teacher.md](04_multistep_energy_teacher.md).
+
 ## Distance used by the teacher
 
 The current geometric distance is mean absolute difference after separately
