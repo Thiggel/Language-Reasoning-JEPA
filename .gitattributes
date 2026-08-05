@@ -22,6 +22,17 @@
 /scripts/evaluate_hierarchical_language_mpc.py -export-ignore
 /scripts/build_hierarchical_value_teacher.py -export-ignore
 /scripts/evaluate_hierarchical_value_replay.py -export-ignore
+/scripts/run_intent_gar_rq3_cell.sh -export-ignore
+/scripts/run_intent_gar_mechanism_cell.sh -export-ignore
+/scripts/run_intent_fixed_budget_cell.sh -export-ignore
+/scripts/run_intent_recovery_audit_cell.sh -export-ignore
+/scripts/run_intent_decision_audit_cell.sh -export-ignore
+/scripts/train.py -export-ignore
+/scripts/plan.py -export-ignore
+/scripts/audit_intent_gar_geometry.py -export-ignore
+/scripts/export_intent_representations.py -export-ignore
+/scripts/analyze_intent_representations.py -export-ignore
+/scripts/plot_intent_representations.py -export-ignore
 /AGENTS.md export-ignore
 /HANDOFF.md export-ignore
 /README.md export-ignore
