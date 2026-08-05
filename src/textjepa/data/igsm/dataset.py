@@ -577,6 +577,9 @@ def collate(batch: list[dict], pad_id: int) -> dict:
                 gav[i, k] = True
         extra.update(ga_t=gat,
                      ga_horizon=max((b.get("ga_horizon", 1) for b in batch)),
+                     ga_requested_horizon=torch.tensor([
+                         b.get("ga_horizon", 1) for b in batch
+                     ], dtype=torch.long),
                      ga_beam_width=max(
                          (b.get("ga_beam_width", 1) for b in batch)
                      ),

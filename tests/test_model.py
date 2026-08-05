@@ -883,6 +883,36 @@ def test_horizon_gar_ranks_recursively_imagined_rollout_endpoints():
     )
 
 
+def test_horizon_gar_uses_requested_not_effective_terminal_length():
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(
+        vocab, size=8, seed=53, geo_rank_k=2,
+        geo_rank_horizon=4, geo_rank_rollouts=3,
+        geo_rank_policy="random",
+    )
+    batch = collate([dataset[i] for i in range(8)], vocab.pad_id)
+    batch["ga_rollout_action_mask"][..., 1:] = False
+    seen = []
+
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="horizon",
+        dense_rollout_depth=4, value_detach=False,
+    )
+    original = model.core.horizon_energy_head.forward
+
+    def record(root, endpoint, initial, horizon):
+        seen.append(torch.as_tensor(horizon).detach().cpu())
+        return original(root, endpoint, initial, horizon)
+
+    model.core.horizon_energy_head.forward = record
+    model(batch)
+    assert seen
+    assert torch.all(seen[0] == 4)
+
+
 def test_rollout_gar_rejects_causal_predictor_at_forward():
     vocab = build_vocab(23)
     ds = IGSMDataset(vocab, size=4, seed=43, geo_rank_k=2)

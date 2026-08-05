@@ -346,6 +346,11 @@ def test_geometric_rollout_candidates_are_deterministic_and_collate():
         batch["ga_rollout_step_mask"].sum(-1)
         <= batch["ga_t"].view(-1, 1, 1) + 4
     )
+    torch.testing.assert_close(
+        batch["ga_requested_horizon"], torch.tensor([
+            item.get("ga_horizon", 1) for item in items
+        ])
+    )
 
 
 def test_geometry_greedy_metadata_collates_without_symbolic_quality_labels():

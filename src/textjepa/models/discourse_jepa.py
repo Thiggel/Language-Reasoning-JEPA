@@ -910,7 +910,14 @@ class DiscourseJEPA(nn.Module):
                 root = root.detach()
                 endpoint = endpoint.detach()
                 initial_h = initial_h.detach()
-            rollout_horizon = flat_action_mask.sum(1).clamp(min=1)
+            # The action mask can become shorter when a symbolic rollout
+            # reaches its terminal state.  Conditioning on that effective
+            # length leaks early termination into the learned Energy.  Use
+            # the horizon requested before the rollout was generated and
+            # treat masked suffixes as absorbing no-ops.
+            rollout_horizon = batch["ga_requested_horizon"].view(
+                B_h, 1, 1
+            ).expand(B_h, C_h, R_h).reshape(-1)
             out.extras["ga_horizon_energy"] = self.core.horizon_energy_head(
                 root, endpoint, initial_h, rollout_horizon
             ).reshape(B_h, C_h, R_h)
