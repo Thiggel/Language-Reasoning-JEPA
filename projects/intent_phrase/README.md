@@ -1,6 +1,9 @@
 # Observed intent-phrase JEPA
 
-Current concise evidence report: [`2026-08-04-current-findings`](../../research/reports/intent_phrase/2026-08-04-current-findings/REPORT.md) ([compiled PDF](../../research/reports/intent_phrase/2026-08-04-current-findings/REPORT.pdf)). It explicitly labels the symbolic future-action scaling pilot as candidate-privileged and scientifically invalid because terminal path length leaks the solution.
+The paper-facing method is now the terminal-safe, mixed-horizon Endpoint-Energy
+JEPA specified in the [method handbook](method/README.md). The earlier
+terminal-length-leaking scaling pilot is invalid; corrected training restores
+the effect without that signal.
 
 Current anonymous ICLR 2027 paper draft: [LaTeX source](paper/main.tex),
 [compiled PDF](paper/main.pdf), [reproduction notes](paper/README.md), and
@@ -20,7 +23,7 @@ latent reasoning state.
 The project asks whether reconstruction-free latent dynamics can:
 
 1. compute counterfactual consequences of observed language actions;
-2. learn which action advances a reasoning problem without symbolic ranking;
+2. rank recursively imagined endpoints;
 3. produce representations that retain the information needed for planning;
 4. transfer from the controlled stylized generator to faithful iGSM.
 
@@ -30,23 +33,17 @@ into the flat recipe.
 
 ## Current state
 
-- The matched token intent policy remains the strongest non-oracle baseline:
-  `.827 +/- .003` strict and `.978 +/- .003` with two extra actions.
-- The older reduced non-symbolic JEPA reached `.797 +/- .008/.963 +/- .008`,
-  but used the previous predictor/protocol and is not the frozen paper model.
-- The clean causal-transformer build-up reaches `.588 +/- .013/.845 +/- .043`
-  after two-step latent-goal preference distillation.
-- Faithful action-displacement decoding and terminal-distance monotonicity are
-  promising individual add-backs (`.632` and `.637` strict respectively), but
-  no combined recipe has been validated.
-- Dense four-step rollout and residual prediction are negative in the current
-  causal matrix.
-- The causal counterfactual-outcome ablation is being rerun after correcting a
-  batch/time indexing bug in independent alternative-action prefixes.
-
-The immediate scientific problem is therefore not “add hierarchy.” It is to
-explain and close the causal model's action-selection gap under a frozen,
-information-matched protocol.
+- The five-seed terminal-safe endpoint model reaches strict success
+  `.120 +/- .012`, `.834 +/- .018`, `.874 +/- .029`, and `.877 +/- .029` at
+  search depths `1,4,8,16`.
+- The validated recipe uses recursive MLP prediction, mixed training horizons
+  `{1,2,4,8}`, four sampled continuations per root, endpoint ranking, no dense
+  rollout loss, and root-balanced beam search.
+- Depth above one currently uses symbolic future feasible menus and is
+  candidate-privileged.
+- The primary open test removes the feasible menu and scores the complete
+  action catalogue at every real and imagined state.
+- Local GAR and hierarchy are controls, not primary method components.
 
 ## Navigation
 

@@ -1,64 +1,63 @@
-# Intent-phrase JEPA method handbook
+# Endpoint-Energy JEPA paper specification
 
-This directory is the living specification of the intent-phrase subproject.
-Its purpose is to make every important information flow, target, loss,
-privilege, and evaluation decision explicit enough that we can inspect and
-change them together.
+This directory defines the paper-facing intent-phrase method. The normative
+recipe is the simplest validated system: recursive latent prediction,
+horizon-conditioned endpoint Energy, and receding-horizon beam search. Local
+GAR is not part of the primary method.
 
-The handbook describes the implementation as of code commit `aa3a564`. It is
-more authoritative about current mechanics than old run names or historical
-reports. Empirical numbers can change; the documents say when a statement is a
-design, an implementation fact, an experimental privilege, or an open choice.
+Implementation reference: commit `5615e47`. Headline evidence uses the
+terminal-safe checkpoints trained at commit `87ebfad`.
 
 ## Reading order
 
-1. [Task and information interfaces](01_task_and_interfaces.md)
-2. [Model and latent states](02_model_and_latent_states.md)
-3. [Geometric Advantage Ranking](03_gar.md)
-4. [Multi-step Energy teacher](04_multistep_energy_teacher.md)
-5. [Planning and beam search](05_planning.md)
-6. [Training objectives and gradient routes](06_training_objectives.md)
-7. [Evaluation and success metrics](07_evaluation.md)
-8. [Baselines, ablations, and controls](08_baselines_and_controls.md)
-9. [Representation and geometry analysis](09_representation_analysis.md)
-10. [Notation and glossary](10_notation_and_glossary.md)
-11. [Open design questions](11_open_design_questions.md)
+1. [Task and interfaces](01_task_and_interfaces.md)
+2. [Model](02_model_and_latent_states.md)
+3. [Endpoint Energy](03_gar.md)
+4. [Training targets](04_multistep_energy_teacher.md)
+5. [Planning](05_planning.md)
+6. [Objectives](06_training_objectives.md)
+7. [Evaluation](07_evaluation.md)
+8. [Baselines and ablations](08_baselines_and_controls.md)
+9. [Representation analysis](09_representation_analysis.md)
+10. [Notation](10_notation_and_glossary.md)
+11. [Open decisions](11_open_design_questions.md)
 
-## Three horizons that must not be confused
+## Paper claim
 
-The project currently has three independent notions of depth:
+> An action-conditioned JEPA can reason in controlled language environments by
+> recursively imagining language-action consequences and ranking their
+> endpoints. More test-time search improves planning when endpoint Energy is
+> trained at multiple horizons.
 
-- **Teacher horizon H:** how far the training-time teacher looks after a
-  candidate first action before creating its target.
-- **Predictor rollout depth:** how many times the learned JEPA transition model
-  is applied to imagine a particular action sequence.
-- **Planner beam depth D:** how many actions each test-time candidate plan
-  contains before its terminal Energy is compared with other beams.
+This is a controlled study of predictive representations. It is not an
+unrestricted language-reasoning agent.
 
-An experiment called `teacher-h8` has H=8. It can still be evaluated with
-D=1, D=4, or D=16. H and D are not the same setting.
+## Validated default
 
-## Current short answer about “multi-step Energy”
+| Choice | Value |
+|---|---|
+| State width | 256 |
+| Action width | 16 |
+| Predictor | residual concatenation MLP |
+| Training horizons | sampled from `{1,2,4,8}` |
+| Rollouts per root | 4 |
+| Alternative roots | 2 plus the factual root |
+| Endpoint loss | logistic pairwise ranking |
+| Dense rollout loss | 0 |
+| Dropout | 0 |
+| Examples | 300,000 fresh generated problems |
+| Test search | root-balanced beam, width 8 |
+| Test depths | `1,4,8,16` |
+| Beam score | final endpoint Energy only |
 
-Yes. For H=N, the teacher does the following for every candidate first action:
+Terminal-safe five-seed strict success is
+`.120, .834, .874, .877` at depths `1,4,8,16`.
 
-1. Take that action in latent imagination.
-2. Search for an approximately best continuation of N−1 more actions.
-3. Measure the final imagined latent state against the encoded goal.
-4. Assign that endpoint distance, or its change from the current distance, as
-   the target attached to the first transition.
+## Independent depths
 
-The phrase “optimal continuation” needs a qualifier. It is not selected using
-the environment's exact shortest-path value. It is the best continuation found
-by a root-balanced beam according to the current EMA JEPA geometry. The
-environment supplies symbolic feasible-action menus, so H>1 is
-candidate-privileged. Full details are in
-[04_multistep_energy_teacher.md](04_multistep_energy_teacher.md).
+- `H`: sampled training rollout horizon.
+- `R`: number of sampled training rollouts per root.
+- `D`: test-time beam depth.
+- `B`: beam width retained per first-action root.
 
-## How to propose a correction
-
-When a document disagrees with the intended method, edit the design statement
-first and list the unresolved implementation change in
-[11_open_design_questions.md](11_open_design_questions.md). Code and new
-experiments should then cite that decision. This keeps terminology from being
-silently redefined by a runner or an old checkpoint.
+A training horizon and a test depth are not the same variable.
