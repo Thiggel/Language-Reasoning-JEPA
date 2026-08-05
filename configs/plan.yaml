@@ -19,6 +19,9 @@ allow_oracle_future_actions: false
 max_expand: 64
 search_algorithm: shooting  # shooting | beam
 transition_energy_composition: terminal  # terminal | cumulative (control) | root
+# For horizon-Energy checkpoints, use the preserved one-step GAR value head
+# to prune partial beams and the horizon head only for the final beam choice.
+hybrid_local_pruning: false
 # oracle_goal encodes the solved trajectory and scores representation distance.
 # symbolic_distance reads exact remaining steps from the environment and also
 # requires simulator=symbolic. Both are explicitly oracle diagnostics.

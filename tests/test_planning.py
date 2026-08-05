@@ -202,6 +202,45 @@ def test_horizon_energy_scores_endpoint_relative_to_fixed_root():
     torch.testing.assert_close(costs, torch.tensor([16.0]))
 
 
+def test_hybrid_uses_local_value_at_depth_one_and_horizon_at_terminal():
+    from types import SimpleNamespace
+    from torch import nn
+
+    class Predictor(nn.Module):
+        def forward(self, state, action):
+            return state + action
+
+    class HorizonEnergy(nn.Module):
+        def forward(self, root, endpoint, initial, horizon):
+            return endpoint[..., 0] + 100.0
+
+    class ValueEnergy(nn.Module):
+        def forward(self, state, initial):
+            return state[..., 0]
+
+    value = ValueEnergy()
+    model = SimpleNamespace(
+        predictor=Predictor(), value_head=value,
+        geo_rank_score_mode="horizon",
+        core=SimpleNamespace(
+            macro_k=0, d_action=1, horizon_energy_head=HorizonEnergy()
+        ),
+    )
+    planner = LatentPlanner(
+        model, None, torch.device("cpu"), lookahead=1,
+        hybrid_local_pruning=True,
+    )
+    planner._action_codes = lambda _problem, actions: torch.tensor(
+        actions, dtype=torch.float32
+    ).unsqueeze(-1)
+    args = (torch.zeros(1, 1), torch.zeros(1, 1), None, [[2]], None)
+    torch.testing.assert_close(
+        planner._flat_costs(*args, score_mode_override="value"),
+        torch.tensor([3.0]),
+    )
+    torch.testing.assert_close(planner._flat_costs(*args), torch.tensor([102.0]))
+
+
 def test_unknown_transition_energy_composition_is_rejected():
     with pytest.raises(ValueError, match="unknown transition Energy composition"):
         LatentPlanner(

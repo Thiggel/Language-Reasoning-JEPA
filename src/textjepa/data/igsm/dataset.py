@@ -102,7 +102,9 @@ class IGSMDataset(Dataset):
         n_alt: int = 0,
         geo_rank_k: int = 0,
         geo_rank_horizon: int = 1,
+        geo_rank_horizons: list[int] | None = None,
         geo_rank_rollouts: int = 1,
+        geo_rank_rollout_for_h1: bool = False,
         geo_rank_policy: str = "random",
         geo_rank_beam_width: int = 1,
         macro_alt_k: int = 0,
@@ -126,7 +128,11 @@ class IGSMDataset(Dataset):
         self.n_alt = n_alt  # counterfactual candidates per step (ranking)
         self.geo_rank_k = geo_rank_k  # geometric-advantage ranking anchors
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
+        self.geo_rank_horizons = tuple(
+            max(1, int(horizon)) for horizon in (geo_rank_horizons or [])
+        )
         self.geo_rank_rollouts = max(1, int(geo_rank_rollouts))
+        self.geo_rank_rollout_for_h1 = bool(geo_rank_rollout_for_h1)
         self.geo_rank_policy = str(geo_rank_policy)
         self.geo_rank_beam_width = max(1, int(geo_rank_beam_width))
         self.macro_alt_k = max(0, int(macro_alt_k))
@@ -168,6 +174,10 @@ class IGSMDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict:
         p, rng = self.problem(index)
+        geo_rank_horizon = self.geo_rank_horizon
+        if self.geo_rank_horizons:
+            horizon_rng = random.Random(f"{self.seed}:{index}:ga-horizon")
+            geo_rank_horizon = horizon_rng.choice(self.geo_rank_horizons)
         # Counterfactual-set sampling is an optional supervision view.  Give it
         # an independent stream so enabling n_alt cannot change the trajectory,
         # geometric teacher, or grounding-control permutation.
@@ -226,7 +236,7 @@ class IGSMDataset(Dataset):
             if alts:
                 ga = {
                     "ga_t": t_star,
-                    "ga_horizon": self.geo_rank_horizon,
+                    "ga_horizon": geo_rank_horizon,
                     "ga_beam_width": self.geo_rank_beam_width,
                     "ga_candidate_ids": [trace[t_star], *alts],
                     "ga_candidate_objects": [trace[t_star], *alts],
@@ -238,7 +248,7 @@ class IGSMDataset(Dataset):
                     ],
                 }
                 if (
-                    self.geo_rank_horizon > 1
+                    geo_rank_horizon > 1
                     and self.geo_rank_policy in {"greedy", "latent_beam"}
                 ):
                     # The model follows the greedy continuation online because
@@ -253,7 +263,7 @@ class IGSMDataset(Dataset):
                         ga_vocab=self.vocab,
                         ga_env_kind="stylized",
                     )
-                elif self.geo_rank_horizon > 1:
+                elif geo_rank_horizon > 1 or self.geo_rank_rollout_for_h1:
                     # Monte-Carlo shooting approximation to an N-step optimal
                     # continuation.  The dataset supplies only feasible action
                     # interactions and rendered text; the model later selects
@@ -272,7 +282,7 @@ class IGSMDataset(Dataset):
                                 self.vocab.encode(action_phrase(p, candidate))
                             ]
                             sequence.append(self.vocab.encode(roll_env.step(candidate)))
-                            for _depth in range(1, self.geo_rank_horizon):
+                            for _depth in range(1, geo_rank_horizon):
                                 if roll_env.solved:
                                     break
                                 feasible = roll_env.feasible_actions()

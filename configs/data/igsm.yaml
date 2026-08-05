@@ -15,7 +15,9 @@ shuffle_actions: false
 n_alt: 0
 geo_rank_k: 0
 geo_rank_horizon: 1
+geo_rank_horizons: null
 geo_rank_rollouts: 1
+geo_rank_rollout_for_h1: false
 geo_rank_policy: random  # random | greedy (true outcomes) | latent_beam (EMA predictor)
 geo_rank_beam_width: 1   # bounded geometry-greedy continuation; 1 = ordinary greedy
 macro_alt_k: 0

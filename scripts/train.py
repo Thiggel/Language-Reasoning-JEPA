@@ -159,6 +159,8 @@ def main(cfg: DictConfig) -> None:
             reset_names.append("hi_predictor")
         if cfg.train.get("reset_macro_value_head", False):
             reset_names.append("macro_value_head")
+        if cfg.train.get("reset_horizon_energy_head", False):
+            reset_names.append("horizon_energy_head")
         for name in reset_names:
             module = getattr(model.core, name)
             for child in module.modules():
@@ -189,6 +191,8 @@ def main(cfg: DictConfig) -> None:
             model.core.predictor.requires_grad_(True)
         if cfg.train.get("train_low_value_head", False):
             model.core.value_head.requires_grad_(True)
+        if cfg.train.get("train_horizon_energy_head", False):
+            model.core.horizon_energy_head.requires_grad_(True)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"model parameters: {n_params / 1e6:.2f}M")
 

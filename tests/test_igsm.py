@@ -232,6 +232,27 @@ def test_counterfactual_set_preserves_stylized_trajectory_and_teacher():
             assert a.get(key) == b.get(key), (index, key)
 
 
+def test_geometric_horizon_mixture_is_deterministic_and_varied():
+    vocab = build_vocab(23)
+    kwargs = dict(
+        size=80, seed=29, geo_rank_k=2,
+        geo_rank_horizons=[1, 2, 4, 8], geo_rank_rollouts=2,
+    )
+    first = IGSMDataset(vocab, **kwargs)
+    replay = IGSMDataset(vocab, **kwargs)
+    horizons = [
+        first[index]["ga_horizon"] for index in range(len(first))
+        if "ga_horizon" in first[index]
+    ]
+    replayed = [
+        replay[index]["ga_horizon"] for index in range(len(replay))
+        if "ga_horizon" in replay[index]
+    ]
+    assert horizons == replayed
+    assert set(horizons).issubset({1, 2, 4, 8})
+    assert len(set(horizons)) > 1
+
+
 def test_counterfactual_set_preserves_faithful_trajectory_and_teacher():
     from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
 

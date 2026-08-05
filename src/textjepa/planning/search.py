@@ -107,6 +107,7 @@ class LatentPlanner:
         score_control: str = "model",  # model | shuffle | zero
         search_algorithm: str = "shooting",  # shooting | beam
         transition_energy_composition: str = "terminal",
+        hybrid_local_pruning: bool = False,
     ):
         if lookahead > 1 and not allow_oracle_future_actions:
             raise ValueError(
@@ -144,6 +145,13 @@ class LatentPlanner:
                 f"{transition_energy_composition}"
             )
         self.transition_energy_composition = transition_energy_composition
+        self.hybrid_local_pruning = bool(hybrid_local_pruning)
+        if self.hybrid_local_pruning and getattr(
+            self.model, "geo_rank_score_mode", "value"
+        ) != "horizon":
+            raise ValueError(
+                "hybrid local pruning requires a horizon-Energy checkpoint"
+            )
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -322,11 +330,15 @@ class LatentPlanner:
         goal_state: torch.Tensor | None,
         state_history: torch.Tensor | None = None,
         action_history: torch.Tensor | None = None,
+        score_mode_override: str | None = None,
     ) -> torch.Tensor:
         active = [[action for action in sequence if action is not None]
                   for sequence in seqs]
         n = len(active)
         total = torch.empty(n, device=self.device)
+        score_mode = score_mode_override or getattr(
+            self.model, "geo_rank_score_mode", "value"
+        )
         for length in sorted({len(q) for q in active}):
             selected = [i for i, q in enumerate(active) if len(q) == length]
             if length == 0:
@@ -336,9 +348,7 @@ class LatentPlanner:
                 future = self._action_codes(problem, flat).reshape(
                     len(selected), length, -1
                 )
-                if getattr(
-                    self.model, "geo_rank_score_mode", "value"
-                ) == "direct":
+                if score_mode == "direct":
                     if length == 1:
                         direct_state = s.expand(len(selected), -1)
                     elif hasattr(self.model.predictor, "rollout"):
@@ -388,8 +398,7 @@ class LatentPlanner:
                         rollout.append(cur)
                     rollout_states = torch.stack(rollout, dim=1)
             if (
-                getattr(self.model, "geo_rank_score_mode", "value")
-                == "horizon" and length > 0
+                score_mode == "horizon" and length > 0
             ):
                 sequence_energy = self.model.core.horizon_energy_head(
                     s.expand(len(selected), -1),
@@ -402,8 +411,7 @@ class LatentPlanner:
                 )
                 continue
             if (
-                getattr(self.model, "geo_rank_score_mode", "value")
-                == "transition" and length > 0
+                score_mode == "transition" and length > 0
             ):
                 previous = torch.cat([
                     s.expand(len(selected), -1).unsqueeze(1),
@@ -458,9 +466,21 @@ class LatentPlanner:
                     actions = _feasible(problem, frozenset(reached))
                     expanded.extend(sequence + [a] for a in actions)
                 beam = expanded
-            costs = self._flat_costs(
+            score_override = (
+                "value"
+                if self.hybrid_local_pruning and depth < self.lookahead
+                else None
+            )
+            score_args = (
                 s, s0, problem, beam, goal_state,
                 state_history, action_history,
+            )
+            costs = (
+                self._flat_costs(
+                    *score_args, score_mode_override=score_override
+                )
+                if score_override is not None
+                else self._flat_costs(*score_args)
             )
             if self.search_algorithm == "root_balanced_beam":
                 indices = []
@@ -482,9 +502,14 @@ class LatentPlanner:
                 keep = min(self.max_expand, len(beam))
                 indices = torch.argsort(costs, stable=True)[:keep].tolist()
             beam = [beam[i] for i in indices]
-        costs = self._flat_costs(
+        score_args = (
             s, s0, problem, beam, goal_state,
             state_history, action_history,
+        )
+        costs = (
+            self._flat_costs(*score_args, score_mode_override="value")
+            if self.hybrid_local_pruning and self.lookahead == 1
+            else self._flat_costs(*score_args)
         )
         return beam[self._controlled_argmin(costs, score_seed)]
 

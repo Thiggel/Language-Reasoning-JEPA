@@ -73,6 +73,7 @@ def main(cfg: DictConfig) -> None:
                 transition_energy_composition=cfg.get(
                     "transition_energy_composition", "terminal"
                 ),
+                hybrid_local_pruning=cfg.get("hybrid_local_pruning", False),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
