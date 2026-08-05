@@ -337,6 +337,33 @@ def test_root_balanced_beam_preserves_every_first_action(monkeypatch):
     assert seen_at_final[0] == set(roots)
 
 
+def test_full_catalogue_beam_scores_all_actions_without_future_menu(monkeypatch):
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=121).problem(0)
+    planner = LatentPlanner(
+        None, vocab, torch.device("cpu"), lookahead=2, max_expand=1,
+        search_algorithm="root_balanced_beam",
+        candidate_interface="full_catalogue",
+    )
+    seen = []
+
+    def costs(_s, _s0, _problem, sequences, *_args):
+        seen.append([tuple(sequence) for sequence in sequences])
+        return torch.arange(len(sequences), dtype=torch.float32)
+
+    monkeypatch.setattr(planner, "_flat_costs", costs)
+    planner._beam_search(
+        torch.zeros(1, 1), torch.zeros(1, 1), problem, frozenset(), None,
+        torch.zeros(1, 1, 1), torch.zeros(1, 0, 1), "seed",
+    )
+    assert {sequence[0] for sequence in seen[0]} == set(range(len(problem.vars)))
+    assert all(
+        {sequence[-1] for sequence in seen[1] if sequence[0] == root}
+        == set(range(len(problem.vars)))
+        for root in range(len(problem.vars))
+    )
+
+
 def test_root_balanced_beam_dispatches_through_beam_search(monkeypatch):
     vocab = build_vocab(23)
     problem, _ = IGSMDataset(vocab, size=1, seed=121).problem(0)

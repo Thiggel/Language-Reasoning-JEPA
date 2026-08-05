@@ -13,6 +13,11 @@ from textjepa.data.igsm.graph import Problem
 from textjepa.data.igsm.render import action_phrase, step_sentence
 
 
+INVALID_ACTION_OUTCOME = (
+    "The proposed action is invalid and the state is unchanged ."
+)
+
+
 class SymbolicEnv:
     def __init__(self, problem: Problem):
         self.p = problem
@@ -44,6 +49,12 @@ class SymbolicEnv:
             raise ValueError(f"infeasible action {idx}")
         self.resolved.append(idx)
         return step_sentence(self.p, idx)
+
+    def step_or_invalid(self, idx: int) -> str:
+        """Execute an action from the full catalogue without exposing a menu."""
+        if idx not in self.feasible_actions():
+            return INVALID_ACTION_OUTCOME
+        return self.step(idx)
 
     @property
     def solved(self) -> bool:

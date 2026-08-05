@@ -74,6 +74,9 @@ def main(cfg: DictConfig) -> None:
                     "transition_energy_composition", "terminal"
                 ),
                 hybrid_local_pruning=cfg.get("hybrid_local_pruning", False),
+                candidate_interface=cfg.get(
+                    "candidate_interface", "feasible_menu"
+                ),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
@@ -118,6 +121,9 @@ def main(cfg: DictConfig) -> None:
             )),
             "simulator": str(cfg.get("simulator", "latent")),
             "energy": str(cfg.get("energy", "value")),
+            "candidate_interface": str(cfg.get(
+                "candidate_interface", "feasible_menu"
+            )),
             "candidate_protocol": (
                 "global-beam-v1"
                 if cfg.get("search_algorithm", "shooting") == "beam"

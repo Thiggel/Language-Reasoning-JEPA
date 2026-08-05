@@ -107,6 +107,7 @@ class IGSMDataset(Dataset):
         geo_rank_rollout_for_h1: bool = False,
         geo_rank_policy: str = "random",
         geo_rank_beam_width: int = 1,
+        geo_rank_candidate_interface: str = "feasible_menu",
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
@@ -135,6 +136,9 @@ class IGSMDataset(Dataset):
         self.geo_rank_rollout_for_h1 = bool(geo_rank_rollout_for_h1)
         self.geo_rank_policy = str(geo_rank_policy)
         self.geo_rank_beam_width = max(1, int(geo_rank_beam_width))
+        self.geo_rank_candidate_interface = str(
+            geo_rank_candidate_interface
+        )
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
@@ -142,6 +146,13 @@ class IGSMDataset(Dataset):
         self.strict_steps_range = bool(strict_steps_range)
         if self.geo_rank_policy not in {"random", "greedy", "latent_beam"}:
             raise ValueError(f"unknown geo_rank_policy: {self.geo_rank_policy}")
+        if self.geo_rank_candidate_interface not in {
+            "feasible_menu", "full_catalogue"
+        }:
+            raise ValueError(
+                "unknown geometric-ranking candidate interface: "
+                f"{self.geo_rank_candidate_interface}"
+            )
         self.adjectives = adjectives or DEFAULT_ADJECTIVES
         self.nouns = nouns or DEFAULT_NOUNS
 
@@ -230,9 +241,20 @@ class IGSMDataset(Dataset):
             env2 = SymbolicEnv(p)
             for i in trace[:t_star]:
                 env2.step(i)
-            others = [a for a in env2.feasible_actions() if a != trace[t_star]]
+            if self.geo_rank_candidate_interface == "full_catalogue":
+                others = [
+                    variable.idx for variable in p.vars
+                    if variable.idx != trace[t_star]
+                ]
+            else:
+                others = [
+                    a for a in env2.feasible_actions() if a != trace[t_star]
+                ]
             rng.shuffle(others)
-            alts = others[: self.geo_rank_k]
+            alts = (
+                others if self.geo_rank_k < 0
+                else others[: self.geo_rank_k]
+            )
             if alts:
                 ga = {
                     "ga_t": t_star,
@@ -244,7 +266,13 @@ class IGSMDataset(Dataset):
                         self.vocab.encode(action_phrase(p, a)) for a in alts
                     ],
                     "ga_alt_steps": [
-                        self.vocab.encode(env2.clone().step(a)) for a in alts
+                        self.vocab.encode(
+                            env2.clone().step_or_invalid(a)
+                            if self.geo_rank_candidate_interface
+                            == "full_catalogue"
+                            else env2.clone().step(a)
+                        )
+                        for a in alts
                     ],
                 }
                 if (
@@ -281,7 +309,13 @@ class IGSMDataset(Dataset):
                             action_sequence = [
                                 self.vocab.encode(action_phrase(p, candidate))
                             ]
-                            sequence.append(self.vocab.encode(roll_env.step(candidate)))
+                            outcome = (
+                                roll_env.step_or_invalid(candidate)
+                                if self.geo_rank_candidate_interface
+                                == "full_catalogue"
+                                else roll_env.step(candidate)
+                            )
+                            sequence.append(self.vocab.encode(outcome))
                             for _depth in range(1, geo_rank_horizon):
                                 if roll_env.solved:
                                     break

@@ -353,6 +353,26 @@ def test_geometric_rollout_candidates_are_deterministic_and_collate():
     )
 
 
+def test_full_catalogue_horizon_data_contains_grounded_invalid_roots():
+    from textjepa.data.igsm.env import INVALID_ACTION_OUTCOME
+
+    vocab = build_vocab(23)
+    ds = IGSMDataset(
+        vocab, size=12, seed=211, geo_rank_k=-1,
+        geo_rank_horizon=4, geo_rank_rollouts=2,
+        geo_rank_candidate_interface="full_catalogue",
+    )
+    item = next(ds[i] for i in range(len(ds)) if "ga_t" in ds[i])
+    assert len(item["ga_candidate_ids"]) == item["n_vars"]
+    invalid = vocab.encode(INVALID_ACTION_OUTCOME)
+    assert invalid in item["ga_alt_steps"]
+    assert any(
+        invalid in rollout
+        for candidate in item["ga_rollout_steps"]
+        for rollout in candidate
+    )
+
+
 def test_geometry_greedy_metadata_collates_without_symbolic_quality_labels():
     vocab = build_vocab(23)
     ds = IGSMDataset(

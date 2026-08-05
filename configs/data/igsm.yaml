@@ -20,6 +20,7 @@ geo_rank_rollouts: 1
 geo_rank_rollout_for_h1: false
 geo_rank_policy: random  # random | greedy (true outcomes) | latent_beam (EMA predictor)
 geo_rank_beam_width: 1   # bounded geometry-greedy continuation; 1 = ordinary greedy
+geo_rank_candidate_interface: feasible_menu  # feasible_menu | full_catalogue
 macro_alt_k: 0
 macro_alt_horizon: 3
 all_action_supervision: false

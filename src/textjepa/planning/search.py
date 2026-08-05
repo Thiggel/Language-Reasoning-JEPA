@@ -30,6 +30,7 @@ class EpisodeResult:
     steps: int
     n_necessary: int
     n_distractor: int
+    n_invalid: int = 0
 
 
 def _feasible(problem: Problem, resolved: frozenset[int]) -> list[int]:
@@ -108,8 +109,17 @@ class LatentPlanner:
         search_algorithm: str = "shooting",  # shooting | beam
         transition_energy_composition: str = "terminal",
         hybrid_local_pruning: bool = False,
+        candidate_interface: str = "feasible_menu",
     ):
-        if lookahead > 1 and not allow_oracle_future_actions:
+        if candidate_interface not in {"feasible_menu", "full_catalogue"}:
+            raise ValueError(
+                f"unknown candidate interface: {candidate_interface}"
+            )
+        if (
+            lookahead > 1
+            and candidate_interface == "feasible_menu"
+            and not allow_oracle_future_actions
+        ):
             raise ValueError(
                 "lookahead > 1 enumerates future actions with the reference "
                 "dependency graph; set allow_oracle_future_actions=true "
@@ -146,6 +156,7 @@ class LatentPlanner:
             )
         self.transition_energy_composition = transition_energy_composition
         self.hybrid_local_pruning = bool(hybrid_local_pruning)
+        self.candidate_interface = candidate_interface
         if self.hybrid_local_pruning and getattr(
             self.model, "geo_rank_score_mode", "value"
         ) != "horizon":
@@ -172,6 +183,7 @@ class LatentPlanner:
         action_history: list[int] = []
         budget = problem.n_necessary_steps + slack
         n_distractor = 0
+        n_invalid = 0
         goal_state = (
             self._oracle_goal_state(problem, prompt_tokens, prompt_mask)
             if self.energy == "oracle_goal"
@@ -211,11 +223,18 @@ class LatentPlanner:
                 )
             chosen = best[0]
             n_distractor += int(chosen not in problem.query_ancestors)
-            step_texts.append(env.step(chosen))
+            invalid = chosen not in env.feasible_actions()
+            n_invalid += int(invalid)
+            step_texts.append(
+                env.step_or_invalid(chosen)
+                if self.candidate_interface == "full_catalogue"
+                else env.step(chosen)
+            )
             action_history.append(chosen)
 
         return EpisodeResult(
-            env.solved, len(step_texts), problem.n_necessary_steps, n_distractor
+            env.solved, len(step_texts), problem.n_necessary_steps,
+            n_distractor, n_invalid
         )
 
     def _s0(self, prompt_tokens, prompt_mask) -> torch.Tensor:
@@ -462,13 +481,24 @@ class LatentPlanner:
         score_seed: str,
     ) -> list[int | None]:
         """True global beam search over JEPA-imagined continuations."""
-        beam = [[action] for action in _feasible(problem, resolved)]
+        roots = (
+            list(range(len(problem.vars)))
+            if self.candidate_interface == "full_catalogue"
+            else _feasible(problem, resolved)
+        )
+        beam = [[action] for action in roots]
         if not beam:
             return [None]
         for depth in range(1, self.lookahead + 1):
             if depth > 1:
                 expanded: list[list[int | None]] = []
                 for sequence in beam:
+                    if self.candidate_interface == "full_catalogue":
+                        expanded.extend(
+                            sequence + [action]
+                            for action in range(len(problem.vars))
+                        )
+                        continue
                     reached = resolved | {
                         a for a in sequence if a is not None
                     }

@@ -145,6 +145,9 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         geo_rank_rollout_for_h1=d.get("geo_rank_rollout_for_h1", False),
         geo_rank_policy=d.get("geo_rank_policy", "random"),
         geo_rank_beam_width=d.get("geo_rank_beam_width", 1),
+        geo_rank_candidate_interface=d.get(
+            "geo_rank_candidate_interface", "feasible_menu"
+        ),
         macro_alt_k=d.get("macro_alt_k", 0),
         macro_alt_horizon=d.get("macro_alt_horizon", 3),
         all_action_supervision=d.get("all_action_supervision", False),

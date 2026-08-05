@@ -69,6 +69,8 @@ def _aggregate(results: list[EpisodeResult]) -> dict[str, float]:
         "mean_necessary": sum(r.n_necessary for r in results) / n,
         "distractor_rate": sum(r.n_distractor for r in results)
         / max(sum(r.steps for r in results), 1),
+        "invalid_action_rate": sum(r.n_invalid for r in results)
+        / max(sum(r.steps for r in results), 1),
     }
 
 
