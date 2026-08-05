@@ -1,9 +1,11 @@
 from types import SimpleNamespace
 
+import pytest
 import torch
 
 from textjepa.utils.hierarchical_generation import (
     exact_ground_sentence_candidates,
+    generate_complete_reasoning_candidates,
     trim_reasoning_candidate,
 )
 
@@ -49,3 +51,33 @@ def test_exact_grounding_uses_each_variable_length_endpoint():
     assert grounded.terminal.tolist() == [False, True]
     assert bool((grounded.log_probabilities > -0.1).all())
 
+
+class CandidateTokenizer:
+    def encode(self, text, add_special_tokens=False):
+        return [10]
+
+
+class CandidateFakeLM:
+    def generate(self, input_ids, *, num_return_sequences=1, **kwargs):
+        prefix = input_ids.expand(num_return_sequences, -1)
+        suffix = torch.tensor([[7, 10]]).expand(num_return_sequences, -1)
+        return torch.cat([prefix, suffix], dim=1)
+
+
+def test_over_horizon_oracle_step_is_valid_but_not_injected():
+    candidates = generate_complete_reasoning_candidates(
+        CandidateFakeLM(), CandidateTokenizer(), torch.tensor([1, 2]),
+        population=2, max_tokens=2, temperature=0.8, top_p=0.95,
+        top_k=0, seed=3, reference=torch.tensor([4, 5, 10]),
+    )
+    assert len(candidates) == 2
+    assert all(tokens.tolist() == [7, 10] for tokens, _ in candidates)
+
+
+def test_malformed_oracle_step_is_still_rejected():
+    with pytest.raises(ValueError, match="oracle reference"):
+        generate_complete_reasoning_candidates(
+            CandidateFakeLM(), CandidateTokenizer(), torch.tensor([1, 2]),
+            population=2, max_tokens=2, temperature=0.8, top_p=0.95,
+            top_k=0, seed=3, reference=torch.tensor([4, 5, 6]),
+        )

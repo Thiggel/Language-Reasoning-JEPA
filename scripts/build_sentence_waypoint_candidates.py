@@ -221,9 +221,18 @@ def main() -> None:
         identity_dynamics.append(float(learner.sentence_metric(
             planning_state.state, waypoint[None]
         )[0]))
-        # Candidate zero is the exact observed reference injected above.
+        # Commutation is a property of the full observed transition, not of
+        # the bounded worker population.  The reference can legitimately be
+        # longer than K0 and is then omitted from the population, so roll it
+        # through P0 explicitly rather than assuming candidate zero.
+        reference_action = model.token_action(reference)[None]
+        predicted_reference, _ = model.p0.rollout(
+            token_history[0, -1], reference_action,
+            state_history=token_history,
+            action_history=token_action_history,
+        )
         predicted_reference_coarse = model.e0_to_1(
-            predicted[0][None]
+            predicted_reference[:, -1]
         )
         commutation_errors.append(float(learner.sentence_metric(
             predicted_reference_coarse, predicted_true[None]

@@ -94,12 +94,20 @@ def generate_complete_reasoning_candidates(
     newline = tokenizer.encode(STEP_DELIMITER, add_special_tokens=False)
     candidates: list[tuple[Tensor, bool]] = []
     if reference is not None:
-        values, complete, terminal = trim_reasoning_candidate(
-            reference.tolist(), newline, maximum=max_tokens
+        # Validate the dataset action independently of the search horizon.
+        # A genuine reasoning step may be longer than K0; in that case it is
+        # a valid oracle goal but cannot be inserted into this bounded worker
+        # population.  Treating it as malformed makes the K0 sweep crash and
+        # also gives short horizons privileged overlong actions if truncated.
+        reference_values, complete, terminal = trim_reasoning_candidate(
+            reference.tolist(), newline, maximum=len(reference)
         )
-        if not complete or not values:
+        if not complete or not reference_values:
             raise ValueError("oracle reference is not a complete step")
-        candidates.append((torch.tensor(values, dtype=torch.long), terminal))
+        if len(reference_values) <= max_tokens:
+            candidates.append((
+                torch.tensor(reference_values, dtype=torch.long), terminal
+            ))
     needed = population - len(candidates)
     device = prefix.device
     common = {

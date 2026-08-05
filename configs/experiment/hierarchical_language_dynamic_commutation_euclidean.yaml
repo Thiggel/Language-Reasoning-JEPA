@@ -1,0 +1,21 @@
+# @package _global_
+defaults:
+  - hierarchical_language_joint_repair_euclidean
+  - _self_
+
+research:
+  stage: DYNAMIC_COMMUTATION
+  joint_token_sentence: false
+  require_admission_stage: ORACLE_WAYPOINT
+
+loss:
+  dynamics_geometry: euclidean
+  normalize_dynamics: true
+  anti_collapse: vicreg
+  token_dynamics: 0.0
+  sentence_dynamics: 1.0
+  variance: 1.0
+  covariance: 0.04
+  sigreg: 0.0
+  token_rollout: 0.0
+  commutation: 1.0

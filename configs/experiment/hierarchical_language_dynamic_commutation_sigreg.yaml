@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - hierarchical_language_dynamic_commutation_euclidean
+  - _self_
+
+loss:
+  anti_collapse: sigreg
+  variance: 0.0
+  covariance: 0.0
+  sigreg: 0.05
