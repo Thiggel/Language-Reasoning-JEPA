@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "round_id": "2026-08-05-intent-gar-scoring-gruenau-remainder-v6",
+  "round_id": "2026-08-05-intent-gar-scoring-gruenau-remainder-v7",
   "project": "intent_phrase",
   "git_commit": "ba01d0fa7f6fda4501992abd2151638d54bc9de8",
   "decision": "Place the two untouched archive-fixed GAR cells on currently free Grunau GPUs after eleven cells were accepted on Lise.",
