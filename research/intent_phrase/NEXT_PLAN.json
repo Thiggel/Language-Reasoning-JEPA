@@ -1,21 +1,108 @@
 {
   "schema_version": 2,
-  "round_id": "2026-08-04-intent-gar-energy-true-state-recovery-v1",
+  "round_id": "2026-08-05-intent-terminal-energy-beam-eval-v1",
   "project": "intent_phrase",
-  "git_commit": "1b583008cfea23b29cd75fd2cd2d1fdf6dc8d7e2",
-  "decision": "Recover only the failed true-state input ablation after quoting the Hydra enum. The original failure occurred before model construction because Hydra parsed true as a Boolean; the repaired composed config preserves it as the string 'true'.",
+  "git_commit": "aa3a5647585644a5025e3258b30b0073f21b2a09",
+  "decision": "Re-evaluate every transition-advantage checkpoint with the intended beam objective: score a partial or completed beam only by the Energy of its terminal transition. Do not sum overlapping transition Energies. Reuse the completed cumulative curves as a negative control, the depth-1 score as the root-only control, and the existing distance-target curves because those already used terminal scoring. If H8 or H16 terminal scoring preserves or improves the strong depth-1 policy as depth increases, cumulative composition caused the apparent test-time scaling failure. If terminal scoring still collapses, the next audit must isolate predictor drift and intermediate beam pruning.",
   "jobs": [
     {
-      "id": "energy-true-state-seed0-recovery-v1",
-      "cluster": "Lise",
-      "gpus": 1,
-      "min_gpu_memory_mb": 20000,
-      "cpus": 4,
-      "walltime_minutes": 720,
-      "command": ["bash", "scripts/run_intent_energy_ablation_cell.sh", "{python}", "true_state", "3e-4"],
-      "env": {"DEVICE": "cuda:0", "SEED": "0"},
-      "purpose": "Recovered isolated true-state Energy-input ablation.",
-      "expected_artifacts": ["training_complete.json", "metrics.json", "model/best.pt", "stdout.log", "stderr.log"]
+      "id": "terminal-energy-default-h1-s0-v1",
+      "cluster": "gruenau", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-default-h1-seed0-v1/model/best.pt", "default-h1"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Correct terminal composition for the H1 reference.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-teacher-h4-s0-v1",
+      "cluster": "gruenau", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-teacher-h4-seed0-v1/model/best.pt", "teacher-h4"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Correct terminal composition for the H4 teacher.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-teacher-h8-s0-v1",
+      "cluster": "gruenau", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-teacher-h8-seed0-v1/model/best.pt", "teacher-h8"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Primary corrected scaling evaluation for the best strict H8 teacher.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-teacher-h16-s0-v1",
+      "cluster": "gruenau", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-teacher-h16-seed0-v1/model/best.pt", "teacher-h16"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Primary corrected scaling evaluation for the best slack-2 H16 teacher.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-teacher-h2-s0-v1",
+      "cluster": "Lise", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/scratch/usr/bemflait/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-teacher-h2-seed0-v1/model/best.pt", "teacher-h2"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Correct terminal composition for the H2 teacher.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-default-lr7e4-s0-v1",
+      "cluster": "Lise", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/scratch/usr/bemflait/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-default-h1-lr7e4-seed0-v1/model/best.pt", "default-lr7e4"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Learning-rate control under corrected terminal composition.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-mse0-s0-v1",
+      "cluster": "Lise", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/scratch/usr/bemflait/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-mse0-seed0-v1/model/best.pt", "mse0"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Ranking-only Energy under corrected terminal composition.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-mse01-s0-v1",
+      "cluster": "Lise", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/scratch/usr/bemflait/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-mse01-seed0-v1/model/best.pt", "mse01"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "MSE-0.1 control under corrected terminal composition.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-mse05-s0-v1",
+      "cluster": "Lise", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/scratch/usr/bemflait/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-mse05-seed0-v1/model/best.pt", "mse05"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "MSE-0.5 control under corrected terminal composition.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-mse1-s0-v1",
+      "cluster": "Lise", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/scratch/usr/bemflait/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-beam-ablation-v1/energy-mse1-seed0-v1/model/best.pt", "mse1"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "MSE-1.0 control under corrected terminal composition.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "terminal-energy-true-state-s0-v1",
+      "cluster": "Lise", "gpus": 1, "min_gpu_memory_mb": 20000,
+      "cpus": 4, "walltime_minutes": 90,
+      "command": ["bash", "scripts/run_intent_terminal_energy_eval.sh", "{python}", "/scratch/usr/bemflait/TextJEPA/runs/autonomy/intent_phrase/2026-08-04-intent-gar-energy-true-state-recovery-v1/energy-true-state-seed0-recovery-v1/model/best.pt", "true-state"],
+      "env": {"DEVICE": "cuda:0", "N_EPISODES": "200", "BEAM_WIDTH": "8"},
+      "purpose": "Predicted-versus-true-state control under terminal composition.",
+      "expected_artifacts": ["metrics.json", "terminal_depth4_slack0.json", "terminal_depth16_slack2.json", "stdout.log", "stderr.log"]
     }
   ]
 }
