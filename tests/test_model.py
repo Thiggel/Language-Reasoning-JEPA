@@ -837,7 +837,7 @@ def test_direct_ranker_is_trained_from_drifted_gar_anchors():
         d_model=32, chunk_layers=1, chunk_heads=2,
         state_layers=1, state_heads=2, d_action=8, d_macro=4,
         predictor_kind="concat", geo_rank_score_mode="direct",
-        geo_energy_target="advantage", geo_rank_rollout_depths=[1, 2, 4],
+        geo_energy_target="advantage", geo_rank_rollout_depths=[1, 2, 3, 4],
         dense_rollout_depth=4, value_detach=False,
     )
     out = model(batch)

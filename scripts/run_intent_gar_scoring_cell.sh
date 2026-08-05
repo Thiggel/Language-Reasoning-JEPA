@@ -22,7 +22,7 @@ case "$family" in
     case "$second" in
       one_step) ;;
       dense4)
-        depths='[1,2,4]'; dense_depth=4; dense_weight=1
+        depths='[1,2,3,4]'; dense_depth=4; dense_weight=1
         rollout_direct=0.25
         [[ "$first" == mse_rank ]] && rollout_rank=1
         ;;
@@ -31,7 +31,7 @@ case "$family" in
     ;;
   rankloss)
     rank_kind=$first; rank=1; direct_mse=0.25
-    depths='[1,2,4]'; dense_depth=4; dense_weight=1
+    depths='[1,2,3,4]'; dense_depth=4; dense_weight=1
     rollout_rank=1; rollout_direct=0.25
     case "$second" in
       state) score_mode=value; energy_target=distance; composition=terminal ;;
