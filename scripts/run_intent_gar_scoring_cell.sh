@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Intentionally kept as the stable controller entry point for GAR scoring screens.
 # One direct-ranker, ranking-loss, or horizon-conditioned GAR screen cell.
 set -euo pipefail
 [[ -n "${RUN_DIR:-}" && -n "${TEXTJEPA_ROOT:-}" ]] || {
