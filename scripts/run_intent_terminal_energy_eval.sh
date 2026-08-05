@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Checkpoint-only evaluation of terminal transition Energy under true beam search.
+# Checkpoint-only evaluation of terminal Energy under true beam search.
+# State-Energy checkpoints score the final predicted state. Transition-Energy
+# checkpoints score only the final predicted transition. No training occurs.
 set -euo pipefail
 [[ -n "${RUN_DIR:-}" && -n "${TEXTJEPA_ROOT:-}" ]] || {
   echo "RUN_DIR and TEXTJEPA_ROOT are required" >&2; exit 2;
