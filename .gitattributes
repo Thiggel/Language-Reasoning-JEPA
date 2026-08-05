@@ -13,6 +13,15 @@
 /tests export-ignore
 /third_party export-ignore
 /ui export-ignore
+/scripts/* export-ignore
+/scripts/run_hierarchical_value_continuation.py -export-ignore
+/scripts/train_hierarchical_language_jepa.py -export-ignore
+/scripts/build_sentence_waypoint_candidates.py -export-ignore
+/scripts/evaluate_hierarchical_language_oracles.py -export-ignore
+/scripts/build_hierarchical_oracle_rollouts.py -export-ignore
+/scripts/evaluate_hierarchical_language_mpc.py -export-ignore
+/scripts/build_hierarchical_value_teacher.py -export-ignore
+/scripts/evaluate_hierarchical_value_replay.py -export-ignore
 /AGENTS.md export-ignore
 /HANDOFF.md export-ignore
 /README.md export-ignore
