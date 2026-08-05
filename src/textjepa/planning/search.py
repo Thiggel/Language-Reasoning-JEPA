@@ -334,13 +334,25 @@ class LatentPlanner:
     ) -> torch.Tensor:
         active = [[action for action in sequence if action is not None]
                   for sequence in seqs]
+        # ``None`` is an absorbing terminal no-op.  Keep the requested search
+        # horizon separate from the number of actions executed before the
+        # terminal state.  Otherwise a horizon-conditioned Energy can detect
+        # symbolic early termination from the shortened horizon argument.
+        requested_horizons = [len(sequence) for sequence in seqs]
         n = len(active)
         total = torch.empty(n, device=self.device)
         score_mode = score_mode_override or getattr(
             self.model, "geo_rank_score_mode", "value"
         )
-        for length in sorted({len(q) for q in active}):
-            selected = [i for i, q in enumerate(active) if len(q) == length]
+        groups = sorted({
+            (len(q), requested_horizons[i]) for i, q in enumerate(active)
+        })
+        for length, requested_horizon in groups:
+            selected = [
+                i for i, q in enumerate(active)
+                if len(q) == length
+                and requested_horizons[i] == requested_horizon
+            ]
             if length == 0:
                 cur = s.expand(len(selected), -1)
             else:
@@ -404,7 +416,7 @@ class LatentPlanner:
                     s.expand(len(selected), -1),
                     cur,
                     s0.expand(len(selected), -1),
-                    length,
+                    requested_horizon,
                 )
                 total[torch.tensor(selected, device=self.device)] = (
                     sequence_energy

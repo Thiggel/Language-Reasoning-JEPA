@@ -202,6 +202,40 @@ def test_horizon_energy_scores_endpoint_relative_to_fixed_root():
     torch.testing.assert_close(costs, torch.tensor([16.0]))
 
 
+def test_horizon_energy_absorbing_padding_does_not_reveal_terminal_length():
+    from types import SimpleNamespace
+    from torch import nn
+
+    class Predictor(nn.Module):
+        def forward(self, state, action):
+            return state + action
+
+    class HorizonEnergy(nn.Module):
+        def forward(self, root, endpoint, initial, horizon):
+            return endpoint[..., 0] + float(horizon)
+
+    model = SimpleNamespace(
+        predictor=Predictor(), geo_rank_score_mode="horizon",
+        core=SimpleNamespace(
+            macro_k=0, d_action=1, horizon_energy_head=HorizonEnergy()
+        ),
+    )
+    planner = LatentPlanner(
+        model, None, torch.device("cpu"), lookahead=4,
+        allow_oracle_future_actions=True,
+    )
+    planner._action_codes = lambda _problem, actions: torch.tensor(
+        actions, dtype=torch.float32
+    ).unsqueeze(-1)
+    costs = planner._flat_costs(
+        torch.zeros(1, 1), torch.zeros(1, 1), None,
+        [[1, None, None, None], [1, 2, None, None]], None,
+    )
+    # Both beams are scored at the requested depth four.  Their endpoints are
+    # absorbing after one and two real actions respectively.
+    torch.testing.assert_close(costs, torch.tensor([5.0, 7.0]))
+
+
 def test_hybrid_uses_local_value_at_depth_one_and_horizon_at_terminal():
     from types import SimpleNamespace
     from torch import nn
