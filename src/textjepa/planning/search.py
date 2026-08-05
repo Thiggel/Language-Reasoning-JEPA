@@ -188,7 +188,7 @@ class LatentPlanner:
                 problem,
                 action_history,
             )
-            if self.search_algorithm == "beam":
+            if self.search_algorithm in {"beam", "root_balanced_beam"}:
                 best = self._beam_search(
                     s, s0, problem, frozenset(env.resolved_set), goal_state,
                     state_history, action_codes,

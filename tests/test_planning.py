@@ -303,6 +303,37 @@ def test_root_balanced_beam_preserves_every_first_action(monkeypatch):
     assert seen_at_final[0] == set(roots)
 
 
+def test_root_balanced_beam_dispatches_through_beam_search(monkeypatch):
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=121).problem(0)
+    planner = LatentPlanner(
+        None, vocab, torch.device("cpu"), lookahead=2, max_expand=2,
+        allow_oracle_future_actions=True,
+        search_algorithm="root_balanced_beam",
+    )
+
+    class BeamReached(RuntimeError):
+        pass
+
+    monkeypatch.setattr(
+        planner, "_tokens", lambda *_args, **_kwargs: torch.zeros(1, 1, 1)
+    )
+    monkeypatch.setattr(
+        planner, "_current_state", lambda *_args: torch.zeros(1, 1)
+    )
+    monkeypatch.setattr(planner, "_s0", lambda *_args: torch.zeros(1, 1))
+    monkeypatch.setattr(
+        planner, "_causal_history",
+        lambda *_args: (torch.zeros(1, 1, 1), torch.zeros(1, 0, 1)),
+    )
+    monkeypatch.setattr(
+        planner, "_beam_search",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(BeamReached()),
+    )
+    with pytest.raises(BeamReached):
+        planner.plan_episode(problem)
+
+
 def test_symbolic_direct_control_uses_direct_head_end_to_end():
     vocab = build_vocab(23)
     problem, _ = IGSMDataset(vocab, size=1, seed=53).problem(0)
