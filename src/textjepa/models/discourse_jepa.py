@@ -146,7 +146,7 @@ class DiscourseJEPA(nn.Module):
         self.freeze_encoders = freeze_encoders
         self.state_target = state_target
         if geo_rank_score_mode not in {
-            "transition", "value", "distance", "direct"
+            "transition", "horizon", "value", "distance", "direct"
         }:
             raise ValueError(
                 f"unknown GAR score mode: {geo_rank_score_mode}"
@@ -175,7 +175,7 @@ class DiscourseJEPA(nn.Module):
         if any(depth <= 0 for depth in rank_rollout_depths):
             raise ValueError("GAR rank rollout depths must be positive")
         if rank_rollout_depths and geo_rank_score_mode not in {
-            "value", "transition"
+            "value", "transition", "direct"
         }:
             raise ValueError(
                 "rollout-exposed GAR requires value or transition Energy"
@@ -278,6 +278,9 @@ class DiscourseJEPA(nn.Module):
         self.core.value_head.requires_grad_(geo_rank_score_mode == "value")
         self.core.transition_energy_head.requires_grad_(
             geo_rank_score_mode == "transition"
+        )
+        self.core.horizon_energy_head.requires_grad_(
+            geo_rank_score_mode == "horizon"
         )
         self.core.direct_action_rank_head.requires_grad_(
             geo_rank_score_mode == "direct"
@@ -871,10 +874,58 @@ class DiscourseJEPA(nn.Module):
         predicted_successors = torch.cat(
             [pe.unsqueeze(1), preds_alt], dim=1
         )
+        if (
+            score_mode == "horizon"
+            and "ga_rollout_action_tokens" in batch
+            and "ga_rollout_distance" in out.extras
+        ):
+            if getattr(self.core.predictor, "causal_sequence", False):
+                raise RuntimeError(
+                    "horizon GAR currently requires the matched MLP predictor"
+                )
+            action_tokens = batch["ga_rollout_action_tokens"]
+            action_mask = batch["ga_rollout_action_mask"]
+            B_h, C_h, R_h, H, La = action_tokens.shape
+            action_codes = self.encode_actions(
+                action_tokens.reshape(B_h * C_h * R_h, H, La)
+            ).reshape(B_h * C_h * R_h, H, -1)
+            root = s_anchor.unsqueeze(1).unsqueeze(1).expand(
+                -1, C_h, R_h, -1
+            ).reshape(B_h * C_h * R_h, -1)
+            endpoint = root
+            flat_action_mask = action_mask.reshape(B_h * C_h * R_h, H)
+            for horizon_index in range(H):
+                proposed = self.core.predictor(
+                    endpoint, action_codes[:, horizon_index]
+                )
+                endpoint = torch.where(
+                    flat_action_mask[:, horizon_index].unsqueeze(-1),
+                    proposed,
+                    endpoint,
+                )
+            initial_h = out.s0.unsqueeze(1).unsqueeze(1).expand(
+                -1, C_h, R_h, -1
+            ).reshape(B_h * C_h * R_h, -1)
+            if self.core.value_detach:
+                root = root.detach()
+                endpoint = endpoint.detach()
+                initial_h = initial_h.detach()
+            rollout_horizon = flat_action_mask.sum(1).clamp(min=1)
+            out.extras["ga_horizon_energy"] = self.core.horizon_energy_head(
+                root, endpoint, initial_h, rollout_horizon
+            ).reshape(B_h, C_h, R_h)
+            out.extras["ga_horizon_label"] = out.extras[
+                "ga_rollout_distance"
+            ]
+            out.extras["ga_horizon_valid"] = (
+                batch["ga_rollout_valid"]
+                & action_mask.any(-1)
+                & valid_b.view(B_h, 1, 1)
+            )
         true_successors = torch.cat(
             [out.step_states_tgt[bidx, t].unsqueeze(1), s_alt_true], dim=1
         )
-        if score_mode in {"transition", "value"}:
+        if score_mode in {"transition", "horizon", "value"}:
             use_true = self.geo_energy_state_source == "true"
             successors = true_successors if use_true else predicted_successors
             current = (
@@ -891,6 +942,11 @@ class DiscourseJEPA(nn.Module):
                     current.unsqueeze(1).expand_as(successors),
                     successors,
                     initial,
+                )
+            elif score_mode == "horizon":
+                root = current.unsqueeze(1).expand_as(successors)
+                energies = self.core.horizon_energy_head(
+                    root, successors, initial, 1
                 )
             else:
                 energies = self.core.value_head(successors, initial)
@@ -991,7 +1047,13 @@ class DiscourseJEPA(nn.Module):
                 anchor = anchor.detach()
                 successor = successor.detach()
                 initial = initial.detach()
-            if self.geo_rank_score_mode == "transition":
+            if self.geo_rank_score_mode == "direct":
+                energy = self.core.direct_action_rank_head(
+                    anchor.unsqueeze(1).expand(-1, candidates, -1),
+                    initial,
+                    actions,
+                )
+            elif self.geo_rank_score_mode == "transition":
                 energy = self.core.transition_energy_head(
                     anchor.unsqueeze(1).expand_as(successor),
                     successor,

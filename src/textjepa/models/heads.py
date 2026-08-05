@@ -78,6 +78,46 @@ class TransitionEnergyHead(nn.Module):
         ).squeeze(-1)
 
 
+class HorizonEnergyHead(nn.Module):
+    """Lower-is-better Energy of an endpoint relative to one MPC root.
+
+    Unlike :class:`TransitionEnergyHead`, ``root`` remains fixed across every
+    beam compared by one MPC decision.  A scalar horizon input lets one head
+    score endpoints reached after different amounts of imagination without
+    treating rollout depth as an unobserved nuisance variable.
+    """
+
+    def __init__(self, d_state: int, hidden_mult: int = 2):
+        super().__init__()
+        width = 3 * d_state + 1
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], 1),
+        )
+
+    def forward(
+        self,
+        root: torch.Tensor,
+        endpoint: torch.Tensor,
+        initial: torch.Tensor,
+        horizon: torch.Tensor | float | int,
+    ) -> torch.Tensor:
+        while initial.dim() < root.dim():
+            initial = initial.unsqueeze(-2)
+        initial = initial.expand_as(root)
+        horizon = torch.as_tensor(
+            horizon, dtype=root.dtype, device=root.device
+        )
+        while horizon.dim() < root.dim() - 1:
+            horizon = horizon.unsqueeze(-1)
+        horizon = horizon.expand(root.shape[:-1]).unsqueeze(-1)
+        # log1p keeps depths 1--16 on a modest, monotone numerical scale.
+        horizon = torch.log1p(horizon) / 4.0
+        return self.net(
+            torch.cat([root, endpoint, initial, horizon], dim=-1)
+        ).squeeze(-1)
+
+
 class MacroValueHead(nn.Module):
     """Cost/advantage head for a macro action in a problem state."""
 

@@ -17,6 +17,72 @@ import torch.nn.functional as F
 from textjepa.objectives.base import Objective
 
 
+def _geometric_rank_loss(
+    energy: torch.Tensor,
+    label: torch.Tensor,
+    valid: torch.Tensor,
+    *,
+    kind: str,
+    margin: float,
+    label_gap: float,
+    temperature: float,
+    teacher_temperature: float,
+) -> torch.Tensor:
+    """Rank lower-is-better Energies against lower-is-better labels."""
+    if kind not in {"hinge", "logistic", "soft_pairwise", "listwise"}:
+        raise ValueError(f"unknown geometric ranking loss: {kind}")
+    if temperature <= 0 or teacher_temperature <= 0:
+        raise ValueError("ranking temperatures must be positive")
+    valid = valid & torch.isfinite(label)
+    safe_label = label.detach().masked_fill(~valid, 0.0)
+    count = energy.shape[-1]
+    if kind == "listwise":
+        row_valid = valid.sum(-1) >= 2
+        if not row_valid.any():
+            return energy.sum() * 0.0
+        student_logits = (-energy / temperature).masked_fill(~valid, -1e9)
+        teacher_logits = (
+            -safe_label / teacher_temperature
+        ).masked_fill(~valid, -1e9)
+        teacher = torch.softmax(teacher_logits, dim=-1)
+        cross_entropy = -(
+            teacher * torch.log_softmax(student_logits, dim=-1)
+        ).sum(-1)
+        return cross_entropy[row_valid].mean()
+
+    upper = torch.triu(
+        torch.ones(count, count, dtype=torch.bool, device=energy.device),
+        diagonal=1,
+    )
+    pair_valid = valid.unsqueeze(2) & valid.unsqueeze(1) & upper.unsqueeze(0)
+    label_i = safe_label.unsqueeze(2)
+    label_j = safe_label.unsqueeze(1)
+    energy_i = energy.unsqueeze(2)
+    energy_j = energy.unsqueeze(1)
+
+    if kind == "soft_pairwise":
+        target = torch.sigmoid(
+            (label_j - label_i) / teacher_temperature
+        )
+        logits = (energy_j - energy_i) / temperature
+        loss = F.binary_cross_entropy_with_logits(
+            logits, target, reduction="none"
+        )
+        return loss[pair_valid].sum() / pair_valid.sum().clamp(min=1)
+
+    better_i = (label_i + label_gap < label_j) & pair_valid
+    better_j = (label_j + label_gap < label_i) & pair_valid
+    signed_difference = torch.where(
+        better_i, energy_i - energy_j, energy_j - energy_i
+    )
+    ordered = better_i | better_j
+    if kind == "hinge":
+        loss = F.relu(margin + signed_difference)
+    else:
+        loss = F.softplus(signed_difference / temperature)
+    return loss[ordered].sum() / ordered.sum().clamp(min=1)
+
+
 class ActionRanking(Objective):
     def __init__(self, margin: float = 0.5):
         super().__init__()
@@ -78,24 +144,34 @@ class GeoAdvantageRank(Objective):
     the EMA-encoded outcome text to the EMA terminal goal). Environment
     interaction only — no symbolic labels."""
 
-    def __init__(self, margin: float = 0.5, label_gap: float = 0.02):
+    def __init__(
+        self,
+        margin: float = 0.5,
+        label_gap: float = 0.02,
+        kind: str = "hinge",
+        temperature: float = 0.3,
+        teacher_temperature: float = 0.1,
+    ):
         super().__init__()
         self.margin = margin
         self.label_gap = label_gap
+        self.kind = kind
+        self.temperature = temperature
+        self.teacher_temperature = teacher_temperature
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         if "ga_energy" not in out.extras:
             return out.step_states.sum() * 0.0
-        e = out.extras["ga_energy"]  # [B, 1+K]
-        d = out.extras["ga_label"]
-        v = out.extras["ga_valid"]
-        di = d.unsqueeze(2) - d.unsqueeze(1)  # label diffs
-        ei = e.unsqueeze(2) - e.unsqueeze(1)
-        pair_v = v.unsqueeze(2) & v.unsqueeze(1)
-        better = (di < -self.label_gap) & pair_v  # i closer to goal than j
-        loss = better.float() * F.relu(self.margin + ei)
-        n = better.float().sum().clamp(min=1.0)
-        return loss.sum() / n
+        return _geometric_rank_loss(
+            out.extras["ga_energy"],
+            out.extras["ga_label"],
+            out.extras["ga_valid"],
+            kind=self.kind,
+            margin=self.margin,
+            label_gap=self.label_gap,
+            temperature=self.temperature,
+            teacher_temperature=self.teacher_temperature,
+        )
 
 
 class GeoAdvantageRegression(Objective):
@@ -179,10 +255,20 @@ class GeoRolloutEnergyRegression(Objective):
 class GeoRolloutAdvantageRank(Objective):
     """Apply the ordinary GAR ordering to candidates from drifted anchors."""
 
-    def __init__(self, margin: float = 0.5, label_gap: float = 0.02):
+    def __init__(
+        self,
+        margin: float = 0.5,
+        label_gap: float = 0.02,
+        kind: str = "hinge",
+        temperature: float = 0.3,
+        teacher_temperature: float = 0.1,
+    ):
         super().__init__()
         self.margin = margin
         self.label_gap = label_gap
+        self.kind = kind
+        self.temperature = temperature
+        self.teacher_temperature = teacher_temperature
 
     def forward(self, out, batch: dict) -> torch.Tensor:
         energies = out.extras.get("ga_rank_rollout_energy", ())
@@ -194,13 +280,38 @@ class GeoRolloutAdvantageRank(Objective):
             out.extras["ga_rank_rollout_label"],
             out.extras["ga_rank_rollout_valid"],
         ):
-            label_diff = label.unsqueeze(2) - label.unsqueeze(1)
-            energy_diff = energy.unsqueeze(2) - energy.unsqueeze(1)
-            pair_valid = valid.unsqueeze(2) & valid.unsqueeze(1)
-            better = (label_diff < -self.label_gap) & pair_valid
-            loss = better.float() * F.relu(self.margin + energy_diff)
-            losses.append(loss.sum() / better.sum().clamp(min=1))
+            losses.append(_geometric_rank_loss(
+                energy,
+                label,
+                valid,
+                kind=self.kind,
+                margin=self.margin,
+                label_gap=self.label_gap,
+                temperature=self.temperature,
+                teacher_temperature=self.teacher_temperature,
+            ))
         return torch.stack(losses).mean()
+
+
+class GeoHorizonRank(GeoAdvantageRank):
+    """Rank recursively imagined endpoints sharing one root and horizon."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "ga_horizon_energy" not in out.extras:
+            return out.step_states.sum() * 0.0
+        energy = out.extras["ga_horizon_energy"].flatten(1)
+        label = out.extras["ga_horizon_label"].flatten(1)
+        valid = out.extras["ga_horizon_valid"].flatten(1)
+        return _geometric_rank_loss(
+            energy,
+            label,
+            valid,
+            kind=self.kind,
+            margin=self.margin,
+            label_gap=self.label_gap,
+            temperature=self.temperature,
+            teacher_temperature=self.teacher_temperature,
+        )
 
 
 class GeoRolloutAdvantageRegression(Objective):

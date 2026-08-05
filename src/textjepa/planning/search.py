@@ -133,7 +133,7 @@ class LatentPlanner:
         if score_control not in {"model", "shuffle", "zero"}:
             raise ValueError(f"unknown score control: {score_control}")
         self.score_control = score_control
-        if search_algorithm not in {"shooting", "beam"}:
+        if search_algorithm not in {"shooting", "beam", "root_balanced_beam"}:
             raise ValueError(f"unknown search algorithm: {search_algorithm}")
         self.search_algorithm = search_algorithm
         if transition_energy_composition not in {
@@ -389,6 +389,20 @@ class LatentPlanner:
                     rollout_states = torch.stack(rollout, dim=1)
             if (
                 getattr(self.model, "geo_rank_score_mode", "value")
+                == "horizon" and length > 0
+            ):
+                sequence_energy = self.model.core.horizon_energy_head(
+                    s.expand(len(selected), -1),
+                    cur,
+                    s0.expand(len(selected), -1),
+                    length,
+                )
+                total[torch.tensor(selected, device=self.device)] = (
+                    sequence_energy
+                )
+                continue
+            if (
+                getattr(self.model, "geo_rank_score_mode", "value")
                 == "transition" and length > 0
             ):
                 previous = torch.cat([
@@ -448,8 +462,25 @@ class LatentPlanner:
                 s, s0, problem, beam, goal_state,
                 state_history, action_history,
             )
-            keep = min(self.max_expand, len(beam))
-            indices = torch.argsort(costs, stable=True)[:keep].tolist()
+            if self.search_algorithm == "root_balanced_beam":
+                indices = []
+                roots = []
+                for sequence in beam:
+                    if sequence[0] not in roots:
+                        roots.append(sequence[0])
+                for root in roots:
+                    group = [
+                        index for index, sequence in enumerate(beam)
+                        if sequence[0] == root
+                    ]
+                    order = torch.argsort(
+                        costs[torch.tensor(group, device=self.device)],
+                        stable=True,
+                    )[: self.max_expand].tolist()
+                    indices.extend(group[index] for index in order)
+            else:
+                keep = min(self.max_expand, len(beam))
+                indices = torch.argsort(costs, stable=True)[:keep].tolist()
             beam = [beam[i] for i in indices]
         costs = self._flat_costs(
             s, s0, problem, beam, goal_state,

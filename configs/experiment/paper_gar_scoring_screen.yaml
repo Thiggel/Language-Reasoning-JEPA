@@ -1,0 +1,13 @@
+# @package _global_
+# Matched screen for GAR scoring targets, ranking losses, and horizon Energy.
+defaults: [paper_gar_rollout_factorial, _self_]
+run_name: paper_gar_scoring_screen
+objective:
+  rollout: {weight: 0.0, kind: smooth_l1, norm_targets: true}
+  geo_horizon_rank:
+    weight: 0.0
+    margin: 0.5
+    label_gap: 0.02
+    kind: hinge
+    temperature: 0.3
+    teacher_temperature: 0.1

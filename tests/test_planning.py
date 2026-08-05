@@ -170,6 +170,38 @@ def test_transition_energy_can_score_only_terminal_or_root_edge():
     torch.testing.assert_close(root._flat_costs(*args), torch.tensor([1.0]))
 
 
+def test_horizon_energy_scores_endpoint_relative_to_fixed_root():
+    from types import SimpleNamespace
+    from torch import nn
+
+    class Predictor(nn.Module):
+        def forward(self, state, action):
+            return state + action
+
+    class Energy(nn.Module):
+        def forward(self, root, endpoint, initial, horizon):
+            return 10 * root[..., 0] + endpoint[..., 0] + float(horizon)
+
+    model = SimpleNamespace(
+        predictor=Predictor(), geo_rank_score_mode="horizon",
+        core=SimpleNamespace(
+            macro_k=0, d_action=1, horizon_energy_head=Energy()
+        ),
+    )
+    planner = LatentPlanner(
+        model, None, torch.device("cpu"), lookahead=2,
+        allow_oracle_future_actions=True,
+    )
+    planner._action_codes = lambda _problem, actions: torch.tensor(
+        actions, dtype=torch.float32
+    ).unsqueeze(-1)
+    costs = planner._flat_costs(
+        torch.ones(1, 1), torch.zeros(1, 1), None, [[1, 2]], None
+    )
+    # Fixed root is 1, recursively imagined endpoint is 4, horizon is 2.
+    torch.testing.assert_close(costs, torch.tensor([16.0]))
+
+
 def test_unknown_transition_energy_composition_is_rejected():
     with pytest.raises(ValueError, match="unknown transition Energy composition"):
         LatentPlanner(
@@ -205,6 +237,31 @@ def test_genuine_beam_returns_root_of_best_complete_sequence(monkeypatch):
         torch.zeros(1, 1, 1), torch.zeros(1, 0, 1), "seed",
     )
     assert best[0] == roots[1]
+
+
+def test_root_balanced_beam_preserves_every_first_action(monkeypatch):
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=121).problem(0)
+    roots = _feasible(problem, frozenset())
+    planner = LatentPlanner(
+        None, vocab, torch.device("cpu"), lookahead=2, max_expand=1,
+        allow_oracle_future_actions=True,
+        search_algorithm="root_balanced_beam",
+    )
+    seen_at_final = []
+
+    def costs(_s, _s0, _problem, sequences, *_args):
+        if all(len(sequence) == 2 for sequence in sequences):
+            seen_at_final.append({sequence[0] for sequence in sequences})
+        return torch.arange(len(sequences), dtype=torch.float32)
+
+    monkeypatch.setattr(planner, "_flat_costs", costs)
+    planner._beam_search(
+        torch.zeros(1, 1), torch.zeros(1, 1), problem, frozenset(), None,
+        torch.zeros(1, 1, 1), torch.zeros(1, 0, 1), "seed",
+    )
+    assert seen_at_final
+    assert seen_at_final[0] == set(roots)
 
 
 def test_symbolic_direct_control_uses_direct_head_end_to_end():

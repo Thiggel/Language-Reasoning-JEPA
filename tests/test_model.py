@@ -803,6 +803,86 @@ def test_rollout_gar_detach_controls_predictor_gradient(detach_body):
     assert predictor_gradient is (not detach_body)
 
 
+@pytest.mark.parametrize(
+    "kind", ["hinge", "logistic", "soft_pairwise", "listwise"]
+)
+def test_geometric_ranking_losses_prefer_lower_energy(kind, setup):
+    from textjepa.objectives import GeoAdvantageRank
+
+    _, batch, model = setup
+    out = model(batch)
+    out.extras.update(
+        ga_label=torch.tensor([[1.0, 2.0, 3.0]]),
+        ga_valid=torch.tensor([[True, True, True]]),
+    )
+    good = torch.tensor([[1.0, 2.0, 3.0]], requires_grad=True)
+    out.extras["ga_energy"] = good
+    good_loss = GeoAdvantageRank(kind=kind)(out, batch)
+    out.extras["ga_energy"] = torch.tensor(
+        [[3.0, 2.0, 1.0]], requires_grad=True
+    )
+    bad_loss = GeoAdvantageRank(kind=kind)(out, batch)
+    assert torch.isfinite(good_loss) and torch.isfinite(bad_loss)
+    assert good_loss < bad_loss
+
+
+def test_direct_ranker_is_trained_from_drifted_gar_anchors():
+    from textjepa.objectives import GeoRolloutCandidateEnergyRegression
+
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(vocab, size=8, seed=47, geo_rank_k=2)
+    batch = collate([dataset[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="direct",
+        geo_energy_target="advantage", geo_rank_rollout_depths=[1, 2, 4],
+        dense_rollout_depth=4, value_detach=False,
+    )
+    out = model(batch)
+    loss = GeoRolloutCandidateEnergyRegression()(out, batch)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert any(
+        parameter.grad is not None
+        for parameter in model.core.direct_action_rank_head.parameters()
+    )
+
+
+def test_horizon_gar_ranks_recursively_imagined_rollout_endpoints():
+    from textjepa.objectives import GeoHorizonRank
+
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(
+        vocab, size=8, seed=53, geo_rank_k=2,
+        geo_rank_horizon=4, geo_rank_rollouts=3,
+        geo_rank_policy="random",
+    )
+    batch = collate([dataset[i] for i in range(8)], vocab.pad_id)
+    assert batch["ga_rollout_action_tokens"].shape[-2] == 4
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="horizon",
+        dense_rollout_depth=4, value_detach=False,
+    )
+    out = model(batch)
+    assert out.extras["ga_horizon_energy"].shape == (8, 3, 3)
+    loss = GeoHorizonRank(kind="logistic")(out, batch)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert any(
+        parameter.grad is not None
+        for parameter in model.core.horizon_energy_head.parameters()
+    )
+    assert any(
+        parameter.grad is not None
+        for parameter in model.core.predictor.parameters()
+    )
+
+
 def test_rollout_gar_rejects_causal_predictor_at_forward():
     vocab = build_vocab(23)
     ds = IGSMDataset(vocab, size=4, seed=43, geo_rank_k=2)

@@ -261,11 +261,16 @@ class IGSMDataset(Dataset):
                     # remaining-step or relevance labels enter that selection.
                     candidates = [trace[t_star], *alts]
                     rollout_steps = []
+                    rollout_actions = []
                     for candidate in candidates:
                         candidate_rollouts = []
+                        candidate_action_rollouts = []
                         for _ in range(self.geo_rank_rollouts):
                             roll_env = env2.clone()
                             sequence = list(steps[:t_star])
+                            action_sequence = [
+                                self.vocab.encode(action_phrase(p, candidate))
+                            ]
                             sequence.append(self.vocab.encode(roll_env.step(candidate)))
                             for _depth in range(1, self.geo_rank_horizon):
                                 if roll_env.solved:
@@ -274,10 +279,16 @@ class IGSMDataset(Dataset):
                                 if not feasible:
                                     break
                                 nxt = feasible[rng.randrange(len(feasible))]
+                                action_sequence.append(
+                                    self.vocab.encode(action_phrase(p, nxt))
+                                )
                                 sequence.append(self.vocab.encode(roll_env.step(nxt)))
                             candidate_rollouts.append(sequence)
+                            candidate_action_rollouts.append(action_sequence)
                         rollout_steps.append(candidate_rollouts)
+                        rollout_actions.append(candidate_action_rollouts)
                     ga["ga_rollout_steps"] = rollout_steps
+                    ga["ga_rollout_actions"] = rollout_actions
 
         # Keep the grounding falsifier exactly paired with the aligned
         # condition.  In particular, draw the GAR anchor, alternatives, and
@@ -619,6 +630,36 @@ def collate(batch: list[dict], pad_id: int) -> dict:
                 ga_rollout_step_mask=grm,
                 ga_rollout_valid=grv,
             )
+            if any("ga_rollout_actions" in b for b in batch):
+                Ha = max(
+                    (len(seq) for b in batch
+                     for c in b.get("ga_rollout_actions", []) for seq in c),
+                    default=1,
+                )
+                La = max(
+                    (len(action) for b in batch
+                     for c in b.get("ga_rollout_actions", []) for seq in c
+                     for action in seq),
+                    default=1,
+                )
+                gra = torch.full(
+                    (B, C, R, Ha, La), pad_id, dtype=torch.long
+                )
+                gram = torch.zeros(B, C, R, Ha, dtype=torch.bool)
+                for i, b in enumerate(batch):
+                    for c, candidate in enumerate(
+                        b.get("ga_rollout_actions", [])
+                    ):
+                        for r, sequence in enumerate(candidate):
+                            for h, action in enumerate(sequence):
+                                gra[i, c, r, h, : len(action)] = torch.tensor(
+                                    action
+                                )
+                                gram[i, c, r, h] = True
+                extra.update(
+                    ga_rollout_action_tokens=gra,
+                    ga_rollout_action_mask=gram,
+                )
     return {
         **extra,
         "prompt_tokens": prompt_tokens,

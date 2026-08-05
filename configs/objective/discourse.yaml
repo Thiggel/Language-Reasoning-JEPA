@@ -119,6 +119,9 @@ geo_rank:
   weight: 0.0  # preference-label-free geometric ranking (disc_georank*)
   margin: 0.5
   label_gap: 0.02
+  kind: hinge
+  temperature: 0.3
+  teacher_temperature: 0.1
 geo_advantage_mse:
   _target_: textjepa.objectives.GeoAdvantageRegression
   weight: 0.0
@@ -134,6 +137,17 @@ geo_rollout_rank:
   weight: 0.0
   margin: 0.5
   label_gap: 0.02
+  kind: hinge
+  temperature: 0.3
+  teacher_temperature: 0.1
+geo_horizon_rank:
+  _target_: textjepa.objectives.GeoHorizonRank
+  weight: 0.0
+  margin: 0.5
+  label_gap: 0.02
+  kind: hinge
+  temperature: 0.3
+  teacher_temperature: 0.1
 geo_rollout_advantage_mse:
   _target_: textjepa.objectives.GeoRolloutAdvantageRegression
   weight: 0.0
