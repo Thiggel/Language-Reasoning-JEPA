@@ -586,6 +586,25 @@ class LatentPlanner:
         )
         last = mask.sum(dim=1) - 1
         cur = states[torch.arange(n, device=self.device), last]
+        if getattr(self.model, "geo_rank_score_mode", "value") == "transition":
+            if any(not actions for actions in active):
+                raise ValueError(
+                    "exact transition Energy requires a non-empty sequence"
+                )
+            predecessor = s.expand(n, -1).clone()
+            multi_step = torch.tensor(
+                [len(actions) > 1 for actions in active],
+                dtype=torch.bool,
+                device=self.device,
+            )
+            if multi_step.any():
+                rows = torch.arange(n, device=self.device)[multi_step]
+                predecessor[multi_step] = states[
+                    rows, last[multi_step] - 1
+                ]
+            return self.model.core.transition_energy_head(
+                predecessor, cur, s0.expand(n, -1)
+            )
         steps = torch.tensor(
             [float(self.lookahead) for _ in seqs], device=self.device
         )

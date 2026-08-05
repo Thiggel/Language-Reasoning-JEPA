@@ -1,8 +1,12 @@
-import pytest
-import torch
+import random
 from collections import Counter
 
+import pytest
+import torch
+
 from textjepa.data.igsm.dataset import IGSMDataset, build_vocab
+from textjepa.data.igsm.env import SymbolicEnv
+from textjepa.data.igsm.render import prompt_sentences
 from textjepa.models import DiscourseJEPA
 from textjepa.planning import (
     HierarchicalLatentPlanner,
@@ -220,6 +224,52 @@ def test_symbolic_direct_control_uses_direct_head_end_to_end():
     result = planner.plan_episode(problem, slack=0, seed=17)
     assert isinstance(result.solved, bool)
     assert result.steps == problem.n_necessary_steps
+
+
+def test_symbolic_transition_control_uses_exact_transition_head():
+    from torch import nn
+
+    vocab = build_vocab(23)
+    problem, _ = IGSMDataset(vocab, size=1, seed=57).problem(0)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2,
+        state_layers=2, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="transition",
+    ).eval()
+
+    class ExactPairEnergy(nn.Module):
+        def forward(self, predecessor, successor, initial):
+            return predecessor[..., 0] + 2 * successor[..., 0]
+
+    model.core.transition_energy_head = ExactPairEnergy()
+    planner = LatentPlanner(
+        model, vocab, torch.device("cpu"), lookahead=2,
+        simulator="symbolic", allow_oracle_future_actions=True,
+    )
+    env = SymbolicEnv(problem)
+    prompt = prompt_sentences(problem, random.Random(3))
+    prompt_tokens = planner._tokens(prompt)
+    prompt_mask = torch.ones(1, len(prompt), dtype=torch.bool)
+    current = planner._current_state(prompt_tokens, prompt_mask, [])
+    initial = planner._s0(prompt_tokens, prompt_mask)
+    first = env.feasible_actions()[0]
+    clone = env.clone()
+    clone.step(first)
+    second = clone.feasible_actions()[0]
+    sequence = [[first, second]]
+    observed = planner._symbolic_costs(
+        problem, env, [], current, initial, prompt_tokens, prompt_mask,
+        sequence, None,
+    )
+    texts = []
+    exact_env = env.clone()
+    texts.append(exact_env.step(first))
+    predecessor = planner._encode_steps(prompt_tokens, prompt_mask, texts)
+    texts.append(exact_env.step(second))
+    successor = planner._encode_steps(prompt_tokens, prompt_mask, texts)
+    expected = predecessor[:, 0] + 2 * successor[:, 0]
+    torch.testing.assert_close(observed, expected)
 
 
 def test_planner_runs_end_to_end():
