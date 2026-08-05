@@ -755,6 +755,28 @@ def test_rollout_gar_reuses_candidates_from_drifted_anchors(score_mode):
     assert torch.isfinite(rank) and torch.isfinite(mse)
 
 
+def test_rollout_advantage_regression_masks_infinite_invalid_candidates(setup):
+    from textjepa.objectives import GeoRolloutAdvantageRegression
+
+    _, batch, model = setup
+    out = model(batch)
+    energy = torch.tensor([[1.0, 2.0, 1000.0]], requires_grad=True)
+    out.extras.update(
+        ga_rank_rollout_energy=(energy,),
+        ga_rank_rollout_label=(
+            torch.tensor([[1.0, 2.0, float("inf")]]),
+        ),
+        ga_rank_rollout_valid=(
+            torch.tensor([[True, True, False]]),
+        ),
+    )
+    loss = GeoRolloutAdvantageRegression()(out, batch)
+    assert loss.item() == pytest.approx(0.0, abs=1e-8)
+    loss.backward()
+    assert torch.isfinite(energy.grad).all()
+    assert energy.grad[0, 2].item() == 0.0
+
+
 @pytest.mark.parametrize("detach_body", [False, True])
 def test_rollout_gar_detach_controls_predictor_gradient(detach_body):
     from textjepa.objectives import GeoRolloutCandidateEnergyRegression

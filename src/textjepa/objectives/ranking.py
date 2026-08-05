@@ -222,6 +222,11 @@ class GeoRolloutAdvantageRegression(Objective):
             out.extras["ga_rank_rollout_label"],
             out.extras["ga_rank_rollout_valid"],
         ):
+            # Failed or padded candidates carry +inf teacher distances.  Make
+            # them finite before constructing pair differences: indexing the
+            # valid pairs only after ``inf - inf`` has already produced NaNs
+            # can still poison autograd.
+            label = label.detach().masked_fill(~valid, 0.0)
             count = energy.shape[1]
             upper = torch.triu(
                 torch.ones(
