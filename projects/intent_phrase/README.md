@@ -50,6 +50,11 @@ information-matched protocol.
 
 ## Navigation
 
+- [Living method handbook](method/README.md): detailed, plain-text
+  specifications of the task, model, GAR, multi-step teacher, planning,
+  objectives, evaluation, controls, and representation analysis. Start here
+  when checking what a term or experiment actually means.
+
 - [Frozen ALFWorld pilot training-game identities](data/alfworld_pilot_train_games.jsonl),
   selected only for deterministic branch-complete collection before model
   evaluation; this fixture is not headline evaluation data.

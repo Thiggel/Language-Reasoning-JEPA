@@ -1,5 +1,13 @@
 # Repository operating notes
 
+## Terminal-facing mathematical notation
+
+- In chat responses and Markdown intended to be read in a terminal, write
+  mathematics with plain text and Unicode symbols rather than LaTeX delimiters.
+  Prefer forms such as `E(z_t, a)`, `z_t -> z_(t+1)`, `sum_i loss_i`, and
+  `P(success | slack <= 2)`. Reserve LaTeX notation for `.tex` paper sources
+  or when the user explicitly asks for LaTeX.
+
 ## Scientific subprojects
 
 - Use `projects/intent_phrase/`, `projects/token_igsm/`, and

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-08-05-method-handbook",
+  "project": "intent_phrase",
+  "title": "A living specification for intent-phrase JEPA planning",
+  "created_at": "2026-08-05T11:00:00+02:00",
+  "status": "method_specification",
+  "decision": "Use the linked method handbook as the living source for intent-phrase task, model, GAR, teacher, planning, evaluation, control, and analysis definitions.",
+  "plain_summary": "The project now has an eleven-part, terminal-readable method handbook that explicitly separates teacher horizon, predictor rollout depth, planner depth, information privileges, losses, and Energy composition.",
+  "report": "REPORT.md",
+  "review_required": true
+}
