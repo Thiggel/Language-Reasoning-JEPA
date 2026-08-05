@@ -126,6 +126,9 @@ geo_advantage_mse:
 geo_energy_mse:
   _target_: textjepa.objectives.GeoEnergyRegression
   weight: 0.0
+geo_rollout_energy_mse:
+  _target_: textjepa.objectives.GeoRolloutEnergyRegression
+  weight: 0.0
 counterfactual_outcome:
   _target_: textjepa.objectives.CounterfactualOutcomePrediction
   weight: 0.0  # data-only control: observed alternatives, no preference labels

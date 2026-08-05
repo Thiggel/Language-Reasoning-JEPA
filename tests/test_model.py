@@ -657,6 +657,71 @@ def test_absolute_energy_mse_masks_invalid_candidates(setup):
     assert energy.grad[0, 2].item() == 0.0
 
 
+def test_rollout_state_energy_uses_planning_matched_depths(setup):
+    from textjepa.objectives import GeoRolloutEnergyRegression
+
+    vocab, batch, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="value",
+        geo_energy_rollout_depths=[0, 1, 2, 4],
+        geo_energy_rollout_detach_body=False, value_detach=False,
+    )
+    out = model(batch)
+    assert out.extras["ga_rollout_state_energy_depths"] == (0, 1, 2, 4)
+    energies = out.extras["ga_rollout_state_energy"]
+    targets = out.extras["ga_rollout_state_energy_target"]
+    masks = out.extras["ga_rollout_state_energy_mask"]
+    steps = batch["step_mask"].shape[1]
+    assert [value.shape[1] for value in energies] == [
+        steps, steps, steps - 1, steps - 3
+    ]
+    assert all(torch.isfinite(value[mask]).all()
+               for value, mask in zip(targets, masks))
+    loss = GeoRolloutEnergyRegression()(out, batch)
+    assert torch.isfinite(loss) and loss > 0
+
+
+@pytest.mark.parametrize("detach_body", [False, True])
+def test_rollout_state_energy_detach_isolates_predictor(
+    setup, detach_body
+):
+    from textjepa.objectives import GeoRolloutEnergyRegression
+
+    vocab, batch, _ = setup
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="value",
+        geo_energy_rollout_depths=[1, 2],
+        geo_energy_rollout_detach_body=detach_body, value_detach=False,
+    )
+    out = model(batch)
+    GeoRolloutEnergyRegression()(out, batch).backward()
+    assert any(parameter.grad is not None
+               for parameter in model.core.value_head.parameters())
+    predictor_gradient = any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.core.predictor.parameters()
+    )
+    assert predictor_gradient is (not detach_body)
+
+
+def test_rollout_state_energy_rejects_action_or_transition_heads(setup):
+    vocab, _, _ = setup
+    with pytest.raises(ValueError, match="requires state Energy"):
+        DiscourseJEPA(
+            vocab_size=len(vocab), pad_id=vocab.pad_id,
+            d_model=32, chunk_layers=1, chunk_heads=2,
+            state_layers=1, state_heads=2, d_action=8, d_macro=4,
+            geo_rank_score_mode="transition",
+            geo_energy_rollout_depths=[1, 2],
+        )
+
+
 def test_observed_action_ldad_reconstructs_raw_tokens(setup):
     from textjepa.objectives import ObservedActionLDAD
 

@@ -1,0 +1,16 @@
+# @package _global_
+# State Energy for terminal latent planning. GAR orders one-step predicted
+# successors, while optional rollout calibration exposes V to the recursively
+# imagined states queried by beam search. All targets remain EMA geometry.
+defaults: [paper_energy_geometry, _self_]
+run_name: paper_state_energy_rollout
+model:
+  geo_rank_score_mode: value
+  geo_energy_target: distance
+  geo_energy_state_source: predicted
+  geo_energy_rollout_depths: []
+  geo_energy_rollout_detach_body: false
+objective:
+  geo_energy_mse: {weight: 0.25}
+  geo_rollout_energy_mse: {weight: 0.0}
+  dense_rollout: {weight: 0.0, kind: smooth_l1, norm_targets: true, horizon_discount: 1.0}

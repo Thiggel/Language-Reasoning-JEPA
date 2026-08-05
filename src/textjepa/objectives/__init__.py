@@ -32,6 +32,7 @@ from textjepa.objectives.ranking import (
     GeoAdvantageRank,
     GeoAdvantageRegression,
     GeoEnergyRegression,
+    GeoRolloutEnergyRegression,
 )
 from textjepa.objectives.counterfactual import (
     CounterfactualOutcomePrediction,
@@ -77,6 +78,7 @@ __all__ = [
     "GeoAdvantageRank",
     "GeoAdvantageRegression",
     "GeoEnergyRegression",
+    "GeoRolloutEnergyRegression",
     "CounterfactualOutcomePrediction",
     "CounterfactualStatePrediction",
     "CounterfactualSlotPrediction",

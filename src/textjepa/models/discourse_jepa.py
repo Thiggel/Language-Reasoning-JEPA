@@ -108,6 +108,8 @@ class DiscourseJEPA(nn.Module):
         geo_rank_score_mode: str = "value",
         geo_energy_target: str = "advantage",
         geo_energy_state_source: str = "predicted",
+        geo_energy_rollout_depths: list[int] | None = None,
+        geo_energy_rollout_detach_body: bool = False,
         geo_rank_label_control: str = "true",
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
@@ -156,6 +158,19 @@ class DiscourseJEPA(nn.Module):
             )
         self.geo_energy_target = geo_energy_target
         self.geo_energy_state_source = geo_energy_state_source
+        rollout_depths = tuple(sorted(set(geo_energy_rollout_depths or [])))
+        if any(depth < 0 for depth in rollout_depths):
+            raise ValueError("GAR Energy rollout depths must be non-negative")
+        if rollout_depths and geo_rank_score_mode != "value":
+            raise ValueError(
+                "rollout-exposed Energy calibration requires state Energy"
+            )
+        self.geo_energy_rollout_depths = rollout_depths
+        self.geo_energy_rollout_detach_body = bool(
+            geo_energy_rollout_detach_body
+        )
+        if rollout_depths:
+            dense_rollout_depth = max(dense_rollout_depth, max(rollout_depths))
         if geo_rank_label_control not in {"true", "cyclic_shuffle"}:
             raise ValueError(
                 f"unknown GAR label control: {geo_rank_label_control}"
@@ -440,7 +455,66 @@ class DiscourseJEPA(nn.Module):
             out.extras["cf_valid"] = batch["alt_remaining"] >= 0
         if "ga_t" in batch and (batch["ga_t"] >= 0).any():
             self._geo_rank(batch, out)
+        if self.geo_energy_rollout_depths:
+            self._rollout_state_energy(out)
         return out
+
+    def _rollout_state_energy(self, out) -> None:
+        """Calibrate state Energy on the states queried by latent planning.
+
+        Depth zero uses observed online states. Positive depths use the exact
+        recursively predicted factual-action rollouts already constructed by
+        ``LatentDynamicsCore``. Targets are distances between the matching EMA
+        states and the EMA terminal state. No symbolic distance, relevance, or
+        future outcome is exposed to the learner.
+        """
+        import torch.nn.functional as Fn
+
+        dense_predictions = out.extras.get("dense_rollout_predictions", ())
+        dense_targets = out.extras.get("dense_rollout_targets", ())
+        dense_masks = out.extras.get("dense_rollout_masks", ())
+        batch = out.s0.shape[0]
+        last = out.step_mask.sum(1).clamp(min=1) - 1
+        goal = out.step_states_tgt[
+            torch.arange(batch, device=out.s0.device), last
+        ]
+        ln = lambda value: Fn.layer_norm(value, value.shape[-1:])
+        energies = []
+        targets = []
+        masks = []
+        for depth in self.geo_energy_rollout_depths:
+            if depth == 0:
+                predicted = out.prev_states
+                target_state = out.extras["prev_states_tgt"]
+                valid = out.step_mask
+            else:
+                if depth > len(dense_predictions):
+                    raise RuntimeError(
+                        f"missing dense rollout depth {depth}; available "
+                        f"depth is {len(dense_predictions)}"
+                    )
+                predicted = dense_predictions[depth - 1]
+                target_state = dense_targets[depth - 1]
+                valid = dense_masks[depth - 1]
+            energy_input = (
+                predicted.detach()
+                if self.geo_energy_rollout_detach_body else predicted
+            )
+            initial = (
+                out.s0.detach()
+                if self.geo_energy_rollout_detach_body else out.s0
+            )
+            energies.append(self.core.value_head(energy_input, initial))
+            targets.append(
+                (ln(target_state) - ln(goal).unsqueeze(1)).abs().mean(-1)
+            )
+            masks.append(valid)
+        out.extras["ga_rollout_state_energy"] = tuple(energies)
+        out.extras["ga_rollout_state_energy_target"] = tuple(targets)
+        out.extras["ga_rollout_state_energy_mask"] = tuple(masks)
+        out.extras["ga_rollout_state_energy_depths"] = (
+            self.geo_energy_rollout_depths
+        )
 
     def _action_support(self, batch: dict, out) -> None:
         """Score every problem action at every observed prefix state."""

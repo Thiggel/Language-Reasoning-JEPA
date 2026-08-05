@@ -153,3 +153,24 @@ class GeoEnergyRegression(Objective):
         safe_target = target.masked_fill(~valid, 0.0)
         error = (energy - safe_target).square()
         return error[valid].sum() / valid.sum().clamp(min=1)
+
+
+class GeoRolloutEnergyRegression(Objective):
+    """Calibrate state Energy on recursively imagined factual rollouts."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        energies = out.extras.get("ga_rollout_state_energy", ())
+        if not energies:
+            return out.step_states.sum() * 0.0
+        targets = out.extras["ga_rollout_state_energy_target"]
+        masks = out.extras["ga_rollout_state_energy_mask"]
+        losses = []
+        for energy, target, valid in zip(energies, targets, masks):
+            target = target.detach()
+            valid = valid & torch.isfinite(target)
+            safe_target = target.masked_fill(~valid, 0.0)
+            squared_error = (energy - safe_target).square()
+            losses.append(
+                squared_error[valid].sum() / valid.sum().clamp(min=1)
+            )
+        return torch.stack(losses).mean()
