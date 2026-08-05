@@ -11,6 +11,7 @@ episodes=${N_EPISODES:-300}; width=${BEAM_WIDTH:-8}
 
 horizon=4; horizons=null; dense_depth=4; dense_weight=1
 dense_discount=1; rollouts=4; frozen=false
+root_distill_weight=0.25; candidate_interface=feasible_menu; rank_k=2
 case "$variant" in
   fixed_h4) ;;
   mix_uniform)
@@ -23,6 +24,24 @@ case "$variant" in
     horizon=8; horizons='[1,2,4,8]'; dense_depth=8; dense_weight=0.25 ;;
   mix_no_dense)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0 ;;
+  mix_no_dense_aux0)
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0 ;;
+  mix_no_dense_aux05)
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.5 ;;
+  mix_no_dense_aux1)
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=1 ;;
+  fixed_h4_distill025)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25 ;;
+  fixed_h4_distill1)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    root_distill_weight=1 ;;
+  mix_no_dense_full_catalogue)
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    candidate_interface=full_catalogue; rank_k=-1 ;;
   frozen_mix)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     frozen=true ;;
@@ -53,9 +72,12 @@ fi
   data.geo_rank_horizon="$horizon" "data.geo_rank_horizons=$horizons" \
   data.geo_rank_policy=random data.geo_rank_rollouts="$rollouts" \
   data.geo_rank_rollout_for_h1=true \
+  data.geo_rank_candidate_interface="$candidate_interface" \
+  data.geo_rank_k="$rank_k" \
   model.geo_rank_score_mode=horizon model.geo_energy_target=distance \
   model.dense_rollout_depth="$dense_depth" \
   objective.geo_rank.weight=0 objective.geo_energy_mse.weight=0 \
+  objective.geo_advantage_mse.weight="$root_distill_weight" \
   objective.geo_horizon_rank.weight=1 \
   objective.geo_horizon_rank.kind=logistic \
   objective.dense_rollout.weight="$dense_weight" \
@@ -66,21 +88,25 @@ if [[ "$frozen" == true ]]; then
   mkdir -p "$RUN_DIR/horizon_only"
   RUN_DIR="$RUN_DIR/horizon_only" N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
+    CANDIDATE_INTERFACE="$candidate_interface" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-horizon-only"
   N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=true \
+    CANDIDATE_INTERFACE="$candidate_interface" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-hybrid"
 else
   N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
+    CANDIDATE_INTERFACE="$candidate_interface" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant"
 fi
 
 "$py" - "$RUN_DIR" "$variant" "$seed" "$lr" "$horizons" \
-  "$dense_depth" "$dense_weight" "$dense_discount" "$frozen" <<'PY'
+  "$dense_depth" "$dense_weight" "$dense_discount" "$frozen" \
+  "$root_distill_weight" "$candidate_interface" "$rank_k" <<'PY'
 import json, pathlib, sys
 r = pathlib.Path(sys.argv[1])
 (r / "training_complete.json").write_text(json.dumps({
@@ -91,5 +117,8 @@ r = pathlib.Path(sys.argv[1])
     "dense_rollout_weight": float(sys.argv[7]),
     "dense_rollout_discount": float(sys.argv[8]),
     "frozen_body": sys.argv[9].lower() == "true",
+    "root_distill_weight": float(sys.argv[10]),
+    "candidate_interface": sys.argv[11],
+    "rank_alternatives": int(sys.argv[12]),
 }, indent=2) + "\n")
 PY
