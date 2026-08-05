@@ -21,7 +21,7 @@ for depth in 1 4 8 16; do
       device="$device" split=val n_episodes="$episodes" slack="$slack" \
       lookahead="$depth" max_expand="$width" search_algorithm="$search_algorithm" \
       transition_energy_composition="$composition" \
-      +hybrid_local_pruning="$hybrid_local_pruning" \
+      hybrid_local_pruning="$hybrid_local_pruning" \
       allow_oracle_future_actions="$oracle" \
       out="$RUN_DIR/terminal_depth${depth}_slack${slack}.json"
   done
