@@ -696,3 +696,49 @@ claim, verify the primary source and current publication status.
   - Remove invalid test-time FLOP curves and uncontrolled manifold plots. Add
     t-SNE or UMAP only after controlled paraphrase and negation features exist,
     with full-space statistics as the primary evidence.
+
+## 2026-08-05 — defensible scope for the symbolic closed-loop testbed
+
+- Decision: whether candidate-privileged, environment-executed iGSM can anchor
+  the paper and whether the work can be described as the first study of JEPA
+  reasoning in language.
+- Primary sources:
+  - V-JEPA 2: <https://arxiv.org/abs/2506.09985>
+  - LLM-JEPA: <https://arxiv.org/abs/2509.14252>
+  - JEPA-Reasoner: <https://openreview.net/forum?id=7ruA2rXG42>
+  - Value-guided action planning with JEPA world models:
+    <https://arxiv.org/abs/2601.00844>
+  - Temporal Straightening for Latent Planning:
+    <https://arxiv.org/abs/2603.12231>
+  - Temporal-Distance JEPA: <https://arxiv.org/abs/2607.25337>
+- Applicable claims:
+  - Existing work already establishes action-conditioned JEPA planning,
+    JEPA-style language learning, and latent language reasoning. A broad
+    priority claim such as "first JEPA planner" or "first JEPA reasoner in
+    language" is false or indefensible.
+  - Recent planning-aware JEPA work also shapes goal distance, trajectory
+    geometry, or directed temporal progress. The paper cannot claim that GAR
+    is the first planning-aware constraint on JEPA geometry.
+  - The unoccupied-looking empirical unit is narrower: within-state
+    counterfactual ordering over discrete language actions, coupled to latent
+    successor prediction and analyzed under a shared candidate interface.
+    Any priority wording should remain "to our knowledge" and should not be
+    necessary for the contribution to stand.
+- Limitations:
+  - Symbolic current-action menus isolate valuation from proposal, while
+    symbolic future menus additionally expose the hypothetical action tree.
+    The latter is a candidate-privileged diagnostic rather than a fully
+    learned planner.
+  - Environment execution and observation after the chosen action make the
+    task closed-loop model-predictive control. They do not test autonomous
+    arithmetic execution or open-loop derivation of the final answer.
+  - A synthetic laboratory can support a mechanism claim, but one arithmetic
+    domain cannot establish broad language-reasoning generality.
+- Design change:
+  - Frame iGSM as a controlled language-mediated planning laboratory in which
+    exact interventions, counterfactuals, and action regret are measurable.
+  - Lead with the prediction-versus-planning-geometry mechanism and GAR's
+    causal controls, not a broad priority or state-of-the-art claim.
+  - Label closed-loop feedback, current feasible menus, and future candidate
+    trees separately. Add outcome-masked and open-loop diagnostics plus one
+    non-arithmetic domain before making claims beyond this laboratory.
