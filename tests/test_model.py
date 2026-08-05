@@ -722,6 +722,80 @@ def test_rollout_state_energy_rejects_action_or_transition_heads(setup):
         )
 
 
+@pytest.mark.parametrize("score_mode", ["value", "transition"])
+def test_rollout_gar_reuses_candidates_from_drifted_anchors(score_mode):
+    from textjepa.objectives import (
+        GeoRolloutAdvantageRank,
+        GeoRolloutCandidateEnergyRegression,
+    )
+
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=8, seed=37, geo_rank_k=2)
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode=score_mode,
+        geo_energy_target=(
+            "advantage" if score_mode == "transition" else "distance"
+        ),
+        geo_rank_rollout_depths=[1, 2, 4], value_detach=False,
+    )
+    out = model(batch)
+    assert out.extras["ga_rank_rollout_depths"] == (1, 2, 4)
+    energies = out.extras["ga_rank_rollout_energy"]
+    masks = out.extras["ga_rank_rollout_valid"]
+    assert len(energies) == len(masks) == 3
+    assert all(value.shape == out.extras["ga_energy"].shape
+               for value in energies)
+    assert any(mask.any() for mask in masks)
+    rank = GeoRolloutAdvantageRank()(out, batch)
+    mse = GeoRolloutCandidateEnergyRegression()(out, batch)
+    assert torch.isfinite(rank) and torch.isfinite(mse)
+
+
+@pytest.mark.parametrize("detach_body", [False, True])
+def test_rollout_gar_detach_controls_predictor_gradient(detach_body):
+    from textjepa.objectives import GeoRolloutCandidateEnergyRegression
+
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=8, seed=41, geo_rank_k=2)
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="transition",
+        geo_energy_target="advantage", geo_rank_rollout_depths=[1, 2],
+        geo_rank_rollout_detach_body=detach_body, value_detach=False,
+    )
+    out = model(batch)
+    GeoRolloutCandidateEnergyRegression()(out, batch).backward()
+    assert any(parameter.grad is not None
+               for parameter in model.core.transition_energy_head.parameters())
+    predictor_gradient = any(
+        parameter.grad is not None and parameter.grad.abs().sum() > 0
+        for parameter in model.core.predictor.parameters()
+    )
+    assert predictor_gradient is (not detach_body)
+
+
+def test_rollout_gar_rejects_causal_predictor_at_forward():
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=4, seed=43, geo_rank_k=2)
+    batch = collate([ds[i] for i in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="causal", predictor_heads=2,
+        geo_rank_rollout_depths=[1], value_detach=False,
+    )
+    with pytest.raises(RuntimeError, match="requires the matched MLP"):
+        model(batch)
+
+
 def test_observed_action_ldad_reconstructs_raw_tokens(setup):
     from textjepa.objectives import ObservedActionLDAD
 

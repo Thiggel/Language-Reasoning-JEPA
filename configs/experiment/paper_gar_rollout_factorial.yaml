@@ -1,0 +1,11 @@
+# @package _global_
+# Matched GAR calibration x rollout-exposure screen.
+defaults: [paper_recovery_mlp_geometry, _self_]
+run_name: paper_gar_rollout_factorial
+model:
+  geo_rank_rollout_depths: []
+  geo_rank_rollout_detach_body: false
+objective:
+  geo_rollout_rank: {weight: 0.0, margin: 0.5, label_gap: 0.02}
+  geo_rollout_advantage_mse: {weight: 0.0, target_scale: 1.0}
+  geo_rollout_candidate_mse: {weight: 0.0}

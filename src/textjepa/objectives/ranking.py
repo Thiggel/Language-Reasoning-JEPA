@@ -174,3 +174,91 @@ class GeoRolloutEnergyRegression(Objective):
                 squared_error[valid].sum() / valid.sum().clamp(min=1)
             )
         return torch.stack(losses).mean()
+
+
+class GeoRolloutAdvantageRank(Objective):
+    """Apply the ordinary GAR ordering to candidates from drifted anchors."""
+
+    def __init__(self, margin: float = 0.5, label_gap: float = 0.02):
+        super().__init__()
+        self.margin = margin
+        self.label_gap = label_gap
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        energies = out.extras.get("ga_rank_rollout_energy", ())
+        if not energies:
+            return out.step_states.sum() * 0.0
+        losses = []
+        for energy, label, valid in zip(
+            energies,
+            out.extras["ga_rank_rollout_label"],
+            out.extras["ga_rank_rollout_valid"],
+        ):
+            label_diff = label.unsqueeze(2) - label.unsqueeze(1)
+            energy_diff = energy.unsqueeze(2) - energy.unsqueeze(1)
+            pair_valid = valid.unsqueeze(2) & valid.unsqueeze(1)
+            better = (label_diff < -self.label_gap) & pair_valid
+            loss = better.float() * F.relu(self.margin + energy_diff)
+            losses.append(loss.sum() / better.sum().clamp(min=1))
+        return torch.stack(losses).mean()
+
+
+class GeoRolloutAdvantageRegression(Objective):
+    """Calibrate pairwise Energy differences at drifted GAR anchors."""
+
+    def __init__(self, target_scale: float = 1.0):
+        super().__init__()
+        if target_scale <= 0:
+            raise ValueError("target_scale must be positive")
+        self.target_scale = float(target_scale)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        energies = out.extras.get("ga_rank_rollout_energy", ())
+        if not energies:
+            return out.step_states.sum() * 0.0
+        losses = []
+        for energy, label, valid in zip(
+            energies,
+            out.extras["ga_rank_rollout_label"],
+            out.extras["ga_rank_rollout_valid"],
+        ):
+            count = energy.shape[1]
+            upper = torch.triu(
+                torch.ones(
+                    count, count, dtype=torch.bool, device=energy.device
+                ),
+                diagonal=1,
+            )
+            pair_valid = (
+                valid.unsqueeze(2) & valid.unsqueeze(1) & upper.unsqueeze(0)
+            )
+            predicted = energy.unsqueeze(1) - energy.unsqueeze(2)
+            target = self.target_scale * (
+                label.unsqueeze(1) - label.unsqueeze(2)
+            )
+            error = (predicted - target).square()
+            losses.append(
+                error[pair_valid].sum() / pair_valid.sum().clamp(min=1)
+            )
+        return torch.stack(losses).mean()
+
+
+class GeoRolloutCandidateEnergyRegression(Objective):
+    """Regress absolute distance or transition change at drifted anchors."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        energies = out.extras.get("ga_rank_rollout_energy", ())
+        if not energies:
+            return out.step_states.sum() * 0.0
+        losses = []
+        for energy, target, valid in zip(
+            energies,
+            out.extras["ga_rank_rollout_target"],
+            out.extras["ga_rank_rollout_valid"],
+        ):
+            target = target.detach()
+            valid = valid & torch.isfinite(target)
+            safe_target = target.masked_fill(~valid, 0.0)
+            error = (energy - safe_target).square()
+            losses.append(error[valid].sum() / valid.sum().clamp(min=1))
+        return torch.stack(losses).mean()

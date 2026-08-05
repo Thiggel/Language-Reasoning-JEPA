@@ -29,6 +29,7 @@
 /scripts/run_intent_decision_audit_cell.sh -export-ignore
 /scripts/run_intent_terminal_energy_eval.sh -export-ignore
 /scripts/run_intent_state_energy_rollout_cell.sh -export-ignore
+/scripts/run_intent_gar_rollout_factorial_cell.sh -export-ignore
 /scripts/train.py -export-ignore
 /scripts/plan.py -export-ignore
 /scripts/audit_intent_gar_geometry.py -export-ignore

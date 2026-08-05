@@ -110,6 +110,8 @@ class DiscourseJEPA(nn.Module):
         geo_energy_state_source: str = "predicted",
         geo_energy_rollout_depths: list[int] | None = None,
         geo_energy_rollout_detach_body: bool = False,
+        geo_rank_rollout_depths: list[int] | None = None,
+        geo_rank_rollout_detach_body: bool = False,
         geo_rank_label_control: str = "true",
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
@@ -169,8 +171,22 @@ class DiscourseJEPA(nn.Module):
         self.geo_energy_rollout_detach_body = bool(
             geo_energy_rollout_detach_body
         )
-        if rollout_depths:
-            dense_rollout_depth = max(dense_rollout_depth, max(rollout_depths))
+        rank_rollout_depths = tuple(sorted(set(geo_rank_rollout_depths or [])))
+        if any(depth <= 0 for depth in rank_rollout_depths):
+            raise ValueError("GAR rank rollout depths must be positive")
+        if rank_rollout_depths and geo_rank_score_mode not in {
+            "value", "transition"
+        }:
+            raise ValueError(
+                "rollout-exposed GAR requires value or transition Energy"
+            )
+        self.geo_rank_rollout_depths = rank_rollout_depths
+        self.geo_rank_rollout_detach_body = bool(
+            geo_rank_rollout_detach_body
+        )
+        required_depths = rollout_depths + rank_rollout_depths
+        if required_depths:
+            dense_rollout_depth = max(dense_rollout_depth, max(required_depths))
         if geo_rank_label_control not in {"true", "cyclic_shuffle"}:
             raise ValueError(
                 f"unknown GAR label control: {geo_rank_label_control}"
@@ -908,9 +924,94 @@ class DiscourseJEPA(nn.Module):
         out.extras["ga_energy_target"] = target.masked_fill(
             ~candidate_valid, 0.0
         )
+        if self.geo_rank_rollout_depths:
+            self._rollout_geo_rank(
+                out=out,
+                t=t,
+                executed_action=out.actions[bidx, t],
+                alternative_actions=a_alt,
+                labels=ga_label,
+                valid=candidate_valid,
+                current_distance=current_distance,
+            )
         out.extras["ga_cf_pred"] = cf_preds_alt
         out.extras["ga_cf_target"] = s_alt_true
         out.extras["ga_cf_valid"] = ga_valid
+
+    def _rollout_geo_rank(
+        self,
+        *,
+        out,
+        t: torch.Tensor,
+        executed_action: torch.Tensor,
+        alternative_actions: torch.Tensor,
+        labels: torch.Tensor,
+        valid: torch.Tensor,
+        current_distance: torch.Tensor,
+    ) -> None:
+        """Re-evaluate the ordinary GAR candidate set from drifted states.
+
+        A depth-d anchor is obtained by recursively applying the predictor to
+        the d factual actions preceding the sampled GAR anchor.  Candidate
+        actions and EMA-geometry labels are exactly the same as in ordinary
+        GAR.  This changes only the state distribution seen by the Energy
+        head and, unless detached, the predictor gradients.
+        """
+        if getattr(self.core.predictor, "causal_sequence", False):
+            raise RuntimeError(
+                "rollout-exposed GAR currently requires the matched MLP "
+                "predictor; causal history reconstruction is not implicit"
+            )
+        dense = out.extras.get("dense_rollout_predictions", ())
+        actions = torch.cat(
+            [executed_action.unsqueeze(1), alternative_actions], dim=1
+        )
+        batch, candidates, _ = actions.shape
+        bidx = torch.arange(batch, device=t.device)
+        energies = []
+        targets = []
+        masks = []
+        for depth in self.geo_rank_rollout_depths:
+            if depth > len(dense):
+                raise RuntimeError(
+                    f"missing GAR rollout depth {depth}; available "
+                    f"depth is {len(dense)}"
+                )
+            row_valid = t >= depth
+            index = (t - depth).clamp(min=0)
+            anchor = dense[depth - 1][bidx, index]
+            successor = self.core.predictor(
+                anchor.unsqueeze(1).expand(-1, candidates, -1).reshape(
+                    batch * candidates, -1
+                ),
+                actions.reshape(batch * candidates, -1),
+            ).reshape(batch, candidates, -1)
+            initial = out.s0
+            if self.geo_rank_rollout_detach_body:
+                anchor = anchor.detach()
+                successor = successor.detach()
+                initial = initial.detach()
+            if self.geo_rank_score_mode == "transition":
+                energy = self.core.transition_energy_head(
+                    anchor.unsqueeze(1).expand_as(successor),
+                    successor,
+                    initial,
+                )
+            else:
+                energy = self.core.value_head(successor, initial)
+            target = labels
+            if self.geo_energy_target == "advantage":
+                target = labels - current_distance
+            energies.append(energy)
+            targets.append(target.masked_fill(~valid, 0.0))
+            masks.append(valid & row_valid.unsqueeze(1))
+        out.extras["ga_rank_rollout_energy"] = tuple(energies)
+        out.extras["ga_rank_rollout_label"] = tuple(
+            labels for _ in energies
+        )
+        out.extras["ga_rank_rollout_target"] = tuple(targets)
+        out.extras["ga_rank_rollout_valid"] = tuple(masks)
+        out.extras["ga_rank_rollout_depths"] = self.geo_rank_rollout_depths
 
     @staticmethod
     def _cyclic_shuffle_valid_labels(

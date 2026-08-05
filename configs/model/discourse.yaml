@@ -33,6 +33,8 @@ geo_energy_target: advantage  # advantage | distance
 geo_energy_state_source: predicted  # predicted | true
 geo_energy_rollout_depths: []  # state-Energy calibration at 0=observed, d>0=imagined
 geo_energy_rollout_detach_body: false  # isolate head calibration from geometry
+geo_rank_rollout_depths: []  # GAR candidates scored from recursively imagined anchors
+geo_rank_rollout_detach_body: false  # train only the head on imagined anchors
 geo_rank_label_control: "true"  # true | cyclic_shuffle (training-only control)
 dropout: 0.0
 geo_proj: false
