@@ -137,3 +137,21 @@ expectile goal-value .057-.187 — near random. See
 References (same episodes): random .053, first-feasible .247, oracle 1.000.
 The frozen coherent recipe slightly exceeds the superseded horizon-conditioned
 headline at every depth >= 4.
+
+## Frozen-recipe variants (2026-08-07, one seed each)
+
+| Variant | D1 | D2 | D4 | D8 | D16 |
+|---|---:|---:|---:|---:|---:|
+| Frozen recipe (5-seed reference) | .126 | .450 | .837 | .879 | .884 |
+| + expectile-TD shaping auxiliary | .150 | .323 | .847 | .863 | .863 |
+| Non-residual (direct) MLP prediction | .120 | .410 | .813 | .850 | .860 |
+
+- **TD shaping does not improve the frozen recipe**: deep depths within one
+  seed SD, and a clear D2 regression (.323 vs .450). TD-as-ingredient is
+  retained as a documented negative ablation, consistent with the pure TD
+  baselines' failure to exploit search.
+- **Residual prediction is roughly neutral for the MLP predictor** (slightly
+  below reference at every depth, within ~1 SD). Combined with the earlier
+  causal-matrix finding that the transformer predictor prefers direct
+  prediction, the honest claim is: the residual choice is second-order; the
+  predictor class (MLP vs transformer) is the first-order choice.
