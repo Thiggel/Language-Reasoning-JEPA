@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-ema-vicreg-one-step-overhead",
+  "decision": "Quantify the memory, throughput, and capacity overhead of selecting EMA targets plus VICReg instead of VISReg in the packed one-step 124M JEPA.",
+  "git_commit": "169a9640d4f6694742872380cd5f128d0076f51e",
+  "jobs": [
+    {
+      "id": "a100-ema-vicreg-packed-one-step", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 20,
+      "purpose": "Measure EMA+VICReg overhead and A100 capacity under the selected no-rollout recipe.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_ema_vicreg_packed_d1_gar", "128", "256", "384", "448", "512"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb128.json", "benchmark_mb512.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-ema-vicreg-packed-one-step", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 20,
+      "purpose": "Measure EMA+VICReg overhead and RTX Pro capacity under the selected no-rollout recipe.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_ema_vicreg_packed_d1_gar", "128", "256", "384", "448", "512", "640"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb128.json", "benchmark_mb640.json", "stdout.log"]
+    }
+  ]
+}

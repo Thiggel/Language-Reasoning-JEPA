@@ -1,0 +1,34 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-token-jepa-packed-rtxpro6k-capacity-v3",
+  "decision": "Measure the physical sequence capacity and sustained-step throughput of the complete packed token-iGSM JEPA objective on one Alex RTX Pro 6000, matched to the A100 ladder.",
+  "git_commit": "aace2f9a34a712bbbdf29673614ff040c4cac7c0",
+  "jobs": [
+    {
+      "id": "rtxpro-packed-full-mb24", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 60,
+      "purpose": "Matched low-batch control for memory and throughput across GPU types.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "24"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-packed-full-mb32", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 60,
+      "purpose": "Cross the known unpacked A100 microbatch-32 memory boundary.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "32"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-packed-full-mb64", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 60,
+      "purpose": "Test a practical large physical sequence batch.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "64"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-packed-full-mb128", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 60,
+      "purpose": "Test an edit-JEPA-scale physical sequence batch with the full token-iGSM objective retained.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "128"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-packed-full-mb256", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 60,
+      "purpose": "Directly test whether 256 physical sequences fit on one RTX Pro 6000.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "256"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-two-level-sentence-hierarchy-lise-recovery",
+  "decision": "Submit six still-unaccepted two-level sentence hierarchy component cells after an intermittent Alex SSH failure stopped the first recovery round.",
+  "git_commit": "f358fb767ba4e354212eb089c5807da6bb989165",
+  "jobs": [
+    {
+      "id": "sentence-bridge-only-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 240,
+      "purpose": "Isolate bidirectional low/high boundary-state bridge supervision.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-bridge-only-seed0", "0", "0", "0", "0", "0", "global", "objective.bridge=0.25"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-transition-reach-only-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 240,
+      "purpose": "Isolate consistency between high predictions and recursively executed low dynamics.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-transition-reach-only-seed0", "0", "0", "0", "0", "0", "global", "objective.transition_reachability=0.25"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-reach-classifier-only-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 240,
+      "purpose": "Isolate the learned low-controller reachability discriminator and its planning score.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-reach-classifier-only-seed0", "0", "0", "0", "1", "0", "global", "objective.reachability_classifier=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-regression-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Sentence-level counterfactual advantage regression without ranking or dynamics MSE.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-regression-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_regression=1", "objective.gar_ranking=0", "objective.gar_counterfactual_mse=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-ranking-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Sentence-level counterfactual pairwise GAR without scalar regression or dynamics MSE.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-ranking-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_regression=0", "objective.gar_ranking=1", "objective.gar_counterfactual_mse=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-joint-inbatch-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 360,
+      "purpose": "Joint advantage regression, ranking, and counterfactual dynamics MSE with in-batch sentences.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-joint-inbatch-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_source=in_batch"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    }
+  ]
+}
