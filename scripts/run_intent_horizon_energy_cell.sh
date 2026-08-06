@@ -14,7 +14,7 @@ dense_discount=1; rollouts=4; frozen=false
 root_distill_weight=0.25; candidate_interface=feasible_menu; rank_k=2
 feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
 horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
-ranking_kind=logistic
+ranking_kind=logistic; chunk_weight=2; vicreg_weight=1
 case "$variant" in
   fixed_h4) ;;
   mix_uniform)
@@ -73,6 +73,16 @@ case "$variant" in
   fixed_h4_hinge)
     horizon=4; horizons=null; dense_depth=0; dense_weight=0
     ranking_kind=hinge ;;
+  fixed_h4_no_chunk_pred)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    chunk_weight=0 ;;
+  fixed_h4_no_vicreg)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    vicreg_weight=0 ;;
+  fixed_h4_endpoint_only)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    root_distill_weight=0; counterfactual_weight=0; latent_weight=0
+    chunk_weight=0 ;;
   mix_no_dense_full_catalogue)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     candidate_interface=full_catalogue; rank_k=-1 ;;
@@ -143,6 +153,8 @@ fi
   objective.geo_horizon_rank.kind="$ranking_kind" \
   objective.counterfactual_state.weight="$counterfactual_weight" \
   objective.latent_pred.weight="$latent_weight" \
+  objective.chunk_pred.weight="$chunk_weight" \
+  objective.vicreg.weight="$vicreg_weight" \
   objective.dense_rollout.weight="$dense_weight" \
   objective.dense_rollout.horizon_discount="$dense_discount" \
   "${extra[@]}" hydra.run.dir="$model_dir" hydra.output_subdir=null
