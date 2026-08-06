@@ -299,19 +299,32 @@ class GeoHorizonRank(GeoAdvantageRank):
     def forward(self, out, batch: dict) -> torch.Tensor:
         if "ga_horizon_energy" not in out.extras:
             return out.step_states.sum() * 0.0
-        energy = out.extras["ga_horizon_energy"].flatten(1)
-        label = out.extras["ga_horizon_label"].flatten(1)
-        valid = out.extras["ga_horizon_valid"].flatten(1)
-        return _geometric_rank_loss(
-            energy,
-            label,
-            valid,
-            kind=self.kind,
-            margin=self.margin,
-            label_gap=self.label_gap,
-            temperature=self.temperature,
-            teacher_temperature=self.teacher_temperature,
-        )
+        energy = out.extras["ga_horizon_energy"]
+        label = out.extras["ga_horizon_label"]
+        valid = out.extras["ga_horizon_valid"]
+
+        def rank(e, y, mask):
+            return _geometric_rank_loss(
+                e.flatten(1),
+                y.flatten(1),
+                mask.flatten(1),
+                kind=self.kind,
+                margin=self.margin,
+                label_gap=self.label_gap,
+                temperature=self.temperature,
+                teacher_temperature=self.teacher_temperature,
+            )
+
+        if energy.ndim == 4:
+            # Dense endpoint supervision has shape [B,C,R,H].  Candidate
+            # order is meaningful within a fixed horizon.  Comparing H1
+            # against H4 would mostly teach the head that longer trajectories
+            # are closer to the goal and swamp the action-ordering signal.
+            return torch.stack([
+                rank(energy[..., depth], label[..., depth], valid[..., depth])
+                for depth in range(energy.shape[-1])
+            ]).mean()
+        return rank(energy, label, valid)
 
 
 class GeoRolloutAdvantageRegression(Objective):

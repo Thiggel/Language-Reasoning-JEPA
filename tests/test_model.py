@@ -907,6 +907,32 @@ def test_horizon_gar_can_supervise_every_rollout_prefix():
     assert torch.isfinite(loss)
 
 
+def test_dense_horizon_ranking_never_compares_different_depths():
+    from types import SimpleNamespace
+
+    from textjepa.objectives import GeoHorizonRank
+
+    label = torch.tensor([[[[0.0, 100.0]], [[1.0, 101.0]]]])
+    valid = torch.ones_like(label, dtype=torch.bool)
+    # Correct candidate ordering at both horizons, but deliberately reverse
+    # the arbitrary cross-horizon offsets relative to the labels.
+    good = torch.tensor([[[[100.0, 0.0]], [[101.0, 1.0]]]])
+    bad = torch.tensor([[[[101.0, 1.0]], [[100.0, 0.0]]]])
+    objective = GeoHorizonRank(kind="logistic")
+    batch = {}
+    out_good = SimpleNamespace(
+        extras={"ga_horizon_energy": good,
+                "ga_horizon_label": label,
+                "ga_horizon_valid": valid}
+    )
+    out_bad = SimpleNamespace(
+        extras={"ga_horizon_energy": bad,
+                "ga_horizon_label": label,
+                "ga_horizon_valid": valid}
+    )
+    assert objective(out_good, batch) < objective(out_bad, batch)
+
+
 def test_horizon_gar_uses_requested_not_effective_terminal_length():
     vocab = build_vocab(23)
     dataset = IGSMDataset(
