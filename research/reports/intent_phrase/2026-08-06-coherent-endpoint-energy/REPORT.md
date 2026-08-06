@@ -95,3 +95,31 @@ auxiliary, all coherent.
 - One seed for the new cells until the promotion completes.
 - The 0.25-auxiliary variant under the pow2 horizon set has not been run; if
   the five-seed gap at D8/16 persists, that is the next single ablation.
+
+## Recipe freeze (2026-08-06 night)
+
+Horizon-set ablation under the horizon-blind head (0.25 auxiliary in both):
+
+| Training horizons | D1 | D2 | D4 | D8 | D16 | Seeds |
+|---|---:|---:|---:|---:|---:|---:|
+| {1,2,4,8} | .127 | .443 | .827 | **.870** | **.875** | 2 |
+| {1,2,4,8,16} | .121 | .422 | .808 | .832 | .833 | 3 |
+
+Training-budget dilution by H16 rollouts explains the earlier deep-depth gap;
+the horizon-blind Energy generalizes to query depth 16 without ever training
+on H16 rollouts.
+
+**Frozen paper recipe**: horizon-blind endpoint Energy
+`E(root, imagined endpoint, z_0)` (no horizon input), logistic pairwise
+ranking of imagined endpoints labeled by EMA-latent distance of their true
+outcomes to the encoded solved state, training rollout horizons {1,2,4,8},
+0.25 root pair-difference auxiliary (coherent: one shared Energy semantics),
+no dense rollout loss. Matches the historical mixed-horizon headline
+(.834/.874/.877 at D4/8/16) with every incoherence removed. Five-seed
+promotion of the frozen recipe launched (s2, s3 running; s4 pending a free
+GPU).
+
+Same-protocol competitor energies (one seed each): TD-Q (SARSA, amortized)
+.190/.210/.240/.223/.220 — myopically stronger at D1, cannot exploit search;
+expectile goal-value .057-.187 — near random. See
+`../2026-08-06-competitor-energy-baselines/REPORT.md`.
