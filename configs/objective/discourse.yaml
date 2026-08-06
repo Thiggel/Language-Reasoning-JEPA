@@ -160,6 +160,15 @@ geo_horizon_monotone:
   weight: 0.0
   margin: 0.02
   projected: false
+td_q:
+  _target_: textjepa.objectives.TDQ
+  weight: 0.0  # TD-JEPA-adapted SARSA Q baseline (baseline_td_q)
+  gamma: 0.98
+expectile_value:
+  _target_: textjepa.objectives.ExpectileValueTD
+  weight: 0.0  # Destrade-style expectile goal value (baseline_expectile_value)
+  gamma: 0.98
+  tau: 0.9
 geo_rollout_advantage_mse:
   _target_: textjepa.objectives.GeoRolloutAdvantageRegression
   weight: 0.0

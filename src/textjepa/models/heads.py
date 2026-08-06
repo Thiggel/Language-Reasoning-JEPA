@@ -53,6 +53,58 @@ class DirectActionRankHead(nn.Module):
         return self.net(torch.cat([state, initial, action], dim=-1)).squeeze(-1)
 
 
+class TDQHead(nn.Module):
+    """SARSA-style Q(z, u(a), z_0) baseline head (TD-JEPA-adapted).
+
+    Higher Q is better internally (Q approximates -(discounted steps-to-go));
+    planning exposes cost = -Q so the lower-is-better convention holds.
+    """
+
+    def __init__(self, d_state: int, d_action: int, hidden_mult: int = 2):
+        super().__init__()
+        width = 2 * d_state + d_action
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], 1),
+        )
+
+    def forward(
+        self, state: torch.Tensor, action: torch.Tensor, initial: torch.Tensor
+    ) -> torch.Tensor:
+        while initial.dim() < state.dim():
+            initial = initial.unsqueeze(-2)
+        initial = initial.expand_as(state)
+        return self.net(torch.cat([state, action, initial], dim=-1)).squeeze(-1)
+
+
+class ExpectileValueHead(nn.Module):
+    """Goal-value baseline V(z, z_0) = -||f(z) - g(z_0)||_2 (arXiv:2601.00844).
+
+    ``f`` and ``g`` are small two-layer projections onto a d_state/2 metric
+    space, so V <= 0 with V = 0 attainable exactly on goal-matching states.
+    """
+
+    def __init__(self, d_state: int, hidden_mult: int = 2):
+        super().__init__()
+        half = max(1, d_state // 2)
+        self.f = nn.Sequential(
+            nn.LayerNorm(d_state),
+            mlp([d_state, d_state * hidden_mult], half),
+        )
+        self.g = nn.Sequential(
+            nn.LayerNorm(d_state),
+            mlp([d_state, d_state * hidden_mult], half),
+        )
+
+    def forward(self, state: torch.Tensor, initial: torch.Tensor) -> torch.Tensor:
+        while initial.dim() < state.dim():
+            initial = initial.unsqueeze(-2)
+        initial = initial.expand_as(state)
+        return -torch.linalg.vector_norm(
+            self.f(state) - self.g(initial), dim=-1
+        )
+
+
 class TransitionEnergyHead(nn.Module):
     """Lower-is-better Energy of a predicted state transition."""
 

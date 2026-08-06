@@ -148,7 +148,8 @@ class DiscourseJEPA(nn.Module):
         self.freeze_encoders = freeze_encoders
         self.state_target = state_target
         if geo_rank_score_mode not in {
-            "transition", "horizon", "value", "distance", "direct"
+            "transition", "horizon", "value", "distance", "direct",
+            "td_q", "expectile_value",
         }:
             raise ValueError(
                 f"unknown GAR score mode: {geo_rank_score_mode}"
@@ -296,6 +297,10 @@ class DiscourseJEPA(nn.Module):
         )
         self.core.direct_action_rank_head.requires_grad_(
             geo_rank_score_mode == "direct"
+        )
+        self.core.td_q_head.requires_grad_(geo_rank_score_mode == "td_q")
+        self.core.expectile_value_head.requires_grad_(
+            geo_rank_score_mode == "expectile_value"
         )
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
@@ -488,7 +493,55 @@ class DiscourseJEPA(nn.Module):
             self._geo_rank(batch, out)
         if self.geo_energy_rollout_depths:
             self._rollout_state_energy(out)
+        if self.geo_rank_score_mode in {"td_q", "expectile_value"}:
+            self._td_baseline_supervision(out)
         return out
+
+    def _td_baseline_supervision(self, out) -> None:
+        """Emit SARSA/expectile TD supervision on the demonstrated trajectory.
+
+        Steps-to-go reward convention: r = -1 for every executed step, 0 after
+        the terminal step.  Terminal detection: ``rollout_trace`` only stops
+        once the environment reports solved, so the last valid step of every
+        trajectory is by construction the solving step (batch["remaining"] is
+        0 there); no symbolic label is consulted.  Bootstrapped targets use
+        the EMA state teacher under no_grad; the action encoder has no EMA
+        teacher, so its detached online codes stand in (same convention as
+        the latent-beam geometry teacher).
+        """
+        detach = self.core.value_detach
+        current = out.prev_states.detach() if detach else out.prev_states
+        initial = out.s0.detach() if detach else out.s0
+        if self.geo_rank_score_mode == "td_q":
+            action = out.actions.detach() if detach else out.actions
+            out.extras["td_q_pred"] = self.core.td_q_head(
+                current, action, initial
+            )
+            with torch.no_grad():
+                # a_{t+1} aligned with z_{t+1}; the trailing zero code is
+                # masked out by the terminal indicator below.
+                next_action = torch.cat([
+                    out.actions[:, 1:], torch.zeros_like(out.actions[:, :1])
+                ], dim=1)
+                out.extras["td_next_value"] = self.core.td_q_head(
+                    out.step_states_tgt, next_action, out.extras["s0_tgt"]
+                )
+        else:
+            out.extras["expectile_value_pred"] = self.core.expectile_value_head(
+                current, initial
+            )
+            with torch.no_grad():
+                out.extras["td_next_value"] = self.core.expectile_value_head(
+                    out.step_states_tgt, out.extras["s0_tgt"]
+                )
+        last = out.step_mask.sum(1).clamp(min=1) - 1
+        positions = torch.arange(
+            out.step_mask.shape[1], device=out.step_mask.device
+        )
+        out.extras["td_terminal"] = (
+            positions[None, :] == last[:, None]
+        ) & out.step_mask
+        out.extras["td_valid"] = out.step_mask
 
     def _rollout_state_energy(self, out) -> None:
         """Calibrate state Energy on the states queried by latent planning.
@@ -755,6 +808,19 @@ class DiscourseJEPA(nn.Module):
                 direct_state.unsqueeze(1).expand(-1, K, -1),
                 out.s0,
                 direct_alt_action,
+            )
+        elif score_mode == "td_q":
+            # Q(s, a, s0) is higher-is-better; negate for the lower-is-better
+            # ga_energy convention shared by every ranking diagnostic.
+            q_state = s_anchor.detach() if self.core.value_detach else s_anchor
+            q_exec_action = out.actions[bidx, t]
+            q_alt_action = a_alt
+            if self.core.value_detach:
+                q_exec_action = q_exec_action.detach()
+                q_alt_action = q_alt_action.detach()
+            e_exec = -self.core.td_q_head(q_state, q_exec_action, out.s0)
+            e_alt = -self.core.td_q_head(
+                q_state.unsqueeze(1).expand(-1, K, -1), q_alt_action, out.s0
             )
         else:
             e_exec = e_alt = None
@@ -1051,7 +1117,7 @@ class DiscourseJEPA(nn.Module):
         true_successors = torch.cat(
             [out.step_states_tgt[bidx, t].unsqueeze(1), s_alt_true], dim=1
         )
-        if score_mode in {"transition", "horizon", "value"}:
+        if score_mode in {"transition", "horizon", "value", "expectile_value"}:
             use_true = self.geo_energy_state_source == "true"
             successors = true_successors if use_true else predicted_successors
             current = (
@@ -1074,6 +1140,8 @@ class DiscourseJEPA(nn.Module):
                 energies = self.core.horizon_energy_head(
                     root, successors, initial, 1
                 )
+            elif score_mode == "expectile_value":
+                energies = -self.core.expectile_value_head(successors, initial)
             else:
                 energies = self.core.value_head(successors, initial)
             e_exec, e_alt = energies[:, 0], energies[:, 1:]

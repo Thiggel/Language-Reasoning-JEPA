@@ -454,6 +454,26 @@ class LatentPlanner:
                         cur = self.model.predictor(cur, future[:, step])
                         rollout.append(cur)
                     rollout_states = torch.stack(rollout, dim=1)
+            if score_mode == "td_q" and length > 0:
+                # Q(s, a) semantics: score the state before the final action
+                # of the beam together with that action.  Absorbing ``None``
+                # padding never contributes actions, so the requested search
+                # depth stays hidden from the head (terminal safety).
+                pre_final = (
+                    s.expand(len(selected), -1) if length == 1
+                    else rollout_states[:, -2]
+                )
+                q = self.model.core.td_q_head(
+                    pre_final, future[:, -1], s0.expand(len(selected), -1)
+                )
+                total[torch.tensor(selected, device=self.device)] = -q
+                continue
+            if score_mode == "expectile_value" and length > 0:
+                v = self.model.core.expectile_value_head(
+                    cur, s0.expand(len(selected), -1)
+                )
+                total[torch.tensor(selected, device=self.device)] = -v
+                continue
             if (
                 score_mode == "horizon" and length > 0
             ):
