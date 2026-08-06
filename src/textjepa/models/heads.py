@@ -87,9 +87,12 @@ class HorizonEnergyHead(nn.Module):
     treating rollout depth as an unobserved nuisance variable.
     """
 
-    def __init__(self, d_state: int, hidden_mult: int = 2):
+    def __init__(
+        self, d_state: int, hidden_mult: int = 2, use_horizon: bool = True
+    ):
         super().__init__()
         width = 3 * d_state + 1
+        self.use_horizon = use_horizon
         self.net = nn.Sequential(
             nn.LayerNorm(width),
             mlp([width, d_state * hidden_mult], 1),
@@ -113,6 +116,9 @@ class HorizonEnergyHead(nn.Module):
         horizon = horizon.expand(root.shape[:-1]).unsqueeze(-1)
         # log1p keeps depths 1--16 on a modest, monotone numerical scale.
         horizon = torch.log1p(horizon) / 4.0
+        if not self.use_horizon:
+            # Horizon-blind control: one shared Energy for every depth.
+            horizon = torch.zeros_like(horizon)
         return self.net(
             torch.cat([root, endpoint, initial, horizon], dim=-1)
         ).squeeze(-1)

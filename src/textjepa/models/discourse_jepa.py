@@ -115,6 +115,7 @@ class DiscourseJEPA(nn.Module):
         geo_rank_label_control: str = "true",
         geo_horizon_supervise_prefixes: bool = False,
         geo_horizon_prefix_depths: list[int] | None = None,
+        geo_horizon_input: bool = True,
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
@@ -294,6 +295,7 @@ class DiscourseJEPA(nn.Module):
         self.core.horizon_energy_head.requires_grad_(
             geo_rank_score_mode == "horizon"
         )
+        self.core.horizon_energy_head.use_horizon = bool(geo_horizon_input)
         self.core.direct_action_rank_head.requires_grad_(
             geo_rank_score_mode == "direct"
         )

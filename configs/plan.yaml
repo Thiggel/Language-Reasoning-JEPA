@@ -42,8 +42,6 @@ out: null
 # null infers outcome/intent from the training checkpoint. Override only for
 # diagnostics; the paper evaluates each LM using its matched training target.
 score_kind: null
-eval_steps_range: null
-eval_n_vars_range: null
 eval_dataset_seed: null
 # Compare candidate strings by mean token likelihood.  Summed likelihood has
 # an avoidable preference for shorter intent wording.
@@ -60,4 +58,5 @@ hydra:
     dir: runs/_plan
   job:
     chdir: false
+
 hierarchy: false

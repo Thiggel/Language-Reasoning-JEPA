@@ -15,8 +15,24 @@ root_distill_weight=0.25; candidate_interface=feasible_menu; rank_k=2
 feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
 horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
 ranking_kind=logistic; chunk_weight=2; vicreg_weight=1
+horizon_input=true
 case "$variant" in
   fixed_h4) ;;
+  mix_pow2_16_aux0)
+    # Coherent supported Energy: every reported eval depth is a training
+    # horizon; no root pair-difference auxiliary (single head semantics).
+    horizon=16; horizons='[1,2,4,8,16]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0 ;;
+  mix_pow2_16_aux0_nohorizon)
+    # Horizon-blind control: one shared Energy for every depth.
+    horizon=16; horizons='[1,2,4,8,16]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0; horizon_input=false ;;
+  mix_full_16_aux0)
+    # Fully pruning-coherent: every integer depth 1..16 is a training
+    # horizon, so every beam-pruning Energy query is in-support.
+    horizon=16
+    horizons='[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16]'
+    dense_depth=0; dense_weight=0; root_distill_weight=0 ;;
   mix_uniform)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=8 ;;
   mix_discount07)
@@ -145,6 +161,7 @@ fi
   data.geo_rank_invalid_k="$invalid_k" \
   data.invalid_action_mode="$invalid_mode" \
   model.geo_rank_score_mode=horizon model.geo_energy_target=distance \
+  model.geo_horizon_input="$horizon_input" \
   model.geo_horizon_supervise_prefixes="$prefix_energy" \
   model.dense_rollout_depth="$dense_depth" \
   objective.geo_rank.weight=0 objective.geo_energy_mse.weight=0 \
@@ -187,7 +204,8 @@ fi
   "$root_distill_weight" "$candidate_interface" "$rank_k" \
   "$feasible_k" "$invalid_k" "$invalid_mode" "$prefix_energy" \
   "$horizon" "$rollouts" "$horizon_rank_weight" \
-  "$counterfactual_weight" "$latent_weight" "$ranking_kind" <<'PY'
+  "$counterfactual_weight" "$latent_weight" "$ranking_kind" \
+  "$horizon_input" <<'PY'
 import json, pathlib, sys
 r = pathlib.Path(sys.argv[1])
 (r / "training_complete.json").write_text(json.dumps({
@@ -211,5 +229,6 @@ r = pathlib.Path(sys.argv[1])
     "counterfactual_state_weight": float(sys.argv[20]),
     "factual_latent_weight": float(sys.argv[21]),
     "ranking_kind": sys.argv[22],
+    "horizon_input": sys.argv[23].lower() == "true",
 }, indent=2) + "\n")
 PY
