@@ -116,6 +116,7 @@ class DiscourseJEPA(nn.Module):
         geo_horizon_supervise_prefixes: bool = False,
         geo_horizon_prefix_depths: list[int] | None = None,
         geo_horizon_input: bool = True,
+        geo_td_auxiliary: str = "none",  # none | td_q | expectile_value
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
@@ -297,6 +298,13 @@ class DiscourseJEPA(nn.Module):
             geo_rank_score_mode == "horizon"
         )
         self.core.horizon_energy_head.use_horizon = bool(geo_horizon_input)
+        if geo_td_auxiliary not in {"none", "td_q", "expectile_value"}:
+            raise ValueError(f"unknown TD auxiliary: {geo_td_auxiliary}")
+        self.geo_td_auxiliary = geo_td_auxiliary
+        if geo_td_auxiliary == "td_q":
+            self.core.td_q_head.requires_grad_(True)
+        elif geo_td_auxiliary == "expectile_value":
+            self.core.expectile_value_head.requires_grad_(True)
         self.core.direct_action_rank_head.requires_grad_(
             geo_rank_score_mode == "direct"
         )
@@ -496,10 +504,12 @@ class DiscourseJEPA(nn.Module):
         if self.geo_energy_rollout_depths:
             self._rollout_state_energy(out)
         if self.geo_rank_score_mode in {"td_q", "expectile_value"}:
-            self._td_baseline_supervision(out)
+            self._td_baseline_supervision(out, self.geo_rank_score_mode)
+        elif self.geo_td_auxiliary != "none":
+            self._td_baseline_supervision(out, self.geo_td_auxiliary)
         return out
 
-    def _td_baseline_supervision(self, out) -> None:
+    def _td_baseline_supervision(self, out, td_mode: str) -> None:
         """Emit SARSA/expectile TD supervision on the demonstrated trajectory.
 
         Steps-to-go reward convention: r = -1 for every executed step, 0 after
@@ -514,7 +524,7 @@ class DiscourseJEPA(nn.Module):
         detach = self.core.value_detach
         current = out.prev_states.detach() if detach else out.prev_states
         initial = out.s0.detach() if detach else out.s0
-        if self.geo_rank_score_mode == "td_q":
+        if td_mode == "td_q":
             action = out.actions.detach() if detach else out.actions
             out.extras["td_q_pred"] = self.core.td_q_head(
                 current, action, initial

@@ -15,7 +15,7 @@ root_distill_weight=0.25; candidate_interface=feasible_menu; rank_k=2
 feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
 horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
 ranking_kind=logistic; chunk_weight=2; vicreg_weight=1
-horizon_input=true
+horizon_input=true; predictor_residual=true; td_auxiliary=none
 score_mode=horizon; rollout_for_h1=true; td_q_weight=0; expectile_weight=0
 case "$variant" in
   fixed_h4) ;;
@@ -40,6 +40,18 @@ case "$variant" in
     # at any query depth because it never reads the horizon).
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     root_distill_weight=0.25; horizon_input=false ;;
+  frozen_nonresidual)
+    # Frozen recipe with direct (non-residual) MLP prediction: completes the
+    # predictor-type x residual 2x2 (the causal predictor preferred direct).
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false; predictor_residual=false ;;
+  combo_rank_td)
+    # Frozen recipe + expectile-TD value auxiliary: does TD shaping of the
+    # latent geometry help the ranking Energy? Planner still scores with the
+    # horizon-blind endpoint Energy.
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false; expectile_weight=1
+    td_auxiliary=expectile_value ;;
   mix_full_16_aux0)
     # Fully pruning-coherent: every integer depth 1..16 is a training
     # horizon, so every beam-pruning Energy query is in-support.
@@ -186,6 +198,8 @@ fi
   data.invalid_action_mode="$invalid_mode" \
   model.geo_rank_score_mode="$score_mode" model.geo_energy_target=distance \
   model.geo_horizon_input="$horizon_input" \
+  model.predictor_residual="$predictor_residual" \
+  model.geo_td_auxiliary="$td_auxiliary" \
   model.geo_horizon_supervise_prefixes="$prefix_energy" \
   model.dense_rollout_depth="$dense_depth" \
   objective.geo_rank.weight=0 objective.geo_energy_mse.weight=0 \

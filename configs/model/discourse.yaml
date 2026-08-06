@@ -39,6 +39,7 @@ geo_rank_label_control: "true"  # true | cyclic_shuffle (training-only control)
 geo_horizon_supervise_prefixes: false
 geo_horizon_prefix_depths: []
 geo_horizon_input: true  # false: horizon-blind endpoint Energy (one shared Energy)
+geo_td_auxiliary: none  # none | td_q | expectile_value (TD shaping alongside ranking)
 dropout: 0.0
 geo_proj: false
 state_target: ema
