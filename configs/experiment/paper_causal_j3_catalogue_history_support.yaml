@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - paper_causal_j3_learned_catalogue_heads
+  - _self_
+
+# The availability model gets the only information a deployable controller
+# necessarily has beyond the prompt: the intents already executed or imagined.
+# Phrase embeddings retain lexical identities; JEPA state/dynamics stay frozen.
+run_name: paper_causal_j3_catalogue_history_support
+model:
+  action_support_kind: history_attention
+  action_support_history_mode: aligned
+  action_support_heads: 4
+train:
+  reset_action_support_head: true
+

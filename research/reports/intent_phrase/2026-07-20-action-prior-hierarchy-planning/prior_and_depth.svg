@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="440" viewBox="0 0 900 440" role="img" aria-labelledby="title desc">
+  <title id="title">Prior-only planning beats JEPA reranking, while oracle deep rollout helps</title>
+  <desc id="desc">Strict success bars compare JEPA and the supervised prior at lengths three, six, and nine, followed by depth one, two, and four oracle-future-menu planning at length nine.</desc>
+  <rect width="900" height="440" fill="white"/>
+  <text x="450" y="30" text-anchor="middle" font-family="sans-serif" font-size="20" font-weight="bold">Where planning value currently comes from</text>
+  <line x1="70" y1="370" x2="860" y2="370" stroke="#333"/><line x1="70" y1="70" x2="70" y2="370" stroke="#333"/>
+  <g font-family="sans-serif" font-size="12" fill="#333"><text x="55" y="374" text-anchor="end">0.0</text><text x="55" y="254" text-anchor="end">0.2</text><text x="55" y="134" text-anchor="end">0.4</text><text x="22" y="210" transform="rotate(-90 22 210)" text-anchor="middle">Strict success</text></g>
+  <g fill="#4c78a8"><rect x="110" y="267" width="38" height="103"/><rect x="245" y="290" width="38" height="80"/><rect x="380" y="330" width="38" height="40"/></g>
+  <g fill="#f58518"><rect x="152" y="153" width="38" height="217"/><rect x="287" y="263" width="38" height="107"/><rect x="422" y="260" width="38" height="110"/></g>
+  <line x1="500" y1="65" x2="500" y2="390" stroke="#bbb" stroke-dasharray="5 5"/>
+  <g fill="#54a24b"><rect x="555" y="333" width="55" height="37"/><rect x="655" y="270" width="55" height="100"/><rect x="755" y="107" width="55" height="263"/></g>
+  <g font-family="sans-serif" font-size="13" text-anchor="middle"><text x="150" y="395">Length 3</text><text x="285" y="395">Length 6</text><text x="420" y="395">Length 9</text><text x="582" y="395">Depth 1</text><text x="682" y="395">Depth 2</text><text x="782" y="395">Depth 4</text><text x="285" y="425" font-weight="bold">Deployable current-action menu</text><text x="682" y="425" font-weight="bold">Oracle future menus, length 9</text></g>
+  <g font-family="sans-serif" font-size="12"><rect x="610" y="43" width="15" height="15" fill="#4c78a8"/><text x="630" y="55">JEPA</text><rect x="685" y="43" width="15" height="15" fill="#f58518"/><text x="705" y="55">Prior only</text><rect x="790" y="43" width="15" height="15" fill="#54a24b"/><text x="810" y="55">Top-4 rollout</text></g>
+</svg>

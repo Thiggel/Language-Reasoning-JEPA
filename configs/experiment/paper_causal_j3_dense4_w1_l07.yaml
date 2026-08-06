@@ -1,0 +1,12 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+
+# High-loss-weight control for the earlier negative dense-rollout recipe.
+run_name: paper_causal_j3_dense4_w1_l07
+model:
+  dense_rollout_depth: 4
+objective:
+  dense_rollout: {weight: 1.0, horizon_discount: 0.7}
+

@@ -1,0 +1,16 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+
+# Candidate-scoring behavioral prior.  The positive is the demonstrated next
+# action, so this is policy supervision and must be compared with prior-only.
+run_name: paper_causal_j3_action_prior
+model:
+  action_prior: true
+  action_prior_detach_inputs: true
+data:
+  all_action_supervision: true
+objective:
+  action_prior: {weight: 1.0}
+

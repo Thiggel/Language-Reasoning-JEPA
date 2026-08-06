@@ -1,0 +1,36 @@
+# @package _global_
+defaults:
+  - paper_causal_j3_action_prior
+  - _self_
+
+# Adapt only the availability and behavioral-prior heads for fully learned
+# catalogue expansion.  The JEPA encoder, predictor, value, and EMA teachers
+# remain frozen, isolating the proposal-interface decision.
+run_name: paper_causal_j3_learned_catalogue_heads
+model:
+  action_support_states: all
+  action_support_detach_inputs: true
+  action_prior_states: all
+  action_prior_detach_inputs: true
+  # The deployable planner ranks the full prompt-derived catalogue. Training
+  # against that same set prevents unconstrained scores on infeasible actions.
+  action_prior_candidate_scope: catalogue
+data:
+  all_action_supervision: true
+  geo_rank_k: 0
+objective:
+  latent_pred: {weight: 0.0}
+  vicreg: {weight: 0.0}
+  chunk_pred: {weight: 0.0, rollout_weight: 0.5}
+  geo_rank: {weight: 0.0, margin: 0.5, label_gap: 0.02}
+  action_feasibility: {weight: 1.0, positive_weight: 2.0}
+  action_prior: {weight: 1.0}
+train:
+  init_mode: full
+  freeze_low_level: true
+  train_high_level: false
+  train_action_support: true
+  train_action_prior: true
+  epochs: 5
+  lr: 0.001
+  warmup_steps: 200

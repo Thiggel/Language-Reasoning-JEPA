@@ -52,9 +52,13 @@ class CausalHistoryPredictor(nn.Module):
         ff_mult: int = 4,
         max_steps: int = 64,
         residual: bool = False,
+        context_window: int | None = None,
     ):
         super().__init__()
         self.residual = residual
+        if context_window is not None and context_window < 1:
+            raise ValueError("context_window must be positive or None")
+        self.context_window = context_window
         self.inp = nn.Linear(d_state + d_action, d_state)
         self.pos = nn.Parameter(torch.zeros(1, max_steps, d_state))
         nn.init.normal_(self.pos, std=0.02)
@@ -91,13 +95,14 @@ class CausalHistoryPredictor(nn.Module):
         if squeeze:
             states, actions = states.unsqueeze(1), actions.unsqueeze(1)
         length = states.shape[1]
-        causal = torch.triu(
-            torch.ones(length, length, dtype=torch.bool, device=states.device),
-            diagonal=1,
-        )
+        row = torch.arange(length, device=states.device).unsqueeze(1)
+        col = torch.arange(length, device=states.device).unsqueeze(0)
+        causal = col > row
+        if self.context_window is not None:
+            causal = causal | ((row - col) >= self.context_window)
         h = self.inp(torch.cat([states, actions], -1)) + self._positions(length)
         key_padding = None
-        if valid is not None:
+        if valid is not None and self.context_window is None:
             key_padding = ~valid
             key_padding = key_padding.clone()
             key_padding[key_padding.all(1), 0] = False

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox="0 0 960 420" role="img" aria-labelledby="title desc">
+  <title id="title">Evidence funnel from strong action rankings to weak closed-loop completion</title>
+  <desc id="desc">Three green ranking boxes near ninety percent feed into a lower strict success box, while task information falls from one hundred percent in observed states to thirty-eight percent after one prediction and twenty-six percent after recursive rollout.</desc>
+  <style>
+    text { font-family: sans-serif; fill: #16202a; }
+    .label { font-size: 18px; font-weight: 600; }
+    .value { font-size: 27px; font-weight: 700; }
+    .note { font-size: 15px; }
+  </style>
+  <rect width="960" height="420" fill="#ffffff"/>
+  <text x="480" y="34" text-anchor="middle" class="label">Ranking looks healthy; predicted-state information does not</text>
+  <rect x="45" y="65" width="250" height="90" rx="12" fill="#d9f2df" stroke="#3a8b55"/>
+  <text x="170" y="98" text-anchor="middle" class="label">Teacher vs oracle</text>
+  <text x="170" y="134" text-anchor="middle" class="value">89.0%</text>
+  <rect x="355" y="65" width="250" height="90" rx="12" fill="#d9f2df" stroke="#3a8b55"/>
+  <text x="480" y="98" text-anchor="middle" class="label">Student vs oracle</text>
+  <text x="480" y="134" text-anchor="middle" class="value">90.7%</text>
+  <rect x="665" y="65" width="250" height="90" rx="12" fill="#f9e3c7" stroke="#c27620"/>
+  <text x="790" y="98" text-anchor="middle" class="label">Strict completion</text>
+  <text x="790" y="134" text-anchor="middle" class="value">58.8%</text>
+  <path d="M295 110 L355 110 M605 110 L665 110" stroke="#687684" stroke-width="3" marker-end="url(#arrow)"/>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#687684"/></marker></defs>
+  <text x="480" y="194" text-anchor="middle" class="label">Linear recovery of the current step's value</text>
+  <rect x="70" y="220" width="240" height="88" rx="12" fill="#d9f2df" stroke="#3a8b55"/>
+  <text x="190" y="252" text-anchor="middle" class="label">Observed state</text>
+  <text x="190" y="287" text-anchor="middle" class="value">100.0%</text>
+  <rect x="360" y="220" width="240" height="88" rx="12" fill="#f9e3c7" stroke="#c27620"/>
+  <text x="480" y="252" text-anchor="middle" class="label">One prediction</text>
+  <text x="480" y="287" text-anchor="middle" class="value">38.0%</text>
+  <rect x="650" y="220" width="240" height="88" rx="12" fill="#f4caca" stroke="#aa4040"/>
+  <text x="770" y="252" text-anchor="middle" class="label">Recursive rollout</text>
+  <text x="770" y="287" text-anchor="middle" class="value">26.3%</text>
+  <path d="M310 264 L360 264 M600 264 L650 264" stroke="#687684" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="480" y="350" text-anchor="middle" class="label">Next decision: test history/optimization controls, not deeper teacher lookahead</text>
+  <text x="480" y="382" text-anchor="middle" class="note">Means across three seeds; oracle comparisons are privileged diagnostics only.</text>
+</svg>

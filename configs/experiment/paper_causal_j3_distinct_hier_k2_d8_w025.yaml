@@ -1,0 +1,19 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+
+# First valid separate-state hierarchy pilot. Flat J3 losses remain active;
+# the macro encoder and predictor operate only in a separately EMA-targeted,
+# causally encoded high-level state space.
+run_name: paper_causal_j3_distinct_hier_k2_d8_w025
+model:
+  macro_k: 2
+  d_macro: 8
+  distinct_high_state_space: true
+  high_state_encoder_layers: 2
+objective:
+  hierarchy: {weight: 0.25}
+  macro_prior: {weight: 0.01}
+  vicreg: {high_weight: 1.0}
+

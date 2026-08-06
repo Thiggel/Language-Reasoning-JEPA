@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from textjepa.models.layers import mlp
+from textjepa.models.layers import encoder_stack, mlp
 
 
 class ValueHead(nn.Module):
@@ -173,9 +173,262 @@ class ActionSupportHead(nn.Module):
         )
 
     def forward(
-        self, state: torch.Tensor, action: torch.Tensor
+        self,
+        state: torch.Tensor,
+        action: torch.Tensor,
+        history: torch.Tensor | None = None,
+        history_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         return self.net(torch.cat([state, action], -1)).squeeze(-1)
+
+
+class HistoryActionSupportHead(nn.Module):
+    """Score availability using an explicit, non-oracle action history.
+
+    Candidate intent phrases query the intents already executed (or imagined
+    within a beam). This exposes prerequisite identity without modifying the
+    frozen JEPA state or consulting symbolic feasibility at inference.
+    """
+
+    def __init__(
+        self,
+        d_state: int,
+        d_action: int,
+        n_heads: int = 2,
+        hidden_mult: int = 2,
+        use_history: bool = True,
+    ):
+        super().__init__()
+        if d_action % n_heads:
+            raise ValueError("action history attention heads must divide d_action")
+        self.use_history = bool(use_history)
+        self.null_history = nn.Parameter(torch.zeros(1, 1, d_action))
+        self.attention = nn.MultiheadAttention(
+            d_action, n_heads, batch_first=True
+        )
+        width = d_state + 2 * d_action
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], 1),
+        )
+
+    def forward(
+        self,
+        state: torch.Tensor,
+        action: torch.Tensor,
+        history: torch.Tensor | None = None,
+        history_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        leading = state.shape[:-1]
+        flat_action = action.reshape(-1, action.shape[-1])
+        query = flat_action.unsqueeze(1)
+        if history is None:
+            history = action.new_zeros(*leading, 0, action.shape[-1])
+        flat_history = history.reshape(
+            flat_action.shape[0], history.shape[-2], history.shape[-1]
+        )
+        if history_mask is None:
+            flat_mask = torch.ones(
+                flat_history.shape[:2], dtype=torch.bool, device=action.device
+            )
+        else:
+            flat_mask = history_mask.reshape(
+                flat_action.shape[0], history_mask.shape[-1]
+            ).bool()
+        if not self.use_history:
+            flat_mask = torch.zeros_like(flat_mask)
+        null = self.null_history.expand(flat_history.shape[0], -1, -1)
+        keys = torch.cat([null, flat_history], dim=1)
+        key_padding = torch.cat([
+            torch.zeros(
+                flat_mask.shape[0], 1, dtype=torch.bool, device=action.device
+            ),
+            ~flat_mask,
+        ], dim=1)
+        context, _ = self.attention(
+            query, keys, keys, key_padding_mask=key_padding,
+            need_weights=False,
+        )
+        features = torch.cat([
+            state.reshape(-1, state.shape[-1]),
+            flat_action,
+            context.squeeze(1),
+        ], dim=-1)
+        return self.net(features).reshape(leading)
+
+
+class TokenHistoryActionSupportHead(nn.Module):
+    """Availability scorer that preserves lexical tokens in action history.
+
+    Candidate tokens query every token in the already executed or imagined
+    intent prefix.  Inputs are frozen token embeddings; only this small head
+    learns.  The interface contains no symbolic dependency labels or future
+    feasible-action menu.
+    """
+
+    def __init__(
+        self,
+        d_state: int,
+        d_token: int,
+        n_heads: int = 4,
+        hidden_mult: int = 2,
+        use_history: bool = True,
+        max_action_tokens: int = 64,
+    ):
+        super().__init__()
+        if d_token % n_heads:
+            raise ValueError("token history attention heads must divide d_token")
+        self.use_history = bool(use_history)
+        self.n_heads = int(n_heads)
+        self.head_width = d_token // n_heads
+        self.token_position = nn.Parameter(
+            torch.zeros(1, max_action_tokens, d_token)
+        )
+        nn.init.normal_(self.token_position, std=0.02)
+        self.candidate_encoder = encoder_stack(
+            d_token, 1, n_heads, hidden_mult, dropout=0.0
+        )
+        self.query = nn.Linear(d_token, d_token)
+        self.key = nn.Linear(d_token, d_token)
+        self.value = nn.Linear(d_token, d_token)
+        self.attention_out = nn.Linear(d_token, d_token)
+        self.null_history = nn.Parameter(torch.zeros(1, 1, d_token))
+        width = d_state + 3 * d_token
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], 1),
+        )
+
+    @staticmethod
+    def _token_mask(embeddings: torch.Tensor) -> torch.Tensor:
+        # Padding embeddings are explicitly zeroed by DiscourseJEPA and the
+        # planner.  Learned non-padding embeddings are not constrained to zero.
+        return embeddings.detach().abs().sum(dim=-1).gt(0)
+
+    def forward(
+        self,
+        state: torch.Tensor,
+        action: torch.Tensor,
+        history: torch.Tensor | None = None,
+        history_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        if action.dim() < 3:
+            raise ValueError("token-history actions require [..., tokens, width]")
+        leading = state.shape[:-1]
+        n = state.reshape(-1, state.shape[-1]).shape[0]
+        length, width = action.shape[-2:]
+        candidate = action.reshape(n, 1, length, width)
+        if history is None:
+            history = action.new_zeros(*leading, 0, length, width)
+        history = history.reshape(
+            n, history.shape[-3], history.shape[-2], history.shape[-1]
+        )
+        if history_mask is not None:
+            history_mask = history_mask.reshape(n, history.shape[1])
+        scores = self.score_candidate_set(
+            state.reshape(n, 1, state.shape[-1]),
+            candidate,
+            history,
+            history_mask,
+        )
+        return scores[:, 0].reshape(leading)
+
+    def score_candidate_set(
+        self,
+        state: torch.Tensor,
+        candidate: torch.Tensor,
+        history: torch.Tensor,
+        history_mask: torch.Tensor | None = None,
+        encoded_candidate: tuple[torch.Tensor, torch.Tensor] | None = None,
+    ) -> torch.Tensor:
+        """Score ``V`` candidates while sharing one history without copies.
+
+        Shapes are state ``[B,V,S]``, candidate ``[B,V,L,D]``, and history
+        ``[B,H,Lh,D]``.  Multi-head attention is evaluated with einsums so the
+        history is never repeated across candidates.
+        """
+        B, V, length, width = candidate.shape
+        if length > self.token_position.shape[1]:
+            raise ValueError("action phrase exceeds token support position limit")
+        if encoded_candidate is None:
+            encoded, candidate_valid = self.encode_candidate_set(candidate)
+        else:
+            encoded, candidate_valid = encoded_candidate
+            if encoded.shape != candidate.shape or candidate_valid.shape != candidate.shape[:-1]:
+                raise ValueError("encoded candidate cache shape mismatch")
+
+        h_count, h_length = history.shape[1:3]
+        if h_length > self.token_position.shape[1]:
+            raise ValueError("history phrase exceeds token support position limit")
+        history_valid = self._token_mask(history)
+        if history_mask is None:
+            action_valid = torch.ones(
+                B, h_count, dtype=torch.bool, device=candidate.device
+            )
+        else:
+            action_valid = history_mask.bool()
+        if not self.use_history:
+            action_valid = torch.zeros_like(action_valid)
+        history_valid &= action_valid.unsqueeze(-1)
+        positioned_history = (
+            history + self.token_position[:, :h_length].unsqueeze(1)
+        ).reshape(B, h_count * h_length, width)
+        flat_valid = history_valid.reshape(B, h_count * h_length)
+        keys = torch.cat([
+            self.null_history.expand(B, -1, -1), positioned_history
+        ], dim=1)
+        key_valid = torch.cat([
+            torch.ones(B, 1, dtype=torch.bool, device=candidate.device),
+            flat_valid,
+        ], dim=1)
+
+        q = self.query(encoded).reshape(
+            B, V, length, self.n_heads, self.head_width
+        ).permute(0, 1, 3, 2, 4)
+        k = self.key(keys).reshape(
+            B, keys.shape[1], self.n_heads, self.head_width
+        ).permute(0, 2, 1, 3)
+        value = self.value(keys).reshape(
+            B, keys.shape[1], self.n_heads, self.head_width
+        ).permute(0, 2, 1, 3)
+        attention = torch.einsum("bvhld,bhsd->bvhls", q, k)
+        attention = attention / (self.head_width ** 0.5)
+        attention = attention.masked_fill(
+            ~key_valid[:, None, None, None, :], float("-inf")
+        ).softmax(dim=-1)
+        context = torch.einsum(
+            "bvhls,bhsd->bvhld", attention, value
+        ).permute(0, 1, 3, 2, 4).reshape(B, V, length, width)
+        context = self.attention_out(context)
+        keep = candidate_valid.unsqueeze(-1).to(encoded.dtype)
+        denom = keep.sum(dim=2).clamp_min(1.0)
+        candidate_pool = (encoded * keep).sum(dim=2) / denom
+        context_pool = (context * keep).sum(dim=2) / denom
+        match_pool = (encoded * context * keep).sum(dim=2) / denom
+        features = torch.cat([
+            state,
+            candidate_pool,
+            context_pool,
+            match_pool,
+        ], dim=-1)
+        return self.net(features).squeeze(-1)
+
+    def encode_candidate_set(
+        self, candidate: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        B, V, length, width = candidate.shape
+        if length > self.token_position.shape[1]:
+            raise ValueError("action phrase exceeds token support position limit")
+        candidate_valid = self._token_mask(candidate)
+        candidate_key_padding = ~candidate_valid.reshape(B * V, length)
+        dead_candidate = ~candidate_valid.reshape(B * V, length).any(dim=-1)
+        candidate_key_padding[dead_candidate, 0] = False
+        encoded = self.candidate_encoder(
+            candidate.reshape(B * V, length, width)
+            + self.token_position[:, :length],
+            src_key_padding_mask=candidate_key_padding,
+        ).reshape(B, V, length, width)
+        return encoded, candidate_valid
 
 
 class SubgoalActionHead(nn.Module):

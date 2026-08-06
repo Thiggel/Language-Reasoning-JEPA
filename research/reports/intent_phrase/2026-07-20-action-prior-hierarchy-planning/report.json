@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-20-action-prior-hierarchy-planning",
+  "project": "intent_phrase",
+  "title": "The policy prior helps, JEPA reranking hurts, and hierarchy remains negative",
+  "created_at": "2026-07-20T14:00:00+02:00",
+  "status": "decision_complete",
+  "decision": "Audit prompt-size versus reasoning-length generalization before training a deployable future-action prior.",
+  "plain_summary": "Across three seeds, the supervised action prior beats the JEPA planner at every in-range length, while allowing the JEPA to rerank more prior proposals gives back the gain; oracle future menus show that deep latent simulation can help, but current wide-CEM hierarchy does not beat simple controls.",
+  "report": "REPORT.md",
+  "review_required": true
+}

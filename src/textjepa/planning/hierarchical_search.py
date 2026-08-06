@@ -191,6 +191,35 @@ class HierarchicalLatentPlanner(LatentPlanner):
         self.measured_reachability_diagnostics: list[dict[str, float]] = []
         self.controller_outcome_batches: list[dict[str, torch.Tensor]] = []
 
+        if getattr(self.model, "distinct_high_state_space", False):
+            if self.energy == "oracle_goal":
+                raise ValueError(
+                    "oracle_goal is a low-state diagnostic and cannot score "
+                    "a distinct high-level state space"
+                )
+            if self.subgoal_source != "model":
+                raise ValueError(
+                    "distinct high-level states currently require learned "
+                    "model subgoals; discrete/oracle subgoals are expressed "
+                    "in the low-level state space"
+                )
+            if self.low_method == "goal_policy":
+                raise ValueError(
+                    "goal_policy was trained on shared-state subgoals and is "
+                    "not valid with distinct high-level states"
+                )
+            if (
+                self.reachability_weight
+                or self.measured_reachability_weight
+                or self.measured_latent_goal_weight
+                or self.measured_symbolic_goal_weight
+                or self.collect_controller_outcomes
+            ):
+                raise ValueError(
+                    "legacy reachability diagnostics compare low endpoints "
+                    "to high subgoals; disable them for distinct hierarchy"
+                )
+
     @staticmethod
     def _ln_l1(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         return (F.layer_norm(x, x.shape[-1:]) - F.layer_norm(
@@ -373,15 +402,30 @@ class HierarchicalLatentPlanner(LatentPlanner):
     def _predict_macro_states(
         self, start: torch.Tensor, codes: torch.Tensor
     ) -> torch.Tensor:
-        return self._predict_macro_states_with(self.model, start, codes)
+        return self._predict_macro_states_with(
+            self.model,
+            start,
+            codes,
+            state_history=getattr(self, "_high_state_history", None),
+            action_history=getattr(self, "_macro_action_history", None),
+        )
 
     @staticmethod
     def _predict_macro_states_with(
-        model, start: torch.Tensor, codes: torch.Tensor
+        model,
+        start: torch.Tensor,
+        codes: torch.Tensor,
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
     ) -> torch.Tensor:
         high = model.core.hi_predictor
         if hasattr(high, "rollout"):
-            return high.rollout(start, codes)
+            return high.rollout(
+                start,
+                codes,
+                state_history=state_history,
+                action_history=action_history,
+            )
         cur = start.expand(codes.shape[0], -1)
         result = []
         for h in range(codes.shape[1]):
@@ -1218,6 +1262,69 @@ class HierarchicalLatentPlanner(LatentPlanner):
             cur = self.model.predictor(cur, actions[:, step])
         return cur
 
+    def _lift_low_candidate_paths(
+        self,
+        observed_low_path: torch.Tensor,
+        future_low_states: torch.Tensor,
+        future_valid: torch.Tensor,
+    ) -> torch.Tensor:
+        """Return candidate endpoints in the EMA high-state coordinates.
+
+        The causal high encoder is path dependent.  Consequently a predicted
+        low-level endpoint cannot be lifted in isolation: every candidate is
+        appended to the complete observed low-state prefix, lifted through the
+        high-level EMA encoder, and gathered at its last valid future state.
+        """
+        if not getattr(self.model, "distinct_high_state_space", False):
+            return future_low_states[
+                torch.arange(len(future_low_states), device=self.device),
+                future_valid.long().sum(-1).sub(1),
+            ]
+        if observed_low_path.ndim != 3 or observed_low_path.shape[0] != 1:
+            raise ValueError("observed low-state path must have shape [1,T,D]")
+        if future_low_states.ndim != 3:
+            raise ValueError("future low states must have shape [N,H,D]")
+        if future_valid.shape != future_low_states.shape[:2]:
+            raise ValueError("future validity mask must have shape [N,H]")
+        lengths = future_valid.long().sum(-1)
+        if not bool((lengths > 0).all()):
+            raise ValueError("every low-level candidate needs a future state")
+        n = future_low_states.shape[0]
+        observed = observed_low_path.expand(n, -1, -1)
+        observed_valid = torch.ones(
+            n, observed.shape[1], dtype=torch.bool, device=observed.device
+        )
+        complete_path = torch.cat([observed, future_low_states], dim=1)
+        complete_valid = torch.cat([observed_valid, future_valid], dim=1)
+        lifted = self.model.encode_high_state_path(
+            complete_path, complete_valid, teacher=True
+        )
+        endpoint_index = observed.shape[1] + lengths - 1
+        return lifted[torch.arange(n, device=lifted.device), endpoint_index]
+
+    def _predict_low_paths(
+        self,
+        state: torch.Tensor,
+        future_actions: torch.Tensor,
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Roll low dynamics without dropping the causal observed prefix."""
+        predictor = self.model.predictor
+        if hasattr(predictor, "rollout"):
+            return predictor.rollout(
+                state.expand(len(future_actions), -1),
+                future_actions,
+                state_history=state_history,
+                action_history=action_history,
+            )
+        cur = state.expand(len(future_actions), -1)
+        predictions = []
+        for depth in range(future_actions.shape[1]):
+            cur = predictor(cur, future_actions[:, depth])
+            predictions.append(cur)
+        return torch.stack(predictions, dim=1)
+
     def _low_discrete_action(
         self,
         problem: Problem,
@@ -1226,6 +1333,9 @@ class HierarchicalLatentPlanner(LatentPlanner):
         s0: torch.Tensor,
         subgoal: torch.Tensor,
         resolved: frozenset[int],
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
+        target_state_history: torch.Tensor | None = None,
     ) -> int:
         if self.low_horizon == 1 or self.low_action_source == "current":
             seqs = [[a] for a in feasible]
@@ -1241,22 +1351,36 @@ class HierarchicalLatentPlanner(LatentPlanner):
         unique = sorted({a for seq in seqs for a in seq})
         encoded = self._action_codes(problem, unique)
         code = {a: encoded[i] for i, a in enumerate(unique)}
-        cur = state.expand(len(seqs), -1).clone()
         support_cost = torch.zeros(len(seqs), device=self.device)
         support_invalid = torch.zeros(
             len(seqs), dtype=torch.bool, device=self.device
         )
         max_depth = max(len(seq) for seq in seqs)
-        for depth in range(max_depth):
-            alive = torch.tensor(
-                [depth < len(seq) for seq in seqs],
-                dtype=torch.bool,
-                device=self.device,
-            )
-            action = torch.stack([
-                code[seq[depth]] if depth < len(seq) else code[seq[0]]
+        future_valid = torch.tensor(
+            [
+                [depth < len(seq) for depth in range(max_depth)]
                 for seq in seqs
+            ],
+            dtype=torch.bool,
+            device=self.device,
+        )
+        future_actions = torch.stack([
+            torch.stack([
+                code[seq[depth]] if depth < len(seq) else code[seq[0]]
+                for depth in range(max_depth)
             ])
+            for seq in seqs
+        ])
+        predicted_path = self._predict_low_paths(
+            state, future_actions, state_history, action_history
+        )
+        for depth in range(max_depth):
+            alive = future_valid[:, depth]
+            action = future_actions[:, depth]
+            cur = (
+                state.expand(len(seqs), -1)
+                if depth == 0 else predicted_path[:, depth - 1]
+            )
             if self.low_support_weight or self.low_support_threshold is not None:
                 logits = self.model.core.action_support_head(cur, action)
                 if self.low_support_weight:
@@ -1267,10 +1391,22 @@ class HierarchicalLatentPlanner(LatentPlanner):
                     support_invalid |= alive & (
                         logits < self.low_support_threshold
                     )
-            nxt = self.model.predictor(cur, action)
-            cur = torch.where(alive.unsqueeze(-1), nxt, cur)
+        lengths = future_valid.long().sum(-1)
+        rows = torch.arange(len(seqs), device=self.device)
+        low_endpoint = predicted_path[rows, lengths - 1]
+        scoring_state = low_endpoint
+        if getattr(self.model, "distinct_high_state_space", False):
+            if target_state_history is None:
+                raise ValueError(
+                    "distinct hierarchy requires the observed low-state path"
+                )
+            scoring_state = self._lift_low_candidate_paths(
+                target_state_history,
+                predicted_path,
+                future_valid,
+            )
         cost = self.low_subgoal_weight * self._ln_l1(
-            cur, subgoal.expand_as(cur)
+            scoring_state, subgoal.expand_as(scoring_state)
         )
         if self.low_support_weight:
             lengths = torch.tensor(
@@ -1283,7 +1419,7 @@ class HierarchicalLatentPlanner(LatentPlanner):
             cost = cost + support_invalid.float() * 1e4
         if self.low_value_weight:
             cost = cost + self.low_value_weight * self.model.value_head(
-                cur, s0.expand_as(cur)
+                low_endpoint, s0.expand_as(low_endpoint)
             )
         return seqs[int(cost.argmin())][0]
 
@@ -1295,6 +1431,9 @@ class HierarchicalLatentPlanner(LatentPlanner):
         s0: torch.Tensor,
         subgoal: torch.Tensor,
         resolved: frozenset[int],
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
+        target_state_history: torch.Tensor | None = None,
     ) -> int:
         """HWM-style low-level CEM for the discrete text-action interface.
 
@@ -1330,23 +1469,45 @@ class HierarchicalLatentPlanner(LatentPlanner):
                 *mean.shape,
                 device=self.device,
             ) * std.unsqueeze(0)
-            cur = state.expand(self.low_cem_samples, -1)
             learned_support = torch.zeros(
                 self.low_cem_samples, device=self.device
             )
+            predicted_path = self._predict_low_paths(
+                state, samples, state_history, action_history
+            )
             for depth in range(horizon):
+                cur = (
+                    state.expand(self.low_cem_samples, -1)
+                    if depth == 0 else predicted_path[:, depth - 1]
+                )
                 if self.low_support_weight:
                     logits = self.model.core.action_support_head(
                         cur, samples[:, depth]
                     )
                     learned_support = learned_support + F.softplus(-logits)
-                cur = self.model.predictor(cur, samples[:, depth])
+            low_endpoint = predicted_path[:, -1]
+            scoring_state = low_endpoint
+            if getattr(self.model, "distinct_high_state_space", False):
+                if target_state_history is None:
+                    raise ValueError(
+                        "distinct hierarchy requires the observed low-state path"
+                    )
+                scoring_state = self._lift_low_candidate_paths(
+                    target_state_history,
+                    predicted_path,
+                    torch.ones(
+                        self.low_cem_samples,
+                        horizon,
+                        dtype=torch.bool,
+                        device=self.device,
+                    ),
+                )
             cost = self.low_subgoal_weight * self._ln_l1(
-                cur, subgoal.expand_as(cur)
+                scoring_state, subgoal.expand_as(scoring_state)
             )
             if self.low_value_weight:
                 cost = cost + self.low_value_weight * self.model.value_head(
-                    cur, s0.expand_as(cur)
+                    low_endpoint, s0.expand_as(low_endpoint)
                 )
             # First action must project to a currently feasible phrase; later
             # actions only need to remain near some unresolved phrase.
@@ -1403,6 +1564,9 @@ class HierarchicalLatentPlanner(LatentPlanner):
         s0: torch.Tensor,
         subgoal: torch.Tensor,
         resolved: frozenset[int],
+        state_history: torch.Tensor | None = None,
+        action_history: torch.Tensor | None = None,
+        target_state_history: torch.Tensor | None = None,
     ) -> int:
         if self.low_method == "goal_policy":
             actions = self._action_codes(problem, feasible)
@@ -1414,11 +1578,71 @@ class HierarchicalLatentPlanner(LatentPlanner):
             return feasible[int(cost.argmin())]
         if self.low_method == "cem":
             return self._low_cem_action(
-                problem, feasible, state, s0, subgoal, resolved
+                problem, feasible, state, s0, subgoal, resolved,
+                state_history, action_history, target_state_history
             )
         return self._low_discrete_action(
-            problem, feasible, state, s0, subgoal, resolved
+            problem, feasible, state, s0, subgoal, resolved,
+            state_history, action_history, target_state_history
         )
+
+    def _observed_low_state_path(
+        self,
+        prompt_tokens: torch.Tensor,
+        prompt_mask: torch.Tensor,
+        step_texts: list[str],
+        *,
+        teacher: bool = False,
+    ) -> torch.Tensor:
+        if step_texts:
+            step_tokens = self._tokens(step_texts)
+            step_mask = torch.ones(
+                1, len(step_texts), dtype=torch.bool, device=self.device
+            )
+        else:
+            step_tokens = torch.full(
+                (1, 1, 1), self.vocab.pad_id,
+                dtype=torch.long, device=self.device,
+            )
+            step_mask = torch.zeros(
+                1, 1, dtype=torch.bool, device=self.device
+            )
+        initial, states = self.model.encode_states(
+            prompt_tokens, prompt_mask, step_tokens, step_mask,
+            teacher=teacher,
+        )
+        if not step_texts:
+            return initial.unsqueeze(1)
+        return torch.cat([initial.unsqueeze(1), states], dim=1)
+
+    def _set_observed_macro_history(
+        self,
+        high_path: torch.Tensor,
+        observed_actions: torch.Tensor,
+    ) -> None:
+        """Set the K-stride causal prefix used by the high predictor."""
+        K = self.model.core.macro_k
+        n_actions = observed_actions.shape[1]
+        if n_actions % K:
+            raise ValueError("high-level replanning must occur on a K boundary")
+        boundary = torch.arange(
+            0, n_actions + 1, K, device=high_path.device
+        )
+        self._high_state_history = high_path[:, boundary]
+        n_macro = n_actions // K
+        if n_macro:
+            windows = observed_actions.reshape(
+                observed_actions.shape[0], n_macro, K, -1
+            )
+            flat = windows.reshape(-1, K, windows.shape[-1])
+            macro = self.model.core.macro_encoder(flat)
+            self._macro_action_history = macro.reshape(
+                observed_actions.shape[0], n_macro, -1
+            )
+        else:
+            self._macro_action_history = high_path.new_zeros(
+                high_path.shape[0], 0, self.model.core.macro_encoder.d_macro
+            )
 
     def _flat_value_action(
         self,
@@ -1448,6 +1672,8 @@ class HierarchicalLatentPlanner(LatentPlanner):
             1, len(prompt), dtype=torch.bool, device=self.device
         )
         step_texts: list[str] = []
+        action_history: list[int] = []
+        active_subgoal: torch.Tensor | None = None
         necessary = self._necessary_actions(problem)
         n_necessary = len(necessary)
         budget = n_necessary + slack
@@ -1463,6 +1689,31 @@ class HierarchicalLatentPlanner(LatentPlanner):
         while not env.solved and len(step_texts) < budget:
             state = self._current_state(prompt_tokens, prompt_mask, step_texts)
             s0 = self._s0(prompt_tokens, prompt_mask)
+            high_state, high_s0 = state, s0
+            observed_low_target_path = None
+            observed_low_path = self._observed_low_state_path(
+                prompt_tokens, prompt_mask, step_texts
+            )
+            observed_action_history = (
+                self._action_codes(problem, action_history).unsqueeze(0)
+                if action_history
+                else observed_low_path.new_zeros(
+                    1, 0, self.model.core.d_action
+                )
+            )
+            if getattr(self.model, "distinct_high_state_space", False):
+                observed_low_target_path = self._observed_low_state_path(
+                    prompt_tokens, prompt_mask, step_texts, teacher=True
+                )
+                valid = torch.ones(
+                    observed_low_path.shape[:2], dtype=torch.bool,
+                    device=self.device,
+                )
+                high_path = self.model.encode_high_state_path(
+                    observed_low_path, valid
+                )
+                high_s0 = high_path[:, 0]
+                high_state = high_path[:, -1]
             if (
                 self.flat_fallback_threshold is not None
                 and float(self.model.value_head(state, s0))
@@ -1474,7 +1725,45 @@ class HierarchicalLatentPlanner(LatentPlanner):
                 )
                 n_distractor += int(chosen not in necessary)
                 step_texts.append(env.step(chosen))
+                action_history.append(chosen)
                 continue
+            distinct = getattr(self.model, "distinct_high_state_space", False)
+            macro_phase = len(action_history) % self.model.core.macro_k
+            if distinct and active_subgoal is not None and macro_phase:
+                # The high transformer is trained at non-overlapping K-step
+                # boundaries.  Between boundaries, keep its waypoint fixed and
+                # iteratively refine the primitive action after observing the
+                # latest real transition.
+                configured_low_horizon = self.low_horizon
+                self.low_horizon = min(
+                    configured_low_horizon,
+                    self.model.core.macro_k - macro_phase,
+                )
+                try:
+                    chosen = self._low_action(
+                        problem,
+                        env.feasible_actions(),
+                        state,
+                        s0,
+                        active_subgoal,
+                        frozenset(env.resolved_set),
+                        observed_low_path,
+                        observed_action_history,
+                        observed_low_target_path,
+                    )
+                finally:
+                    self.low_horizon = configured_low_horizon
+                n_distractor += int(chosen not in necessary)
+                step_texts.append(env.step(chosen))
+                action_history.append(chosen)
+                continue
+            if distinct:
+                self._set_observed_macro_history(
+                    high_path, observed_action_history
+                )
+            else:
+                self._high_state_history = None
+                self._macro_action_history = None
             self.n_macro_decisions += 1
             if (
                 self.macro_knn_weight
@@ -1543,8 +1832,8 @@ class HierarchicalLatentPlanner(LatentPlanner):
                 )
                 try:
                     subgoal = self._high_subgoal(
-                        state,
-                        s0,
+                        high_state,
+                        high_s0,
                         goal_state,
                         problem,
                         env,
@@ -1554,6 +1843,8 @@ class HierarchicalLatentPlanner(LatentPlanner):
                     )
                 finally:
                     self.high_horizon = configured_horizon
+            if distinct:
+                active_subgoal = subgoal
             feasible = env.feasible_actions()
             if (
                 self.discrete_execute_macro
@@ -1570,9 +1861,13 @@ class HierarchicalLatentPlanner(LatentPlanner):
                     s0,
                     subgoal,
                     frozenset(env.resolved_set),
+                    observed_low_path,
+                    observed_action_history,
+                    observed_low_target_path,
                 )
             n_distractor += int(chosen not in necessary)
             step_texts.append(env.step(chosen))
+            action_history.append(chosen)
         return EpisodeResult(
             env.solved,
             len(step_texts),

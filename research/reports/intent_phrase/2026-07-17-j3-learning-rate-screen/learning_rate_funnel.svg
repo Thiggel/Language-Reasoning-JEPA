@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="250" viewBox="0 0 760 250" role="img" aria-labelledby="t d">
+  <title id="t">Learning-rate and context screen</title><desc id="d">Four alternatives are compared with the reference; only learning rate one times ten to the minus three advances to replication.</desc>
+  <rect width="760" height="250" fill="#fff"/>
+  <g font-family="sans-serif" font-size="16" text-anchor="middle">
+    <g fill="#eceff4" stroke="#4c566a"><rect x="20" y="35" width="125" height="62" rx="8"/><rect x="165" y="35" width="125" height="62" rx="8"/><rect x="310" y="35" width="125" height="62" rx="8"/><rect x="455" y="35" width="125" height="62" rx="8"/></g>
+    <g fill="#d8f3dc" stroke="#2d6a4f"><rect x="600" y="35" width="140" height="62" rx="8"/><rect x="285" y="170" width="190" height="55" rx="8"/></g>
+    <text x="82" y="61">context 1</text><text x="82" y="84">15.5%</text><text x="227" y="61">context 4</text><text x="227" y="84">47.5%</text><text x="372" y="61">rate 1e-4</text><text x="372" y="84">29.5%</text><text x="517" y="61">reference</text><text x="517" y="84">59.0%</text><text x="670" y="61">rate 1e-3</text><text x="670" y="84">70.5%</text><text x="380" y="203">replicate seeds 1 and 2</text>
+  </g>
+  <path d="M670 100 C650 145 500 145 450 168" fill="none" stroke="#2d6a4f" stroke-width="4" marker-end="url(#a)"/><defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="#2d6a4f"/></marker></defs>
+</svg>

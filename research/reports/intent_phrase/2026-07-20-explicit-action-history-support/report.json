@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-20-explicit-action-history-support",
+  "project": "intent_phrase",
+  "title": "Testing explicit intent history for non-oracle action availability",
+  "created_at": "2026-07-20T18:45:00+02:00",
+  "status": "completed_provisional",
+  "decision": "Retain causal action history and test whether calibrated hybrid reranking can preserve proposal validity while extracting useful JEPA simulation signal.",
+  "plain_summary": "Causal action history raised availability accuracy from 81.9% to about 98.2% and length-nine plus-two success from zero to 36.7%, but invalid actions remain frequent and pure JEPA reranking is harmful.",
+  "report": "REPORT.md",
+  "review_required": true
+}

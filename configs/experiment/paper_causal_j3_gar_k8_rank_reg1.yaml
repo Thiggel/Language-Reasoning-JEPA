@@ -1,0 +1,11 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+
+run_name: paper_causal_j3_gar_k8_rank_reg1
+objective:
+  geo_advantage_regression: {weight: 1.0}
+data:
+  geo_rank_k: 8
+

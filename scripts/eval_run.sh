@@ -10,7 +10,14 @@ PY=${PY:-.venv2/bin/python}
 $PY scripts/probe.py ckpt="$RUN/best.pt" device="$DEV"
 $PY scripts/plan.py ckpt="$RUN/best.pt" device="$DEV" slack=0
 $PY scripts/plan.py ckpt="$RUN/best.pt" device="$DEV" slack=2
-$PY scripts/analyze.py ckpt="$RUN/best.pt" device="$DEV"
+# Geometry PNGs are diagnostic-only.  Some validated cluster environments do
+# not install matplotlib; do not discard completed probes and closed-loop
+# planning metrics merely because optional plotting is unavailable.
+if $PY -c 'import matplotlib' >/dev/null 2>&1; then
+  $PY scripts/analyze.py ckpt="$RUN/best.pt" device="$DEV"
+else
+  echo "warning: matplotlib unavailable; skipping optional geometry plots" >&2
+fi
 
 # Exit status 0 means this checkpoint was trained with GAR candidates.  Read
 # only the stored config here so ordinary/non-discourse runs remain cheap.

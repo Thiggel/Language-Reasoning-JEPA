@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-20-learned-catalogue-pilot-result",
+  "project": "intent_phrase",
+  "title": "Why the learned action catalogue selected invalid intents",
+  "created_at": "2026-07-20T18:00:00+02:00",
+  "status": "negative_mechanism_result",
+  "decision": "Repair catalogue-wide behavioral-prior supervision before interpreting deeper JEPA planning.",
+  "plain_summary": "The planner usually proposed feasible actions but selected an infeasible one because its prior had never been trained to compete against infeasible catalogue actions; a tested catalogue-wide loss correction is ready for a bounded learning-rate recovery.",
+  "report": "REPORT.md",
+  "review_required": true
+}
+

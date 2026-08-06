@@ -1,0 +1,10 @@
+# @package _global_
+defaults:
+  - paper_causal_j3_distinct_hier_k2_d8_w025
+  - _self_
+
+# Narrow macro-action bottleneck control.
+run_name: paper_causal_j3_distinct_hier_k2_d4_w025
+model:
+  d_macro: 4
+

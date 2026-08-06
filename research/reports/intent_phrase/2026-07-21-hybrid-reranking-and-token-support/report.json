@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-21-hybrid-reranking-and-token-support",
+  "project": "intent_phrase",
+  "title": "Proposal evidence beats latent reranking, so preserve lexical prerequisites next",
+  "created_at": "2026-07-21T00:30:00+02:00",
+  "status": "completed_and_next_pilot_validated",
+  "decision": "Stop hybrid mixture tuning and test token-level causal prerequisite support against pooled and masked controls.",
+  "plain_summary": "Proposal-only selection remains stronger than every JEPA mixture, while invalid actions remain the dominant failure; a tested token-level support head is the next bounded mechanism experiment.",
+  "report": "REPORT.md",
+  "review_required": true
+}

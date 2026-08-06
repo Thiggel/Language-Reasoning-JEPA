@@ -1,0 +1,13 @@
+# @package _global_
+defaults:
+  - paper_causal_j3_distinct_hier_k2_d8_w025
+  - _self_
+
+# Planning-matched recursive macro supervision, isolated from the one-jump
+# hierarchy pilot above.
+run_name: paper_causal_j3_distinct_hier_k2_d8_dense4
+model:
+  high_dense_rollout_depth: 4
+objective:
+  high_dense_rollout: {weight: 0.25, horizon_discount: 0.7}
+

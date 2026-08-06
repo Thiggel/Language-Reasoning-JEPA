@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - paper_causal_j3
+  - _self_
+run_name: paper_causal_j3_lr7e4_proxy
+train:
+  epochs: 10
+  lr: 7.0e-4

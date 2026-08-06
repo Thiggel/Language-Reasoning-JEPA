@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - paper_causal_j3_distinct_hier_k2_d8_dense4_value
+  - _self_
+
+run_name: paper_causal_j3_distinct_hier_k2_d16_dense4_value
+model:
+  d_macro: 16
+

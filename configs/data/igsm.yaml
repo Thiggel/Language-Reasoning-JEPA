@@ -27,4 +27,6 @@ invalid_action_mode: noop  # noop | failure
 macro_alt_k: 0
 macro_alt_horizon: 3
 all_action_supervision: false
+problem_max_tries: 50
+strict_steps_range: false
 fresh_per_epoch: true
