@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-token-jepa-packed-sdpa-a100-capacity",
+  "decision": "Measure the maximum physical sequence batch and sustained-step throughput of corrected packed token-iGSM JEPA on one 80GB A100.",
+  "git_commit": "aace2f9a34a712bbbdf29673614ff040c4cac7c0",
+  "jobs": [
+    {
+      "id": "a100-packed-full-mb24", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Matched control against the established unpacked fitting batch.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "24"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "a100-packed-full-mb32", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Test the first unpacked out-of-memory boundary.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "32"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "a100-packed-full-mb40", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Resolve the practical ceiling if microbatch 32 fits.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "40"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "a100-packed-full-mb48", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Resolve the upper packed capacity boundary.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "48"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "a100-packed-full-mb64", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Test whether corrected packing reaches a power-of-two physical batch.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "64"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "a100-packed-full-mb128", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Direct large-batch capacity test.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "128"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "a100-packed-full-mb256", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Directly answer whether 256 physical sequences fit one A100.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_packed", "256"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}

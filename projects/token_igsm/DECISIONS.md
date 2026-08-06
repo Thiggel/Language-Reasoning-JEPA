@@ -1,18 +1,22 @@
 # Decisions
 
-- Preserve all historical hard-text logs, checkpoints, plans, and run-family
-  names in place as legacy.
-- Use a frozen causal reasoning LM as the wide encoder and executable proposal
-  distribution; train separate token and sentence planning projections.
-- Admit one falsifiable mechanism at a time. First test token JEPA with a true
-  future goal and exact endpoint control; next test a token worker against a
-  true sentence waypoint.
-- Keep oracle terminal, symbolic, candidate-privileged, and cross-project
-  information explicitly labelled.
-- Do not add latent macro-actions, high-level CEM, or value distillation until
-  both decisive worker gates pass.
-- Do not include a remaining-budget input. `K0`, `K1`, `KV`, and `n_exec`
-  retain distinct planning, teacher-computation, and execution meanings.
-- Require information-matched controls, shortcut/cache diagnostics,
-  compute-matched depth comparisons, exact grounding, and optimizer-curse
-  curves.
+- Keep fixed-span and semantic-boundary hierarchy as separate conditions.
+- Treat oracle-goal planning as diagnostic.
+- Require an information-matched flat control and executable low-level refinement.
+- EMA targets must remain deterministic and in evaluation mode.
+- Use learned value only at the topmost level until lower-level energies pass
+  optimizer-exploitation tests; lower levels match selected subgoals by latent
+  distance.
+- Treat the token prior and conditional macro codebook as hard search support
+  in the next diagnostic, not merely as soft penalties.
+- Spend the remaining global headroom only on the missing seed-0 semantic flat
+  control; do not expand seeds or scale until that matched comparison is valid.
+- Never compare a primitive reached state directly with a distinct hierarchy
+  state; lift the complete reached path through the corresponding EMA causal
+  encoders first.
+- Treat action-advantage targets as non-symbolic only when alternatives come
+  from full-vocabulary token outcomes, observed chunks, or learned support—not
+  symbolic feasibility filtering.
+- Stop increasing primitive GAR counterfactual count after K=94 improved pair
+  ordering without improving selection or execution; isolate prior-only versus
+  mixed versus random proposal coverage at fixed K=32 next.

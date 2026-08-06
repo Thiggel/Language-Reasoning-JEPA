@@ -1,32 +1,157 @@
 {
   "schema_version": 2,
   "project": "token_igsm",
-  "round_id": "2026-07-20-token-igsm-grete-move-wave85",
-  "decision": "Replace all three still-live token-iGSM jobs on credit-exhausted Grete (14993283, 14993285, 14993286) with exact-snapshot Grünau copies. Preserve every scientific and optimization setting. Exclude any eventual Grete outputs as duplicates; Grete is ineligible for future plans.",
+  "round_id": "2026-07-20-two-level-sentence-hierarchy-factorial",
+  "decision": "Which bottleneck and individually isolated representation, reachability, value-geometry, and planning components make a distinct-space token-to-sentence JEPA controllable without symbolic feasibility or an auxiliary language model?",
   "git_commit": "f358fb767ba4e354212eb089c5807da6bb989165",
-  "projected_gpu_hours": 21,
   "jobs": [
     {
-      "id": "sentence-monotonicity-only-seed0-gruenau-wave85",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 38000, "walltime_minutes": 300,
-      "purpose": "Exact replacement for Grete job 14993283: isolate monotonic remaining-cost supervision along correct sentence trajectories.",
+      "id": "sentence-full-d32-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 480,
+      "purpose": "Full two-level recipe with all learned support, reachability, GAR, geometry, and extended planning evaluations.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-d32-seed0", "1", "0.1", "1", "1", "1", "prior", "model.d_macro=32", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/sentence_hierarchy_audit.json", "model/sentence_prior_closed_loop.json", "model/sentence_planning_codebook_h2.json", "model/sentence_planning_codebook_h2_reach-refined.json", "model/sentence_planning_prior_h2.json"]
+    },
+    {
+      "id": "sentence-flat-control-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Information-matched token model with the complete sentence-level objective removed.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-flat-control-seed0", "0", "0", "0", "0", "0", "global", "objective.high_level_weight=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-base-d8-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Minimal sentence hierarchy with an eight-dimensional macro-action bottleneck.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-base-d8-seed0", "0", "0", "0", "0", "0", "global", "model.d_macro=8"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-base-d16-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Minimal sentence hierarchy with a sixteen-dimensional macro-action bottleneck.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-base-d16-seed0", "0", "0", "0", "0", "0", "global", "model.d_macro=16"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-base-d32-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Minimal sentence hierarchy with the reference thirty-two-dimensional bottleneck.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-base-d32-seed0", "0", "0", "0", "0", "0", "global", "model.d_macro=32"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-base-d64-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Minimal sentence hierarchy with a sixty-four-dimensional macro-action bottleneck.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-base-d64-seed0", "0", "0", "0", "0", "0", "global", "model.d_macro=64"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-base-d128-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Near-unrestricted 128-dimensional macro-action leakage control.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-base-d128-seed0", "0", "0", "0", "0", "0", "global", "model.d_macro=128"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-shared-state-control-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Exact shared-state control for the otherwise matched sentence architecture.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-shared-state-control-seed0", "0", "0", "0", "0", "0", "global", "model.d_high=256", "model.separate_high_encoder=false"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-high-weight025-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Test whether a weaker aggregate sentence loss is underweighted by token supervision.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-high-weight025-seed0", "0", "0", "0", "0", "0", "global", "objective.high_level_weight=0.25"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-high-weight4-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Test whether stronger sentence-level gradients force useful abstraction.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-high-weight4-seed0", "0", "0", "0", "0", "0", "global", "objective.high_level_weight=4"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-dense-h1-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "One-step-only upper dynamics control for multistep sentence supervision.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-dense-h1-seed0", "0", "0", "0", "0", "0", "global", "model.high_dense_depth=1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-dense-h4-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Four-sentence densely supervised recursive upper dynamics.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-dense-h4-seed0", "0", "0", "0", "0", "0", "global", "model.high_dense_depth=4"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-macro-prior-only-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Isolate the state-conditional Gaussian macro-action prior and prior-filtered planning.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-macro-prior-only-seed0", "0", "0.1", "0", "0", "0", "prior", "objective.macro_prior=0.05"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-support-only-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Isolate the learned state-conditional macro support discriminator.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-support-only-seed0", "0", "0", "1", "0", "0", "support", "objective.support=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-bridge-only-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Isolate bidirectional low/high boundary-state bridge supervision.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-bridge-only-seed0", "0", "0", "0", "0", "0", "global", "objective.bridge=0.25"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-transition-reach-only-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Isolate consistency between high predictions and recursively executed low dynamics.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-transition-reach-only-seed0", "0", "0", "0", "0", "0", "global", "objective.transition_reachability=0.25"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-reach-classifier-only-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 240,
+      "purpose": "Isolate the learned low-controller reachability discriminator and its planning score.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-reach-classifier-only-seed0", "0", "0", "0", "1", "0", "global", "objective.reachability_classifier=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-regression-seed0", "cluster": "gruenau", "gpus": 1, "cpus": 4, "min_gpu_memory_mb": 40000, "walltime_minutes": 300,
+      "purpose": "Sentence-level counterfactual advantage regression without ranking or dynamics MSE.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-regression-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_regression=1", "objective.gar_ranking=0", "objective.gar_counterfactual_mse=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-ranking-seed0", "cluster": "alex", "gpus": 1, "cpus": 4, "gpu_type": "a100", "walltime_minutes": 300,
+      "purpose": "Sentence-level counterfactual pairwise GAR without scalar regression or dynamics MSE.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-ranking-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_regression=0", "objective.gar_ranking=1", "objective.gar_counterfactual_mse=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-joint-inbatch-seed0", "cluster": "alex", "gpus": 1, "cpus": 4, "gpu_type": "a100", "walltime_minutes": 360,
+      "purpose": "Joint advantage regression, ranking, and counterfactual dynamics MSE with in-batch sentences.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-joint-inbatch-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_source=in_batch"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-joint-nearest-seed0", "cluster": "Lise", "gpus": 1, "cpus": 4, "partition": "gpu-a100:shared", "walltime_minutes": 360,
+      "purpose": "Joint GAR using nearest-code hard negative sentences rather than arbitrary in-batch alternatives.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-joint-nearest-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_source=nearest"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-straightening-only-seed0", "cluster": "Lise", "gpus": 1, "cpus": 4, "partition": "gpu-a100:shared", "walltime_minutes": 300,
+      "purpose": "Isolate temporal straightening in a learned high-level planning projection.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-straightening-only-seed0", "0", "0", "0", "0", "0", "global", "objective.temporal_straightening=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-monotonicity-only-seed0", "cluster": "Grete", "gpus": 1, "cpus": 4, "partition": "grete:shared", "walltime_minutes": 300,
+      "purpose": "Isolate monotonic remaining-cost supervision along correct sentence trajectories.",
       "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-monotonicity-only-seed0", "0", "0", "0", "0", "0", "global", "objective.value_monotonicity=0.1"],
       "expected_artifacts": ["metrics.json", "model/best.pt"]
     },
     {
-      "id": "sentence-full-lr1e4-seed0-gruenau-wave85",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 38000, "walltime_minutes": 480,
-      "purpose": "Exact replacement for Grete job 14993285: low-learning-rate cross-check for the complete sentence-hierarchy objective.",
+      "id": "sentence-full-lr1e4-seed0", "cluster": "Grete", "gpus": 1, "cpus": 4, "partition": "grete:shared", "walltime_minutes": 480,
+      "purpose": "Low-learning-rate cross-check for the complete objective after changing gradient scale.",
       "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e4-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-4", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
       "expected_artifacts": ["metrics.json", "model/best.pt"]
     },
     {
-      "id": "sentence-full-lr1e3-seed0-gruenau-wave85",
-      "cluster": "gruenau", "gpus": 1, "cpus": 4,
-      "min_gpu_memory_mb": 38000, "walltime_minutes": 480,
-      "purpose": "Exact replacement for Grete job 14993286: high-learning-rate cross-check for the complete sentence-hierarchy objective.",
+      "id": "sentence-full-lr1e3-seed0", "cluster": "alex", "gpus": 1, "cpus": 4, "gpu_type": "a100", "walltime_minutes": 480,
+      "purpose": "High-learning-rate cross-check for the complete objective after changing gradient scale.",
       "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e3-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-3", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
       "expected_artifacts": ["metrics.json", "model/best.pt"]
     }

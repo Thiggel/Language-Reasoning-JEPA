@@ -24,11 +24,15 @@ model:
   use_token_prior: false
   token_prior_hidden: 0
   token_prior_detach_state: false
+  distinct_level_states: false
+  level_state_encoder_layers: 2
 
 objective:
   low_prediction: 1.0
   low_dense: 1.0
-  low_value: 0.25
+  # Deprecated legacy normalized-position target. Keep the head loadable for
+  # checkpoint compatibility, but never enable it in non-symbolic research.
+  low_value: 0.0
   goal_prediction: 1.0
   high_prediction: 1.0
   high_dense: 1.0
@@ -36,16 +40,66 @@ objective:
   # A single value is broadcast to every active level.
   high_level_weights: [1.0]
   reachability: 0.25
-  high_value: 1.0
+  # Deprecated legacy normalized-position target; see ``low_value``.
+  high_value: 0.0
   macro_prior: 0.05
   support: 0.1
   vicreg: 1.0
   covariance: 0.04
   dense_discount: 0.7
+  # Optional level-specific overrides. Null preserves dense_discount.
+  low_dense_discount: null
+  high_dense_discount: null
   token_prior: 0.0
   token_prior_rollout: 0.0
   token_prior_rollout_discount: 0.7
   token_prior_label_smoothing: 0.0
+  # Exposure-robust imitation: roll from a factual prefix under the model's
+  # own token choices, then predict the observed continuation. This uses no
+  # symbolic feasibility or environment-derived ranking label.
+  token_prior_self_rollout: 0.0
+  token_prior_self_rollout_depth: 4
+  token_prior_self_rollout_policy: greedy
+  token_prior_self_rollout_topk: 8
+  token_prior_self_rollout_temperature: 1.0
+  token_prior_self_rollout_detach_state: true
+  # End-to-end geometric advantage ranking (GAR). Candidate outcomes are
+  # EMA-encoded same-prefix counterfactual token sequences; no symbolic
+  # remaining-step or feasibility label enters the preference target.
+  geo_rank_low: 0.0
+  geo_rank_high: 0.0
+  geo_rank_level_weights: [1.0]
+  geo_rank_k: 2
+  # Optional primitive/macro overrides. A single legacy value still
+  # broadcasts when these are null.
+  geo_rank_low_k: null
+  geo_rank_high_k: null
+  geo_rank_horizon: 2
+  # Optional primitive/macro overrides. Null preserves geo_rank_horizon.
+  geo_rank_low_horizon: null
+  geo_rank_high_horizon: null
+  geo_rank_continuations: 2
+  # random: full-vocabulary negatives; prior/mixed: planner-supported hard negatives.
+  geo_rank_primitive_proposals: random
+  # sampled takes the best exact outcome among sampled continuation sequences.
+  # oracle_beam searches prior-supported continuations by exact EMA goal distance.
+  geo_rank_low_policy: sampled
+  geo_rank_beam_width: 4
+  geo_rank_beam_branch: 4
+  geo_rank_macro_proposals: global
+  geo_rank_conditional_k: 32
+  geo_rank_margin: 0.5
+  geo_rank_label_gap: 0.02
+  geo_rank_objective: pairwise
+  geo_rank_pairwise: 1.0
+  geo_rank_temperature: 0.1
+  geo_rank_regression: 0.0
+  # Directly anchor F(s,a_cf) to the EMA-encoded counterfactual outcome.
+  geo_rank_counterfactual_mse: 0.0
+  # goal uses the privileged terminal latent during training; prompt distills
+  # the same advantage into a deployable prompt-conditioned value function.
+  geo_rank_value_condition: goal
+  geo_rank_detach_prediction: false
 
 train:
   batch_size: 24

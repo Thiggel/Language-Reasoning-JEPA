@@ -1,0 +1,394 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-pooled-sentence-long-confirmation",
+  "decision": "After adequate optimization and statistically useful evaluation, which causal pooled-prefix architecture and learning rate provide a reproducible improvement over its own token-prior baseline, and does deeper MPC help rather than exploit noisy four-trace evaluation?",
+  "git_commit": "c6002639bf15d845f76e202c83a223ad7e7c57a6",
+  "jobs": [
+    {
+      "id": "pooled-long-sentence-prior-nodecoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, nodecoder, learning rate 0.00003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-nodecoder-lr3e-5-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.00003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-sentence-prior-nodecoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, nodecoder, learning rate 0.0001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-nodecoder-lr1e-4-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-sentence-prior-nodecoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, nodecoder, learning rate 0.0003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-nodecoder-lr3e-4-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-sentence-prior-nodecoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, nodecoder, learning rate 0.001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-nodecoder-lr1e-3-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-sentence-prior-decoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, decoder, learning rate 0.00003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-decoder-lr3e-5-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-sentence-prior-decoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, decoder, learning rate 0.0001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-decoder-lr1e-4-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-sentence-prior-decoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, decoder, learning rate 0.0003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-decoder-lr3e-4-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-sentence-prior-decoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: sentence pooling, token prior, decoder, learning rate 0.001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-sentence-prior-decoder-lr1e-3-s0",
+        "model.pooling_scope=sentence",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-nodecoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, nodecoder, learning rate 0.00003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-nodecoder-lr3e-5-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.00003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-nodecoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, nodecoder, learning rate 0.0001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-nodecoder-lr1e-4-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-nodecoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, nodecoder, learning rate 0.0003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-nodecoder-lr3e-4-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.0003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-nodecoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, nodecoder, learning rate 0.001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-nodecoder-lr1e-3-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=false",
+        "train.lr=0.001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-decoder-lr3e-5-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, decoder, learning rate 0.00003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-decoder-lr3e-5-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.00003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-decoder-lr1e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, decoder, learning rate 0.0001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-decoder-lr1e-4-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-decoder-lr3e-4-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, decoder, learning rate 0.0003; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-decoder-lr3e-4-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.0003"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    },
+    {
+      "id": "pooled-long-global-prior-decoder-lr1e-3-s0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 720,
+      "purpose": "Long-training confirmation: global pooling, token prior, decoder, learning rate 0.001; 25k updates and independent 64-trace planning holdout.",
+      "command": [
+        "bash",
+        "scripts/run_pooled_sentence_long_cell.sh",
+        "{python}",
+        "pooled-long-global-prior-decoder-lr1e-3-s0",
+        "model.pooling_scope=global",
+        "model.use_prefix_decoder=true",
+        "train.lr=0.001"
+      ],
+      "expected_artifacts": [
+        "metrics.json",
+        "model/best.pt",
+        "model/last.pt",
+        "model/selected_prior_weight.json"
+      ]
+    }
+  ]
+}
+

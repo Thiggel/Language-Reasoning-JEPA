@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-packed-one-step-jepa-capacity",
+  "decision": "Measure the actual capacity of the selected packed one-step JEPA recipe beyond 256 and compare it fairly with the matched 124M token LM.",
+  "git_commit": "4c724ba11f94d46b1dfddbf5f923034bc1a2c147",
+  "jobs": [
+    {
+      "id": "a100-packed-one-step-jepa", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 20,
+      "purpose": "Find the packed one-step JEPA A100 capacity boundary.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_visreg_packed_d1_gar", "256", "320", "384", "416", "448", "480", "512", "640"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb256.json", "benchmark_mb640.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-packed-one-step-jepa", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 20,
+      "purpose": "Find the packed one-step JEPA RTX Pro 6000 capacity boundary.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_visreg_packed_d1_gar", "256", "320", "384", "416", "448", "480", "512", "640"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb256.json", "benchmark_mb640.json", "stdout.log"]
+    }
+  ]
+}

@@ -8,7 +8,10 @@ from torch import nn
 from textjepa.models.action import MacroActionModel
 from textjepa.models.ema import EMATeacher
 from textjepa.models.heads import ValueHead
-from textjepa.models.layers import build_causal_attention_mask
+from textjepa.models.layers import (
+    PackedMultiheadAttention, build_causal_attention_mask,
+    causal_attention_mask, packed_encoder_forward,
+)
 
 
 class CausalTokenStateEncoder(nn.Module):
@@ -21,10 +24,13 @@ class CausalTokenStateEncoder(nn.Module):
         n_heads: int,
         ff_mult: int,
         max_len: int,
+        attention_backend: str = "auto",
+        sequence_packing: bool = False,
     ):
         super().__init__()
         self.pad_id = pad_id
         self.n_heads = n_heads
+        self.sequence_packing = bool(sequence_packing)
         self.tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.pos = nn.Parameter(torch.zeros(1, max_len, d_model))
         nn.init.normal_(self.pos, std=0.02)
@@ -32,11 +38,18 @@ class CausalTokenStateEncoder(nn.Module):
             d_model,
             n_heads,
             d_model * ff_mult,
+            dropout=0.0,
             batch_first=True,
             norm_first=True,
             activation="gelu",
         )
         self.blocks = nn.TransformerEncoder(layer, n_layers)
+        if self.sequence_packing:
+            for block in self.blocks.layers:
+                block.self_attn = PackedMultiheadAttention(
+                    d_model, n_heads, dropout=0.0, batch_first=True,
+                    attention_backend=attention_backend,
+                )
         self.norm = nn.LayerNorm(d_model)
 
     def _positions(self, length: int) -> torch.Tensor:
@@ -51,10 +64,13 @@ class CausalTokenStateEncoder(nn.Module):
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
         _, length = tokens.shape
-        valid = tokens.ne(self.pad_id)
         x = self.tok(tokens) + self._positions(length)
-        mask = build_causal_attention_mask(valid, self.n_heads)
-        return self.norm(self.blocks(x, mask=mask))
+        if self.sequence_packing:
+            return self.norm(packed_encoder_forward(
+                self.blocks, x, tokens.ne(self.pad_id), causal=True,
+            ))
+        mask = causal_attention_mask(length, tokens.device)
+        return self.norm(self.blocks(x, mask=mask, is_causal=True))
 
 
 class CausalLatentPredictor(nn.Module):

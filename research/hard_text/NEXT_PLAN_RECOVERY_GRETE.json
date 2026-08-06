@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-two-level-sentence-hierarchy-grete-recovery",
+  "decision": "Submit the final five still-unaccepted geometry, hard-negative GAR, and learning-rate cells after the original direct-placement round stopped safely.",
+  "git_commit": "f358fb767ba4e354212eb089c5807da6bb989165",
+  "jobs": [
+    {
+      "id": "sentence-gar-joint-nearest-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 360,
+      "purpose": "Joint GAR using nearest-code hard negative sentences rather than arbitrary in-batch alternatives.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-joint-nearest-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_source=nearest"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-straightening-only-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Isolate temporal straightening in a learned high-level planning projection.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-straightening-only-seed0", "0", "0", "0", "0", "0", "global", "objective.temporal_straightening=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-monotonicity-only-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Isolate monotonic remaining-cost supervision along correct sentence trajectories.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-monotonicity-only-seed0", "0", "0", "0", "0", "0", "global", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-full-lr1e4-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 480,
+      "purpose": "Low-learning-rate cross-check for the complete objective after changing gradient scale.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e4-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-4", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-full-lr1e3-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 480,
+      "purpose": "High-learning-rate cross-check for the complete objective after changing gradient scale.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e3-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-3", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    }
+  ]
+}

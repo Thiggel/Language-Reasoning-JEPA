@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="430" viewBox="0 0 1000 430" role="img" aria-labelledby="title desc">
+  <title id="title">Semantic control evidence gate</title>
+  <desc id="desc">Three completed hierarchy cells and one timed-out flat control feed a locked comparison. A single recovery job unlocks a decision between replication and redirecting the boundary design.</desc>
+  <rect width="1000" height="430" fill="#f7f8fa"/>
+  <style>
+    text { font-family: sans-serif; fill: #172033; }
+    .head { font-size: 25px; font-weight: 700; }
+    .body { font-size: 18px; }
+    .small { font-size: 15px; }
+    .ok { fill: #dff3e6; stroke: #2f7d4a; stroke-width: 2; }
+    .bad { fill: #fde4e1; stroke: #b23a2d; stroke-width: 2; }
+    .gate { fill: #fff4cc; stroke: #9a7411; stroke-width: 3; }
+    .next { fill: #e2ecff; stroke: #3f67ad; stroke-width: 2; }
+    .arrow { stroke: #596579; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#596579"/></marker></defs>
+  <text x="500" y="38" text-anchor="middle" class="head">The semantic comparison is waiting for one fair control</text>
+  <rect x="35" y="75" width="210" height="70" rx="12" class="ok"/>
+  <text x="140" y="104" text-anchor="middle" class="body">Semantic boundaries</text><text x="140" y="129" text-anchor="middle" class="small">process completed</text>
+  <rect x="35" y="165" width="210" height="70" rx="12" class="ok"/>
+  <text x="140" y="194" text-anchor="middle" class="body">Random matched</text><text x="140" y="219" text-anchor="middle" class="small">process completed</text>
+  <rect x="35" y="255" width="210" height="70" rx="12" class="ok"/>
+  <text x="140" y="284" text-anchor="middle" class="body">Sentence weighted</text><text x="140" y="309" text-anchor="middle" class="small">process completed</text>
+  <rect x="35" y="345" width="210" height="70" rx="12" class="bad"/>
+  <text x="140" y="374" text-anchor="middle" class="body">Flat objective</text><text x="140" y="399" text-anchor="middle" class="small">timed out</text>
+  <path d="M245 110 C310 110 305 205 360 205" class="arrow"/><path d="M245 200 L360 205" class="arrow"/><path d="M245 290 C310 290 305 215 360 215" class="arrow"/><path d="M245 380 C330 380 305 235 360 225" class="arrow"/>
+  <rect x="365" y="155" width="245" height="120" rx="18" class="gate"/>
+  <text x="488" y="192" text-anchor="middle" class="head">Comparison locked</text>
+  <text x="488" y="222" text-anchor="middle" class="body">No matched flat result</text>
+  <text x="488" y="248" text-anchor="middle" class="small">summaries also lack metrics</text>
+  <path d="M610 215 L700 215" class="arrow"/>
+  <rect x="705" y="155" width="255" height="120" rx="18" class="next"/>
+  <text x="833" y="189" text-anchor="middle" class="head">One recovery</text>
+  <text x="833" y="220" text-anchor="middle" class="body">flat objective, seed 0</text>
+  <text x="833" y="247" text-anchor="middle" class="small">1 GPU × 50 min = 0.83 GPU-h</text>
+  <text x="500" y="404" text-anchor="middle" class="body">Healthy recovery → compare both controls; failure → repair measurement; no scale-up yet</text>
+</svg>

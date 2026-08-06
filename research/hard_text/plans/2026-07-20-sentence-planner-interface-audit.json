@@ -1,0 +1,20 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-sentence-planner-interface-audit-v2",
+  "decision": "At which interface does two-level sentence planning fail: terminal-goal prediction, macro selection, macro dynamics, or primitive execution toward a reachable sentence subgoal?",
+  "git_commit": "1248f1b9632bfdc40a7ef3ea98049bc58c4c9dd3",
+  "jobs": [
+    {
+      "id": "sentence-planner-oracle-decomposition-v2-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 240,
+      "purpose": "Decompose predicted versus oracle terminal goals, reference macro dynamics, learned versus oracle macro selection, low-level execution toward exact versus predicted subgoals, and horizon sensitivity on the completed full-model checkpoint.",
+      "command": ["{python}", "scripts/audit_sentence_planner_decomposition.py", "--ckpt", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-two-level-sentence-hierarchy-factorial/sentence-full-d32-seed0/model/best.pt", "--device", "cuda:0", "--examples", "12", "--codebook-examples", "256"],
+      "expected_artifacts": ["sentence_planner_decomposition.json"]
+    }
+  ]
+}

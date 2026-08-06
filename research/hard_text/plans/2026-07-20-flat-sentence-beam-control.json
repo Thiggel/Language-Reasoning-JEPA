@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-flat-sentence-beam-control",
+  "decision": "Does a single causal sentence-prefix state space support useful token planning, and how do joint, detached, or absent token-prior supervision and GAR versus oracle scoring change the benefit of beam depth?",
+  "git_commit": "ab556c50683037095610cae263cfbec3b1053c65",
+  "jobs": [
+    {
+      "id": "flat-sentence-joint-prior-gar-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 480,
+      "purpose": "Reference single-level causal JEPA with joint token-prior gradients and token-counterfactual GAR.",
+      "command": ["bash", "scripts/run_flat_sentence_cell.sh", "{python}", "flat-sentence-joint-prior-gar-seed0", "prior"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/flat_sentence_beam_prior_oracle_d1_w8.json", "model/flat_sentence_beam_prior_oracle_d8_w8.json", "model/flat_sentence_beam_prior_value_d1_w8.json", "model/flat_sentence_beam_prior_value_d8_w8.json"]
+    },
+    {
+      "id": "flat-sentence-detached-prior-gar-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 480,
+      "purpose": "Matched control in which the token prior learns proposals but cannot reshape the JEPA encoder.",
+      "command": ["bash", "scripts/run_flat_sentence_cell.sh", "{python}", "flat-sentence-detached-prior-gar-seed0", "prior", "model.token_prior_detach_state=true"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/flat_sentence_beam_prior_oracle_d1_w8.json", "model/flat_sentence_beam_prior_oracle_d8_w8.json", "model/flat_sentence_beam_prior_value_d1_w8.json", "model/flat_sentence_beam_prior_value_d8_w8.json"]
+    },
+    {
+      "id": "flat-sentence-no-prior-gar-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 480,
+      "purpose": "No-prior control that expands every vocabulary token and scores candidates only through oracle geometry or deployable GAR.",
+      "command": ["bash", "scripts/run_flat_sentence_cell.sh", "{python}", "flat-sentence-no-prior-gar-seed0", "all", "model.use_token_prior=false", "objective.token_prior=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/flat_sentence_beam_all_oracle_d1_w8.json", "model/flat_sentence_beam_all_oracle_d8_w8.json", "model/flat_sentence_beam_all_value_d1_w8.json", "model/flat_sentence_beam_all_value_d8_w8.json"]
+    },
+    {
+      "id": "flat-sentence-joint-prior-no-gar-seed0",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 4,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 480,
+      "purpose": "Negative control separating the effect of GAR on representation geometry from beam search and token-prior effects.",
+      "command": ["bash", "scripts/run_flat_sentence_cell.sh", "{python}", "flat-sentence-joint-prior-no-gar-seed0", "prior", "objective.gar=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/flat_sentence_beam_prior_oracle_d1_w8.json", "model/flat_sentence_beam_prior_oracle_d8_w8.json"]
+    }
+  ]
+}

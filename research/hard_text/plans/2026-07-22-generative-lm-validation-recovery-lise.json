@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-generative-lm-validation-recovery-lise",
+  "decision": "Complete the two capacity-matched sentence-LM cells that lacked a suitable Grünau placement in the recovery round.",
+  "git_commit": "9a1430cbb97113e8772d7fb9878d903b15c27bec",
+  "jobs": [
+    {
+      "id": "sentence-lm-42m-lr3e4-recovery-lise-seed0",
+      "cluster": "Lise", "gpus": 1, "cpus": 4,
+      "partition": "gpu-a100:shared", "walltime_minutes": 240,
+      "purpose": "Recover the missing 42.64M CE-only sentence LM at 3e-4.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-42m-lr3e4-recovery-lise-seed0", "pilot", "3e-4", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    },
+    {
+      "id": "sentence-lm-42m-lr1e3-recovery-lise-seed0",
+      "cluster": "Lise", "gpus": 1, "cpus": 4,
+      "partition": "gpu-a100:shared", "walltime_minutes": 240,
+      "purpose": "Recover the missing 42.64M CE-only sentence LM at 1e-3.",
+      "command": ["bash", "scripts/run_10m_lm_baseline.sh", "{python}", "sentence", "sentence-lm-42m-lr1e3-recovery-lise-seed0", "pilot", "1e-3", "matched"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/generation_w1.json", "model/generation_w8.json"]
+    }
+  ]
+}

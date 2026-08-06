@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-igsm-124m-51m-scale-v2",
+  "decision": "At matched approximately 124M trainable-parameter scale and 51.2M fresh trace presentations, compare a token LM, a CE-only sentence LM, the selected two-step pooled sentence JEPA, and the identical JEPA without a token prior. All models use an effective batch of 512, 100,000 optimizer updates, original-iGSM optimizer hyperparameters, and exposure-qualified checkpoints. This first scheduler segment is resumable and must never restart from scratch after a walltime boundary.",
+  "git_commit": "57672c39451370bc1ceaf6d938b038f55eea62ed",
+  "jobs": [
+    {
+      "id": "igsm-124m-jepa-prior-s0-segment1",
+      "cluster": "gruenau",
+      "node": 9,
+      "gpus": 2,
+      "cpus": 16,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "2", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the 123.32M pooled sentence JEPA with its learned token prior toward 51.2M fresh traces; preserve frequent resumable and scientific milestone checkpoints.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_prior", "igsm-124m-jepa-prior-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-jepa-no-prior-s0-segment1",
+      "cluster": "gruenau",
+      "node": 10,
+      "gpus": 2,
+      "cpus": 16,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "2", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the matched pooled sentence JEPA with the token-prior module and loss removed, isolating whether prior supervision changes representation learning and downstream planning.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_no_prior", "igsm-124m-jepa-no-prior-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-token-lm-s0-segment1",
+      "cluster": "Lise",
+      "gpus": 2,
+      "cpus": 16,
+      "min_gpu_memory_mb": 39000,
+      "walltime_minutes": 1440,
+      "purpose": "Train the 123.93M decoder-only token LM on the same fresh trace stream, optimizer-update count, effective batch, and checkpoint schedule.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "token_lm", "igsm-124m-token-lm-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-sentence-lm-s0-segment1",
+      "cluster": "Lise",
+      "gpus": 2,
+      "cpus": 16,
+      "min_gpu_memory_mb": 39000,
+      "walltime_minutes": 1440,
+      "purpose": "Train the 123.21M CE-only sentence-latent LM with the same fresh trace stream, optimizer-update count, effective batch, and checkpoint schedule.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "sentence_lm", "igsm-124m-sentence-lm-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "stdout.log"]
+    }
+  ]
+}

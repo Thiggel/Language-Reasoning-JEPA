@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-token-lm-vs-jepa-capacity",
+  "decision": "Measure matched 124M token-LM capacity on A100 and RTX Pro 6000 and finish the RTX JEPA edge, after decomposition isolated the current all-start depth-two rollout as the JEPA memory pathology.",
+  "git_commit": "32f63d5482d3ebe6b78d686bfe50413e9c00c12a",
+  "jobs": [
+    {
+      "id": "a100-token-lm-capacity", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 30,
+      "purpose": "Measure physical capacity of the matched 124M next-token transformer on A100.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "token_lm", "32", "64", "128", "192", "256", "320", "384", "512"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb32.json", "benchmark_mb512.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-token-lm-capacity", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 30,
+      "purpose": "Measure physical capacity of the matched 124M next-token transformer on RTX Pro 6000.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "token_lm", "32", "64", "128", "192", "256", "320", "384", "512"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb32.json", "benchmark_mb512.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-jepa-final-edge", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 15,
+      "purpose": "Resolve the remaining JEPA capacity edge between fitting 52 and failing 56.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_visreg_packed", "53", "54", "55"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb53.json", "benchmark_mb55.json", "stdout.log"]
+    }
+  ]
+}

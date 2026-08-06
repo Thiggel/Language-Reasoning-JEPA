@@ -1,0 +1,57 @@
+defaults:
+  - data: igsm
+  - _self_
+
+run_name: flat_sentence_jepa
+seed: 0
+device: cuda:0
+boundary_mode: semantic
+
+model:
+  d_state: 192
+  encoder_layers: 4
+  predictor_layers: 2
+  n_heads: 8
+  ff_mult: 4
+  max_len: 768
+  d_action: 64
+  dense_depth: 4
+  use_token_prior: true
+  token_prior_hidden: 0
+  token_prior_detach_state: false
+
+objective:
+  prediction: 1.0
+  dense: 1.0
+  dense_discount: 0.7
+  token_prior: 1.0
+  goal: 1.0
+  vicreg: 1.0
+  covariance: 0.04
+  gar: 1.0
+  gar_k: 8
+  gar_max_anchors: 16
+  gar_regression: 1.0
+  gar_ranking: 1.0
+  gar_margin: 0.1
+  gar_counterfactual_mse: 0.25
+
+train:
+  batch_size: 12
+  num_workers: 0
+  epochs: 6
+  lr: 3.0e-4
+  weight_decay: 0.05
+  warmup_steps: 200
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 50
+  eval_batches: 16
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  output_subdir: null
+  job:
+    chdir: false

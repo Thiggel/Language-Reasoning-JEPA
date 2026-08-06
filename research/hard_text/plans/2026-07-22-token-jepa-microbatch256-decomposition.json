@@ -1,0 +1,54 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-token-jepa-microbatch256-decomposition",
+  "decision": "Determine whether 256 physical token-iGSM sequences fit on one A100 and isolate the memory obstruction into all-start dense rollout versus GAR.",
+  "git_commit": "91ed3a54263775cb0c48bbeab1d08c878ee9bfcd",
+  "jobs": [
+    {
+      "id": "d2-nogar-mb32", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Remove GAR while retaining depth-two all-start rollout at the first full-recipe OOM batch.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d2_nogar", "32"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d2-nogar-mb64", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Measure the depth-two rollout memory ceiling without GAR.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d2_nogar", "64"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d2-nogar-mb128", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Test whether dense all-start rollout alone rules out edit-JEPA-scale batches.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d2_nogar", "128"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d1-gar-mb64", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Remove recursive all-start rollout while retaining GAR.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d1_gar", "64"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d1-gar-mb128", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Test a large transition-only batch with GAR retained.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d1_gar", "128"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d1-gar-mb256", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Direct 256-sequence edit-JEPA-style memory test with GAR retained.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d1_gar", "256"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d1-nogar-mb64", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Transition-only, no-GAR memory control.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d1_nogar", "64"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d1-nogar-mb128", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Transition-only, no-GAR large-batch memory control.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d1_nogar", "128"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "d1-nogar-mb256", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 60,
+      "purpose": "Direct 256-sequence base architecture memory control.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_visreg_d1_nogar", "256"], "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-two-level-sentence-hierarchy-recovery",
+  "decision": "Submit only the twelve component-isolation cells that were never accepted when the Grünau inventory changed during the original two-level sentence-hierarchy round.",
+  "git_commit": "f358fb767ba4e354212eb089c5807da6bb989165",
+  "jobs": [
+    {
+      "id": "sentence-support-only-seed0", "cluster": "alex", "partition": "a40", "gpu_type": "a40", "gpus": 1, "cpus": 4, "walltime_minutes": 240,
+      "purpose": "Isolate the learned state-conditional macro support discriminator.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-support-only-seed0", "0", "0", "1", "0", "0", "support", "objective.support=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-bridge-only-seed0", "cluster": "alex", "partition": "a40", "gpu_type": "a40", "gpus": 1, "cpus": 4, "walltime_minutes": 240,
+      "purpose": "Isolate bidirectional low/high boundary-state bridge supervision.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-bridge-only-seed0", "0", "0", "0", "0", "0", "global", "objective.bridge=0.25"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-transition-reach-only-seed0", "cluster": "alex", "partition": "a40", "gpu_type": "a40", "gpus": 1, "cpus": 4, "walltime_minutes": 240,
+      "purpose": "Isolate consistency between high predictions and recursively executed low dynamics.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-transition-reach-only-seed0", "0", "0", "0", "0", "0", "global", "objective.transition_reachability=0.25"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-reach-classifier-only-seed0", "cluster": "alex", "partition": "a40", "gpu_type": "a40", "gpus": 1, "cpus": 4, "walltime_minutes": 240,
+      "purpose": "Isolate the learned low-controller reachability discriminator and its planning score.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-reach-classifier-only-seed0", "0", "0", "0", "1", "0", "global", "objective.reachability_classifier=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-regression-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Sentence-level counterfactual advantage regression without ranking or dynamics MSE.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-regression-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_regression=1", "objective.gar_ranking=0", "objective.gar_counterfactual_mse=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-ranking-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Sentence-level counterfactual pairwise GAR without scalar regression or dynamics MSE.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-ranking-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_regression=0", "objective.gar_ranking=1", "objective.gar_counterfactual_mse=0"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-joint-inbatch-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 360,
+      "purpose": "Joint advantage regression, ranking, and counterfactual dynamics MSE with in-batch sentences.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-joint-inbatch-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_source=in_batch"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-gar-joint-nearest-seed0", "cluster": "Lise", "partition": "gpu-a100:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 360,
+      "purpose": "Joint GAR using nearest-code hard negative sentences rather than arbitrary in-batch alternatives.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-gar-joint-nearest-seed0", "1", "0", "0", "0", "0", "global", "objective.gar_weight=1", "objective.gar_source=nearest"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-straightening-only-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Isolate temporal straightening in a learned high-level planning projection.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-straightening-only-seed0", "0", "0", "0", "0", "0", "global", "objective.temporal_straightening=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-monotonicity-only-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 300,
+      "purpose": "Isolate monotonic remaining-cost supervision along correct sentence trajectories.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-monotonicity-only-seed0", "0", "0", "0", "0", "0", "global", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-full-lr1e4-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 480,
+      "purpose": "Low-learning-rate cross-check for the complete objective after changing gradient scale.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e4-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-4", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    },
+    {
+      "id": "sentence-full-lr1e3-seed0", "cluster": "Grete", "partition": "grete:shared", "gpus": 1, "cpus": 4, "walltime_minutes": 480,
+      "purpose": "High-learning-rate cross-check for the complete objective after changing gradient scale.",
+      "command": ["bash", "scripts/run_sentence_hierarchy_cell.sh", "{python}", "sentence-full-lr1e3-seed0", "1", "0.1", "1", "1", "0", "prior", "train.lr=1e-3", "model.high_dense_depth=4", "objective.macro_prior=0.05", "objective.support=0.1", "objective.bridge=0.25", "objective.transition_reachability=0.25", "objective.reachability_classifier=0.1", "objective.gar_weight=1", "objective.gar_source=nearest", "objective.temporal_straightening=0.1", "objective.value_monotonicity=0.1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt"]
+    }
+  ]
+}

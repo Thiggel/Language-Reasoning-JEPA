@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-21-pooled-sentence-dense-rollout-diagnostics",
+  "decision": "Does faithful all-position dense open-loop supervision at horizons 1, 2, 4, or 8 reduce latent drift and improve unconstrained full-problem generation under GAR-value or oracle-distance beam planning?",
+  "git_commit": "2194d07039079e12b19dc037197fe39f3d2f4670",
+  "jobs": [
+    {
+      "id": "pooled-sentence-dense-n1-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 1440,
+      "purpose": "One-step control with identical 50M architecture, GAR value, generation, drift, frozen probes, and detached decoder.",
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-sentence-dense-n1-seed0", "1"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/last.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json", "model/selected_prior_weight.json"]
+    },
+    {
+      "id": "pooled-sentence-dense-n2-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 1440,
+      "purpose": "Two-step all-anchor open-loop supervision with every diagnostic and planning comparison held fixed.",
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-sentence-dense-n2-seed0", "2"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/last.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json", "model/selected_prior_weight.json"]
+    },
+    {
+      "id": "pooled-sentence-dense-n4-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 1440,
+      "purpose": "Four-step all-anchor open-loop supervision with every diagnostic and planning comparison held fixed.",
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-sentence-dense-n4-seed0", "4"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/last.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json", "model/selected_prior_weight.json"]
+    },
+    {
+      "id": "pooled-sentence-dense-n8-seed0",
+      "cluster": "Lise",
+      "gpus": 1,
+      "cpus": 4,
+      "partition": "gpu-a100:shared",
+      "walltime_minutes": 1440,
+      "purpose": "Eight-step all-anchor open-loop supervision, testing the strongest drift correction before instability or excess compute.",
+      "command": ["bash", "scripts/run_pooled_sentence_dense_diagnostics.sh", "{python}", "pooled-sentence-dense-n8-seed0", "8"],
+      "expected_artifacts": ["metrics.json", "model/best.pt", "model/last.pt", "model/frozen_sentence_probes.json", "model/detached_sentence_decoder.json", "model/selected_prior_weight.json"]
+    }
+  ]
+}

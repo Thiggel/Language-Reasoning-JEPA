@@ -1,0 +1,31 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-igsm-124m-jepa-short-tmp-recovery",
+  "decision": "Recover the two zero-update Grünau JEPA scale launches using the identical 51.2M-example specification plus a job-unique short multiprocessing directory. Use Slurm placement so the recovery does not race the stalled direct processes.",
+  "git_commit": "46786659ded9ad4a82a351b3b2f4efa54f075c33",
+  "jobs": [
+    {
+      "id": "igsm-124m-jepa-prior-s0-shorttmp-segment1",
+      "cluster": "Lise",
+      "gpus": 2,
+      "cpus": 16,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 1440,
+      "purpose": "Corrected 123.32M JEPA-with-prior scale launch; no state is inherited because the malformed source launch completed zero updates.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_prior", "igsm-124m-jepa-prior-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-jepa-no-prior-s0-shorttmp-segment1",
+      "cluster": "Lise",
+      "gpus": 2,
+      "cpus": 16,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 1440,
+      "purpose": "Corrected 123.24M no-prior JEPA scale launch; no state is inherited because the malformed source launch completed zero updates.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_no_prior", "igsm-124m-jepa-no-prior-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "stdout.log"]
+    }
+  ]
+}

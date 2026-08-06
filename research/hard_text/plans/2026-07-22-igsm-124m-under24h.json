@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-igsm-124m-under24h-v2",
+  "decision": "Finish the corrected 51.2M-example, 100k-update 124M comparison within 24 hours by matching each model to currently available hardware. Use four A100s each for the token LM and prior JEPA on Alex's idle eight-GPU node, two measured-faster RTX Pro 6000 Blackwell GPUs for the no-prior JEPA, and one immediately free local L40 for the cheaper sentence LM. Preserve global batch 512 and all scientific settings.",
+  "git_commit": "edc02a2dfdb38c5303b0c720c33a44a0d1eeb4e3",
+  "jobs": [
+    {
+      "id": "igsm-124m-token-lm-under24h-s0",
+      "cluster": "alex",
+      "partition": "a100",
+      "gpu_type": "a100",
+      "gpus": 4,
+      "cpus": 64,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "4", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the matched token LM on four A100-80GB GPUs; measured aggregate throughput targets completion in about 11.5 hours before communication overhead.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "token_lm", "igsm-124m-token-lm-under24h-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-sentence-lm-under24h-s0",
+      "cluster": "gruenau",
+      "node": 12,
+      "gpus": 1,
+      "cpus": 8,
+      "min_gpu_memory_mb": 40000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "1", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the cheaper sentence LM on an immediately idle L40; its much lower compute and memory demand projects below 24 hours even after allowing for the slower device.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "sentence_lm", "igsm-124m-sentence-lm-under24h-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-jepa-prior-under24h-s0",
+      "cluster": "alex",
+      "partition": "a100",
+      "gpu_type": "a100",
+      "gpus": 4,
+      "cpus": 64,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "4", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train packed one-step EMA/VICReg/GAR JEPA with token prior on four A100s; measured single-rank throughput projects about 17 hours before communication overhead.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_prior", "igsm-124m-jepa-prior-under24h-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-jepa-no-prior-under24h-s0",
+      "cluster": "alex",
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "gpus": 2,
+      "cpus": 32,
+      "min_gpu_memory_mb": 90000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "2", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the matched no-prior JEPA on two RTX Pro 6000 Blackwell GPUs; measured aggregate throughput projects about 17.2 hours before communication overhead.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_no_prior", "igsm-124m-jepa-no-prior-under24h-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    }
+  ]
+}

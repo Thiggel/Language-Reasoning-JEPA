@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-token-jepa-packed-capacity-exact",
+  "decision": "Resolve the safe and edge physical sequence capacity of corrected packed token-iGSM JEPA on one 80GB A100 and one 96GB RTX Pro 6000 without repeated scheduler staging.",
+  "git_commit": "32f63d5482d3ebe6b78d686bfe50413e9c00c12a",
+  "jobs": [
+    {
+      "id": "a100-packed-exact-boundary", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 30,
+      "purpose": "Resolve the observed A100 boundary between fitting batch 40 and failing batch 48.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_visreg_packed", "41", "42", "43", "44", "45", "46", "47"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb41.json", "benchmark_mb47.json", "stdout.log"]
+    },
+    {
+      "id": "rtxpro-packed-exact-boundary", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 30,
+      "purpose": "Measure and bracket the complete RTX Pro 6000 physical sequence capacity after batch 24 fitted.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_visreg_packed", "32", "40", "48", "52", "56", "60", "64", "96", "128", "256"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb32.json", "benchmark_mb256.json", "stdout.log"]
+    }
+  ]
+}

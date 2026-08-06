@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-igsm-124m-under24h-jepa-recovery",
+  "decision": "Recover only the two JEPA submissions omitted when the under-24-hour round encountered a transient Alex SSH failure after successfully submitting the token and sentence baselines.",
+  "git_commit": "edc02a2dfdb38c5303b0c720c33a44a0d1eeb4e3",
+  "jobs": [
+    {
+      "id": "igsm-124m-jepa-prior-under24h-s0",
+      "cluster": "alex",
+      "partition": "a100",
+      "gpu_type": "a100",
+      "gpus": 4,
+      "cpus": 64,
+      "min_gpu_memory_mb": 75000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "4", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train packed one-step EMA/VICReg/GAR JEPA with token prior on four A100s; measured throughput projects completion below 24 hours.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_prior", "igsm-124m-jepa-prior-under24h-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    },
+    {
+      "id": "igsm-124m-jepa-no-prior-under24h-s0",
+      "cluster": "alex",
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "gpus": 2,
+      "cpus": 32,
+      "min_gpu_memory_mb": 90000,
+      "walltime_minutes": 1440,
+      "env": {"WORLD_GPUS": "2", "OMP_NUM_THREADS": "4"},
+      "purpose": "Train the matched no-prior JEPA on two RTX Pro 6000 Blackwell GPUs; measured throughput projects completion below 24 hours.",
+      "command": ["bash", "scripts/run_igsm_124m_scale.sh", "{python}", "jepa_no_prior", "igsm-124m-jepa-no-prior-under24h-s0"],
+      "expected_artifacts": ["model/last.pt", "model/checkpoint-examples-000204800.pt", "model/checkpoint-examples-51200000.pt", "metrics.json", "stdout.log"]
+    }
+  ]
+}

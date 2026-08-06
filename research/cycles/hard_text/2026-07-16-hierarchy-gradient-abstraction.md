@@ -1,6 +1,6 @@
 # Cycle: hierarchy gradients and abstraction
 
-Status: ready to submit after controller smoke
+Status: fixed-span evidence audited; semantic comparison blocked on one matched control
 
 ## Decision
 
@@ -78,3 +78,56 @@ latent goal distance modestly, but one-token execution drift remains roughly
 .61--.69. The current localized failure is therefore the primitive inverse /
 conditional language-support interface, not only arbitrary off-bank macro
 vectors. Reachability-crossed cells are still running.
+
+## Terminal-summary audit and next decision (2026-07-16)
+
+The newly terminal compact summaries were audited without opening raw logs or
+sibling-project memory. Process state and scientific validity were treated
+separately:
+
+- all twelve fixed-span hierarchy cells completed with exit code 0;
+- all twelve oracle-terminal CEM diagnostic cells completed with exit code 0;
+- three semantic-boundary cells completed with exit code 0; and
+- the semantic flat-objective cell timed out with exit code 124.
+
+Every summary has an empty `metrics` object, no declared artifacts, and
+`scientific_validity: not_assessed`. They therefore establish terminal process
+state only. They do not validate, invalidate, or extend the interim scientific
+metrics above. In particular, terminal completion of the reachability-crossed
+oracle cells is not evidence of executable planning.
+
+No token_igsm steering inbox existed at the supplied integration-repository
+path. Consequently there were no unhandled steering notes to incorporate, and
+no scientific choice was changed by a note. The supplied allocation snapshot
+did change the operational choice: token_igsm has one guaranteed GPU and 15.0
+project GPU-hours remaining, but only 0.9 GPU-hours remain globally. That rules
+out seed expansion and admits at most one short recovery job.
+
+### Falsifiable decision
+
+Before interpreting the semantic-boundary pilot, recover the missing
+information-matched flat-objective control at seed 0. After recovery, continue
+semantic-boundary work only if the semantic cell improves the predeclared
+future/progress or answer probe relative to **both** the random-matched-boundary
+cell and the flat-objective cell, while state/action variance and effective rank
+remain healthy. If it does not, keep the result as a negative pilot and redirect
+boundary construction. If the recovery again fails to finish or produces
+invalid/missing metrics, repair the measurement pipeline before further GPU
+training. A single exploratory seed cannot trigger scale-up.
+
+### Minimal recovery design
+
+Run only `semantic-flat-objective-seed-0-recovery` with the existing semantic
+architecture, data, seed, optimizer, three-epoch schedule, and rendered-text
+boundaries, but set both higher-level loss weights to zero. The random-matched
+and semantic cells are already terminal; rerunning them would exceed the global
+headroom without resolving the immediate missing-control problem. The recovery
+has a 50-minute one-GPU walltime (0.83 GPU-hours), writes a checkpoint plus
+representation and gradient diagnostics, and does not submit automatically.
+
+Primary comparisons after recovery are final-answer accuracy and
+remaining-fraction R2 at token, phrase, and sentence levels. Health gates are
+finite losses, non-collapsed state/action standard deviation and effective
+rank, and nonzero encoder gradients for active objectives. Endpoint-token and
+segment-length probes are diagnostics for lexical/length shortcuts, not proof
+of abstraction. Oracle-terminal CEM remains a separate, privileged diagnostic.

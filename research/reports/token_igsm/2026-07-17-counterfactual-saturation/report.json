@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "id": "2026-07-17-counterfactual-saturation",
+  "project": "token_igsm",
+  "title": "More candidate actions improved ranking, but not planning",
+  "created_at": "2026-07-17T21:00:00+02:00",
+  "status": "complete",
+  "decision": "Stop increasing primitive counterfactual count and test proposal coverage at fixed count.",
+  "plain_summary": "Ranking improved with more candidate tokens, but reference selection and executable planning did not.",
+  "report": "REPORT.md",
+  "review_required": true
+}
+

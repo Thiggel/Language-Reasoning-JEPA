@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-token-jepa-packed-rtxpro-edge",
+  "decision": "Resolve the final RTX Pro 6000 physical batch boundary between fitting 52 and failing 56 sequences.",
+  "git_commit": "32f63d5482d3ebe6b78d686bfe50413e9c00c12a",
+  "jobs": [
+    {
+      "id": "rtxpro-packed-final-edge", "cluster": "alex", "partition": "rtxpro6k", "gpu_type": "rtxpro6k", "gpus": 1, "cpus": 16, "min_gpu_memory_mb": 90000, "walltime_minutes": 15,
+      "purpose": "Test every remaining candidate at the observed RTX Pro capacity edge.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "jepa_visreg_packed", "53", "54", "55"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb53.json", "benchmark_mb55.json", "stdout.log"]
+    }
+  ]
+}

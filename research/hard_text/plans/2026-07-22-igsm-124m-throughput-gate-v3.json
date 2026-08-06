@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-igsm-124m-throughput-gate-v3",
+  "decision": "Submit the twelve throughput cells not accepted in the transient Alex network partial submission; the token-LM microbatch-16 cell remains uniquely tracked by v2.",
+  "git_commit": "0142146e98ec1b767fadfd6280e3590a207b3058",
+  "jobs": [
+    {"id":"bench-token-lm-mb32","cluster":"Lise","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full-objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","token_lm","32"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-sentence-lm-mb4","cluster":"Lise","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full-objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","sentence_lm","4"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-sentence-lm-mb8","cluster":"Lise","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full-objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","sentence_lm","8"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-sentence-lm-mb16","cluster":"Lise","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full-objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","sentence_lm","16"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-prior-mb2","cluster":"Lise","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_prior","2"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-prior-mb4","cluster":"Lise","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_prior","4"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-prior-mb8","cluster":"Grete","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_prior","8"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-prior-mb16","cluster":"Grete","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_prior","16"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-no-prior-mb2","cluster":"Grete","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_no_prior","2"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-no-prior-mb4","cluster":"Grete","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_no_prior","4"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-no-prior-mb8","cluster":"Grete","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_no_prior","8"],"expected_artifacts":["benchmark.json","stdout.log"]},
+    {"id":"bench-jepa-no-prior-mb16","cluster":"Grete","gpus":1,"cpus":8,"min_gpu_memory_mb":75000,"walltime_minutes":60,"purpose":"Full GAR+dense objective throughput gate.","command":["bash","scripts/run_igsm_124m_benchmark.sh","{python}","jepa_no_prior","16"],"expected_artifacts":["benchmark.json","stdout.log"]}
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-20-flat-sentence-prior-blend",
+  "decision": "Can latent oracle or GAR scores improve ordinary prior-guided beam search when they correct rather than replace cumulative token probabilities?",
+  "git_commit": "aa066eac5a4977224b4cc5557d11a15e408afb8e",
+  "jobs": [
+    {
+      "id": "flat-sentence-joint-prior-gar-blend-seed0",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 40000, "walltime_minutes": 180,
+      "purpose": "Sweep cumulative-prior weights for oracle and GAR beam scores on the joint-prior GAR checkpoint.",
+      "command": ["bash", "scripts/run_flat_sentence_blend_eval.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-flat-sentence-beam-control/flat-sentence-joint-prior-gar-seed0/model/best.pt"],
+      "expected_artifacts": ["metrics.json"]
+    },
+    {
+      "id": "flat-sentence-detached-prior-gar-blend-seed0",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 40000, "walltime_minutes": 180,
+      "purpose": "Sweep cumulative-prior weights for oracle and GAR beam scores when prior gradients were detached from the encoder.",
+      "command": ["bash", "scripts/run_flat_sentence_blend_eval.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-flat-sentence-beam-control/flat-sentence-detached-prior-gar-seed0/model/best.pt"],
+      "expected_artifacts": ["metrics.json"]
+    },
+    {
+      "id": "flat-sentence-joint-prior-no-gar-blend-seed0",
+      "cluster": "gruenau", "gpus": 1, "cpus": 4,
+      "min_gpu_memory_mb": 40000, "walltime_minutes": 180,
+      "purpose": "Matched no-GAR negative control for deciding whether any blend gain comes from GAR-shaped geometry.",
+      "command": ["bash", "scripts/run_flat_sentence_blend_eval.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/token_igsm/2026-07-20-flat-sentence-beam-control/flat-sentence-joint-prior-no-gar-seed0/model/best.pt"],
+      "expected_artifacts": ["metrics.json"]
+    }
+  ]
+}

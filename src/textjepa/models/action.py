@@ -101,12 +101,13 @@ class MacroActionEncoder(nn.Module):
         d_hidden: int = 128,
         n_layers: int = 2,
         n_heads: int = 4,
+        max_actions: int = 64,
     ):
         super().__init__()
         self.inp = nn.Linear(d_action, d_hidden)
         self.cls = nn.Parameter(torch.zeros(1, 1, d_hidden))
         nn.init.normal_(self.cls, std=0.02)
-        self.pos = nn.Parameter(torch.zeros(1, 65, d_hidden))
+        self.pos = nn.Parameter(torch.zeros(1, max_actions + 1, d_hidden))
         nn.init.normal_(self.pos, std=0.02)
         self.encoder = encoder_stack(d_hidden, n_layers, n_heads, 2, 0.0)
         self.out = nn.Linear(d_hidden, d_macro)
@@ -184,10 +185,18 @@ class MacroActionModel(nn.Module):
         variational: bool = False,
         concat_width: int = 8,
         hidden: int = 256,
+        transformer_hidden: int = 128,
+        transformer_layers: int = 2,
+        transformer_heads: int = 4,
+        transformer_max_actions: int = 64,
     ):
         super().__init__()
         if kind == "transformer":
-            self.encoder = MacroActionEncoder(d_action, d_macro)
+            self.encoder = MacroActionEncoder(
+                d_action, d_macro, d_hidden=transformer_hidden,
+                n_layers=transformer_layers, n_heads=transformer_heads,
+                max_actions=transformer_max_actions,
+            )
         elif kind == "concat":
             self.encoder = ConcatMacroActionEncoder(
                 d_action, d_macro, span, concat_width

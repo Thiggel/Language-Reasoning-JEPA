@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-22-sentence-lm-capacity-gate",
+  "decision": "Measure the safe per-A100 physical batch for the 124M sentence-LM baseline before submitting the corrected two-GPU paper-scale comparison.",
+  "git_commit": "3992199a36fe8e4a454a6ca3381c3d164b83321f",
+  "jobs": [
+    {
+      "id": "a100-sentence-lm-capacity", "cluster": "Lise", "partition": "gpu-a100:test", "gpus": 1, "cpus": 8, "min_gpu_memory_mb": 75000, "walltime_minutes": 30,
+      "purpose": "Find sentence-LM capacity and throughput on the same A100 software stack.",
+      "command": ["bash", "scripts/run_igsm_124m_capacity_ladder.sh", "{python}", "sentence_lm", "4", "8", "16", "24", "32", "48", "64", "96", "128"],
+      "expected_artifacts": ["capacity_summary.json", "benchmark_mb4.json", "benchmark_mb128.json", "stdout.log"]
+    }
+  ]
+}
