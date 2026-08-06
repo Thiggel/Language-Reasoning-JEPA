@@ -327,6 +327,91 @@ class GeoHorizonRank(GeoAdvantageRank):
         return rank(energy, label, valid)
 
 
+class GeoHorizonEnergyRegression(Objective):
+    """Regress endpoint Energy to absolute EMA endpoint-to-goal distance."""
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "ga_horizon_energy" not in out.extras:
+            return out.step_states.sum() * 0.0
+        energy = out.extras["ga_horizon_energy"]
+        target = out.extras["ga_horizon_label"].detach()
+        valid = out.extras["ga_horizon_valid"] & torch.isfinite(target)
+        safe = target.masked_fill(~valid, 0.0)
+        error = (energy - safe).square()
+        return error[valid].sum() / valid.sum().clamp(min=1)
+
+
+class GeoHorizonStraightening(Objective):
+    """Straighten recursively predicted counterfactual prefix trajectories.
+
+    Velocities are divided by the gap between supervised depths, so sparse
+    depths such as 2->4 and 8->16 do not receive larger magnitude merely
+    because they span more predictor applications.
+    """
+
+    def __init__(self, projected: bool = False):
+        super().__init__()
+        self.projected = bool(projected)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        key = (
+            "ga_horizon_projected_states"
+            if self.projected else "ga_horizon_states"
+        )
+        if key not in out.extras:
+            return out.step_states.sum() * 0.0
+        states = out.extras[key]
+        valid = out.extras.get(
+            "ga_horizon_dynamic_valid", out.extras["ga_horizon_valid"]
+        )
+        depths = out.extras["ga_horizon_depths"].to(states.dtype)
+        if states.shape[-2] < 3:
+            return states.sum() * 0.0
+        gaps = torch.diff(depths).clamp_min(1).view(
+            *((1,) * (states.ndim - 2)), -1, 1
+        )
+        velocity = torch.diff(states, dim=-2) / gaps
+        cosine = torch.nn.functional.cosine_similarity(
+            velocity[..., :-1, :], velocity[..., 1:, :], dim=-1
+        )
+        pair_valid = valid[..., :-2] & valid[..., 1:-1] & valid[..., 2:]
+        return ((1.0 - cosine) * pair_valid).sum() / pair_valid.sum().clamp(min=1)
+
+
+class GeoHorizonMonotonicity(Objective):
+    """Make Energy or projected goal distance decrease on good prefixes only."""
+
+    def __init__(self, margin: float = 0.02, projected: bool = False):
+        super().__init__()
+        self.margin = float(margin)
+        self.projected = bool(projected)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "ga_horizon_energy" not in out.extras:
+            return out.step_states.sum() * 0.0
+        teacher = out.extras["ga_horizon_label"].detach()
+        valid = out.extras["ga_horizon_valid"]
+        if self.projected:
+            states = out.extras.get("ga_horizon_projected_states")
+            goal = out.extras.get("ga_horizon_projected_goal")
+            if states is None or goal is None:
+                raise RuntimeError("projected monotonicity requires geo_proj=true")
+            ln = lambda value: torch.nn.functional.layer_norm(
+                value, value.shape[-1:]
+            )
+            score = (
+                ln(states) - ln(goal).view(goal.shape[0], 1, 1, 1, -1)
+            ).abs().mean(-1)
+        else:
+            score = out.extras["ga_horizon_energy"]
+        improves = teacher[..., 1:] < teacher[..., :-1]
+        pair_valid = valid[..., 1:] & valid[..., :-1] & improves
+        loss = torch.nn.functional.relu(
+            score[..., 1:] - score[..., :-1] + self.margin
+        )
+        return (loss * pair_valid).sum() / pair_valid.sum().clamp(min=1)
+
+
 class GeoRolloutAdvantageRegression(Objective):
     """Calibrate pairwise Energy differences at drifted GAR anchors."""
 

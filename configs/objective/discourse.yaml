@@ -148,6 +148,18 @@ geo_horizon_rank:
   kind: hinge
   temperature: 0.3
   teacher_temperature: 0.1
+geo_horizon_energy_mse:
+  _target_: textjepa.objectives.GeoHorizonEnergyRegression
+  weight: 0.0
+geo_horizon_straighten:
+  _target_: textjepa.objectives.GeoHorizonStraightening
+  weight: 0.0
+  projected: false
+geo_horizon_monotone:
+  _target_: textjepa.objectives.GeoHorizonMonotonicity
+  weight: 0.0
+  margin: 0.02
+  projected: false
 geo_rollout_advantage_mse:
   _target_: textjepa.objectives.GeoRolloutAdvantageRegression
   weight: 0.0

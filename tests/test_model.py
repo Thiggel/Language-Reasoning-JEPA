@@ -907,6 +907,75 @@ def test_horizon_gar_can_supervise_every_rollout_prefix():
     assert torch.isfinite(loss)
 
 
+def test_horizon_energy_selected_depths_include_anchor_and_are_trainable():
+    from textjepa.objectives import (
+        GeoHorizonEnergyRegression,
+        GeoHorizonMonotonicity,
+        GeoHorizonRank,
+        GeoHorizonStraightening,
+    )
+
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(
+        vocab, size=4, seed=61, geo_rank_k=2,
+        geo_rank_horizon=4, geo_rank_rollouts=2,
+        geo_rank_policy="random",
+    )
+    batch = collate([dataset[i] for i in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="horizon",
+        geo_horizon_supervise_prefixes=True,
+        geo_horizon_prefix_depths=[0, 1, 2, 4], value_detach=False,
+    )
+    out = model(batch)
+    assert out.extras["ga_horizon_energy"].shape == (4, 3, 2, 4)
+    assert out.extras["ga_horizon_depths"].tolist() == [0, 1, 2, 4]
+    for objective in (
+        GeoHorizonEnergyRegression(),
+        GeoHorizonRank(kind="logistic"),
+        GeoHorizonStraightening(),
+        GeoHorizonMonotonicity(),
+    ):
+        loss = objective(out, batch)
+        assert torch.isfinite(loss)
+
+
+def test_projected_horizon_geometry_routes_through_projection():
+    from textjepa.objectives import (
+        GeoHorizonMonotonicity,
+        GeoHorizonStraightening,
+    )
+
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(
+        vocab, size=4, seed=63, geo_rank_k=2,
+        geo_rank_horizon=4, geo_rank_rollouts=2,
+        geo_rank_policy="random",
+    )
+    batch = collate([dataset[i] for i in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="horizon",
+        geo_horizon_supervise_prefixes=True,
+        geo_horizon_prefix_depths=[0, 1, 2, 4],
+        geo_proj=True, value_detach=False,
+    )
+    out = model(batch)
+    loss = GeoHorizonStraightening(projected=True)(out, batch)
+    loss = loss + GeoHorizonMonotonicity(projected=True)(out, batch)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert any(
+        parameter.grad is not None
+        for parameter in model.core.geo_head.parameters()
+    )
+
+
 def test_dense_horizon_ranking_never_compares_different_depths():
     from types import SimpleNamespace
 

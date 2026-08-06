@@ -114,6 +114,7 @@ class DiscourseJEPA(nn.Module):
         geo_rank_rollout_detach_body: bool = False,
         geo_rank_label_control: str = "true",
         geo_horizon_supervise_prefixes: bool = False,
+        geo_horizon_prefix_depths: list[int] | None = None,
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
@@ -196,6 +197,13 @@ class DiscourseJEPA(nn.Module):
         self.geo_horizon_supervise_prefixes = bool(
             geo_horizon_supervise_prefixes
         )
+        self.geo_horizon_prefix_depths = tuple(
+            sorted(set(geo_horizon_prefix_depths or []))
+        )
+        if any(depth < 0 for depth in self.geo_horizon_prefix_depths):
+            raise ValueError("horizon Energy prefix depths must be non-negative")
+        if self.geo_horizon_prefix_depths and not self.geo_horizon_supervise_prefixes:
+            raise ValueError("prefix depths require prefix Energy supervision")
         if action_support_states not in {"none", "true", "all"}:
             raise ValueError(
                 f"unknown action-support state mode: {action_support_states}"
@@ -928,36 +936,104 @@ class DiscourseJEPA(nn.Module):
                 B_h, 1, 1
             ).expand(B_h, C_h, R_h).reshape(-1)
             if self.geo_horizon_supervise_prefixes:
-                endpoints = torch.stack(predicted_prefixes, dim=1)
+                all_endpoints = torch.stack(
+                    [root, *predicted_prefixes], dim=1
+                )
+                selected_depths = self.geo_horizon_prefix_depths or tuple(
+                    range(1, H + 1)
+                )
+                max_depth = max(selected_depths)
+                if max_depth > H:
+                    absorbing = all_endpoints[:, -1:].expand(
+                        -1, max_depth - H, -1
+                    )
+                    all_endpoints = torch.cat(
+                        [all_endpoints, absorbing], dim=1
+                    )
+                depth_index = torch.tensor(
+                    selected_depths, device=device, dtype=torch.long
+                )
+                endpoints = all_endpoints.index_select(1, depth_index)
                 roots = root.unsqueeze(1).expand_as(endpoints)
                 initials = initial_h.unsqueeze(1).expand_as(endpoints)
-                depths = torch.arange(
-                    1, H + 1, device=device, dtype=endpoints.dtype
-                ).view(1, H).expand(endpoints.shape[0], -1)
+                depths = depth_index.to(endpoints.dtype).view(1, -1).expand(
+                    endpoints.shape[0], -1
+                )
                 out.extras["ga_horizon_energy"] = (
                     self.core.horizon_energy_head(
                         roots, endpoints, initials, depths
-                    ).reshape(B_h, C_h, R_h, H)
+                    ).reshape(B_h, C_h, R_h, -1)
                 )
-                positions = (
+                rollout_positions = (
                     t.view(B_h, 1, 1, 1)
                     + torch.arange(H, device=device).view(1, 1, 1, H)
                 ).expand(B_h, C_h, R_h, H)
-                true_prefixes = rollout_states_grid.gather(
+                true_after_actions = rollout_states_grid.gather(
                     3,
-                    positions.clamp_max(rollout_states_grid.shape[3] - 1)
+                    rollout_positions.clamp_max(
+                        rollout_states_grid.shape[3] - 1
+                    )
                     .unsqueeze(-1).expand(-1, -1, -1, -1,
                                          rollout_states_grid.shape[-1]),
                 )
+                true_root = out.extras["prev_states_tgt"][bidx, t].view(
+                    B_h, 1, 1, 1, -1
+                ).expand(B_h, C_h, R_h, 1, -1)
+                all_true_prefixes = torch.cat(
+                    [true_root, true_after_actions], dim=3
+                )
+                if max_depth > H:
+                    absorbing_true = all_true_prefixes[..., -1:, :].expand(
+                        -1, -1, -1, max_depth - H, -1
+                    )
+                    all_true_prefixes = torch.cat(
+                        [all_true_prefixes, absorbing_true], dim=3
+                    )
+                true_prefixes = all_true_prefixes.index_select(3, depth_index)
                 out.extras["ga_horizon_label"] = (
                     ln(true_prefixes)
                     - ln(goal).view(B_h, 1, 1, 1, -1)
                 ).abs().mean(-1)
+                # Requested depths after a terminal/exhausted continuation
+                # are absorbing endpoints, not missing examples.  Keeping
+                # them valid prevents effective rollout length from leaking
+                # terminality and matches terminal-safe planning evaluation.
+                all_prefix_valid = torch.ones(
+                    B_h, C_h, R_h, max_depth + 1,
+                    dtype=torch.bool, device=device,
+                )
                 out.extras["ga_horizon_valid"] = (
                     batch["ga_rollout_valid"].unsqueeze(-1)
-                    & action_mask
+                    & all_prefix_valid.index_select(3, depth_index)
                     & valid_b.view(B_h, 1, 1, 1)
                 )
+                dynamic_valid = torch.cat([
+                    torch.ones_like(action_mask[..., :1]), action_mask
+                ], dim=-1)
+                if max_depth > H:
+                    dynamic_valid = torch.cat([
+                        dynamic_valid,
+                        torch.zeros(
+                            B_h, C_h, R_h, max_depth - H,
+                            dtype=torch.bool, device=device,
+                        ),
+                    ], dim=-1)
+                out.extras["ga_horizon_dynamic_valid"] = (
+                    dynamic_valid.index_select(3, depth_index)
+                    & batch["ga_rollout_valid"].unsqueeze(-1)
+                    & valid_b.view(B_h, 1, 1, 1)
+                )
+                out.extras["ga_horizon_states"] = endpoints.reshape(
+                    B_h, C_h, R_h, -1, endpoints.shape[-1]
+                )
+                out.extras["ga_horizon_depths"] = depth_index
+                if self.core.geo_head is not None:
+                    projected = self.core.geo_head(endpoints)
+                    projected_goal = self.core.geo_head(goal.detach()).detach()
+                    out.extras["ga_horizon_projected_states"] = projected.reshape(
+                        B_h, C_h, R_h, -1, projected.shape[-1]
+                    )
+                    out.extras["ga_horizon_projected_goal"] = projected_goal
             else:
                 out.extras["ga_horizon_energy"] = (
                     self.core.horizon_energy_head(

@@ -13,10 +13,11 @@ search_algorithm=${SEARCH_ALGORITHM:-beam}
 hybrid_local_pruning=${HYBRID_LOCAL_PRUNING:-false}
 candidate_interface=${CANDIDATE_INTERFACE:-feasible_menu}
 invalid_action_mode=${INVALID_ACTION_MODE:-noop}
+depths=${EVAL_DEPTHS:-"1 4 8 16"}
 case "$composition" in cumulative|terminal|root) ;; *)
   echo "invalid transition Energy composition: $composition" >&2; exit 2;;
 esac
-for depth in 1 4 8 16; do
+for depth in $depths; do
   oracle=false
   if [[ "$depth" -gt 1 && "$candidate_interface" == feasible_menu ]]; then
     oracle=true
@@ -35,10 +36,10 @@ for depth in 1 4 8 16; do
 done
 "$py" - "$RUN_DIR" "$label" "$checkpoint" "$episodes" "$width" \
   "$composition" "$search_algorithm" "$hybrid_local_pruning" \
-  "$candidate_interface" "$invalid_action_mode" <<'PY'
+  "$candidate_interface" "$invalid_action_mode" "$depths" <<'PY'
 import hashlib,json,pathlib,sys
 r=pathlib.Path(sys.argv[1]); curves={}
-for depth in (1,4,8,16):
+for depth in map(int, sys.argv[11].split()):
     curves[str(depth)]={}
     for slack in (0,2):
         p=r/f'terminal_depth{depth}_slack{slack}.json'
