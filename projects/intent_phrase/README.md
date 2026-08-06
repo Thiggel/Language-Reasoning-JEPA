@@ -33,12 +33,15 @@ into the flat recipe.
 
 ## Current state
 
-- The five-seed terminal-safe endpoint model reaches strict success
-  `.120 +/- .012`, `.834 +/- .018`, `.874 +/- .029`, and `.877 +/- .029` at
-  search depths `1,4,8,16`.
-- The validated recipe uses recursive MLP prediction, mixed training horizons
-  `{1,2,4,8}`, four sampled continuations per root, endpoint ranking, no dense
-  rollout loss, and root-balanced beam search.
+- The frozen five-seed horizon-blind endpoint model (2026-08-07) reaches
+  strict success `.126 +/- .005`, `.450 +/- .031`, `.837 +/- .019`,
+  `.879 +/- .027`, `.884 +/- .023` at search depths `1,2,4,8,16`.
+- The frozen recipe uses recursive MLP prediction, mixed training horizons
+  `{1,2,4,8}`, four sampled continuations per root, a horizon-blind endpoint
+  Energy (no depth input), the 0.25 root pair-difference auxiliary, endpoint
+  ranking, no dense rollout loss, and root-balanced beam search. Same-protocol
+  TD competitor energies (SARSA TD-Q, expectile goal-value) do not convert
+  search depth into accuracy.
 - Depth above one currently uses symbolic future feasible menus and is
   candidate-privileged.
 - The primary open test removes the feasible menu and scores the complete

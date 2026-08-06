@@ -123,3 +123,17 @@ Same-protocol competitor energies (one seed each): TD-Q (SARSA, amortized)
 .190/.210/.240/.223/.220 — myopically stronger at D1, cannot exploit search;
 expectile goal-value .057-.187 — near random. See
 `../2026-08-06-competitor-energy-baselines/REPORT.md`.
+
+## Final five-seed frozen-recipe headline (2026-08-07)
+
+| Depth | Strict | Slack-2 |
+|---:|---:|---:|
+| 1 | .126 ± .005 | .541 ± .023 |
+| 2 | .450 ± .031 | .863 ± .008 |
+| 4 | .837 ± .019 | .979 ± .008 |
+| 8 | .879 ± .027 | .991 ± .004 |
+| 16 | .884 ± .023 | .995 ± .004 |
+
+References (same episodes): random .053, first-feasible .247, oracle 1.000.
+The frozen coherent recipe slightly exceeds the superseded horizon-conditioned
+headline at every depth >= 4.

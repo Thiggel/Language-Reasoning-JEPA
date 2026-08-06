@@ -40,6 +40,7 @@ unrestricted language-reasoning agent.
 | Action width | 16 |
 | Predictor | residual concatenation MLP |
 | Training horizons | sampled from `{1,2,4,8}` |
+| Horizon input to Energy head | none (horizon-blind) |
 | Rollouts per root | 4 |
 | Alternative roots | 2 plus the factual root |
 | Endpoint loss | logistic pairwise ranking |
@@ -47,11 +48,16 @@ unrestricted language-reasoning agent.
 | Dropout | 0 |
 | Examples | 300,000 fresh generated problems |
 | Test search | root-balanced beam, width 8 |
-| Test depths | `1,4,8,16` |
+| Test depths | `1,2,4,8,16` |
 | Beam score | final endpoint Energy only |
 
-Terminal-safe five-seed strict success is
-`.120, .834, .874, .877` at depths `1,4,8,16`.
+Frozen-recipe (horizon-blind Energy, 2026-08-07) five-seed strict success is
+`.126, .450, .837, .879, .884` at depths `1,2,4,8,16`
+(slack-2 `.541, .863, .979, .991, .995`). The earlier horizon-conditioned
+mixed-horizon result (`.120, .834, .874, .877` at depths `1,4,8,16`) is
+superseded: the Energy head no longer receives any horizon input, which
+removes every out-of-support depth query, and the 0.25 root pair-difference
+auxiliary is retained (coherent: one shared Energy semantics).
 
 ## Independent depths
 
