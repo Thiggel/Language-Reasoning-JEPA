@@ -12,6 +12,7 @@ composition=${TRANSITION_ENERGY_COMPOSITION:-terminal}
 search_algorithm=${SEARCH_ALGORITHM:-beam}
 hybrid_local_pruning=${HYBRID_LOCAL_PRUNING:-false}
 candidate_interface=${CANDIDATE_INTERFACE:-feasible_menu}
+invalid_action_mode=${INVALID_ACTION_MODE:-noop}
 case "$composition" in cumulative|terminal|root) ;; *)
   echo "invalid transition Energy composition: $composition" >&2; exit 2;;
 esac
@@ -27,13 +28,14 @@ for depth in 1 4 8 16; do
       transition_energy_composition="$composition" \
       hybrid_local_pruning="$hybrid_local_pruning" \
       candidate_interface="$candidate_interface" \
+      invalid_action_mode="$invalid_action_mode" \
       allow_oracle_future_actions="$oracle" \
       out="$RUN_DIR/terminal_depth${depth}_slack${slack}.json"
   done
 done
 "$py" - "$RUN_DIR" "$label" "$checkpoint" "$episodes" "$width" \
   "$composition" "$search_algorithm" "$hybrid_local_pruning" \
-  "$candidate_interface" <<'PY'
+  "$candidate_interface" "$invalid_action_mode" <<'PY'
 import hashlib,json,pathlib,sys
 r=pathlib.Path(sys.argv[1]); curves={}
 for depth in (1,4,8,16):
@@ -48,6 +50,7 @@ ckpt=pathlib.Path(sys.argv[3])
     'search_algorithm':sys.argv[7],
     'hybrid_local_pruning':sys.argv[8].lower() == 'true',
     'candidate_interface':sys.argv[9],
+    'invalid_action_mode':sys.argv[10],
     'transition_energy_composition':sys.argv[6],
     'n_episodes':int(sys.argv[4]), 'beam_width':int(sys.argv[5]),
     'metrics_by_depth_and_slack':curves,

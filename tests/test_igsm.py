@@ -373,6 +373,33 @@ def test_full_catalogue_horizon_data_contains_grounded_invalid_roots():
     )
 
 
+def test_invalid_action_failure_is_absorbing():
+    from textjepa.data.igsm.env import INVALID_ACTION_FAILURE
+
+    problem, _ = _problem(31)
+    env = SymbolicEnv(problem, invalid_action_mode="failure")
+    invalid = env.feasible_actions()[0]
+    env.step(invalid)
+    assert env.step_or_invalid(invalid) == INVALID_ACTION_FAILURE
+    assert env.failed and not env.solved and env.feasible_actions() == []
+    assert env.step_or_invalid(0) == INVALID_ACTION_FAILURE
+
+
+def test_full_catalogue_balanced_sampling_limits_each_candidate_stratum():
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(
+        vocab, size=32, seed=223, geo_rank_k=-1,
+        geo_rank_horizon=4, geo_rank_rollouts=2,
+        geo_rank_candidate_interface="full_catalogue",
+        geo_rank_feasible_k=2, geo_rank_invalid_k=2,
+    )
+    for index in range(len(dataset)):
+        item = dataset[index]
+        if "ga_candidate_ids" not in item:
+            continue
+        assert len(item["ga_candidate_ids"]) <= 5
+
+
 def test_geometry_greedy_metadata_collates_without_symbolic_quality_labels():
     vocab = build_vocab(23)
     ds = IGSMDataset(

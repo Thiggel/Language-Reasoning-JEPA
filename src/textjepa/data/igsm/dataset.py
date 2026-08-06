@@ -108,6 +108,9 @@ class IGSMDataset(Dataset):
         geo_rank_policy: str = "random",
         geo_rank_beam_width: int = 1,
         geo_rank_candidate_interface: str = "feasible_menu",
+        geo_rank_feasible_k: int | None = None,
+        geo_rank_invalid_k: int | None = None,
+        invalid_action_mode: str = "noop",
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
@@ -139,6 +142,9 @@ class IGSMDataset(Dataset):
         self.geo_rank_candidate_interface = str(
             geo_rank_candidate_interface
         )
+        self.geo_rank_feasible_k = geo_rank_feasible_k
+        self.geo_rank_invalid_k = geo_rank_invalid_k
+        self.invalid_action_mode = str(invalid_action_mode)
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
@@ -152,6 +158,10 @@ class IGSMDataset(Dataset):
             raise ValueError(
                 "unknown geometric-ranking candidate interface: "
                 f"{self.geo_rank_candidate_interface}"
+            )
+        if self.invalid_action_mode not in {"noop", "failure"}:
+            raise ValueError(
+                f"unknown invalid action mode: {self.invalid_action_mode}"
             )
         self.adjectives = adjectives or DEFAULT_ADJECTIVES
         self.nouns = nouns or DEFAULT_NOUNS
@@ -238,14 +248,31 @@ class IGSMDataset(Dataset):
             # step sentences (text only; the ranking label is computed in
             # latent space by the model — no symbolic annotations)
             t_star = rng.randrange(len(trace))
-            env2 = SymbolicEnv(p)
+            env2 = SymbolicEnv(p, self.invalid_action_mode)
             for i in trace[:t_star]:
                 env2.step(i)
             if self.geo_rank_candidate_interface == "full_catalogue":
-                others = [
-                    variable.idx for variable in p.vars
-                    if variable.idx != trace[t_star]
+                feasible = set(env2.feasible_actions())
+                valid_others = [
+                    action for action in feasible
+                    if action != trace[t_star]
                 ]
+                invalid_others = [
+                    variable.idx for variable in p.vars
+                    if variable.idx not in feasible
+                ]
+                rng.shuffle(valid_others)
+                rng.shuffle(invalid_others)
+                if (
+                    self.geo_rank_feasible_k is not None
+                    or self.geo_rank_invalid_k is not None
+                ):
+                    others = (
+                        valid_others[: self.geo_rank_feasible_k or 0]
+                        + invalid_others[: self.geo_rank_invalid_k or 0]
+                    )
+                else:
+                    others = valid_others + invalid_others
             else:
                 others = [
                     a for a in env2.feasible_actions() if a != trace[t_star]
@@ -319,6 +346,17 @@ class IGSMDataset(Dataset):
                             for _depth in range(1, geo_rank_horizon):
                                 if roll_env.solved:
                                     break
+                                if roll_env.failed:
+                                    # Supply absorbing-failure transitions so
+                                    # imagined search cannot escape the state.
+                                    nxt = rng.randrange(len(p.vars))
+                                    action_sequence.append(
+                                        self.vocab.encode(action_phrase(p, nxt))
+                                    )
+                                    sequence.append(self.vocab.encode(
+                                        roll_env.step_or_invalid(nxt)
+                                    ))
+                                    continue
                                 feasible = roll_env.feasible_actions()
                                 if not feasible:
                                     break

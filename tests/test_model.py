@@ -883,6 +883,30 @@ def test_horizon_gar_ranks_recursively_imagined_rollout_endpoints():
     )
 
 
+def test_horizon_gar_can_supervise_every_rollout_prefix():
+    from textjepa.objectives import GeoHorizonRank
+
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(
+        vocab, size=4, seed=59, geo_rank_k=2,
+        geo_rank_horizon=4, geo_rank_rollouts=2,
+        geo_rank_policy="random",
+    )
+    batch = collate([dataset[i] for i in range(4)], vocab.pad_id)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="horizon",
+        geo_horizon_supervise_prefixes=True, value_detach=False,
+    )
+    out = model(batch)
+    assert out.extras["ga_horizon_energy"].shape == (4, 3, 2, 4)
+    assert out.extras["ga_horizon_label"].shape == (4, 3, 2, 4)
+    loss = GeoHorizonRank(kind="logistic")(out, batch)
+    assert torch.isfinite(loss)
+
+
 def test_horizon_gar_uses_requested_not_effective_terminal_length():
     vocab = build_vocab(23)
     dataset = IGSMDataset(

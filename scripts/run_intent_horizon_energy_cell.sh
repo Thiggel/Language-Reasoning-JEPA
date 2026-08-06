@@ -12,6 +12,7 @@ episodes=${N_EPISODES:-300}; width=${BEAM_WIDTH:-8}
 horizon=4; horizons=null; dense_depth=4; dense_weight=1
 dense_discount=1; rollouts=4; frozen=false
 root_distill_weight=0.25; candidate_interface=feasible_menu; rank_k=2
+feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
 case "$variant" in
   fixed_h4) ;;
   mix_uniform)
@@ -42,6 +43,29 @@ case "$variant" in
   mix_no_dense_full_catalogue)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     candidate_interface=full_catalogue; rank_k=-1 ;;
+  full_catalogue_noop_balanced)
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    candidate_interface=full_catalogue; rank_k=-1
+    feasible_k=2; invalid_k=2 ;;
+  full_catalogue_failure_all)
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    candidate_interface=full_catalogue; rank_k=-1; invalid_mode=failure ;;
+  full_catalogue_failure_balanced)
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    candidate_interface=full_catalogue; rank_k=-1; invalid_mode=failure
+    feasible_k=2; invalid_k=2 ;;
+  dense_endpoint_h2)
+    horizon=2; horizons=null; dense_depth=0; dense_weight=0
+    prefix_energy=true ;;
+  dense_endpoint_h4)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    prefix_energy=true ;;
+  dense_endpoint_h8)
+    horizon=8; horizons=null; dense_depth=0; dense_weight=0
+    prefix_energy=true ;;
+  dense_endpoint_h16)
+    horizon=16; horizons=null; dense_depth=0; dense_weight=0
+    prefix_energy=true ;;
   frozen_mix)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     frozen=true ;;
@@ -74,7 +98,11 @@ fi
   data.geo_rank_rollout_for_h1=true \
   data.geo_rank_candidate_interface="$candidate_interface" \
   data.geo_rank_k="$rank_k" \
+  data.geo_rank_feasible_k="$feasible_k" \
+  data.geo_rank_invalid_k="$invalid_k" \
+  data.invalid_action_mode="$invalid_mode" \
   model.geo_rank_score_mode=horizon model.geo_energy_target=distance \
+  model.geo_horizon_supervise_prefixes="$prefix_energy" \
   model.dense_rollout_depth="$dense_depth" \
   objective.geo_rank.weight=0 objective.geo_energy_mse.weight=0 \
   objective.geo_advantage_mse.weight="$root_distill_weight" \
@@ -89,24 +117,28 @@ if [[ "$frozen" == true ]]; then
   RUN_DIR="$RUN_DIR/horizon_only" N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
     CANDIDATE_INTERFACE="$candidate_interface" \
+    INVALID_ACTION_MODE="$invalid_mode" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-horizon-only"
   N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=true \
     CANDIDATE_INTERFACE="$candidate_interface" \
+    INVALID_ACTION_MODE="$invalid_mode" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-hybrid"
 else
   N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
     CANDIDATE_INTERFACE="$candidate_interface" \
+    INVALID_ACTION_MODE="$invalid_mode" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant"
 fi
 
 "$py" - "$RUN_DIR" "$variant" "$seed" "$lr" "$horizons" \
   "$dense_depth" "$dense_weight" "$dense_discount" "$frozen" \
-  "$root_distill_weight" "$candidate_interface" "$rank_k" <<'PY'
+  "$root_distill_weight" "$candidate_interface" "$rank_k" \
+  "$feasible_k" "$invalid_k" "$invalid_mode" "$prefix_energy" <<'PY'
 import json, pathlib, sys
 r = pathlib.Path(sys.argv[1])
 (r / "training_complete.json").write_text(json.dumps({
@@ -120,5 +152,9 @@ r = pathlib.Path(sys.argv[1])
     "root_distill_weight": float(sys.argv[10]),
     "candidate_interface": sys.argv[11],
     "rank_alternatives": int(sys.argv[12]),
+    "feasible_alternatives": sys.argv[13],
+    "invalid_alternatives": sys.argv[14],
+    "invalid_action_mode": sys.argv[15],
+    "supervise_energy_prefixes": sys.argv[16].lower() == "true",
 }, indent=2) + "\n")
 PY

@@ -148,6 +148,9 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         geo_rank_candidate_interface=d.get(
             "geo_rank_candidate_interface", "feasible_menu"
         ),
+        geo_rank_feasible_k=d.get("geo_rank_feasible_k", None),
+        geo_rank_invalid_k=d.get("geo_rank_invalid_k", None),
+        invalid_action_mode=d.get("invalid_action_mode", "noop"),
         macro_alt_k=d.get("macro_alt_k", 0),
         macro_alt_horizon=d.get("macro_alt_horizon", 3),
         all_action_supervision=d.get("all_action_supervision", False),

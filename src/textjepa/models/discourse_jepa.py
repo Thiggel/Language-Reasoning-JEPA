@@ -113,6 +113,7 @@ class DiscourseJEPA(nn.Module):
         geo_rank_rollout_depths: list[int] | None = None,
         geo_rank_rollout_detach_body: bool = False,
         geo_rank_label_control: str = "true",
+        geo_horizon_supervise_prefixes: bool = False,
         dropout: float = 0.0,
         chunk_target: str = "frozen",  # "frozen" | "ema" anchor for chunk_pred
         freeze_encoders: bool = False,  # baseline: random frozen representation
@@ -192,6 +193,9 @@ class DiscourseJEPA(nn.Module):
                 f"unknown GAR label control: {geo_rank_label_control}"
             )
         self.geo_rank_label_control = geo_rank_label_control
+        self.geo_horizon_supervise_prefixes = bool(
+            geo_horizon_supervise_prefixes
+        )
         if action_support_states not in {"none", "true", "all"}:
             raise ValueError(
                 f"unknown action-support state mode: {action_support_states}"
@@ -827,6 +831,9 @@ class DiscourseJEPA(nn.Module):
                 d = d_rollout.amin(-1)
                 candidate_valid = rv.any(-1) & valid_b.unsqueeze(1)
                 out.extras["ga_rollout_distance"] = d_rollout
+                rollout_states_grid = rollout_states.reshape(
+                    B, C, R, rollout_states.shape[1], -1
+                )
             else:
                 st = batch["step_tokens"]  # [B, T, L]
                 ga_st = batch["ga_alt_step_tokens"]  # [B, K, La]
@@ -893,6 +900,7 @@ class DiscourseJEPA(nn.Module):
                 -1, C_h, R_h, -1
             ).reshape(B_h * C_h * R_h, -1)
             endpoint = root
+            predicted_prefixes = []
             flat_action_mask = action_mask.reshape(B_h * C_h * R_h, H)
             for horizon_index in range(H):
                 proposed = self.core.predictor(
@@ -903,6 +911,7 @@ class DiscourseJEPA(nn.Module):
                     proposed,
                     endpoint,
                 )
+                predicted_prefixes.append(endpoint)
             initial_h = out.s0.unsqueeze(1).unsqueeze(1).expand(
                 -1, C_h, R_h, -1
             ).reshape(B_h * C_h * R_h, -1)
@@ -918,17 +927,51 @@ class DiscourseJEPA(nn.Module):
             rollout_horizon = batch["ga_requested_horizon"].view(
                 B_h, 1, 1
             ).expand(B_h, C_h, R_h).reshape(-1)
-            out.extras["ga_horizon_energy"] = self.core.horizon_energy_head(
-                root, endpoint, initial_h, rollout_horizon
-            ).reshape(B_h, C_h, R_h)
-            out.extras["ga_horizon_label"] = out.extras[
-                "ga_rollout_distance"
-            ]
-            out.extras["ga_horizon_valid"] = (
-                batch["ga_rollout_valid"]
-                & action_mask.any(-1)
-                & valid_b.view(B_h, 1, 1)
-            )
+            if self.geo_horizon_supervise_prefixes:
+                endpoints = torch.stack(predicted_prefixes, dim=1)
+                roots = root.unsqueeze(1).expand_as(endpoints)
+                initials = initial_h.unsqueeze(1).expand_as(endpoints)
+                depths = torch.arange(
+                    1, H + 1, device=device, dtype=endpoints.dtype
+                ).view(1, H).expand(endpoints.shape[0], -1)
+                out.extras["ga_horizon_energy"] = (
+                    self.core.horizon_energy_head(
+                        roots, endpoints, initials, depths
+                    ).reshape(B_h, C_h, R_h, H)
+                )
+                positions = (
+                    t.view(B_h, 1, 1, 1)
+                    + torch.arange(H, device=device).view(1, 1, 1, H)
+                ).expand(B_h, C_h, R_h, H)
+                true_prefixes = rollout_states_grid.gather(
+                    3,
+                    positions.clamp_max(rollout_states_grid.shape[3] - 1)
+                    .unsqueeze(-1).expand(-1, -1, -1, -1,
+                                         rollout_states_grid.shape[-1]),
+                )
+                out.extras["ga_horizon_label"] = (
+                    ln(true_prefixes)
+                    - ln(goal).view(B_h, 1, 1, 1, -1)
+                ).abs().mean(-1)
+                out.extras["ga_horizon_valid"] = (
+                    batch["ga_rollout_valid"].unsqueeze(-1)
+                    & action_mask
+                    & valid_b.view(B_h, 1, 1, 1)
+                )
+            else:
+                out.extras["ga_horizon_energy"] = (
+                    self.core.horizon_energy_head(
+                        root, endpoint, initial_h, rollout_horizon
+                    ).reshape(B_h, C_h, R_h)
+                )
+                out.extras["ga_horizon_label"] = out.extras[
+                    "ga_rollout_distance"
+                ]
+                out.extras["ga_horizon_valid"] = (
+                    batch["ga_rollout_valid"]
+                    & action_mask.any(-1)
+                    & valid_b.view(B_h, 1, 1)
+                )
         true_successors = torch.cat(
             [out.step_states_tgt[bidx, t].unsqueeze(1), s_alt_true], dim=1
         )

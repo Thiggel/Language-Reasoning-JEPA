@@ -77,6 +77,7 @@ def main(cfg: DictConfig) -> None:
                 candidate_interface=cfg.get(
                     "candidate_interface", "feasible_menu"
                 ),
+                invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed

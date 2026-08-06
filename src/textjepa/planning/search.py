@@ -110,6 +110,7 @@ class LatentPlanner:
         transition_energy_composition: str = "terminal",
         hybrid_local_pruning: bool = False,
         candidate_interface: str = "feasible_menu",
+        invalid_action_mode: str = "noop",
     ):
         if candidate_interface not in {"feasible_menu", "full_catalogue"}:
             raise ValueError(
@@ -157,6 +158,7 @@ class LatentPlanner:
         self.transition_energy_composition = transition_energy_composition
         self.hybrid_local_pruning = bool(hybrid_local_pruning)
         self.candidate_interface = candidate_interface
+        self.invalid_action_mode = invalid_action_mode
         if self.hybrid_local_pruning and getattr(
             self.model, "geo_rank_score_mode", "value"
         ) != "horizon":
@@ -175,7 +177,7 @@ class LatentPlanner:
 
     @torch.no_grad()
     def plan_episode(self, problem: Problem, slack: int = 0, seed: int = 0) -> EpisodeResult:
-        env = SymbolicEnv(problem)
+        env = SymbolicEnv(problem, self.invalid_action_mode)
         prompt = prompt_sentences(problem, random.Random(seed))
         prompt_tokens = self._tokens(prompt)
         prompt_mask = torch.ones(1, len(prompt), dtype=torch.bool, device=self.device)
@@ -190,7 +192,7 @@ class LatentPlanner:
             else None
         )
 
-        while not env.solved and len(step_texts) < budget:
+        while not env.solved and not env.failed and len(step_texts) < budget:
             s = self._current_state(prompt_tokens, prompt_mask, step_texts)
             s0 = self._s0(prompt_tokens, prompt_mask)
             state_history, action_codes = self._causal_history(
