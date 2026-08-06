@@ -32,6 +32,8 @@
 /scripts/run_intent_gar_rollout_factorial_cell.sh -export-ignore
 /scripts/run_intent_gar_scoring_cell.sh -export-ignore
 /scripts/run_intent_horizon_energy_cell.sh -export-ignore
+/scripts/run_intent_multidepth_energy_cell.sh -export-ignore
+/scripts/run_intent_multidepth_energy_triplet.sh -export-ignore
 /scripts/train.py -export-ignore
 /scripts/plan.py -export-ignore
 /scripts/audit_intent_gar_geometry.py -export-ignore
