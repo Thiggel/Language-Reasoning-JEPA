@@ -32,6 +32,11 @@ Buffer = list[list[int]]
 ScoreFunction = Callable[[Buffer, list[Edit]], list[float]]
 
 
+def apply_edit(buffer: Buffer, action: Edit) -> None:
+    """Apply one structured edit through the canonical environment helper."""
+    _apply(buffer, action)
+
+
 def copy_buffer(buffer: Buffer) -> Buffer:
     return [list(sentence) for sentence in buffer]
 

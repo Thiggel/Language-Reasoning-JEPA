@@ -328,6 +328,11 @@ def packed_encoder_forward(
     return output
 
 
+# Backward-compatible name used by the token-hierarchy modules.  The flash
+# implementation subsumes the original packed-attention wrapper.
+PackedMultiheadAttention = FlashMultiheadAttention
+
+
 def mlp(dims: list[int], out_dim: int) -> nn.Sequential:
     layers: list[nn.Module] = []
     for i in range(len(dims) - 1):
@@ -505,3 +510,8 @@ def build_causal_attention_mask(
     dead = ~allowed.any(dim=-1)
     allowed[..., 0] |= dead
     return (~allowed).repeat_interleave(n_heads, dim=0)
+
+
+def causal_attention_mask(length: int, device: torch.device) -> torch.Tensor:
+    """Compact shared causal mask (``True`` entries are blocked)."""
+    return torch.ones(length, length, dtype=torch.bool, device=device).triu(1)

@@ -24,6 +24,30 @@ from textjepa.data.igsm.render import prompt_sentences
 from textjepa.data.vocab import Vocab
 
 
+def validate_learned_catalogue_checkpoint(cfg) -> None:
+    """Reject checkpoints that lack learned-catalogue training support."""
+    errors = []
+    if not bool(cfg.model.get("action_prior", False)):
+        errors.append("model.action_prior must be enabled")
+    if cfg.model.get("action_support_states", "true") != "all":
+        errors.append("model.action_support_states must be 'all'")
+    if cfg.model.get("action_prior_states", "true") != "all":
+        errors.append("model.action_prior_states must be 'all'")
+    if cfg.model.get("action_prior_candidate_scope", "feasible") != "catalogue":
+        errors.append("model.action_prior_candidate_scope must be 'catalogue'")
+    if not bool(cfg.data.get("all_action_supervision", False)):
+        errors.append("data.all_action_supervision must be enabled")
+    if float(cfg.objective.get("action_feasibility", {}).get("weight", 0.0)) <= 0:
+        errors.append("objective.action_feasibility.weight must be positive")
+    if float(cfg.objective.get("action_prior", {}).get("weight", 0.0)) <= 0:
+        errors.append("objective.action_prior.weight must be positive")
+    if errors:
+        raise ValueError(
+            "checkpoint is invalid for learned-catalogue planning: "
+            + "; ".join(errors)
+        )
+
+
 @dataclass
 class EpisodeResult:
     solved: bool
