@@ -28,6 +28,12 @@ case "$variant" in
     # Horizon-blind control: one shared Energy for every depth.
     horizon=16; horizons='[1,2,4,8,16]'; dense_depth=0; dense_weight=0
     root_distill_weight=0; horizon_input=false ;;
+  mix_pow2_16_aux025_nohorizon)
+    # Horizon-blind + root pair-difference auxiliary: with one shared Energy
+    # semantics the auxiliary is coherent (it distills multi-step quality
+    # into the same Energy the planner queries at every depth).
+    horizon=16; horizons='[1,2,4,8,16]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false ;;
   mix_full_16_aux0)
     # Fully pruning-coherent: every integer depth 1..16 is a training
     # horizon, so every beam-pruning Energy query is in-support.
