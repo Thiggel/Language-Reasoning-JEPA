@@ -229,6 +229,124 @@ Recent one-seed screens compared ranking, direct advantage/difference regression
 
 Among alternative losses with four-step dense training, listwise ranking was often the least bad, but all were far below final-endpoint ranking. Hinge and logistic endpoint ranking are close enough to warrant a matched multi-seed comparison only after the method semantics are fixed.
 
+### 9a. Complete recovered depth behavior of the older GAR and Energy families
+
+The earlier version of this report compressed these experiments too aggressively. This section records every scientifically distinct depth formulation for which a complete D1/D4/D8/D16 artifact was recovered. Duplicate reruns, failed pre-archive jobs, and repeated evaluations of the same checkpoint are represented by the latest complete artifact. Unless a row explicitly says five seeds, it is one seed with 300 episodes. The August 4 pilot used 200 episodes and an older global-beam evaluator. All rows use a supplied feasible candidate interface unless marked full catalogue, but several old artifacts did not serialize that field; they are therefore not interchangeable with the terminal-safe root-balanced endpoint results.
+
+#### Original local GAR used as a terminal rollout score
+
+| Local score formulation | Composition | D1 strict | D4 strict | D8 strict | D16 strict | D1 slack two | D4 slack two | D8 slack two | D16 slack two |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Ranking, LR 3e-4 | Terminal local score | .420 | .110 | .110 | .110 | .787 | .643 | .627 | .620 |
+| Ranking, LR 7e-4 | Terminal local score | .360 | .220 | .197 | .197 | .750 | .753 | .760 | .757 |
+| Pairwise calibrated, LR 3e-4 | Terminal local score | .407 | .143 | .133 | .133 | .793 | .757 | .767 | .767 |
+| Pairwise calibrated, LR 7e-4 | Terminal local score | .373 | .140 | .147 | .147 | .760 | .587 | .590 | .583 |
+| Ranking plus rollout training | Terminal local score | .367 | .223 | .210 | .210 | .747 | .667 | .660 | .650 |
+| Ranking plus dense rollout loss | Terminal local score | .367 | .080 | .083 | .083 | .767 | .543 | .520 | .527 |
+| Ranking with detached rollout | Terminal local score | .503 | .100 | .080 | .080 | .820 | .593 | .590 | .590 |
+| Pairwise plus rollout training | Terminal local score | .210 | .130 | .123 | .123 | .663 | .627 | .630 | .630 |
+| Pairwise plus dense rollout loss | Terminal local score | .267 | .087 | .080 | .080 | .677 | .557 | .557 | .560 |
+| Pairwise with detached rollout | Terminal local score | .363 | .120 | .110 | .107 | .790 | .663 | .647 | .640 |
+
+These are the cleanest answer to how the older method behaved with depth. Local GAR was trained to compare actions at the current state. Reusing its score on recursively predicted terminal states changes the input distribution and gives an uncalibrated score no guaranteed cross-state or cross-depth meaning. Every row loses strict accuracy beyond one step. The failure persists under a higher learning rate, direct calibration, dense rollout training, and detached rollout training.
+
+#### Direct advantage and state-Energy targets
+
+| Target/head | Rollout treatment | Composition | D1 | D4 | D8 | D16 |
+|---|---|---|---:|---:|---:|---:|
+| Advantage-difference regression | Base, LR 3e-4 | Cumulative | .117 | .027 | .027 | .027 |
+| Advantage-difference regression | Base, LR 7e-4 | Cumulative | .130 | .090 | .087 | .087 |
+| Advantage-difference regression | Joint rollout | Cumulative | .120 | .037 | .037 | .037 |
+| Advantage-difference regression | Dense rollout | Cumulative | .130 | .037 | .040 | .040 |
+| Advantage-difference regression | Detached rollout | Cumulative | .157 | .063 | .060 | .060 |
+| State-goal Energy regression | Base, LR 3e-4 | Terminal | .143 | .117 | .113 | .117 |
+| State-goal Energy regression | Base, LR 7e-4 | Terminal | .143 | .137 | .113 | .120 |
+| State-goal Energy regression | Joint rollout | Terminal | .140 | .203 | .177 | .167 |
+| State-goal Energy regression | Dense rollout | Terminal | .147 | .120 | .113 | .103 |
+| State-goal Energy regression | Detached rollout | Terminal | .137 | .117 | .073 | .067 |
+
+The cumulative advantage experiments sum predicted changes along a path. They are useful negative controls but are not the final planner: calibration error accumulates and an action-level advantage learned at one distribution is not necessarily additive under recursively imagined states. State-Energy has the right terminal composition but was difficult to regress accurately and never approached endpoint ranking.
+
+#### Five-seed existing state-Energy head
+
+| Depth | Strict mean | Slack-two mean |
+|---:|---:|---:|
+| 1 | .407 | .783 |
+| 4 | .125 | .655 |
+| 8 | .118 | .651 |
+| 16 | .118 | .650 |
+
+This matched five-seed evaluation rules out a seed-specific explanation for the depth collapse. A head that is strong on real/current states does not automatically value recursively predicted terminal states.
+
+#### Direct difference rankers and alternative ranking losses
+
+| Formulation | Score composition | D1 | D4 | D8 | D16 |
+|---|---|---:|---:|---:|---:|
+| Direct difference MSE, one-step training | Terminal | .187 | .010 | .010 | .010 |
+| Direct difference MSE plus ranking, one-step | Terminal | .137 | .010 | .010 | .010 |
+| Direct difference MSE, dense H4 | Terminal | .183 | .060 | .063 | .060 |
+| Direct difference MSE plus ranking, dense H4 | Terminal | .123 | .040 | .043 | .047 |
+| Hinge rank, difference target | Cumulative | .153 | .077 | .077 | .077 |
+| Logistic rank, difference target | Cumulative | .147 | .093 | .090 | .090 |
+| Soft-pairwise rank, difference target | Cumulative | .150 | .097 | .113 | .113 |
+| Listwise rank, difference target | Cumulative | .147 | .173 | .190 | .190 |
+| Hinge rank, state target | Terminal | .137 | .107 | .100 | .100 |
+| Logistic rank, state target | Terminal | .147 | .220 | .213 | .197 |
+| Soft-pairwise rank, state target | Terminal | .140 | .123 | .110 | .110 |
+| Listwise rank, state target | Terminal | .137 | .153 | .133 | .133 |
+| Horizon-conditioned local GAR, H4 | Terminal, root-balanced | .083 | .353 | .380 | .390 |
+
+Listwise difference ranking was the best cumulative-difference cell but remained weak. Horizon conditioning improved the direction of the curve but not its absolute level. The endpoint method subsequently succeeded by changing the supervised object from a local action score to the complete recursively predicted endpoint.
+
+#### August 4 global-beam localization
+
+| Older pilot | D1 | D4 | D8 | D16 | What it isolated |
+|---|---:|---:|---:|---:|---|
+| Default local Energy, LR 3e-4 | .160 | .055 | .055 | .055 | Baseline collapse |
+| Default local Energy, LR 7e-4 | .160 | .095 | .090 | .090 | Optimization helps little |
+| Ranking only, no MSE | .160 | .190 | .200 | .200 | Calibration loss can hurt depth |
+| MSE weight .1 | .195 | .040 | .040 | .040 | Small MSE still collapses |
+| MSE weight .5 | .175 | .035 | .035 | .035 | Larger MSE collapses |
+| MSE weight 1 | .175 | .020 | .020 | .020 | Larger MSE collapses further |
+| Action-distance target | .150 | .025 | .020 | .020 | Action metric is unusable terminally |
+| State-distance target | .155 | .170 | .155 | .150 | Better semantics, weak accuracy |
+| True encoded state at scoring | .165 | .015 | .015 | .015 | Naive true-state substitution is not an upper bound |
+| Teacher horizon 2 | .475 | .015 | .015 | .015 | Strong root teacher, wrong terminal use |
+| Teacher horizon 4 | .485 | .015 | .015 | .015 | Same failure |
+| Teacher horizon 8 | .635 | .015 | .015 | .015 | Same failure |
+| Teacher horizon 16 | .590 | .015 | .015 | .015 | Same failure |
+
+These pilots used the old global-beam code and are historical localization, not paper comparisons. They established that the problem was not simply world-model drift: replacing the predicted state with a true encoded state did not repair a head whose semantics and input distribution were wrong. The predictor and score head can also be co-adapted, so a true-state substitution need not help.
+
+#### Planner and endpoint-training repair sequence
+
+| Stage | D1 | D4 | D8 | D16 | Scientific status |
+|---|---:|---:|---:|---:|---|
+| Old global-beam local GAR | .42 | .11 | .11 | .11 | Valid one-step; invalid extrapolation as deep planner |
+| First horizon-conditioned GAR H4 | .083 | .353 | .380 | .390 | Directional improvement |
+| Early mixed endpoint, root-balanced | .130 | .360 | .360 | .363 | Endpoint idea, weak/old checkpoint |
+| True root-balanced mixed endpoint | .130 | .903 | .907 | .917 | Strong but pre-terminal-safety evaluation |
+| Terminal-safe mixed endpoint, five-seed mean | .120 | .834 | .874 | .877 | Replicated; horizon-support caveat remains |
+| Fixed-H4 endpoint, R2 | .110 | .903 | .913 | .907 | Strong one-seed simplification |
+| Fixed-H4 endpoint only | .163 | .893 | .610 | .603 | Exact-horizon strength, weak transfer |
+
+The pre-terminal-safety true-beam result is not used as headline evidence because early terminal length could leak through the horizon argument. The terminal-safe training reproduced most of the gain, showing that the entire endpoint result was not caused by that leak.
+
+#### Why the old curves and endpoint curves are not one simple leaderboard
+
+Four variables changed together over the historical sequence:
+
+1. **Supervised object:** local action order, state distance, additive advantage, or final endpoint order.
+2. **Composition:** terminal score versus sum of edge scores.
+3. **Search:** global beam, shooting, or root-balanced beam.
+4. **Terminal handling:** early return versus fixed requested horizon with absorbing padding.
+
+The tables above preserve those labels. The main robust comparison is qualitative: local/current-state scorers consistently fail under recursive terminal reuse, while an Energy trained on recursively predicted endpoints succeeds under a corrected root-balanced, terminal-safe planner.
+
+![Line plot of strict success versus planning depth. Original ranking GAR falls from .42 at depth one to about .11 at deeper depths; five-seed state Energy falls from .407 to about .12; horizon-conditioned GAR rises from .083 to .390; terminal-safe endpoint Energy rises from .120 to .877.](figures/depth_method_history.svg)
+
+The plot shows the method transition without hiding the protocol boundary. The two older local/current-state heads are strong at one step and fail under recursive terminal reuse. Horizon conditioning changes the slope but remains weak. Training directly on recursively imagined endpoints produces the large candidate-privileged depth gain.
+
 ### 10. Full-catalogue action selection
 
 The no-menu experiment scores every action in the problem rather than receiving a symbolic feasible subset. With invalid actions treated as unchanged-state no-ops, strict success was essentially zero. Making invalid actions transition to an absorbing failure state and balancing valid/invalid sampling reduced some invalid selection but did not restore planning:

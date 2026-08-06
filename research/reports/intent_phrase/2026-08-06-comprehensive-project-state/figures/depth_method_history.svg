@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="610" viewBox="0 0 980 610" role="img" aria-labelledby="title desc">
+  <title id="title">Historical depth behavior of intent-phrase planning methods</title>
+  <desc id="desc">Strict success from depth one through sixteen for local ranking GAR, five-seed state Energy, horizon-conditioned GAR, and terminal-safe endpoint Energy.</desc>
+  <rect width="980" height="610" fill="#fbfaf7"/>
+  <g stroke="#d7d5cf" stroke-width="1">
+    <path d="M100 500H900M100 410H900M100 320H900M100 230H900M100 140H900M100 50H900"/>
+  </g>
+  <g stroke="#263238" stroke-width="2" fill="none">
+    <path d="M100 50V500H900"/>
+  </g>
+  <g font-family="sans-serif" fill="#263238" font-size="17">
+    <text x="85" y="505" text-anchor="end">0.0</text><text x="85" y="415" text-anchor="end">0.2</text>
+    <text x="85" y="325" text-anchor="end">0.4</text><text x="85" y="235" text-anchor="end">0.6</text>
+    <text x="85" y="145" text-anchor="end">0.8</text><text x="85" y="55" text-anchor="end">1.0</text>
+    <text x="145" y="530" text-anchor="middle">1</text><text x="380" y="530" text-anchor="middle">4</text>
+    <text x="615" y="530" text-anchor="middle">8</text><text x="850" y="530" text-anchor="middle">16</text>
+    <text x="500" y="575" text-anchor="middle">Planning depth</text>
+    <text x="25" y="275" transform="rotate(-90 25 275)" text-anchor="middle">Strict success</text>
+  </g>
+  <polyline points="145,311 380,450.5 615,450.5 850,450.5" fill="none" stroke="#b64d43" stroke-width="4"/>
+  <g fill="#b64d43"><circle cx="145" cy="311" r="6"/><circle cx="380" cy="450.5" r="6"/><circle cx="615" cy="450.5" r="6"/><circle cx="850" cy="450.5" r="6"/></g>
+  <polyline points="145,316.9 380,443.8 615,446.9 850,446.9" fill="none" stroke="#8c6bb1" stroke-width="4"/>
+  <g fill="#8c6bb1"><circle cx="145" cy="316.9" r="6"/><circle cx="380" cy="443.8" r="6"/><circle cx="615" cy="446.9" r="6"/><circle cx="850" cy="446.9" r="6"/></g>
+  <polyline points="145,462.7 380,341.2 615,329 850,324.5" fill="none" stroke="#d28b21" stroke-width="4"/>
+  <g fill="#d28b21"><circle cx="145" cy="462.7" r="6"/><circle cx="380" cy="341.2" r="6"/><circle cx="615" cy="329" r="6"/><circle cx="850" cy="324.5" r="6"/></g>
+  <polyline points="145,446 380,124.7 615,106.7 850,105.4" fill="none" stroke="#2d758e" stroke-width="5"/>
+  <g fill="#2d758e"><circle cx="145" cy="446" r="7"/><circle cx="380" cy="124.7" r="7"/><circle cx="615" cy="106.7" r="7"/><circle cx="850" cy="105.4" r="7"/></g>
+  <g font-family="sans-serif" font-size="16" fill="#263238">
+    <line x1="180" y1="78" x2="220" y2="78" stroke="#2d758e" stroke-width="5"/><text x="230" y="84">Terminal-safe endpoint Energy, 5 seeds</text>
+    <line x1="520" y1="78" x2="560" y2="78" stroke="#d28b21" stroke-width="4"/><text x="570" y="84">Horizon GAR H4, 1 seed</text>
+    <line x1="180" y1="110" x2="220" y2="110" stroke="#b64d43" stroke-width="4"/><text x="230" y="116">Local ranking GAR, 1 seed</text>
+    <line x1="520" y1="110" x2="560" y2="110" stroke="#8c6bb1" stroke-width="4"/><text x="570" y="116">State Energy, 5 seeds</text>
+  </g>
+</svg>

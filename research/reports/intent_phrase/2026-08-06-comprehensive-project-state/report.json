@@ -10,6 +10,10 @@
   "plain_summary": "A comprehensive synthesis of the intent-phrase task, method evolution, validated and exploratory results, failures, representation analyses, current endpoint-Energy formulation, live jobs, limitations, and next decisions.",
   "report": "REPORT.md",
   "figures": [
-    "figures/current_method_and_evidence.svg"
+    "figures/current_method_and_evidence.svg",
+    "figures/depth_method_history.svg"
+  ],
+  "supplementary_files": [
+    "EXPERIMENT_LEDGER.md"
   ]
 }
