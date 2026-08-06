@@ -97,21 +97,17 @@
 - Human steering notes are useful priority signals but their handling does not
   gate experiments. Never mark a report as read on the human's behalf.
 
-## Controller boundary
+## Experiment launch workflow (direct SSH)
 
-- Use the project skills in `.agents/skills/` for research direction,
-  experiment design, cluster orchestration, result analysis, literature
-  review, and Beamer synthesis.
-- Codex may implement and test the code needed for the current decision and
-  write `research/NEXT_PLAN.json`. It must not directly call SSH, `sbatch`,
-  `scancel`, or detached launch commands during an autonomous oversight turn.
-  The deterministic interface is `automation/bin/researchctl`; operator usage
-  is documented in `docs/AUTONOMOUS_RESEARCH.md`.
-- During an interactive user-directed turn, Codex may use non-interactive SSH
-  for scoped inspection and TextJEPA operations. It may invoke `sbatch` or
-  `scancel` only when the user explicitly authorizes the corresponding
-  submission or cancellation, after resolving the exact target. This exception
-  does not apply to autonomous oversight or unrelated jobs.
+- The researchctl controller, its UI, and the `.agents` skill layer were
+  removed on 2026-08-06. Launch experiments directly over SSH (Grünau) or
+  Slurm (`sbatch` on Alex/Lise/Grete). Historical researchctl plans are
+  archived in `runs/autonomy/_researchctl_plans_archive/`.
+- Keep the run-directory conventions the old controller used: one directory
+  per cell under `runs/autonomy/<project>/<round-id>/<job-id>/` containing
+  `job.sh`, `state` (RUNNING/COMPLETED/FAILED), `stdout.log`, `stderr.log`,
+  `exit_code`, and result JSONs. The existing `scripts/run_*.sh` cells read
+  `RUN_DIR` from the environment; export it yourself.
 - Inventory before planning GPU work. Slurm owns allocation on Alex, Lise, and
   Grete. On Grünau, require both low allocated memory and low utilization and
   remember that direct observation cannot prevent a race with another user.

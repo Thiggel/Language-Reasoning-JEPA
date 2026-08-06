@@ -13,21 +13,20 @@ runs/
 runs_*.log
 outputs/
 multirun/
-data/intent_phrase/
-.researchctl/
-research/NEXT_PLAN.json
-research/STOP
+data/
 
 # latex build artifacts
-reports/*.aux
-reports/*.log
-reports/*.nav
-reports/*.out
-reports/*.snm
-reports/*.toc
-reports/*.vrb
-reports/compile.log
-reports/slide*.png
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
 
 # misc
 .DS_Store

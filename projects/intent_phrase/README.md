@@ -5,9 +5,9 @@ JEPA specified in the [method handbook](method/README.md). The earlier
 terminal-length-leaking scaling pilot is invalid; corrected training restores
 the effect without that signal.
 
-Current anonymous ICLR 2027 paper draft: [LaTeX source](paper/main.tex),
-[compiled PDF](paper/main.pdf), [reproduction notes](paper/README.md), and
-[internal reviewer audit](paper/REVIEW_AUDIT.md). The
+The anonymous ICLR paper draft moved out of this repository to
+`/vol/home-vol2/ml/laitenbf/TextJEPA-paper/overleaf/` (its own git repo,
+ready for Overleaf import). The
 draft uses the official 2027 style, includes all validated intent-phrase
 results, labels one-seed and candidate-privileged evidence, and leaves missing
 cross-domain and controlled-minimal-pair results visibly incomplete.

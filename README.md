@@ -9,10 +9,20 @@ The three scientific subprojects have stable entry points under
 
 Shared implementation remains in `src/`, `configs/`, and `scripts/`; existing
 run paths are preserved. Detailed experiment records are under
-[`research/`](research/README.md). `HANDOFF.md` remains the operational history,
-while `RESULTS.md` preserves chronological findings.
+[`research/`](research/README.md). `HANDOFF.md` and `RESULTS.md` are frozen
+historical records (2026-07); the current entry points are
+`projects/<name>/README.md` and the dated syntheses under
+`research/reports/<name>/`.
 
-> **Continuing this project? Start with [HANDOFF.md](HANDOFF.md)** — current state, in-flight experiments, active research question, and every gotcha.
+All paper writing (ICLR draft, Overleaf project, report archives) lives
+outside this repository in `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/`.
+The researchctl automation layer was removed on 2026-08-06; experiments are
+launched directly over SSH/Slurm (see `AGENTS.md` and `docs/clusters/`).
+
+> **Continuing the intent-phrase project? Start with
+> [projects/intent_phrase/README.md](projects/intent_phrase/README.md)** and
+> the latest comprehensive report under
+> `research/reports/intent_phrase/2026-08-06-comprehensive-project-state/`.
 
 > **Results and protocol notes: see [RESULTS.md](RESULTS.md).** The current
 > non-symbolic reduced JEPA averages **79.7%±0.8% strict / 96.3%±0.8%
