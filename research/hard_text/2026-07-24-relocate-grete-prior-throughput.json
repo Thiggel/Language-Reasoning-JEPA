@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "project": "token_igsm",
+  "round_id": "2026-07-24-relocate-grete-prior-throughput-v1",
+  "decision": "Relocate the two never-started Grete jepa-prior throughput gates to enabled Grünau hardware after Grete credit exhaustion. Preserve the exact original commit and commands; retain the hardware identifier in each benchmark result and do not compare raw throughput across the A100 and H100 placements.",
+  "git_commit": "0142146e98ec1b767fadfd6280e3590a207b3058",
+  "jobs": [
+    {
+      "id": "bench-jepa-prior-mb8-gruenau-relocation-v1",
+      "cluster": "gruenau",
+      "node": 10,
+      "gpus": 1,
+      "cpus": 8,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 75000,
+      "purpose": "Exact replacement for pending Grete job 15022486: full GAR+dense objective throughput gate at microbatch 8 on an A100.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "8"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    },
+    {
+      "id": "bench-jepa-prior-mb16-gruenau-relocation-v1",
+      "cluster": "gruenau",
+      "node": 11,
+      "gpus": 1,
+      "cpus": 8,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 75000,
+      "purpose": "Exact replacement for pending Grete job 15022504: full GAR+dense objective throughput gate at microbatch 16; hardware is explicitly recorded as H100 and therefore not used for A100 throughput comparison.",
+      "command": ["bash", "scripts/run_igsm_124m_benchmark.sh", "{python}", "jepa_prior", "16"],
+      "expected_artifacts": ["benchmark.json", "stdout.log"]
+    }
+  ]
+}

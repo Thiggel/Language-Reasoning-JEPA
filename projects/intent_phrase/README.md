@@ -63,6 +63,7 @@ into the flat recipe.
 - [GAR geometry and generative-bottleneck audit design](GAR_GEOMETRY_AUDIT.md)
 - [Concise project, empirical, and representation-analysis report](../../research/reports/intent_phrase/2026-08-03-project-state-and-representation-analysis/REPORT.md)
 - [Comprehensive project state, full result synthesis, and current method audit](../../research/reports/intent_phrase/2026-08-06-comprehensive-project-state/REPORT.md)
+- [Sparse multidepth Endpoint-Energy factorial and launch audit](../../research/reports/intent_phrase/2026-08-06-multidepth-energy-factorial/REPORT.md)
 - [Latest token prerequisite-support report](../../research/reports/intent_phrase/2026-07-21-token-prerequisite-support/REPORT.md)
 - [ALFWorld implementation and admission status](../../research/reports/intent_phrase/2026-07-22-alfworld-admission/REPORT.md)
 - [Discarded ALFWorld feasibility-hybrid diagnostic](../../research/reports/intent_phrase/2026-07-22-alfworld-overfit-failure/REPORT.md)

@@ -1,0 +1,35 @@
+{
+  "schema_version": 2,
+  "project": "intent_phrase",
+  "round_id": "2026-07-24-intent-igsm-invalidcf-validity-h100-v1",
+  "decision": "Decide whether observing invalid grounded counterfactual outcomes improves prior-free full-catalogue geometry JEPA planning, rather than merely its candidate-privileged feasible-only diagnostic. Compare otherwise identical fresh seed-0 width-256 runs with zero versus two invalid alternatives; admit any LR selection only if the full-catalogue result improves without a feasibility-only regression.",
+  "git_commit": "328a855f9eb250c83b48b802fc4cda3a929aa3e6",
+  "jobs": [
+    {
+      "id": "intent-igsm-geometry-w256-lr1e3-invalidcf0-seed0-h100-v1",
+      "cluster": "gruenau",
+      "node": 11,
+      "gpus": 1,
+      "cpus": 6,
+      "walltime_minutes": 1440,
+      "min_gpu_memory_mb": 60000,
+      "purpose": "Fresh full-budget control: geometry JEPA without invalid grounded counterfactual outcomes, protected from partial-checkpoint evaluation.",
+      "env": {"SEEDS": "0", "INVALID_COUNTERFACTUAL_K": "0"},
+      "command": ["bash", "scripts/run_intent_paper_igsm_lr_triplet.sh", "{python}", "geometry_jepa", "256", "1e-3"],
+      "expected_artifacts": ["seed-0/training_complete.json", "seed-0/model/best.pt", "seed-0/metrics.json", "seed-0/oracle_feasible_metrics.json", "metrics.json", "stdout.log", "stderr.log"]
+    },
+    {
+      "id": "intent-igsm-geometry-w256-lr1e3-invalidcf2-seed0-h100-v1",
+      "cluster": "gruenau",
+      "node": 11,
+      "gpus": 1,
+      "cpus": 6,
+      "walltime_minutes": 1440,
+      "min_gpu_memory_mb": 60000,
+      "purpose": "Fresh full-budget treatment: geometry JEPA observes two invalid grounded counterfactual outcomes per state under the identical full non-oracle catalogue.",
+      "env": {"SEEDS": "0", "INVALID_COUNTERFACTUAL_K": "2"},
+      "command": ["bash", "scripts/run_intent_paper_igsm_lr_triplet.sh", "{python}", "geometry_jepa", "256", "1e-3"],
+      "expected_artifacts": ["seed-0/training_complete.json", "seed-0/model/best.pt", "seed-0/metrics.json", "seed-0/oracle_feasible_metrics.json", "metrics.json", "stdout.log", "stderr.log"]
+    }
+  ]
+}

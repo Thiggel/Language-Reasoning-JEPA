@@ -1,0 +1,21 @@
+{
+  "schema_version": 2,
+  "project": "intent_phrase",
+  "round_id": "2026-07-24-relocate-grete-latent-lm-gate-v1",
+  "decision": "Relocate the never-started Grete recurrent sentence-latent language-model process gate to an enabled Grünau L40, preserving its exact snapshot, command, and validity criterion.",
+  "git_commit": "2711922584ec5f8dcc4c694ea5c7fb3d9c01e5f9",
+  "jobs": [
+    {
+      "id": "intent-paper-gate-looped-sentence-latent-lm-gruenau-relocation-v1",
+      "cluster": "gruenau",
+      "node": 12,
+      "gpus": 1,
+      "cpus": 4,
+      "walltime_minutes": 60,
+      "min_gpu_memory_mb": 20000,
+      "purpose": "Exact replacement for pending Grete job 15018571: recurrent sentence-latent LM process gate with a short job-private multiprocessing path.",
+      "command": ["bash", "scripts/run_intent_paper_gate_cell.sh", "{python}", "looped_sentence_latent_lm", "0", "128", "3e-4"],
+      "expected_artifacts": ["run_summary.json", "model/best.pt", "metrics.json", "stdout.log", "stderr.log"]
+    }
+  ]
+}

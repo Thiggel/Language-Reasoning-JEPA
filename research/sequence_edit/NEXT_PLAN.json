@@ -1,46 +1,65 @@
 {
   "schema_version": 2,
   "project": "sequence_edit",
-  "round_id": "2026-07-21-edit-gar-ranking-diversity-wave93",
-  "decision": "At fixed 12.5M token-only architecture, four trajectories per clean sequence, detached action prior, exact terminal token-edit teacher, and 512 clean sequences, does faithful GAR supervision—MSE regression weight 0.25 plus same-state pairwise margin ranking—create a discriminative deployment V(s,a), and does its benefit increase with target-independent counterfactual breadth K in {1,4,8}? K=1 regression-only anchors the changed regression scale, K=8 regression-only isolates breadth without ranking, and a K=8 learning-rate cross-check tests whether the new gradient scale merely changes optimization. Continue to deeper MPC only if pairwise/top-1 accuracy and posterior discrimination improve without damaging action-conditioned transition controls.",
-  "git_commit": "fa22cdcf97122ed831d896050dd6efc614492def",
-  "projected_gpu_hours": 29,
+  "round_id": "2026-07-24-edit-recovery-refinement-v2",
+  "decision": "Two concrete failures require repair. First, the 40k sentence-GAR run made stable progress to step 28,600 but timed out on an A100 before the epoch-end-only checkpoint; a 25k A100 rerun with optimizer-boundary checkpoints every 5k steps will establish whether sentence GAR is viable at the observed stable loss scale. Second, the completed token-GAR evaluator was unmask-only despite training on 25% wrong-token iterative refinement. On the fixed token GAR checkpoint, does bounded target-blind corrective refinement after unmasking improve generation when the learned V(s,a) stops on nonpositive predicted advantage? Compare refinement budgets of 0.25x and 1.0x the initial mask count to the already-completed unmask-only GAR H=1,M=16 control. Clean targets remain post-hoc metrics only; no oracle candidate enters generation.",
+  "git_commit": "2ec19c3a7cc30a117b3bf2dae2b72307629591d1",
+  "projected_gpu_hours": 36,
   "jobs": [
     {
-      "id": "edit-gar-k1-mse025-norank-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 180,
-      "purpose": "Matched K=1 MSE-0.25 regression-only control for the ranked GAR objective.",
-      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "1", "0", "0.0003", "0", "512"],
-      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
+      "id": "edit-optimized-sentence-gar-k8-25k-checkpoint-s0-v2",
+      "cluster": "gruenau",
+      "node": 10,
+      "gpus": 1,
+      "cpus": 8,
+      "min_gpu_memory_mb": 80000,
+      "walltime_minutes": 1440,
+      "purpose": "Recover a usable 124M sentence GAR checkpoint below the demonstrated A100 wall-time envelope, with periodic optimizer checkpoints.",
+      "command": [
+        "bash", "scripts/run_multiscale_edit_cell.sh", "{python}",
+        "edit_igsm_original_sentence_gar", "0",
+        "train.max_steps=25000", "train.batch_size=256",
+        "train.microbatch_size=256", "train.eval_batch_size=8",
+        "train.num_workers=4", "train.eval_batches=64", "train.log_every=50",
+        "train.checkpoint_every_steps=5000", "data.train_size=6400000",
+        "data.val_size=4096", "model.sequence_packing=true",
+        "objective.sigreg.weight=0.0", "objective.multiscale_vicreg.weight=0.02"
+      ],
+      "expected_artifacts": ["model/best.pt", "model/last.pt", "model/metrics.csv", "metrics.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-gar-k1-mse025-rank1-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 180,
-      "purpose": "K=1 expert-versus-counterfactual pairwise GAR control at MSE weight 0.25.",
-      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "1", "1", "0.0003", "0", "512"],
-      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
+      "id": "edit-token-gar-refine025-h1-m16-e1-s8600-v2",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 6,
+      "min_gpu_memory_mb": 44000,
+      "walltime_minutes": 360,
+      "purpose": "Target-blind GAR H=1,M=16 generation with a 0.25x corrective-refinement budget and learned nonpositive-Q stopping.",
+      "command": [
+        "bash", "scripts/run_checkpoint_igsm_length_eval.sh", "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-23-edit-optimized-token-gar-k8-40k-repair-v1/edit-optimized-token-gar-k8-124m-b256-40k-lr2e3-s0-repair-v1/model/best.pt",
+        "jepa", "1", "--planner-scoring", "gar", "--horizon", "1",
+        "--candidate-budget", "16", "--beam-width", "1",
+        "--refinement-multiplier", "0.25", "--stop-on-nonpositive-q"
+      ],
+      "expected_artifacts": ["length_metrics.json", "stdout.log", "stderr.log"]
     },
     {
-      "id": "edit-gar-k4-mse025-rank1-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 300,
-      "purpose": "Four-counterfactual same-state GAR ranking cell measuring the first breadth increase.",
-      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "4", "1", "0.0003", "0", "512"],
-      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-gar-k8-mse025-norank-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 360,
-      "purpose": "Eight-counterfactual regression-only control separating extra labels from pairwise ordering.",
-      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "8", "0", "0.0003", "0", "512"],
-      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-gar-k8-mse025-rank1-lr3e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 360,
-      "purpose": "Eight-counterfactual ranked GAR cell testing whether wider same-state ordering changes useful geometry.",
-      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "8", "1", "0.0003", "0", "512"],
-      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
-    },
-    {
-      "id": "edit-gar-k8-mse025-rank1-lr1e4-s0-wave93", "cluster": "gruenau", "gpus": 1, "cpus": 6, "min_gpu_memory_mb": 22000, "walltime_minutes": 360,
-      "purpose": "Lower-learning-rate cross-check for the widest ranked GAR cell after the objective changes gradient magnitude.",
-      "command": ["bash", "scripts/run_multiscale_gar_ranking_cell.sh", "{python}", "8", "1", "0.0001", "0", "512"],
-      "expected_artifacts": ["model/best.pt", "metrics.json", "mpc_h1_smoke.json", "stdout.log", "stderr.log"]
+      "id": "edit-token-gar-refine100-h1-m16-e1-s8600-v2",
+      "cluster": "gruenau",
+      "gpus": 1,
+      "cpus": 6,
+      "min_gpu_memory_mb": 44000,
+      "walltime_minutes": 360,
+      "purpose": "Same target-blind GAR planner with a full one-pass corrective-refinement budget, testing whether local GAR corrections accumulate or over-edit.",
+      "command": [
+        "bash", "scripts/run_checkpoint_igsm_length_eval.sh", "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/sequence_edit/2026-07-23-edit-optimized-token-gar-k8-40k-repair-v1/edit-optimized-token-gar-k8-124m-b256-40k-lr2e3-s0-repair-v1/model/best.pt",
+        "jepa", "1", "--planner-scoring", "gar", "--horizon", "1",
+        "--candidate-budget", "16", "--beam-width", "1",
+        "--refinement-multiplier", "1.0", "--stop-on-nonpositive-q"
+      ],
+      "expected_artifacts": ["length_metrics.json", "stdout.log", "stderr.log"]
     }
   ]
 }
