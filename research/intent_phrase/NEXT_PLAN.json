@@ -1,39 +1,92 @@
 {
   "schema_version": 2,
+  "round_id": "2026-07-21-intent-token-prerequisite-support-v1",
   "project": "intent_phrase",
-  "round_id": "2026-07-20-intent-length-prompt-factorization-v1",
-  "decision": "Determine whether the apparent failure beyond nine necessary actions is caused by longer reasoning, larger prompts, or both before changing the model architecture.",
-  "git_commit": "AUTO",
+  "decision": "Determine whether token-level causal matching of candidate intents to executed intent history reduces length-nine invalid actions beyond phrase pooling and an equal-capacity history-masked control.",
+  "git_commit": "2bdd5a01b5f987889147d39b8af7808e8b1642f8",
   "jobs": [
     {
-      "id": "intent-length-prompt-factorization-seed0-v1",
+      "id": "intent-token-support-aligned-lr1e3-seed0-v1",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/eval_intent_length_prompt_grid_checkpoint.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-prior-length-pilot-v1/intent-action-prior-len-pilot-seed0-v1/model/best.pt", "60"],
       "gpus": 1,
-      "walltime_minutes": 120,
-      "min_gpu_memory_mb": 30000,
-      "purpose": "Factorize reasoning length and prompt size for action-prior seed 0.",
-      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/source_checkpoint.sha256", "model/prompt_axis_l9_nv6_12_jepa.json", "model/prompt_axis_l9_nv18_27_jepa.json", "model/prompt_axis_l9_nv24_36_jepa.json", "model/prompt_axis_l9_nv36_54_jepa.json", "model/length_axis_nv24_36_jepa.json", "model/prompt_axis_l9_nv6_12_prior.json", "model/prompt_axis_l9_nv18_27_prior.json", "model/prompt_axis_l9_nv24_36_prior.json", "model/prompt_axis_l9_nv36_54_prior.json", "model/length_axis_nv24_36_prior.json"]
+      "walltime_minutes": 240,
+      "min_gpu_memory_mb": 40000,
+      "purpose": "Learning-rate cross-check for aligned token-level causal prerequisite support.",
+      "command": [
+        "bash", "scripts/run_intent_token_history_support.sh", "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-history-support-v1/intent-history-support-aligned-lr3e3-seed0-v1/model/best.pt",
+        "0.001", "aligned", "5", "40000", "120"
+      ],
+      "expected_artifacts": [
+        "run_summary.json", "stdout.log", "stderr.log", "model/source_checkpoint.sha256",
+        "model/best.pt", "model/metrics.csv",
+        "model/support_audit_length6.json", "model/support_audit_length9.json",
+        "model/token_support1.0_prior.json", "model/token_support3.0_prior.json",
+        "model/token_support10.0_prior.json", "model/token_support30.0_prior.json"
+      ]
     },
     {
-      "id": "intent-length-prompt-factorization-seed1-v1",
+      "id": "intent-token-support-aligned-lr3e3-seed0-v1",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/eval_intent_length_prompt_grid_checkpoint.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-prior-length-pilot-v1/intent-action-prior-len-pilot-seed1-v1/model/best.pt", "60"],
       "gpus": 1,
-      "walltime_minutes": 120,
-      "min_gpu_memory_mb": 30000,
-      "purpose": "Factorize reasoning length and prompt size for action-prior seed 1.",
-      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/source_checkpoint.sha256", "model/prompt_axis_l9_nv6_12_jepa.json", "model/prompt_axis_l9_nv18_27_jepa.json", "model/prompt_axis_l9_nv24_36_jepa.json", "model/prompt_axis_l9_nv36_54_jepa.json", "model/length_axis_nv24_36_jepa.json", "model/prompt_axis_l9_nv6_12_prior.json", "model/prompt_axis_l9_nv18_27_prior.json", "model/prompt_axis_l9_nv24_36_prior.json", "model/prompt_axis_l9_nv36_54_prior.json", "model/length_axis_nv24_36_prior.json"]
+      "walltime_minutes": 240,
+      "min_gpu_memory_mb": 40000,
+      "purpose": "Primary aligned token-level causal prerequisite-support cell.",
+      "command": [
+        "bash", "scripts/run_intent_token_history_support.sh", "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-history-support-v1/intent-history-support-aligned-lr3e3-seed0-v1/model/best.pt",
+        "0.003", "aligned", "5", "40000", "120"
+      ],
+      "expected_artifacts": [
+        "run_summary.json", "stdout.log", "stderr.log", "model/source_checkpoint.sha256",
+        "model/best.pt", "model/metrics.csv",
+        "model/support_audit_length6.json", "model/support_audit_length9.json",
+        "model/token_support1.0_prior.json", "model/token_support3.0_prior.json",
+        "model/token_support10.0_prior.json", "model/token_support30.0_prior.json"
+      ]
     },
     {
-      "id": "intent-length-prompt-factorization-seed2-v1",
+      "id": "intent-token-support-none-lr3e3-seed0-v1",
       "cluster": "gruenau",
-      "command": ["bash", "scripts/eval_intent_length_prompt_grid_checkpoint.sh", "{python}", "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-prior-length-pilot-v1/intent-action-prior-len-pilot-seed2-v1/model/best.pt", "60"],
+      "gpus": 1,
+      "walltime_minutes": 240,
+      "min_gpu_memory_mb": 40000,
+      "purpose": "Equal-capacity negative control with every executed and imagined history token masked.",
+      "command": [
+        "bash", "scripts/run_intent_token_history_support.sh", "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-history-support-v1/intent-history-support-aligned-lr3e3-seed0-v1/model/best.pt",
+        "0.003", "none", "5", "40000", "120"
+      ],
+      "expected_artifacts": [
+        "run_summary.json", "stdout.log", "stderr.log", "model/source_checkpoint.sha256",
+        "model/best.pt", "model/metrics.csv",
+        "model/support_audit_length6.json", "model/support_audit_length9.json",
+        "model/token_support1.0_prior.json", "model/token_support3.0_prior.json",
+        "model/token_support10.0_prior.json", "model/token_support30.0_prior.json"
+      ]
+    },
+    {
+      "id": "intent-phrase-support-matched-eval-v1",
+      "cluster": "gruenau",
       "gpus": 1,
       "walltime_minutes": 120,
-      "min_gpu_memory_mb": 30000,
-      "purpose": "Factorize reasoning length and prompt size for action-prior seed 2.",
-      "expected_artifacts": ["run_summary.json", "stdout.log", "stderr.log", "model/source_checkpoint.sha256", "model/prompt_axis_l9_nv6_12_jepa.json", "model/prompt_axis_l9_nv18_27_jepa.json", "model/prompt_axis_l9_nv24_36_jepa.json", "model/prompt_axis_l9_nv36_54_jepa.json", "model/length_axis_nv24_36_jepa.json", "model/prompt_axis_l9_nv6_12_prior.json", "model/prompt_axis_l9_nv18_27_prior.json", "model/prompt_axis_l9_nv24_36_prior.json", "model/prompt_axis_l9_nv36_54_prior.json", "model/length_axis_nv24_36_prior.json"]
+      "min_gpu_memory_mb": 20000,
+      "purpose": "Matched 120-episode reevaluation of both existing phrase-pooled learning-rate checkpoints.",
+      "command": [
+        "bash", "scripts/run_intent_phrase_history_matched_eval.sh", "{python}",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-history-support-v1/intent-history-support-aligned-lr1e3-seed0-v1/model/best.pt",
+        "/vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-07-20-intent-action-history-support-v1/intent-history-support-aligned-lr3e3-seed0-v1/model/best.pt",
+        "120"
+      ],
+      "expected_artifacts": [
+        "run_summary.json", "stdout.log", "stderr.log", "model/source_checkpoints.sha256",
+        "model/lr1e3_support_audit_length6.json", "model/lr1e3_support_audit_length9.json",
+        "model/lr3e3_support_audit_length6.json", "model/lr3e3_support_audit_length9.json",
+        "model/lr1e3_phrase_support1.0_prior.json", "model/lr1e3_phrase_support3.0_prior.json",
+        "model/lr1e3_phrase_support10.0_prior.json", "model/lr1e3_phrase_support30.0_prior.json",
+        "model/lr3e3_phrase_support1.0_prior.json", "model/lr3e3_phrase_support3.0_prior.json",
+        "model/lr3e3_phrase_support10.0_prior.json", "model/lr3e3_phrase_support30.0_prior.json"
+      ]
     }
   ]
 }
