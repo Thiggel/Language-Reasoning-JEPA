@@ -34,6 +34,12 @@ case "$variant" in
     # into the same Energy the planner queries at every depth).
     horizon=16; horizons='[1,2,4,8,16]'; dense_depth=0; dense_weight=0
     root_distill_weight=0.25; horizon_input=false ;;
+  mix4_aux025_nohorizon)
+    # Horizon-blind + auxiliary, training horizons {1,2,4,8} only: tests
+    # whether H16 rollouts dilute the sample budget (head remains coherent
+    # at any query depth because it never reads the horizon).
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false ;;
   mix_full_16_aux0)
     # Fully pruning-coherent: every integer depth 1..16 is a training
     # horizon, so every beam-pruning Energy query is in-support.
