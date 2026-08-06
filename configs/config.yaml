@@ -11,6 +11,9 @@ allow_legacy_predictor: false
 
 train:
   init_ckpt: null
+  resume_from: null
+  checkpoint_every_steps: 0
+  stop_after_steps: null
   init_mode: low_level  # low_level | full
   reset_hi_predictor: false
   reset_macro_value_head: false

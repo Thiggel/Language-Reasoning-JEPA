@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "project": "sequence_edit",
+  "round_id": "2026-07-24-optimized-sentence-gar-k8-segment2-alex",
+  "decision": "After the first exact segment completes, restore its model, optimizer, EMA teacher, learning-rate position, and deterministic sampler offset to finish updates 20,001 through 40,000 without repeating the first half of the procedural training stream.",
+  "git_commit": "31f2fc6ca406cb377caf122a2e234e7aa64ee015",
+  "jobs": [
+    {
+      "id": "edit-optimized-sentence-gar-k8-124m-b256-40k-segment2-alex-s0",
+      "cluster": "alex",
+      "command": [
+        "bash",
+        "scripts/run_multiscale_edit_cell.sh",
+        "{python}",
+        "edit_igsm_original_sentence_gar",
+        "0",
+        "train.max_steps=40000",
+        "train.resume_from=/home/atuin/c107fa/c107fa12/TextJEPA/runs/autonomy/sequence_edit/2026-07-24-optimized-sentence-gar-k8-segment1-alex/edit-optimized-sentence-gar-k8-124m-b256-40k-segment1-alex-s0/model/last.pt",
+        "train.checkpoint_every_steps=1000",
+        "train.batch_size=256",
+        "train.microbatch_size=256",
+        "train.eval_batch_size=8",
+        "train.num_workers=4",
+        "train.eval_batches=64",
+        "train.log_every=50",
+        "data.train_size=10240000",
+        "data.val_size=4096",
+        "model.sequence_packing=true",
+        "objective.sigreg.weight=0.0",
+        "objective.multiscale_vicreg.weight=0.02"
+      ],
+      "gpus": 1,
+      "walltime_minutes": 1440,
+      "cpus": 16,
+      "partition": "rtxpro6k",
+      "gpu_type": "rtxpro6k",
+      "min_gpu_memory_mb": 90000,
+      "dependency_afterok": [
+        "3891634"
+      ],
+      "purpose": "Second, dependency-held half of the exact checkpoint-safe timeout recovery.",
+      "expected_artifacts": [
+        "model/last.pt",
+        "model/best.pt",
+        "model/metrics.csv",
+        "metrics.json"
+      ]
+    }
+  ]
+}
