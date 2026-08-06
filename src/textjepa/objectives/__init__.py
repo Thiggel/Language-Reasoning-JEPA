@@ -41,6 +41,7 @@ from textjepa.objectives.ranking import (
     GeoHorizonStraightening,
     GeoHorizonMonotonicity,
 )
+from textjepa.objectives.td_baselines import ExpectileValueTD, TDQ
 from textjepa.objectives.counterfactual import (
     CounterfactualOutcomePrediction,
     CounterfactualStatePrediction,
@@ -93,6 +94,8 @@ __all__ = [
     "GeoHorizonEnergyRegression",
     "GeoHorizonStraightening",
     "GeoHorizonMonotonicity",
+    "TDQ",
+    "ExpectileValueTD",
     "CounterfactualOutcomePrediction",
     "CounterfactualStatePrediction",
     "CounterfactualSlotPrediction",

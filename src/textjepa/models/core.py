@@ -20,7 +20,9 @@ from textjepa.models.heads import (
     TokenHistoryActionSupportHead,
     ControllerOutcomeHead,
     DirectActionRankHead,
+    ExpectileValueHead,
     HorizonEnergyHead,
+    TDQHead,
     TransitionEnergyHead,
     SubgoalActionHead,
     MacroSupportHead,
@@ -145,6 +147,8 @@ class LatentDynamicsCore(nn.Module):
         self.direct_action_rank_head = DirectActionRankHead(d_model, d_action)
         self.transition_energy_head = TransitionEnergyHead(d_model)
         self.horizon_energy_head = HorizonEnergyHead(d_model)
+        self.td_q_head = TDQHead(d_model, d_action)
+        self.expectile_value_head = ExpectileValueHead(d_model)
         self.hi_value_head = ValueHead(d_model)
         self.macro_value_head = MacroValueHead(d_model, d_macro)
         self.macro_support_head = MacroSupportHead(d_model, d_macro)

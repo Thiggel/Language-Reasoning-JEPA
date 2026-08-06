@@ -16,6 +16,7 @@ feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
 horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
 ranking_kind=logistic; chunk_weight=2; vicreg_weight=1
 horizon_input=true
+score_mode=horizon; rollout_for_h1=true; td_q_weight=0; expectile_weight=0
 case "$variant" in
   fixed_h4) ;;
   mix_pow2_16_aux0)
@@ -128,6 +129,17 @@ case "$variant" in
   frozen_mix)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     frozen=true ;;
+  baseline_td_q)
+    # TD-JEPA-adapted SARSA Q competitor: fixed_h4 backbone objectives, no
+    # endpoint ranking or root distillation, no geometry rollouts needed.
+    horizon=1; horizons=null; dense_depth=0; dense_weight=0; rollouts=1
+    rollout_for_h1=false; horizon_rank_weight=0; root_distill_weight=0
+    score_mode=td_q; td_q_weight=1 ;;
+  baseline_expectile_value)
+    # Destrade-style expectile goal-value competitor (arXiv:2601.00844).
+    horizon=1; horizons=null; dense_depth=0; dense_weight=0; rollouts=1
+    rollout_for_h1=false; horizon_rank_weight=0; root_distill_weight=0
+    score_mode=expectile_value; expectile_weight=1 ;;
   *) echo "unknown horizon-Energy variant: $variant" >&2; exit 2 ;;
 esac
 
@@ -154,13 +166,13 @@ fi
   data.test_size=500 train.eval_batches=40 train.warmup_steps=500 \
   data.geo_rank_horizon="$horizon" "data.geo_rank_horizons=$horizons" \
   data.geo_rank_policy=random data.geo_rank_rollouts="$rollouts" \
-  data.geo_rank_rollout_for_h1=true \
+  data.geo_rank_rollout_for_h1="$rollout_for_h1" \
   data.geo_rank_candidate_interface="$candidate_interface" \
   data.geo_rank_k="$rank_k" \
   data.geo_rank_feasible_k="$feasible_k" \
   data.geo_rank_invalid_k="$invalid_k" \
   data.invalid_action_mode="$invalid_mode" \
-  model.geo_rank_score_mode=horizon model.geo_energy_target=distance \
+  model.geo_rank_score_mode="$score_mode" model.geo_energy_target=distance \
   model.geo_horizon_input="$horizon_input" \
   model.geo_horizon_supervise_prefixes="$prefix_energy" \
   model.dense_rollout_depth="$dense_depth" \
@@ -168,6 +180,8 @@ fi
   objective.geo_advantage_mse.weight="$root_distill_weight" \
   objective.geo_horizon_rank.weight="$horizon_rank_weight" \
   objective.geo_horizon_rank.kind="$ranking_kind" \
+  objective.td_q.weight="$td_q_weight" \
+  objective.expectile_value.weight="$expectile_weight" \
   objective.counterfactual_state.weight="$counterfactual_weight" \
   objective.latent_pred.weight="$latent_weight" \
   objective.chunk_pred.weight="$chunk_weight" \
