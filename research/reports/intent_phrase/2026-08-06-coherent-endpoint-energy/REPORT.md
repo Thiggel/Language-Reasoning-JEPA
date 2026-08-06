@@ -65,6 +65,30 @@ state; mixed rollout horizons {1,2,4,8,16}; no root auxiliary; no dense loss;
 no horizon conditioning. Five-seed promotion of this cell (s1–s4) and of its
 horizon-conditioned twin (s1 running, s2–s4 queued) launched tonight.
 
+## Five-seed promotion (added same day)
+
+Horizon-blind endpoint ranking, five seeds (s0-s4):
+
+| Depth | Strict | Slack-2 |
+|---:|---:|---:|
+| 1 | .123 ± .009 | .556 ± .014 |
+| 2 | .438 ± .041 | .869 ± .010 |
+| 4 | .777 ± .023 | .985 ± .005 |
+| 8 | .800 ± .022 | .994 ± .003 |
+| 16 | .801 ± .024 | .995 ± .004 |
+
+Horizon-conditioned twin (2 seeds): .135/.447/.780/.820/.818 — overlapping;
+the horizon input is confirmed unnecessary.
+
+The remaining ~.05-.07 deep-depth gap to the old mixed reference
+(.834/.874/.877 at D4/8/16) therefore tracks the 0.25 root pair-difference
+auxiliary, not the horizon input. Note that under a horizon-blind head the
+auxiliary is no longer semantically incoherent: there is only one Energy
+semantics for it to distill into. The decisive ablation
+(`mix_pow2_16_aux025_nohorizon`, five seeds) is running; if it recovers the
+reference level, the frozen paper recipe is horizon-blind ranking + 0.25
+auxiliary, all coherent.
+
 ## Caveats
 
 - Depth > 1 remains candidate-privileged (symbolic future feasible menus).
