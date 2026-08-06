@@ -70,3 +70,18 @@ ICLR paper. No experiments in this report._
    (family b, Temporal-Distance JEPA).
 4. `subgoal_proposer` G(z_t, z_0, rho): enables non-oracle family (c)
    (FF-JEPA/LAGO-style) rows.
+
+## First results (added 2026-08-06 night, one seed, 300 episodes, identical protocol)
+
+| Method | D1 | D2 | D4 | D8 | D16 |
+|---|---:|---:|---:|---:|---:|
+| TD-Q (SARSA, amortized) | **.190** | .210 | .240 | .223 | .220 |
+| Expectile goal-value | .057 | .063 | .103 | .173 | .187 |
+| Horizon-blind endpoint ranking (5 seeds) | .123 | .438 | .777 | .800 | .801 |
+
+TD-Q slack-2 *decreases* with depth (.617 -> .470): the amortized value is
+myopically stronger than the ranking Energy (D1 .190 vs .123) but cannot
+exploit recursive imagination — deeper search actively hurts it. The
+expectile distance-value stays near the random baseline (.053). Both confirm
+the internal pattern: absolutely-calibrated scores collapse under imagined
+inputs; relative ranking distillation is what survives depth.
