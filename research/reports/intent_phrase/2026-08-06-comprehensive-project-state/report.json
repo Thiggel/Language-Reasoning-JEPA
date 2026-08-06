@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "2026-08-06-comprehensive-project-state",
+  "project": "intent_phrase",
+  "title": "Predictive planning with intent phrases: complete project state on 6 August 2026",
+  "created_at": "2026-08-06T15:00:00+02:00",
+  "review_required": true,
+  "status": "project_synthesis",
+  "decision": "Repair endpoint-Energy horizon semantics before promoting the candidate-privileged test-time scaling curve to a final paper claim.",
+  "plain_summary": "A comprehensive synthesis of the intent-phrase task, method evolution, validated and exploratory results, failures, representation analyses, current endpoint-Energy formulation, live jobs, limitations, and next decisions.",
+  "report": "REPORT.md",
+  "figures": [
+    "figures/current_method_and_evidence.svg"
+  ]
+}
