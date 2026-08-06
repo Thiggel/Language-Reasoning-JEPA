@@ -13,6 +13,8 @@ horizon=4; horizons=null; dense_depth=4; dense_weight=1
 dense_discount=1; rollouts=4; frozen=false
 root_distill_weight=0.25; candidate_interface=feasible_menu; rank_k=2
 feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
+horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
+ranking_kind=logistic
 case "$variant" in
   fixed_h4) ;;
   mix_uniform)
@@ -40,6 +42,37 @@ case "$variant" in
   fixed_h4_distill1)
     horizon=4; horizons=null; dense_depth=0; dense_weight=0
     root_distill_weight=1 ;;
+  fixed_h1_final)
+    horizon=1; horizons=null; dense_depth=0; dense_weight=0 ;;
+  fixed_h2_final)
+    horizon=2; horizons=null; dense_depth=0; dense_weight=0 ;;
+  fixed_h8_final)
+    horizon=8; horizons=null; dense_depth=0; dense_weight=0 ;;
+  fixed_h16_final)
+    horizon=16; horizons=null; dense_depth=0; dense_weight=0 ;;
+  fixed_h4_rollouts1)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0; rollouts=1 ;;
+  fixed_h4_rollouts2)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0; rollouts=2 ;;
+  fixed_h4_rollouts8)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0; rollouts=8 ;;
+  fixed_h4_rollouts16)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0; rollouts=16 ;;
+  fixed_h4_distill0)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    root_distill_weight=0 ;;
+  fixed_h4_no_endpoint_rank)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    horizon_rank_weight=0 ;;
+  fixed_h4_no_counterfactual)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    counterfactual_weight=0 ;;
+  fixed_h4_no_factual_latent)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    latent_weight=0 ;;
+  fixed_h4_hinge)
+    horizon=4; horizons=null; dense_depth=0; dense_weight=0
+    ranking_kind=hinge ;;
   mix_no_dense_full_catalogue)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     candidate_interface=full_catalogue; rank_k=-1 ;;
@@ -106,8 +139,10 @@ fi
   model.dense_rollout_depth="$dense_depth" \
   objective.geo_rank.weight=0 objective.geo_energy_mse.weight=0 \
   objective.geo_advantage_mse.weight="$root_distill_weight" \
-  objective.geo_horizon_rank.weight=1 \
-  objective.geo_horizon_rank.kind=logistic \
+  objective.geo_horizon_rank.weight="$horizon_rank_weight" \
+  objective.geo_horizon_rank.kind="$ranking_kind" \
+  objective.counterfactual_state.weight="$counterfactual_weight" \
+  objective.latent_pred.weight="$latent_weight" \
   objective.dense_rollout.weight="$dense_weight" \
   objective.dense_rollout.horizon_discount="$dense_discount" \
   "${extra[@]}" hydra.run.dir="$model_dir" hydra.output_subdir=null
@@ -138,7 +173,9 @@ fi
 "$py" - "$RUN_DIR" "$variant" "$seed" "$lr" "$horizons" \
   "$dense_depth" "$dense_weight" "$dense_discount" "$frozen" \
   "$root_distill_weight" "$candidate_interface" "$rank_k" \
-  "$feasible_k" "$invalid_k" "$invalid_mode" "$prefix_energy" <<'PY'
+  "$feasible_k" "$invalid_k" "$invalid_mode" "$prefix_energy" \
+  "$horizon" "$rollouts" "$horizon_rank_weight" \
+  "$counterfactual_weight" "$latent_weight" "$ranking_kind" <<'PY'
 import json, pathlib, sys
 r = pathlib.Path(sys.argv[1])
 (r / "training_complete.json").write_text(json.dumps({
@@ -156,5 +193,11 @@ r = pathlib.Path(sys.argv[1])
     "invalid_alternatives": sys.argv[14],
     "invalid_action_mode": sys.argv[15],
     "supervise_energy_prefixes": sys.argv[16].lower() == "true",
+    "fixed_horizon": int(sys.argv[17]),
+    "rollouts_per_root": int(sys.argv[18]),
+    "endpoint_rank_weight": float(sys.argv[19]),
+    "counterfactual_state_weight": float(sys.argv[20]),
+    "factual_latent_weight": float(sys.argv[21]),
+    "ranking_kind": sys.argv[22],
 }, indent=2) + "\n")
 PY
