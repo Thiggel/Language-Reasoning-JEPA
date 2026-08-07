@@ -32,7 +32,11 @@ transition_energy_composition: terminal  # terminal | cumulative (control) | roo
 # For horizon-Energy checkpoints, use the preserved one-step GAR value head
 # to prune partial beams and the horizon head only for the final beam choice.
 hybrid_local_pruning: false
-candidate_interface: feasible_menu  # feasible_menu | full_catalogue
+candidate_interface: feasible_menu  # feasible_menu | full_catalogue | learned_catalogue
+# learned_catalogue only: filter catalogue candidates by the learned action
+# prior (top-p nucleus over the catalogue-normalized prior, then top-k).
+prior_top_k: 0   # 0 = keep all
+prior_top_p: 1.0
 invalid_action_mode: noop  # noop | failure
 # oracle_goal encodes the solved trajectory and scores representation distance.
 # symbolic_distance reads exact remaining steps from the environment and also

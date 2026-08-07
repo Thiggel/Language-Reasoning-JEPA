@@ -141,6 +141,10 @@ class DiscourseJEPA(nn.Module):
         high_predictor_ff_mult: int = 4,
         high_predictor_residual: bool | None = None,
         action_support_states: str = "true",
+        action_prior: bool = False,
+        action_prior_components: int = 1,
+        action_prior_states: str = "true",
+        action_prior_candidate_scope: str = "feasible",
         macro_support_scales: list[float] | None = None,
         dense_rollout_depth: int = 0,
         high_dense_rollout_depth: int = 0,
@@ -214,6 +218,17 @@ class DiscourseJEPA(nn.Module):
                 f"unknown action-support state mode: {action_support_states}"
             )
         self.action_support_states = action_support_states
+        if action_prior_states not in {"true", "all"}:
+            raise ValueError(
+                f"unknown action-prior state mode: {action_prior_states}"
+            )
+        self.action_prior_states = action_prior_states
+        if action_prior_candidate_scope not in {"feasible", "catalogue"}:
+            raise ValueError(
+                "unknown action-prior candidate scope: "
+                f"{action_prior_candidate_scope}"
+            )
+        self.action_prior_candidate_scope = action_prior_candidate_scope
         self.macro_support_scales = tuple(macro_support_scales or [3.0])
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
@@ -291,6 +306,17 @@ class DiscourseJEPA(nn.Module):
             high_dense_rollout_depth=high_dense_rollout_depth,
             td_jepa_d_psi=td_jepa_d_psi,
             td_jepa_d_task=td_jepa_d_task,
+        )
+        # Learned action prior over the intent-phrase embedding space.
+        # Optional (default off) so existing checkpoints load unchanged.
+        from textjepa.models.heads import GaussianActionPrior
+
+        self.action_prior = (
+            GaussianActionPrior(
+                d_model, d_action, n_components=action_prior_components
+            )
+            if action_prior
+            else None
         )
         # Keep the active policy-head budget information matched.  Inactive
         # heads remain in the module only for checkpoint compatibility.
@@ -484,6 +510,13 @@ class DiscourseJEPA(nn.Module):
             and "action_candidate_tokens" in batch
         ):
             self._action_support(batch, out)
+        if self.action_prior is not None:
+            observed_codes = (
+                actions
+                if self.var_action is None
+                else self.encode_actions(batch["action_tokens"])
+            )
+            self._action_prior_supervision(out, observed_codes)
         if self.observed_action_decoder is not None:
             if self.observed_action_ldad_horizon == 1:
                 out.extras["observed_action_logits"] = self.observed_action_decoder(
@@ -766,6 +799,42 @@ class DiscourseJEPA(nn.Module):
             action_support_logits=logits,
             action_support_valid=valid,
             action_support_target=target,
+        )
+
+    def _action_prior_supervision(self, out, action_codes) -> None:
+        """NLL of the observed next action's embedding under p(a | s).
+
+        Supervises the Gaussian action prior at every observed prefix state
+        (and, in ``all`` mode, also at one-step-predicted and open-loop
+        rollout states, mirroring ``action_support_states``). Inputs are
+        detached under ``value_detach`` so the prior never shapes the JEPA
+        representation.
+        """
+        states = [out.prev_states]
+        if self.action_prior_states == "all":
+            states.extend([
+                torch.cat([out.s0.unsqueeze(1), out.preds[:, :-1]], dim=1),
+                torch.cat([out.s0.unsqueeze(1), out.rollout[:, :-1]], dim=1),
+            ])
+        states = torch.stack(states, dim=1)  # [B, M, T, D]
+        if self.core.value_detach:
+            states = states.detach()
+        targets = (
+            action_codes.detach()
+            if self.core.value_detach
+            else action_codes
+        )
+        B, M, T, _ = states.shape
+        nll = self.action_prior.nll(
+            states, targets.unsqueeze(1).expand(B, M, T, -1)
+        )
+        valid = out.step_mask.unsqueeze(1).expand(B, M, T)
+        if M == 1:
+            nll = nll[:, 0]
+            valid = valid[:, 0]
+        out.extras.update(
+            action_prior_nll=nll,
+            action_prior_nll_valid=valid,
         )
 
     def _macro_counterfactuals(self, batch: dict, out) -> None:

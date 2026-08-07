@@ -55,6 +55,10 @@ class EpisodeResult:
     n_necessary: int
     n_distractor: int
     n_invalid: int = 0
+    # Mean (over steps) 1-based rank of the best ground-truth-necessary
+    # feasible action under the learned action prior. Diagnostic only: it
+    # reads oracle labels for measurement, never for candidate generation.
+    prior_rank: float | None = None
 
 
 def _feasible(problem: Problem, resolved: frozenset[int]) -> list[int]:
@@ -135,11 +139,28 @@ class LatentPlanner:
         hybrid_local_pruning: bool = False,
         candidate_interface: str = "feasible_menu",
         invalid_action_mode: str = "noop",
+        prior_top_k: int = 0,
+        prior_top_p: float = 1.0,
     ):
-        if candidate_interface not in {"feasible_menu", "full_catalogue"}:
+        if candidate_interface not in {
+            "feasible_menu", "full_catalogue", "learned_catalogue"
+        }:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface}"
             )
+        if candidate_interface == "learned_catalogue" and (
+            hierarchy or simulator != "latent"
+        ):
+            raise ValueError(
+                "learned_catalogue planning supports only the flat latent "
+                "simulator"
+            )
+        if prior_top_k < 0:
+            raise ValueError("prior_top_k must be non-negative (0 = off)")
+        if not 0.0 < prior_top_p <= 1.0:
+            raise ValueError("prior_top_p must lie in (0, 1]")
+        self.prior_top_k = prior_top_k
+        self.prior_top_p = prior_top_p
         if (
             lookahead > 1
             and candidate_interface == "feasible_menu"
@@ -210,6 +231,7 @@ class LatentPlanner:
         budget = problem.n_necessary_steps + slack
         n_distractor = 0
         n_invalid = 0
+        prior_ranks: list[float] = []
         goal_state = (
             self._oracle_goal_state(problem, prompt_tokens, prompt_mask)
             if self.energy == "oracle_goal"
@@ -226,7 +248,16 @@ class LatentPlanner:
                 problem,
                 action_history,
             )
-            if self.search_algorithm in {"beam", "root_balanced_beam"}:
+            if self.candidate_interface == "learned_catalogue":
+                prior_ranks.append(
+                    self._prior_rank_diagnostic(
+                        problem, s, frozenset(env.resolved_set)
+                    )
+                )
+            if (
+                self.candidate_interface == "learned_catalogue"
+                or self.search_algorithm in {"beam", "root_balanced_beam"}
+            ):
                 best = self._beam_search(
                     s, s0, problem, frozenset(env.resolved_set), goal_state,
                     state_history, action_codes,
@@ -253,14 +284,18 @@ class LatentPlanner:
             n_invalid += int(invalid)
             step_texts.append(
                 env.step_or_invalid(chosen)
-                if self.candidate_interface == "full_catalogue"
+                if self.candidate_interface
+                in {"full_catalogue", "learned_catalogue"}
                 else env.step(chosen)
             )
             action_history.append(chosen)
 
         return EpisodeResult(
             env.solved, len(step_texts), problem.n_necessary_steps,
-            n_distractor, n_invalid
+            n_distractor, n_invalid,
+            prior_rank=(
+                sum(prior_ranks) / len(prior_ranks) if prior_ranks else None
+            ),
         )
 
     def _s0(self, prompt_tokens, prompt_mask) -> torch.Tensor:
@@ -365,6 +400,93 @@ class LatentPlanner:
         texts = [action_phrase(problem, i) for i in idxs]
         tokens = self._tokens(texts).squeeze(0).unsqueeze(1)  # [n, 1, L]
         return self.model.encode_actions(tokens).squeeze(1)
+
+    # ------------------------------------------------------------------ #
+    # learned action prior: catalogue candidates with no feasibility oracle
+    # ------------------------------------------------------------------ #
+    def _catalogue_codes(self, problem: Problem) -> torch.Tensor:
+        """[V, d_action] embeddings of every catalogue intent phrase."""
+        cache = getattr(self, "_catalogue_cache", None)
+        if cache is None or cache[0] is not problem:
+            codes = self._action_codes(
+                problem, list(range(len(problem.vars)))
+            )
+            self._catalogue_cache = (problem, codes)
+        return self._catalogue_cache[1]
+
+    def _prior_log_probs(
+        self, problem: Problem, state: torch.Tensor
+    ) -> torch.Tensor:
+        """log p(a | state) for every catalogue action ([V])."""
+        prior = getattr(self.model, "action_prior", None)
+        if prior is None:
+            raise RuntimeError(
+                "candidate_interface=learned_catalogue requires a checkpoint "
+                "trained with model.action_prior=true (no GaussianActionPrior "
+                "head found on the model)"
+            )
+        codes = self._catalogue_codes(problem)
+        return prior.log_prob(
+            state.reshape(1, -1).expand(codes.shape[0], -1), codes
+        )
+
+    def _prior_candidates(
+        self, problem: Problem, state: torch.Tensor
+    ) -> list[int]:
+        """Catalogue actions ranked and filtered by the learned prior.
+
+        Top-p (nucleus over the prior's catalogue-normalized probabilities)
+        then top-k, both optional. No feasibility oracle is consulted; the
+        environment handles proposed-but-infeasible actions downstream.
+        """
+        log_probs = self._prior_log_probs(problem, state)
+        order = torch.argsort(log_probs, descending=True, stable=True)
+        keep = len(order)
+        if self.prior_top_p < 1.0:
+            sorted_probs = log_probs[order].softmax(-1)
+            cumulative = sorted_probs.cumsum(-1)
+            keep = min(
+                keep, int((cumulative < self.prior_top_p).sum().item()) + 1
+            )
+        if self.prior_top_k > 0:
+            keep = min(keep, self.prior_top_k)
+        return order[:keep].tolist()
+
+    def _imagined_state(
+        self, problem: Problem, s: torch.Tensor, sequence: list[int]
+    ) -> torch.Tensor:
+        """Roll the predictor over a partial action sequence ([1, D])."""
+        codes = self._action_codes(problem, sequence)
+        if hasattr(self.model.predictor, "rollout"):
+            return self.model.predictor.rollout(
+                s, codes.unsqueeze(0)
+            )[:, -1]
+        cur = s
+        for step in range(codes.shape[0]):
+            cur = self.model.predictor(cur, codes[step : step + 1])
+        return cur
+
+    def _prior_rank_diagnostic(
+        self, problem: Problem, state: torch.Tensor, resolved: frozenset[int]
+    ) -> float:
+        """1-based prior rank of the best ground-truth next action.
+
+        Oracle labels (feasible necessary actions) are used only to *measure*
+        how highly the prior ranks a correct continuation — never to build
+        the candidate set.
+        """
+        log_probs = self._prior_log_probs(problem, state)
+        order = torch.argsort(log_probs, descending=True, stable=True).tolist()
+        targets = {
+            action
+            for action in _feasible(problem, resolved)
+            if action in problem.query_ancestors
+        }
+        if not targets:
+            return float(len(order))
+        return float(
+            min(order.index(action) for action in targets) + 1
+        )
 
     def _flat_costs(
         self,
@@ -565,11 +687,12 @@ class LatentPlanner:
         score_seed: str,
     ) -> list[int | None]:
         """True global beam search over JEPA-imagined continuations."""
-        roots = (
-            list(range(len(problem.vars)))
-            if self.candidate_interface == "full_catalogue"
-            else _feasible(problem, resolved)
-        )
+        if self.candidate_interface == "full_catalogue":
+            roots = list(range(len(problem.vars)))
+        elif self.candidate_interface == "learned_catalogue":
+            roots = self._prior_candidates(problem, s)
+        else:
+            roots = _feasible(problem, resolved)
         beam = [[action] for action in roots]
         if not beam:
             return [None]
@@ -581,6 +704,17 @@ class LatentPlanner:
                         expanded.extend(
                             sequence + [action]
                             for action in range(len(problem.vars))
+                        )
+                        continue
+                    if self.candidate_interface == "learned_catalogue":
+                        # Prior-filter expansions from the JEPA-imagined state
+                        # after the partial sequence; no oracle menu is used.
+                        expanded.extend(
+                            sequence + [action]
+                            for action in self._prior_candidates(
+                                problem,
+                                self._imagined_state(problem, s, sequence),
+                            )
                         )
                         continue
                     reached = resolved | {

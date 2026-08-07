@@ -74,6 +74,11 @@ def _aggregate(
         "invalid_action_rate": sum(r.n_invalid for r in results)
         / max(sum(r.steps for r in results), 1),
     }
+    ranks = [r.prior_rank for r in results if r.prior_rank is not None]
+    if ranks:
+        # Learned-catalogue diagnostic: mean rank of the ground-truth next
+        # action under the learned prior (1 = the prior's top choice).
+        metrics["mean_prior_rank"] = sum(ranks) / len(ranks)
     if max_slack is not None:
         # The policy never reads the remaining budget, so one run at
         # slack=max_slack yields every smaller-slack success rate exactly:

@@ -15,6 +15,7 @@ import torch
 from omegaconf import DictConfig
 
 from textjepa.planning import LatentPlanner, evaluate_planning
+from textjepa.planning.search import validate_learned_catalogue_checkpoint
 from textjepa.planning.edit_search import EditPlanner, evaluate_edit_planning
 from textjepa.utils import seed_everything
 from textjepa.utils.checkpoint import (
@@ -29,6 +30,8 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
     apply_eval_data_overrides(run_cfg, cfg)
+    if cfg.get("candidate_interface", "feasible_menu") == "learned_catalogue":
+        validate_learned_catalogue_checkpoint(run_cfg)
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
     device = torch.device(cfg.device)
@@ -102,6 +105,8 @@ def main(cfg: DictConfig) -> None:
                     "candidate_interface", "feasible_menu"
                 ),
                 invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
+                prior_top_k=int(cfg.get("prior_top_k", 0)),
+                prior_top_p=float(cfg.get("prior_top_p", 1.0)),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,

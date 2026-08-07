@@ -54,6 +54,7 @@ from textjepa.objectives.counterfactual import (
 )
 from textjepa.objectives.macro_hierarchy import (
     ActionFeasibility,
+    GaussianActionPriorNLL,
     HierarchyReachability,
     LowerHierarchyRollout,
     MacroActionValue,
@@ -84,6 +85,7 @@ from textjepa.objectives.hierarchical_language import (
 
 __all__ = [
     "ActionFeasibility",
+    "GaussianActionPriorNLL",
     "HierarchyReachability",
     "LowerHierarchyRollout",
     "ActionRanking",

@@ -391,6 +391,24 @@ class ActionFeasibility(Objective):
         )
 
 
+class GaussianActionPriorNLL(Objective):
+    """Fit the learned Gaussian action prior p(a | s) by NLL.
+
+    The target is the OBSERVED next action's embedding at each prefix state,
+    so this is demonstration supervision for a learned proposal density —
+    the planner uses it to rank the intent-phrase catalogue without any
+    feasibility oracle.
+    """
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "action_prior_nll" not in out.extras:
+            return out.preds.sum() * 0.0
+        return masked_mean(
+            out.extras["action_prior_nll"],
+            out.extras["action_prior_nll_valid"].float(),
+        )
+
+
 class ActionPrior(Objective):
     """Behavior cloning over the configured intent-phrase candidate set.
 

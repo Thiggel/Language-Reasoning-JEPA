@@ -24,6 +24,10 @@ high_predictor_heads: 8
 high_predictor_ff_mult: 4
 high_predictor_residual: null
 action_support_states: "true"  # true | all (also one-step/open-loop states)
+action_prior: false            # learned Gaussian prior p(a | s) over intent embeddings
+action_prior_components: 1     # >1: mixture of isotropic Gaussians
+action_prior_states: "true"    # true | all (also one-step/open-loop states)
+action_prior_candidate_scope: feasible  # feasible | catalogue (learned-catalogue planning)
 macro_support_scales: [3.0]
 dense_rollout_depth: 0
 high_dense_rollout_depth: 0

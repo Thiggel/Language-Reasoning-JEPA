@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import torch
 from torch import nn
 
@@ -347,6 +349,62 @@ class ActionSupportHead(nn.Module):
         history_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         return self.net(torch.cat([state, action], -1)).squeeze(-1)
+
+
+class GaussianActionPrior(nn.Module):
+    """Learned prior p(a | s) over intent-phrase action embeddings.
+
+    An MLP maps the current state latent to the parameters of a (mixture of)
+    isotropic Gaussian(s) over the action-embedding space: per component a
+    mixture logit, a mean vector, and one scalar log-variance. Trained with
+    the NLL of the observed next action's embedding, it lets the planner
+    rank catalogue actions without any feasibility oracle.
+    """
+
+    def __init__(
+        self,
+        d_state: int,
+        d_action: int,
+        hidden: int = 256,
+        n_components: int = 1,
+    ):
+        super().__init__()
+        if n_components < 1:
+            raise ValueError("action prior requires at least one component")
+        self.d_action = d_action
+        self.n_components = n_components
+        self.net = nn.Sequential(
+            nn.LayerNorm(d_state),
+            mlp([d_state, hidden], n_components * (2 + d_action)),
+        )
+
+    def components(
+        self, state: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """[.., d_state] -> mixture logits [.., K], means [.., K, d_action],
+        scalar (isotropic) log-variances [.., K]."""
+        raw = self.net(state).reshape(
+            *state.shape[:-1], self.n_components, 2 + self.d_action
+        )
+        logits = raw[..., 0]
+        mu = raw[..., 1 : 1 + self.d_action]
+        logvar = raw[..., 1 + self.d_action].clamp(-6.0, 4.0)
+        return logits, mu, logvar
+
+    def log_prob(
+        self, state: torch.Tensor, action: torch.Tensor
+    ) -> torch.Tensor:
+        """log p(action | state) for matching leading shapes [.., d_*]."""
+        logits, mu, logvar = self.components(state)
+        diff = action.unsqueeze(-2) - mu
+        component_lp = -0.5 * (
+            self.d_action * (logvar + math.log(2.0 * math.pi))
+            + diff.square().sum(-1) * (-logvar).exp()
+        )
+        return torch.logsumexp(logits.log_softmax(-1) + component_lp, dim=-1)
+
+    def nll(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        return -self.log_prob(state, action)
 
 
 class HistoryActionSupportHead(nn.Module):

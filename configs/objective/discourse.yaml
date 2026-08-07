@@ -259,3 +259,6 @@ action_feasibility:
   _target_: textjepa.objectives.ActionFeasibility
   weight: 0.0
   positive_weight: 2.0
+action_prior:
+  _target_: textjepa.objectives.GaussianActionPriorNLL
+  weight: 0.0  # NLL of the observed next action under the learned prior
