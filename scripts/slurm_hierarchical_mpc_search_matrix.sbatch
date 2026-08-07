@@ -31,12 +31,18 @@ finish() {
 }
 trap finish EXIT
 
-if ! command -v module >/dev/null 2>&1; then
-  # Alex batch shells are non-login shells on some partitions, so the module
-  # function is not initialized automatically.
+# Alex nodes are heterogeneous: some expose Environment Modules only after
+# sourcing modules.sh, while newer nodes provide the CUDA job environment
+# without installing Modules at all. The validated shared venv carries its
+# own CUDA-enabled PyTorch, so module loading is an optional optimization,
+# not a correctness prerequisite.
+if ! command -v module >/dev/null 2>&1 \
+    && [[ -r /etc/profile.d/modules.sh ]]; then
   source /etc/profile.d/modules.sh
 fi
-module load cuda/12.8.1
+if command -v module >/dev/null 2>&1; then
+  module load cuda/12.8.1 >/dev/null 2>&1 || true
+fi
 export http_proxy=http://proxy:80
 export https_proxy=http://proxy:80
 export HTTP_PROXY=$http_proxy
