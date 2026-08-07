@@ -71,6 +71,7 @@ class LatentDynamicsCore(nn.Module):
         dense_rollout_depth: int = 0,
         high_dense_rollout_depth: int = 0,
         action_support_kind: str = "pairwise",
+        action_support_action_dim: int | None = None,
         action_support_history_mode: str = "aligned",
         action_support_heads: int = 2,
         td_jepa_d_psi: int = 32,
@@ -172,19 +173,20 @@ class LatentDynamicsCore(nn.Module):
         self.hi_value_head = ValueHead(d_model)
         self.macro_value_head = MacroValueHead(d_model, d_macro)
         self.macro_support_head = MacroSupportHead(d_model, d_macro)
+        support_a_dim = action_support_action_dim or d_model
         if action_support_kind == "pairwise":
             self.action_support_head = ActionSupportHead(d_model, d_action)
         elif action_support_kind == "history_attention":
             self.action_support_head = HistoryActionSupportHead(
                 d_model,
-                d_model,
+                support_a_dim,
                 n_heads=action_support_heads,
                 use_history=action_support_history_mode == "aligned",
             )
         elif action_support_kind == "token_history_attention":
             self.action_support_head = TokenHistoryActionSupportHead(
                 d_model,
-                d_model,
+                support_a_dim,
                 n_heads=action_support_heads,
                 use_history=action_support_history_mode == "aligned",
             )

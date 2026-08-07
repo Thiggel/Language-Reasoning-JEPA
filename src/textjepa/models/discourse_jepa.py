@@ -141,6 +141,7 @@ class DiscourseJEPA(nn.Module):
         high_predictor_ff_mult: int = 4,
         high_predictor_residual: bool | None = None,
         action_support_states: str = "true",
+        action_support_kind: str = "pairwise",
         action_prior: bool = False,
         action_prior_components: int = 1,
         action_prior_states: str = "true",
@@ -290,6 +291,8 @@ class DiscourseJEPA(nn.Module):
             macro_k=macro_k,
             d_macro=d_macro,
             value_detach=value_detach,
+            action_support_kind=action_support_kind,
+            action_support_action_dim=d_action,
             geo_proj=geo_proj,
             residual=predictor_residual,
             detach_targets=state_target != "online_nosg",
@@ -778,11 +781,38 @@ class DiscourseJEPA(nn.Module):
             states = states.detach()
         action_features = actions.detach() if self.core.value_detach else actions
         M = states.shape[1]
+        hist = hist_mask = None
+        from textjepa.models.heads import ActionSupportHead
+        if not isinstance(self.core.action_support_head, ActionSupportHead):
+            # History-attention heads see the executed actions a_0..a_{t-1}
+            # for the state before step t (causal, no oracle).
+            hist_src = (
+                out.actions.detach()
+                if self.core.value_detach
+                else out.actions
+            )
+            hist = (
+                hist_src.reshape(B, 1, 1, 1, T, -1)
+                .expand(B, M, T, V, T, hist_src.shape[-1])
+            )
+            causal = torch.tril(
+                torch.ones(
+                    T, T, dtype=torch.bool, device=hist_src.device
+                ),
+                diagonal=-1,
+            )
+            hist_mask = (
+                (causal.unsqueeze(0) & out.step_mask.unsqueeze(1))
+                .reshape(B, 1, T, 1, T)
+                .expand(B, M, T, V, T)
+            )
         logits = self.core.action_support_head(
             states.unsqueeze(3).expand(B, M, T, V, d_state),
             action_features.unsqueeze(1).unsqueeze(1).expand(
                 B, M, T, V, -1
             ),
+            history=hist,
+            history_mask=hist_mask,
         )
         candidate_observed = batch.get("action_candidate_observed")
         if candidate_observed is None:

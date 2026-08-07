@@ -19,7 +19,7 @@ horizon_input=true; predictor_residual=true; td_auxiliary=none
 factual_only=false
 score_mode=horizon; rollout_for_h1=true; td_q_weight=0; expectile_weight=0
 td_jepa_weight=0; goal_head_weight=0
-action_prior=false; eval_candidate_interface=""
+action_prior=false; eval_candidate_interface=""; support_kind=""
 case "$variant" in
   fixed_h4) ;;
   mix_pow2_16_aux0)
@@ -192,6 +192,17 @@ case "$variant" in
     root_distill_weight=0.25; horizon_input=false
     candidate_interface=full_catalogue; action_prior=true
     eval_candidate_interface=learned_catalogue ;;
+  mix4_aux025_nohorizon_prior_hist)
+    # Menu-free recipe, second iteration: same as _prior but the learned
+    # feasibility head attends over the executed-action HISTORY
+    # (history_attention) — feasibility in iGSM is relational (all
+    # prerequisites executed), which the flat pairwise head provably
+    # cannot read (58% accuracy, near-constant logits in mix4-prior-s0).
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false
+    candidate_interface=full_catalogue; action_prior=true
+    support_kind=history_attention
+    eval_candidate_interface=learned_catalogue ;;
   plain_backbone)
     # Backbone-only training: latent/counterfactual/chunk/vicreg objectives
     # with every value/ranking/TD auxiliary at zero. Produces the plain-JEPA
@@ -250,6 +261,9 @@ if [[ "$action_prior" == true ]]; then
     data.all_action_supervision=true objective.action_prior.weight=1.0
     objective.action_feasibility.weight=1.0
   )
+  if [[ -n "$support_kind" ]]; then
+    extra+=("model.action_support_kind=$support_kind")
+  fi
 fi
 
 "$py" "$TEXTJEPA_ROOT/scripts/train.py" \

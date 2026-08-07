@@ -417,7 +417,10 @@ class LatentPlanner:
         return self._catalogue_cache[1]
 
     def _prior_log_probs(
-        self, problem: Problem, state: torch.Tensor
+        self,
+        problem: Problem,
+        state: torch.Tensor,
+        history: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """log p(a | state) for every catalogue action ([V])."""
         prior = getattr(self.model, "action_prior", None)
@@ -434,12 +437,26 @@ class LatentPlanner:
             # Soft gate by the LEARNED feasibility head (trained with
             # objective.action_feasibility): adds log sigma(logit). No
             # oracle is consulted; both scores come from the checkpoint.
-            logits = self.model.core.action_support_head(expanded, codes)
+            # History-attention heads additionally see the executed (or
+            # beam-imagined) action codes — still no oracle.
+            hist = hist_mask = None
+            if history is not None and history.shape[-2] > 0:
+                hist = history.expand(codes.shape[0], -1, -1)
+                hist_mask = torch.ones(
+                    codes.shape[0], history.shape[-2],
+                    dtype=torch.bool, device=codes.device,
+                )
+            logits = self.model.core.action_support_head(
+                expanded, codes, history=hist, history_mask=hist_mask
+            )
             log_probs = log_probs + torch.nn.functional.logsigmoid(logits)
         return log_probs
 
     def _prior_candidates(
-        self, problem: Problem, state: torch.Tensor
+        self,
+        problem: Problem,
+        state: torch.Tensor,
+        history: torch.Tensor | None = None,
     ) -> list[int]:
         """Catalogue actions ranked and filtered by the learned prior.
 
@@ -447,7 +464,7 @@ class LatentPlanner:
         then top-k, both optional. No feasibility oracle is consulted; the
         environment handles proposed-but-infeasible actions downstream.
         """
-        log_probs = self._prior_log_probs(problem, state)
+        log_probs = self._prior_log_probs(problem, state, history=history)
         order = torch.argsort(log_probs, descending=True, stable=True)
         keep = len(order)
         if self.prior_top_p < 1.0:
@@ -698,7 +715,7 @@ class LatentPlanner:
         if self.candidate_interface == "full_catalogue":
             roots = list(range(len(problem.vars)))
         elif self.candidate_interface == "learned_catalogue":
-            roots = self._prior_candidates(problem, s)
+            roots = self._prior_candidates(problem, s, history=action_history)
         else:
             roots = _feasible(problem, resolved)
         beam = [[action] for action in roots]
@@ -722,6 +739,15 @@ class LatentPlanner:
                             for action in self._prior_candidates(
                                 problem,
                                 self._imagined_state(problem, s, sequence),
+                                history=torch.cat(
+                                    [
+                                        action_history,
+                                        self._action_codes(
+                                            problem, sequence
+                                        ).unsqueeze(0),
+                                    ],
+                                    dim=1,
+                                ),
                             )
                         )
                         continue
