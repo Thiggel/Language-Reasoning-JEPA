@@ -142,6 +142,13 @@ manager call. Closed-loop hierarchy executes only the first waypoint, exactly
 re-encodes the achieved sentence state and causal histories, and replans from
 that corrected state. Both are reported; closed-loop is the primary MPC mode.
 
+Within either hierarchy policy, token MPC reports `n_exec` independently.
+For positive `n_exec`, the worker executes at most that many tokens, exactly
+re-encodes the partial prefix, and replans toward the same sentence waypoint.
+Only a complete newline/EOS span is passed to `A1` and counted as an achieved
+sentence transition. Complete-sentence execution (`n_exec=0`) is a control,
+not a substitute for token-level receding MPC.
+
 ## Stage order
 
 | Stage | Active addition |

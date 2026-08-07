@@ -26,9 +26,13 @@ from textjepa.planning.nested_language_runtime import (
     sentence_planning_state_from_trace,
 )
 from textjepa.planning.grounded_language_worker import (
+    WorkerBank,
     build_optimized_worker_bank,
     build_worker_bank,
     realize_macro_action,
+)
+from textjepa.utils.hierarchical_generation import (
+    exact_ground_sentence_candidates,
 )
 from textjepa.training.hierarchical_language import ResearchStage
 from textjepa.utils.language_planning_runtime import (
@@ -77,6 +81,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--worker-beam-width", type=int, default=8)
     parser.add_argument("--worker-branch-factor", type=int, default=8)
     parser.add_argument("--worker-preserve-prefix", type=int, default=4)
+    parser.add_argument(
+        "--worker-execution-tokens", type=int, default=0,
+        help="tokens executed before worker replanning; 0 executes a sentence",
+    )
     parser.add_argument(
         "--manager-action-support",
         choices=("ambient", "prior", "prior_trust", "prior_nll"),
@@ -139,6 +147,12 @@ def main() -> None:
         raise ValueError("MPC sizes must be positive")
     if min(args.step_cost, args.prior_weight, args.worker_prior_weight) < 0:
         raise ValueError("MPC costs must be nonnegative")
+    if args.worker_execution_tokens < 0:
+        raise ValueError("worker execution interval must be nonnegative")
+    if args.worker_execution_tokens and args.worker_search == "one_shot":
+        raise ValueError(
+            "token-level receding MPC requires an optimizing worker"
+        )
     if not 0 < args.worker_elite_fraction <= 1:
         raise ValueError("worker elite fraction must be in (0,1]")
     if args.manager_trust_region < 0:
@@ -217,6 +231,7 @@ def main() -> None:
         worker_model_cost_errors = []
         pending_waypoints: list[torch.Tensor] = []
         manager_replans = 0
+        worker_replans = 0
         failure = None
         started = perf_counter()
         hidden = _encode_prefix(frozen, prefix).to(dtype=dtype)
@@ -439,6 +454,117 @@ def main() -> None:
                     failure = str(error)
                     break
 
+            if args.worker_execution_tokens and (
+                args.worker_search != "one_shot"
+            ):
+                # Token-level receding-horizon MPC holds the manager waypoint
+                # fixed, executes only n_exec tokens, exactly re-encodes that
+                # partial text, and searches again. A1 is constructed only
+                # once a genuine sentence boundary has been reached.
+                sentence_root = prefix.clone()
+                search_prefix = prefix
+                search_hidden = hidden
+                accumulated = prefix.new_empty(0)
+                banks = []
+                while True:
+                    assert bank is not None
+                    banks.append(bank)
+                    worker_replans += 1
+                    candidate_tokens, candidate_terminal = bank.candidates[0]
+                    take = min(
+                        args.worker_execution_tokens, len(candidate_tokens)
+                    )
+                    executed = candidate_tokens[:take].to(args.device)
+                    accumulated = torch.cat([accumulated, executed])
+                    search_prefix = torch.cat([search_prefix, executed])
+                    completed = take == len(candidate_tokens)
+                    if completed:
+                        selected_terminal = bool(candidate_terminal)
+                        break
+                    if len(accumulated) >= args.k0:
+                        failure = (
+                            "token MPC exhausted K0 before reaching a "
+                            "reasoning-step boundary"
+                        )
+                        break
+                    encode_started = perf_counter()
+                    search_hidden = _encode_prefix(
+                        frozen, search_prefix
+                    ).to(dtype=dtype)
+                    reencode_seconds += perf_counter() - encode_started
+                    full_prefix_reencode_tokens += len(search_prefix)
+                    try:
+                        bank = build_optimized_worker_bank(
+                            model, frozen, tokenizer, search_prefix,
+                            search_hidden, waypoint, metric,
+                            prompt_len=prompt_len,
+                            algorithm=args.worker_search,
+                            objective=args.worker_objective,
+                            population=args.worker_population,
+                            k0=args.k0 - len(accumulated),
+                            iterations=args.worker_iterations,
+                            elite_fraction=args.worker_elite_fraction,
+                            beam_width=args.worker_beam_width,
+                            branch_factor=args.worker_branch_factor,
+                            preserve_prefix=args.worker_preserve_prefix,
+                            prior_weight=args.worker_prior_weight,
+                            temperature=args.temperature,
+                            top_p=args.top_p, top_k=args.top_k,
+                            seed=(
+                                args.seed * 1000003 + episode * 101 + step
+                                + 10007 * len(banks)
+                            ),
+                        )
+                    except RuntimeError as error:
+                        failure = str(error)
+                        break
+                if failure is not None:
+                    break
+                exact_started = perf_counter()
+                final_grounded = exact_ground_sentence_candidates(
+                    frozen, sentence_root,
+                    [(accumulated.detach().cpu(), selected_terminal)],
+                )
+                final_exact_seconds = perf_counter() - exact_started
+                final_exact = model.e0_to_1(model.e0(
+                    final_grounded.endpoint_hidden.to(dtype=dtype)
+                ))
+                final_action = model.a1(
+                    final_grounded.tokens, final_grounded.mask
+                )
+                bank = WorkerBank(
+                    candidates=[(
+                        accumulated.detach().cpu(), selected_terminal
+                    )],
+                    predicted_coarse=banks[-1].predicted_coarse,
+                    exact_coarse=final_exact,
+                    actions=final_action,
+                    lm_log_probability=final_grounded.log_probabilities,
+                    generation_seconds=sum(
+                        item.generation_seconds for item in banks
+                    ),
+                    exact_grounding_seconds=(
+                        sum(item.exact_grounding_seconds for item in banks)
+                        + final_exact_seconds
+                    ),
+                    token_rollout_seconds=sum(
+                        item.token_rollout_seconds for item in banks
+                    ),
+                    search_algorithm=args.worker_search,
+                    search_diagnostics=tuple(
+                        diagnostic for item in banks
+                        for diagnostic in item.search_diagnostics
+                    ),
+                    proposed_tokens=sum(
+                        item.proposed_tokens for item in banks
+                    ),
+                    transition_evaluations=sum(
+                        item.transition_evaluations for item in banks
+                    ),
+                )
+            else:
+                worker_replans += 1
+
             generation_seconds += bank.generation_seconds
             candidate_grounding_seconds += bank.exact_grounding_seconds
             token_rollout_seconds += bank.token_rollout_seconds
@@ -561,6 +687,8 @@ def main() -> None:
             "generated_tokens": len(generated_tokens),
             "mpc_replans": len(boundaries) - 1,
             "manager_replans": manager_replans,
+            "worker_replans": worker_replans,
+            "worker_execution_tokens": args.worker_execution_tokens,
             "generated_candidate_tokens": generated_candidate_tokens,
             "exact_candidate_tensor_tokens": exact_candidate_tensor_tokens,
             "token_transition_evaluations": token_transition_evaluations,
@@ -666,6 +794,9 @@ def main() -> None:
         ) / len(rows),
         "mean_manager_replans": sum(
             row["manager_replans"] for row in rows
+        ) / len(rows),
+        "mean_worker_replans": sum(
+            row["worker_replans"] for row in rows
         ) / len(rows),
         "mean_full_prefix_reencode_tokens": sum(
             row["full_prefix_reencode_tokens"] for row in rows

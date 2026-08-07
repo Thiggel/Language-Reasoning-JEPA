@@ -59,6 +59,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--worker-beam-width", type=int, default=8)
     parser.add_argument("--worker-branch-factor", type=int, default=8)
     parser.add_argument("--worker-preserve-prefix", type=int, default=4)
+    parser.add_argument(
+        "--worker-execution-tokens", nargs="+", type=int, default=[0]
+    )
     parser.add_argument("--manager-population", type=int, default=256)
     parser.add_argument("--manager-iterations", type=int, default=4)
     parser.add_argument("--manager-elite-fraction", type=float, default=0.1)
@@ -83,6 +86,7 @@ def _cell_id(cell: dict) -> str:
     return "-".join([
         cell["split"], cell["worker_search"], cell["worker_objective"],
         cell["manager_support"], cell["execution"],
+        f'nexec_{cell["worker_execution_tokens"]}',
         f'k0_{cell["k0"]}', f'k1_{cell["k1"]}',
     ])
 
@@ -98,21 +102,30 @@ def _cells(args) -> list[dict]:
                     continue
                 for manager in args.manager_support:
                     for execution in args.execution:
-                        for k0 in args.k0:
-                            for k1 in args.k1:
-                                cell = {
-                                    "split": split,
-                                    "worker_search": worker,
-                                    "worker_objective": worker_objective,
-                                    "manager_support": manager,
-                                    "execution": execution,
-                                    "k0": k0, "k1": k1,
-                                }
-                                digest = int(hashlib.sha256(
-                                    _cell_id(cell).encode()
-                                ).hexdigest(), 16)
-                                if digest % args.shard_count == args.shard_index:
-                                    cells.append(cell)
+                        for execution_tokens in args.worker_execution_tokens:
+                            if worker == "one_shot" and execution_tokens:
+                                continue
+                            for k0 in args.k0:
+                                for k1 in args.k1:
+                                    cell = {
+                                        "split": split,
+                                        "worker_search": worker,
+                                        "worker_objective": worker_objective,
+                                        "manager_support": manager,
+                                        "execution": execution,
+                                        "worker_execution_tokens": (
+                                            execution_tokens
+                                        ),
+                                        "k0": k0, "k1": k1,
+                                    }
+                                    digest = int(hashlib.sha256(
+                                        _cell_id(cell).encode()
+                                    ).hexdigest(), 16)
+                                    if (
+                                        digest % args.shard_count
+                                        == args.shard_index
+                                    ):
+                                        cells.append(cell)
     return cells
 
 
@@ -133,12 +146,13 @@ def _plot(rows: list[dict], output: Path) -> None:
     figure, axes = plt.subplots(1, 3, figsize=(16, 4.5))
     labels = sorted({
         f'{row["worker_search"]}/{row["manager_support"]}/'
-        f'{row["execution"]}' for row in rows
+        f'{row["execution"]}/n={row["worker_execution_tokens"]}'
+        for row in rows
     })
     for label in labels:
         selected = [row for row in rows if (
             f'{row["worker_search"]}/{row["manager_support"]}/'
-            f'{row["execution"]}' == label
+            f'{row["execution"]}/n={row["worker_execution_tokens"]}' == label
         )]
         selected.sort(key=lambda row: row["mean_transition_evaluations"])
         axes[0].plot(
@@ -211,6 +225,8 @@ def main() -> None:
             "--worker-beam-width", str(args.worker_beam_width),
             "--worker-branch-factor", str(args.worker_branch_factor),
             "--worker-preserve-prefix", str(args.worker_preserve_prefix),
+            "--worker-execution-tokens",
+            str(cell["worker_execution_tokens"]),
             "--worker-prior-weight", str(args.worker_prior_weight),
             "--manager-population", str(args.manager_population),
             "--cem-iterations", str(args.manager_iterations),
@@ -251,6 +267,7 @@ def main() -> None:
                 + payload["mean_manager_transition_evaluations"]
             ),
             "mean_manager_replans": payload["mean_manager_replans"],
+            "mean_worker_replans": payload["mean_worker_replans"],
             "mean_worker_seconds": payload["mean_worker_seconds"],
             "mean_manager_seconds": payload["mean_manager_seconds"],
             "checkpoint_sha256": payload["checkpoint_sha256"],

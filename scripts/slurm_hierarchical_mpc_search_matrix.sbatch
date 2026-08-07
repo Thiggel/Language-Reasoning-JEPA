@@ -31,6 +31,11 @@ finish() {
 }
 trap finish EXIT
 
+if ! command -v module >/dev/null 2>&1; then
+  # Alex batch shells are non-login shells on some partitions, so the module
+  # function is not initialized automatically.
+  source /etc/profile.d/modules.sh
+fi
 module load cuda/12.8.1
 export http_proxy=http://proxy:80
 export https_proxy=http://proxy:80

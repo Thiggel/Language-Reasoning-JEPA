@@ -46,6 +46,15 @@ the achieved worker state, replaces the imagined manager state, and reruns
 high-level CEM. After every executed reasoning step, the frozen LM and both
 bounded predictor histories are rebuilt from the real prefix.
 
+The token worker also has an independent receding-execution interval
+`n_exec`. With `n_exec` in `{1,2,4}`, it holds the current sentence waypoint
+fixed, executes only that many tokens from the optimized trajectory, exactly
+re-encodes the partial textual prefix, and reruns token search. The macro
+action `A1` is constructed only after the accumulated text reaches a genuine
+newline or EOS boundary. `n_exec=0` is the complete-sentence execution
+control. This token feedback loop is crossed separately with open- versus
+closed-loop manager execution; the two controls must not be conflated.
+
 High-level support is separately ablated as ambient-action CEM, `Pi1`-coordinate
 CEM, `Pi1`-coordinate CEM with a noise trust region, and the latter plus an
 explicit prior NLL cost. This distinguishes proposal support from an additive
