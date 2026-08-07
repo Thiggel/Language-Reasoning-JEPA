@@ -46,10 +46,19 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   falsified: post-hoc distillation from a backbone that never saw ranking
   gradients works at full strength. Plain-JEPA backbone (no value/TD/rank
   gradients at all) now training to complete the triangle.
-- Counterfactual K sweep (seed 0): K=0 .137/.237/.697/.877/.887 (shallow
-  depths suffer, deep recovers); K=1 .183/.410/.870/.893/.893; K=8
-  .157/.313/.783/.867/.857; K=32 .167/.313/.787/.880/.897. K=1..2 best at
-  D2; odd K=8/32 dip needs seeds before claiming non-monotonicity.
+- Counterfactual K sweep COMPLETE (seed 0, D2 strict): K=0 .237, K=1 .410,
+  K=2 .450 (5 seeds), K=3 .323, K=8 .313, K=16 .407, K=64 .407. Deep depths
+  all ~.85-.93. Two caveats found: (a) K saturates at catalogue size
+  (n_vars <= 12, alts = others[:K]) — K=16 and K=64 are bit-identical;
+  report the axis as K in {0,1,2,3,8,all}. (b) K=0/8/32 ran from the
+  pre-merge snapshot, K=1/3/16/64 post-merge; the merged baseline heads
+  shift RNG at init, so same-seed cross-snapshot cells are NOT directly
+  comparable — treat cross-snapshot differences as containing an extra
+  seed-sized noise term. Robust conclusion: K=0 clearly hurts shallow
+  depths; any K >= 1
+  is equivalent within single-seed noise. Recipe K=2 stands; exact K is
+  second-order. Seeds only if the paper wants the full curve with error
+  bars.
 - Theory probes (audit_theory_predictions.py, mix4 s0): T2 monotone
   invariance exact (planner metrics bit-identical under exp/cube/affine).
   T1 Kendall tau geometry-vs-steps-to-go only .46 mean — raw geometry is
