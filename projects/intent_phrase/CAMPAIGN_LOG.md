@@ -38,12 +38,24 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   `2d025b6`); K in {1, 3, 16, 64} queued for free GPUs. K=0 uses the new
   `data.geo_rank_factual_only` flag (same-root continuation ranking only;
   H=1 rows contribute no pairs by construction).
-- Faithful-baseline implementation agent (worktree): exact TD-JEPA
-  (successor features + task embedding, arXiv:2510.00739) and Takai GoalHead
-  (JSAI 2026) score modes + cell variants.
-- Single-pass slack-curve evaluator landed (`slack_curve=true` in plan.py):
-  one generous-budget run yields success_by_slack for all N + per-episode
-  excess steps. Use for all new evals.
+- Faithful-baseline cells `baseline_td_jepa` + `baseline_goal_head` on
+  gruenau1 V100s (round `2026-08-07-intent-faithful-baselines-v1`, snapshot
+  `5e07541`). Implementation merged to main (heads, TD/goal losses, planner
+  score modes, plan-time z_r ridge fit, 20 new tests; adaptation decisions
+  documented in the competitor report).
+- Frozen-backbone ablation `frozen_backbone` on gruenau1 RTX 6000 (round
+  `2026-08-07-intent-frozen-backbone-v1`, snapshot `9ca28ee`): frozen recipe
+  losses, backbone loaded from mix4 s0 best.pt and frozen, Energy head reset
+  and trained post hoc. Follow-up planned: same but from a ranking-free
+  backbone (e.g. baseline_td_q checkpoint) to remove ranking-shaped-geometry
+  confound.
+- `run_intent_terminal_energy_eval.sh` now does ONE generous run per depth
+  (MAX_SLACK=4, `slack_curve=true`): exact success at every slack 0..4 +
+  per-episode excess steps (`slack_curves` in metrics.json; legacy per-slack
+  rows kept for collectors). ~2x cheaper eval; use everywhere.
+- Repo health: orphaned researchctl-era test removed; pre-existing
+  consolidation breakage in token_igsm packed-attention tests being repaired
+  (agent on main; intent_phrase unaffected).
 
 ## Next steps (priority order)
 
