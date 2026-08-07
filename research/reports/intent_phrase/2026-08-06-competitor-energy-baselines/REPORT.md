@@ -91,6 +91,37 @@ ICLR paper. No experiments in this report._
    family-(c) row without symbolic goal access. In our environment the
    "instruction" is the problem statement, already encoded in z_0.
 
+## Implementation notes for the faithful rows (added 2026-08-07)
+
+Both upgrades are implemented as score modes `td_jepa` and `goal_head`
+(cell variants `baseline_td_jepa` / `baseline_goal_head`, objectives
+`td_jepa` / `goal_head`, heads in `src/textjepa/models/heads.py`,
+losses in `src/textjepa/objectives/td_baselines.py`). Adaptation decisions:
+
+1. **td_jepa** — task embedding: our task is fully specified by the problem
+   statement, which z_0 encodes, so z_task = tau(z_0) with a small MLP tau
+   (`TaskEmbeddingHead`). d_psi = d_task = 32 (`model.td_jepa_d_psi/_d_task`).
+   The specified loss stop-gradients psi entirely, so psi stays a fixed
+   random feature map (documented on `StateFeatureHead`); T and tau train.
+   Bootstrap targets follow the td_q EMA convention (EMA next states under
+   no_grad, detached online action codes, terminal step drops the bootstrap).
+   Reward convention for z_r: r(s) = -1 on non-solved states (incl. z_0) and
+   0 at the solved terminal — the repo's steps-to-go convention, an affine
+   shift of 1[solved]. z_r is ridge-regressed (eps 1e-4) over training-trace
+   states at plan time (`DiscourseJEPA.fit_td_jepa_reward_projection`,
+   invoked automatically by `scripts/plan.py`; stored in the
+   `core.td_jepa_z_r` buffer) — chosen over a train-loop hook because it
+   works for any checkpoint without touching training. Planner cost:
+   -T(z_pre_final, u(a_final), tau(z_0))^T z_r with the td_q pre-final-state
+   convention. No training-time ga_energy exists for this mode (Q needs z_r).
+2. **goal_head** — g(z_0) is a 2-layer MLP (`GoalHead`); the training target
+   is the same EMA-encoded solved-trajectory endpoint the geometry teacher
+   uses (`out.step_states_tgt` at the last valid step). Loss = mean-squared
+   error + 1.0 * (1 - cosine) against the stop-gradient target. Planner cost
+   = LN-L1 distance of the imagined endpoint to g(z_0), exactly mirroring
+   `energy=oracle_goal` with the predicted goal in place of the oracle
+   encoding; the same distance is emitted as the ga_energy diagnostic.
+
 ## First results (added 2026-08-06 night, one seed, 300 episodes, identical protocol)
 
 | Method | D1 | D2 | D4 | D8 | D16 |
