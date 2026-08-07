@@ -221,7 +221,37 @@ diagnostics in the paper); no training signal changes.
   is ordinal-faithful (T1), since the head only re-expresses an ordering
   the encoder already carries.
 
-## 7. Honesty notes for the paper
+## 7. First results (2026-08-07, mix4 seed 0, `audit_theory_predictions.py`)
+
+Run: `runs/autonomy/intent_phrase/2026-08-07-intent-theory-probes-v1/`
+(100 episodes/anchors for T1/T4, 60 episodes for T2).
+
+- **T2 passes exactly.** exp, cube, and affine transforms of the trained
+  Energy leave every planner metric bit-identical (success .983, mean
+  steps 4.27 at depth 4, slack 2). Proposition 2(i) is exact and the
+  evaluation stack is confirmed to consume only comparisons.
+- **T1 is only moderately positive — an honest surprise.** Mean Kendall
+  tau between EMA-latent goal distance and symbolic steps-to-go over
+  random-policy prefix states is .46; only 13% of episodes exceed .8 and
+  the minimum is negative. The raw geometry is *not* uniformly ordinal on
+  arbitrary states. The working method is therefore not "read off a
+  monotone distance": the ranking head adds real information beyond the
+  bare latent metric. Prediction registered *before* the pure-JEPA
+  frozen-backbone cell finishes: if T1's moderate tau is the binding
+  constraint, a head distilled on a ranking-free backbone should land
+  clearly below the recipe (the recipe-backbone frozen head already
+  matched it: .83 at D4).
+- **T4 explains the depth-1 weakness quantitatively.** Agreement of the
+  best-of-R latent label with the exact optimal root ordering: H=1 is
+  .48 (flat in R — with no continuation steps all rollouts coincide), H=2
+  jumps to .83–.85, H=4 climbs from .53 (R=1) to .83 (R=8). One-step
+  latent distances barely separate necessary from distractor actions, but
+  two-plus-step lookahead labels do — precisely why strict success is .126
+  at depth 1 yet .84+ once the planner searches deeper, i.e. why
+  test-time scaling exists in this system at all. (H=8 rows were null:
+  no sampled anchor had 8 remaining necessary steps with a mixed menu.)
+
+## 8. Honesty notes for the paper
 
 - Propositions 1–2 are exact and environment-general (any monotone
   deterministic DAG environment); Proposition 3(ii)'s coupling uses iGSM's

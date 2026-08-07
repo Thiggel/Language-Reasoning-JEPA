@@ -136,3 +136,25 @@ exploit recursive imagination — deeper search actively hurts it. The
 expectile distance-value stays near the random baseline (.053). Both confirm
 the internal pattern: absolutely-calibrated scores collapse under imagined
 inputs; relative ranking distillation is what survives depth.
+
+## Faithful-parameterization results (2026-08-07, one seed, 300 episodes, identical protocol)
+
+The exact competitor parameterizations (previous section) trained and
+evaluated in `runs/autonomy/intent_phrase/2026-08-07-intent-faithful-baselines-v1/`
+(snapshot `5e07541`, single-pass slack-curve eval, strict / slack-2):
+
+| Method | D1 | D2 | D4 | D8 | D16 |
+|---|---:|---:|---:|---:|---:|
+| Faithful TD-JEPA (successor features, arXiv:2510.00739) | .133/.530 | .130/.480 | .117/.367 | .107/.327 | .107/.327 |
+| Takai GoalHead (JSAI 2026, predicted-goal distance) | .137/.610 | .037/.350 | .057/.453 | .060/.493 | .060/.493 |
+| Frozen recipe (5 seeds, reference) | .126/.541 | .450/.863 | .837/.979 | .879/.991 | .884/.995 |
+
+Both faithful implementations reproduce the family signature already seen
+with the simpler TD-Q/expectile stand-ins: competitive at depth 1, then
+*declining* with search depth (TD-JEPA slack-2 .530 -> .327; GoalHead
+collapses immediately after D1 despite its oracle-goal ceiling being 1.000).
+The successor-feature Q and the predicted-goal distance are both absolute
+calibrations, and neither survives recursive imagination — while the same
+backbone under ranking distillation reaches .884. This is the paper's
+contrast axis measured on the actual competitor methods, not adaptations of
+convenience.
