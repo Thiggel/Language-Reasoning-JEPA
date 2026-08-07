@@ -19,6 +19,7 @@ invalid_action_mode=${INVALID_ACTION_MODE:-noop}
 depths=${EVAL_DEPTHS:-"1 4 8 16"}
 max_slack=${MAX_SLACK:-4}
 prior_top_k=${PRIOR_TOP_K:-8}; prior_top_p=${PRIOR_TOP_P:-1.0}
+prior_feasibility_gate=${PRIOR_FEASIBILITY_GATE:-false}
 case "$composition" in cumulative|terminal|root) ;; *)
   echo "invalid transition Energy composition: $composition" >&2; exit 2;;
 esac
@@ -36,6 +37,7 @@ for depth in $depths; do
     candidate_interface="$candidate_interface" \
     invalid_action_mode="$invalid_action_mode" \
     prior_top_k="$prior_top_k" prior_top_p="$prior_top_p" \
+    prior_feasibility_gate="$prior_feasibility_gate" \
     allow_oracle_future_actions="$oracle" \
     out="$RUN_DIR/terminal_depth${depth}_slackcurve.json"
 done
