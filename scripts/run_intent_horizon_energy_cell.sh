@@ -19,6 +19,7 @@ horizon_input=true; predictor_residual=true; td_auxiliary=none
 factual_only=false
 score_mode=horizon; rollout_for_h1=true; td_q_weight=0; expectile_weight=0
 td_jepa_weight=0; goal_head_weight=0
+action_prior=false; eval_candidate_interface=""
 case "$variant" in
   fixed_h4) ;;
   mix_pow2_16_aux0)
@@ -181,6 +182,16 @@ case "$variant" in
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     root_distill_weight=0.25; horizon_input=false
     candidate_interface=full_catalogue ;;
+  mix4_aux025_nohorizon_prior)
+    # Menu-free recipe: frozen recipe trained with full-catalogue ranking
+    # candidates PLUS the learned Gaussian action prior p(u(a)|s) and the
+    # feasibility support head. Eval plans from prior-filtered catalogue
+    # candidates (learned_catalogue) — no feasible-action menu and no
+    # feasibility oracle anywhere.
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false
+    candidate_interface=full_catalogue; action_prior=true
+    eval_candidate_interface=learned_catalogue ;;
   plain_backbone)
     # Backbone-only training: latent/counterfactual/chunk/vicreg objectives
     # with every value/ranking/TD auxiliary at zero. Produces the plain-JEPA
@@ -232,6 +243,14 @@ if [[ "$frozen" == true ]]; then
     train.train_high_level=false train.train_horizon_energy_head=true
   )
 fi
+if [[ "$action_prior" == true ]]; then
+  extra+=(
+    model.action_prior=true model.action_prior_states=all
+    model.action_support_states=all model.action_prior_candidate_scope=catalogue
+    data.all_action_supervision=true objective.action_prior.weight=1.0
+    objective.action_feasibility.weight=1.0
+  )
+fi
 
 "$py" "$TEXTJEPA_ROOT/scripts/train.py" \
   +experiment=paper_gar_scoring_screen \
@@ -274,20 +293,20 @@ if [[ "$frozen" == true ]]; then
   mkdir -p "$RUN_DIR/horizon_only"
   RUN_DIR="$RUN_DIR/horizon_only" N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
-    CANDIDATE_INTERFACE="$candidate_interface" \
+    CANDIDATE_INTERFACE="${eval_candidate_interface:-$candidate_interface}" \
     INVALID_ACTION_MODE="$invalid_mode" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-horizon-only"
   N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=true \
-    CANDIDATE_INTERFACE="$candidate_interface" \
+    CANDIDATE_INTERFACE="${eval_candidate_interface:-$candidate_interface}" \
     INVALID_ACTION_MODE="$invalid_mode" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-hybrid"
 else
   N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
-    CANDIDATE_INTERFACE="$candidate_interface" \
+    CANDIDATE_INTERFACE="${eval_candidate_interface:-$candidate_interface}" \
     INVALID_ACTION_MODE="$invalid_mode" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant"
