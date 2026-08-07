@@ -173,6 +173,21 @@ case "$variant" in
     # post hoc from fixed JEPA geometry (no joint adaptation).
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     root_distill_weight=0.25; horizon_input=false; frozen=true ;;
+  mix4_aux025_nohorizon_fullcat)
+    # Frozen recipe with the non-privileged candidate interface: ranking
+    # alternatives come from the full action catalogue (step_or_invalid),
+    # and the inherited eval also plans over the full catalogue at every
+    # depth with no feasibility oracle or symbolic future menus.
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false
+    candidate_interface=full_catalogue ;;
+  plain_backbone)
+    # Backbone-only training: latent/counterfactual/chunk/vicreg objectives
+    # with every value/ranking/TD auxiliary at zero. Produces the plain-JEPA
+    # init for the frozen_backbone ablation (vs ranking-shaped and TD-shaped
+    # backbones). The Energy head stays untrained; skip reading its eval.
+    horizon=1; horizons=null; dense_depth=0; dense_weight=0; rollouts=1
+    rollout_for_h1=false; horizon_rank_weight=0; root_distill_weight=0 ;;
   baseline_td_q)
     # TD-JEPA-adapted SARSA Q competitor: fixed_h4 backbone objectives, no
     # endpoint ranking or root distillation, no geometry rollouts needed.
