@@ -32,6 +32,7 @@ def _bucketed_packed_attention(
     cu_seqlens: torch.Tensor,
     dropout_p: float = 0.0,
     backend: str = "torch",
+    causal: bool = False,
 ) -> torch.Tensor:
     """Native SDPA over isolated power-of-two length buckets.
 
@@ -76,10 +77,14 @@ def _bucketed_packed_attention(
             q_group, k_group, v_group = (
                 part.permute(0, 2, 1, 3) for part in gathered.unbind(2)
             )
+            # Sequences are right-padded within their bucket row, so under a
+            # causal mask every key a valid query can see is itself valid and
+            # no explicit padding mask is needed; padded rows are discarded by
+            # the gather below.
             result = F.scaled_dot_product_attention(
                 q_group, k_group, v_group,
-                attn_mask=group_valid[:, None, None, :],
-                dropout_p=dropout_p, is_causal=False,
+                attn_mask=None if causal else group_valid[:, None, None, :],
+                dropout_p=dropout_p, is_causal=causal,
             )
             unpacked = result.permute(0, 2, 1, 3)
             attended[gather_index[group_valid]] = unpacked[group_valid]
@@ -212,12 +217,14 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
         cu_seqlens: torch.Tensor,
         max_seqlen: int,
         block_mask=None,
+        causal: bool = False,
     ) -> torch.Tensor:
         """Self-attention over a flat, boundary-separated token stream.
 
         ``query`` contains no padding. ``cu_seqlens`` identifies independent
         examples; attention is therefore exactly block diagonal and can never
-        leak information between packed training items.
+        leak information between packed training items. ``causal`` restricts
+        each query to its own causal prefix within its example.
         """
         if query.ndim != 2:
             raise ValueError("packed attention expects [total_tokens, dim]")
@@ -233,7 +240,7 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
                 qkv[:, 0], qkv[:, 1], qkv[:, 2],
                 cu_seqlens_q=cu_seqlens, cu_seqlens_k=cu_seqlens,
                 max_seqlen_q=max_seqlen, max_seqlen_k=max_seqlen,
-                causal=False,
+                causal=causal,
             )
             self.last_backend = "flash_attn_4_packed"
         elif backend == "flash_attn_2":
@@ -243,7 +250,7 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             attended = fa2(
                 qkv, cu_seqlens, max_seqlen,
                 dropout_p=self.dropout if self.training else 0.0,
-                causal=False,
+                causal=causal,
             )
             self.last_backend = "flash_attn_2_packed"
         elif query.is_cuda:
@@ -255,7 +262,7 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
             attended = _bucketed_packed_attention(
                 qkv, cu_seqlens,
                 dropout_p=self.dropout if self.training else 0.0,
-                backend=backend,
+                backend=backend, causal=causal,
             )
             self.last_backend = "torch_bucketed_packed"
         else:
@@ -270,7 +277,7 @@ class FlashMultiheadAttention(nn.MultiheadAttention):
                 value = F.scaled_dot_product_attention(
                     q, k, v,
                     dropout_p=self.dropout if self.training else 0.0,
-                    is_causal=False,
+                    is_causal=causal,
                 )
                 pieces.append(value.squeeze(0).transpose(0, 1))
             attended = torch.cat(pieces, dim=0)
@@ -293,12 +300,14 @@ def packed_encoder_forward(
     encoder: nn.TransformerEncoder,
     src: torch.Tensor,
     valid: torch.Tensor,
+    causal: bool = False,
 ) -> torch.Tensor:
     """Run a pre-norm encoder with no padded activations between layers.
 
     The returned tensor is dense only at the model boundary for compatibility
     with token-aligned losses and edit routing. All attention and feed-forward
-    blocks operate on ``sum(valid)`` tokens.
+    blocks operate on ``sum(valid)`` tokens. ``causal=True`` applies a causal
+    mask within each packed example (used by the causal token/state stacks).
     """
     if src.ndim != 3 or valid.shape != src.shape[:2]:
         raise ValueError("packed encoder expects [batch, length, dim] plus mask")
@@ -317,7 +326,7 @@ def packed_encoder_forward(
                 "packed encoder requires a fused attention backend, not 'torch'"
             )
         attended = layer.self_attn.forward_packed(
-            layer.norm1(flat), cu, maximum
+            layer.norm1(flat), cu, maximum, causal=causal,
         )
         flat = flat + layer.dropout1(attended)
         flat = flat + layer._ff_block(layer.norm2(flat))

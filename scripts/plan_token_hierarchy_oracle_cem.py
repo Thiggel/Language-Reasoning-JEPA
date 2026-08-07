@@ -1248,19 +1248,20 @@ def main():
         generated = []
         full = torch.tensor([item["tokens"]], device=args.device)
         with torch.no_grad():
-            teacher_path = model.teacher(full)
             prompt_tensor = torch.tensor([prompt], device=args.device)
             prompt_state = model.encoder(prompt_tensor)[:, -1]
-            oracle_goal = (
-                teacher_path[:, -1]
-                if args.goal_source == "oracle"
-                else model.goal_head(prompt_state)
-            )
-            reasoning_path = (
-                teacher_path[:, item["prompt_len"] - 1:]
-                if args.goal_source == "oracle"
-                else torch.stack([prompt_state, oracle_goal], 1)
-            )
+            if args.goal_source == "oracle":
+                # Primary JEPA-pure contract (tests/test_oracle_cem_contract):
+                # the goal is the EMA-teacher state of the complete solution,
+                # oracle-privileged and free of any auxiliary language model.
+                oracle_goal = model.teacher(full)[:, -1]
+                # Deterministic EMA teacher under no_grad: this second call
+                # returns the identical path; per-episode cost is negligible
+                # next to CEM planning.
+                reasoning_path = model.teacher(full)[:, item["prompt_len"] - 1:]
+            else:
+                oracle_goal = model.goal_head(prompt_state)
+                reasoning_path = torch.stack([prompt_state, oracle_goal], 1)
             oracle_level_goals = (
                 tuple(path[:, -1] for path in model.lift_state_path(
                     reasoning_path, teacher=True

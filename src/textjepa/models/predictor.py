@@ -53,12 +53,19 @@ class CausalHistoryPredictor(nn.Module):
         max_steps: int = 64,
         residual: bool = False,
         context_window: int | None = None,
+        attention_backend: str = "auto",
+        sequence_packing: bool = False,
     ):
         super().__init__()
         self.residual = residual
         if context_window is not None and context_window < 1:
             raise ValueError("context_window must be positive or None")
         self.context_window = context_window
+        self.sequence_packing = bool(sequence_packing)
+        if self.sequence_packing and context_window is not None:
+            raise ValueError(
+                "sequence_packing does not support a context_window"
+            )
         self.inp = nn.Linear(d_state + d_action, d_state)
         self.pos = nn.Parameter(torch.zeros(1, max_steps, d_state))
         nn.init.normal_(self.pos, std=0.02)
@@ -72,6 +79,12 @@ class CausalHistoryPredictor(nn.Module):
             activation="gelu",
         )
         self.blocks = nn.TransformerEncoder(layer, n_layers)
+        if self.sequence_packing:
+            for block in self.blocks.layers:
+                block.self_attn = FlashMultiheadAttention(
+                    d_state, n_heads, dropout=0.0, batch_first=True,
+                    attention_backend=attention_backend,
+                )
         self.norm = nn.LayerNorm(d_state)
         self.out = nn.Linear(d_state, d_state)
 
@@ -101,6 +114,18 @@ class CausalHistoryPredictor(nn.Module):
         if self.context_window is not None:
             causal = causal | ((row - col) >= self.context_window)
         h = self.inp(torch.cat([states, actions], -1)) + self._positions(length)
+        if self.sequence_packing:
+            if valid is None:
+                valid = torch.ones(
+                    states.shape[:2], dtype=torch.bool, device=states.device
+                )
+            pred = self.out(self.norm(packed_encoder_forward(
+                self.blocks, h, valid, causal=True,
+            )))
+            if self.residual:
+                pred = states + pred
+            pred = pred.masked_fill(~valid[..., None], 0.0)
+            return pred[:, 0] if squeeze else pred
         key_padding = None
         if valid is not None and self.context_window is None:
             key_padding = ~valid
