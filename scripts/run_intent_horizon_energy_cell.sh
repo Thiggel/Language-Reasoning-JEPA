@@ -16,6 +16,7 @@ feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
 horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
 ranking_kind=logistic; chunk_weight=2; vicreg_weight=1
 horizon_input=true; predictor_residual=true; td_auxiliary=none
+factual_only=false
 score_mode=horizon; rollout_for_h1=true; td_q_weight=0; expectile_weight=0
 case "$variant" in
   fixed_h4) ;;
@@ -52,6 +53,17 @@ case "$variant" in
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     root_distill_weight=0.25; horizon_input=false; expectile_weight=1
     td_auxiliary=expectile_value ;;
+  frozen_k*)
+    # Counterfactual-data scaling: frozen recipe with K alternatives per
+    # anchor taken from the variant name (frozen_k0, frozen_k8, ...). K=0
+    # additionally zeroes counterfactual prediction and the root auxiliary
+    # (no alternative roots exist), leaving same-root continuation ranking.
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false
+    rank_k=${variant#frozen_k}
+    if [[ "$rank_k" == "0" ]]; then
+      counterfactual_weight=0; root_distill_weight=0; factual_only=true
+    fi ;;
   mix_full_16_aux0)
     # Fully pruning-coherent: every integer depth 1..16 is a training
     # horizon, so every beam-pruning Energy query is in-support.
@@ -193,6 +205,7 @@ fi
   data.geo_rank_rollout_for_h1="$rollout_for_h1" \
   data.geo_rank_candidate_interface="$candidate_interface" \
   data.geo_rank_k="$rank_k" \
+  data.geo_rank_factual_only="$factual_only" \
   data.geo_rank_feasible_k="$feasible_k" \
   data.geo_rank_invalid_k="$invalid_k" \
   data.invalid_action_mode="$invalid_mode" \

@@ -780,10 +780,20 @@ class DiscourseJEPA(nn.Module):
         bidx = torch.arange(B, device=device)
         valid_b = batch["ga_t"] >= 0
         # model-side energies
-        a_alt = self.encode_actions(batch["ga_alt_action_tokens"])  # [B,K,da]
-        K = a_alt.shape[1]
+        K = batch["ga_alt_action_tokens"].shape[1]
+        if K == 0:
+            # factual-only supervision (counterfactual-data ablation K=0):
+            # the encoders cannot consume zero-size batches, so alt tensors
+            # are materialized empty and every K-indexed path degenerates.
+            a_alt = out.actions.new_zeros(B, 0, self.core.d_action)
+        else:
+            a_alt = self.encode_actions(
+                batch["ga_alt_action_tokens"]
+            )  # [B,K,da]
         s_anchor = out.prev_states[bidx, t]  # state before the anchor step
-        if getattr(self.core.predictor, "causal_sequence", False):
+        if K == 0:
+            preds_alt = out.preds.new_zeros(B, 0, out.preds.shape[-1])
+        elif getattr(self.core.predictor, "causal_sequence", False):
             # Evaluate every alternative with the same teacher-forced causal
             # prefix as the executed action and as planner rollout.  The old
             # length-one call reset transformer position/history for alts.
@@ -857,22 +867,25 @@ class DiscourseJEPA(nn.Module):
                 self.chunk_encoder.pad_id,
             )
             _, _, next_T, next_L = next_tokens.shape
-            flat_next_mask = next_mask.reshape(B * K, next_T).clone()
-            empty_next = ~flat_next_mask.any(1)
-            flat_next_mask[empty_next, 0] = True
-            _, alt_next_states = self.encode_states(
-                batch["prompt_tokens"].repeat_interleave(K, 0),
-                batch["prompt_mask"].repeat_interleave(K, 0),
-                next_tokens.reshape(B * K, next_T, next_L),
-                flat_next_mask,
-                teacher=True,
-            )
-            next_index = next_mask.reshape(B * K, next_T).sum(1).clamp(
-                min=1
-            ) - 1
-            s_alt_true = alt_next_states[
-                torch.arange(B * K, device=device), next_index
-            ].reshape(B, K, -1)
+            if K == 0:
+                s_alt_true = out.s0.new_zeros(B, 0, out.s0.shape[-1])
+            else:
+                flat_next_mask = next_mask.reshape(B * K, next_T).clone()
+                empty_next = ~flat_next_mask.any(1)
+                flat_next_mask[empty_next, 0] = True
+                _, alt_next_states = self.encode_states(
+                    batch["prompt_tokens"].repeat_interleave(K, 0),
+                    batch["prompt_mask"].repeat_interleave(K, 0),
+                    next_tokens.reshape(B * K, next_T, next_L),
+                    flat_next_mask,
+                    teacher=True,
+                )
+                next_index = next_mask.reshape(B * K, next_T).sum(1).clamp(
+                    min=1
+                ) - 1
+                s_alt_true = alt_next_states[
+                    torch.arange(B * K, device=device), next_index
+                ].reshape(B, K, -1)
             if batch.get("ga_latent_beam", False):
                 d, candidate_valid = self._latent_beam_geo_labels(
                     batch, out, goal

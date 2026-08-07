@@ -14,6 +14,7 @@ test_seed: 3
 shuffle_actions: false
 n_alt: 0
 geo_rank_k: 0
+geo_rank_factual_only: false
 geo_rank_horizon: 1
 geo_rank_horizons: null
 geo_rank_rollouts: 1

@@ -139,6 +139,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         shuffle_actions=d.get("shuffle_actions", False),
         n_alt=d.get("n_alt", 0),
         geo_rank_k=d.get("geo_rank_k", 0),
+        geo_rank_factual_only=d.get("geo_rank_factual_only", False),
         geo_rank_horizon=d.get("geo_rank_horizon", 1),
         geo_rank_horizons=d.get("geo_rank_horizons", None),
         geo_rank_rollouts=d.get("geo_rank_rollouts", 1),
@@ -244,6 +245,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         kw = dict(igsm_kwargs)
         kw.pop("shuffle_actions", None)
         kw.pop("n_alt", None)
+        kw.pop("geo_rank_factual_only", None)
         kw.pop("macro_alt_k", None)
         kw.pop("macro_alt_horizon", None)
         kw.pop("all_action_supervision", None)

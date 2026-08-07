@@ -101,6 +101,7 @@ class IGSMDataset(Dataset):
         shuffle_actions: bool = False,
         n_alt: int = 0,
         geo_rank_k: int = 0,
+        geo_rank_factual_only: bool = False,
         geo_rank_horizon: int = 1,
         geo_rank_horizons: list[int] | None = None,
         geo_rank_rollouts: int = 1,
@@ -131,6 +132,9 @@ class IGSMDataset(Dataset):
         self.shuffle_actions = shuffle_actions  # control: break action grounding
         self.n_alt = n_alt  # counterfactual candidates per step (ranking)
         self.geo_rank_k = geo_rank_k  # geometric-advantage ranking anchors
+        # K=0 cell: anchor + rollouts with the factual root only (no
+        # alternative actions anywhere in the energy supervision)
+        self.geo_rank_factual_only = bool(geo_rank_factual_only)
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
         self.geo_rank_horizons = tuple(
             max(1, int(horizon)) for horizon in (geo_rank_horizons or [])
@@ -243,7 +247,7 @@ class IGSMDataset(Dataset):
             resolved_n.append(len(env.resolved))
             necessary.append(int(idx in p.query_ancestors))
         ga = {}
-        if self.geo_rank_k and len(trace) > 1:
+        if (self.geo_rank_k or self.geo_rank_factual_only) and len(trace) > 1:
             # one anchor step: alt intent phrases + env-rendered TRUE next
             # step sentences (text only; the ranking label is computed in
             # latent space by the model — no symbolic annotations)
@@ -282,7 +286,9 @@ class IGSMDataset(Dataset):
                 others if self.geo_rank_k < 0
                 else others[: self.geo_rank_k]
             )
-            if alts:
+            if self.geo_rank_factual_only:
+                alts = []
+            if alts or self.geo_rank_factual_only:
                 ga = {
                     "ga_t": t_star,
                     "ga_horizon": geo_rank_horizon,
