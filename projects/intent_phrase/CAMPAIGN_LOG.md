@@ -38,14 +38,18 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   collapses after D1. Same family signature as TD-Q/expectile: absolute
   calibrations don't survive recursive imagination. Details in the
   competitor-baselines report.
-- Frozen-backbone Energy head (recipe backbone, head reset + retrained,
-  backbone frozen): .137/.433/.830/.840/.837 — nearly the full jointly
-  trained recipe (.126/.450/.837/.879/.884, 5 seeds). Geometry carries the
-  ordering; pure-JEPA-backbone control running.
+- Frozen-backbone Energy head (backbone frozen, head reset + retrained):
+  recipe-shaped backbone .137/.433/.830/.840/.837; ranking-free TD-shaped
+  backbone (init = baseline_td_q, value_detach=false so TD gradients DID
+  shape it) .153/.360/.907/.927/.913 — ABOVE the jointly trained recipe at
+  D4+ (single seed). Registered prediction (pure backbone clearly below)
+  falsified: post-hoc distillation from a backbone that never saw ranking
+  gradients works at full strength. Plain-JEPA backbone (no value/TD/rank
+  gradients at all) now training to complete the triangle.
 - Counterfactual K sweep (seed 0): K=0 .137/.237/.697/.877/.887 (shallow
-  depths suffer, deep recovers); K=8 .157/.313/.783/.867/.857; K=32
-  .167/.313/.787/.880/.897. K=2 (recipe) looks best at D2 — needs seeds
-  before claiming non-monotonicity.
+  depths suffer, deep recovers); K=1 .183/.410/.870/.893/.893; K=8
+  .157/.313/.783/.867/.857; K=32 .167/.313/.787/.880/.897. K=1..2 best at
+  D2; odd K=8/32 dip needs seeds before claiming non-monotonicity.
 - Theory probes (audit_theory_predictions.py, mix4 s0): T2 monotone
   invariance exact (planner metrics bit-identical under exp/cube/affine).
   T1 Kendall tau geometry-vs-steps-to-go only .46 mean — raw geometry is
@@ -60,11 +64,15 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
 
 ## Running / queued (2026-08-07)
 
-- Counterfactual K in {1, 3, 16, 64}: gruenau10 GPUs 0-1 + gruenau1 V100s
-  (round `2026-08-07-intent-counterfactual-scaling-v1`, snapshot `9ca28ee`).
-- Pure-JEPA frozen-backbone control `frozen-backbone-pure-s0-v1`: gruenau1
-  RTX 6000 (round `2026-08-07-intent-frozen-backbone-v1`, INIT_CKPT =
-  baseline_td_q s0 best.pt — backbone never saw ranking gradients).
+- Counterfactual K in {3, 16, 64} still training (round
+  `2026-08-07-intent-counterfactual-scaling-v1`, snapshot `9ca28ee`).
+- Full-catalogue recipe TRAINING cell `mix4-fullcat-s0-v1` (gruenau10 GPU0,
+  snapshot `b788372`): ranking alternatives from the full catalogue,
+  inherited eval also plans full-catalogue at every depth (no feasibility
+  oracle anywhere).
+- Plain-backbone chain (gruenau1 RTX 6000): `plain-backbone-s0-v1` trains
+  backbone objectives only (no value/TD/ranking gradients), then
+  `frozen-backbone-plain-s0-v1` distills the Energy head on it frozen.
 - Interface controls (owner's directive 2026-08-07): full-catalogue evals of
   recipe s0 + faithful baselines (no feasibility oracle, no symbolic future
   menus, invalid=noop) running as
