@@ -52,8 +52,14 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   depth, yet TD-shaped backbone + ranking head is the best cell so far) —
   vindicates the owner's "TD as an ingredient" idea in modified form.
   Caveat: ranking-shaped backbone saw richer data (H mix, R=4) than
-  plain/TD (H=1, R=1), so (b) uses plain-vs-TD only. Seeds running
-  (pure s1, plain s1).
+  plain/TD (H=1, R=1), so (b) uses plain-vs-TD only. Seed-1 replications:
+  plain .107/.250/.643/.797/.803 and TD-shaped .143/.383/.893/.917/.910
+  both REPLICATE s0 — the triangle's two decisive legs are 2-seed solid;
+  ranking-shaped s1 still running.
+  Note: each run dir holds TWO eval sets — the paper-relevant pure
+  endpoint-Energy planner is under `horizon_only/`; the root-level
+  slackcurve files are a hybrid local-pruning variant (worse deep) —
+  always collect from `horizon_only/`.
 - Counterfactual K sweep COMPLETE (seed 0, D2 strict): K=0 .237, K=1 .410,
   K=2 .450 (5 seeds), K=3 .323, K=8 .313, K=16 .407, K=64 .407. Deep depths
   all ~.85-.93. Two caveats found: (a) K saturates at catalogue size
@@ -65,8 +71,9 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   seed-sized noise term. Robust conclusion: K=0 clearly hurts shallow
   depths; any K >= 1
   is equivalent within single-seed noise. Recipe K=2 stands; exact K is
-  second-order. Seeds only if the paper wants the full curve with error
-  bars.
+  second-order. K=0 s1 replicates s0 (D2 .263 vs .237; deep ~.88) — the
+  K=0 shallow penalty is now 2-seed. Full-curve seeds only if the paper
+  wants error bars on every K.
 - Theory probes (audit_theory_predictions.py, mix4 s0): T2 monotone
   invariance exact (planner metrics bit-identical under exp/cube/affine).
   T1 Kendall tau geometry-vs-steps-to-go only .46 mean — raw geometry is
