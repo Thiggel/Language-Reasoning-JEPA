@@ -114,9 +114,11 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   `mix4-prior-s0-v1` (variant `mix4_aux025_nohorizon_prior`, snapshot
   `f27403a`) RUNNING on gruenau1 GPU0: recipe + full-catalogue ranking
   candidates + prior + support head, eval fully menu-free (top-k 8).
-- Five-seed headline slack-curve re-eval RUNNING on gruenau1 GPU1
-  (round `2026-08-07-intent-headline-slackcurve-v1`; s0 done, .120/.410/
-  .813/.850/.860 strict — consistent with the headline mean).
+- Five-seed headline slack-curve re-eval COMPLETE
+  (`2026-08-07-intent-headline-slackcurve-v1/aggregate_slack_curves.json`):
+  strict means reproduce the frozen headline exactly
+  (.126/.450/.837/.879/.884); mean excess steps when solved 2.04/0.96/
+  0.24/0.17/0.15 at D1..D16. Figure-ready.
 - Frozen-backbone triangle now 2-SEED on all three legs (s1: plain
   .107/.250/.643/.797/.803; TD-shaped .143/.383/.893/.917/.910;
   ranking-shaped .133/.390/.807/.830/.830 — all replicate s0).
