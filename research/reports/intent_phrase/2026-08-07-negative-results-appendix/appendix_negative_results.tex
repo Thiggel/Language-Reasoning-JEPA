@@ -1,0 +1,53 @@
+% Negative-results appendix table (booktabs).
+% Companion to research/reports/intent_phrase/2026-08-07-negative-results-appendix/REPORT.md,
+% which cites the source report or metrics file for every number.
+% Protocol: strict success, 300 validation episodes, root-balanced beam B=8;
+% depth 1 uses the current feasible menu, depth >1 additionally uses symbolic
+% future feasible menus (candidate-privileged, identical to the headline).
+% One seed unless noted. Frozen-recipe reference (5 seeds):
+% .126/.450/.837/.879/.884 strict at depths 1/2/4/8/16.
+\begin{table}[t]
+\centering
+\caption{Measured and rejected alternatives to the frozen recipe
+(horizon-blind endpoint Energy trained by logistic pairwise ranking of
+recursively imagined endpoints). All rows use the headline evaluation
+protocol: strict success, 300 validation episodes, root-balanced beam
+$B{=}8$; depth${}>1$ is candidate-privileged (symbolic future feasible
+menus), exactly as for the headline. One seed unless noted. Reference
+(frozen recipe, 5 seeds): strict $.126/.450/.837/.879/.884$ at depths
+$1/2/4/8/16$; random $.053$, first-feasible $.247$, oracle encoded-goal
+distance $1.000$ (oracle). The pattern across families: relative ranking
+of imagined endpoints survives recursive imagination; absolute, TD, or
+bootstrapped calibrations do not.}
+\label{tab:negative-results}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}llllp{4.6cm}@{}}
+\toprule
+Variant & Family & Key number (strict) & Recipe, same depth & Verdict \\
+\midrule
+State--goal Energy MSE regression & absolute & D16 .117 (5-seed head .118) & .884 & rejected: absolute calibration collapses on imagined endpoints \\
+Advantage-difference regression (cumulative) & absolute & D16 .027--.090 & .884 & rejected: errors accumulate under summation \\
+Ranking $+$ MSE mixed objective & absolute & D4--16 .04--.05 & .837--.884 & rejected: MSE swamps the ordering signal \\
+TD-Q (SARSA, amortized) & absolute & D1 .190, D16 .220 & D1 .126, D16 .884 & rejected: myopically stronger, cannot exploit search \\
+Expectile goal-value & absolute & D16 .187 (random .053) & .884 & rejected: near random \\
+Expectile-TD shaping auxiliary & absolute & D2 .323, D16 .863 & .450, .884 & rejected: no gain, D2 regression \\
+Faithful TD-JEPA (successor features) & absolute & D1 .133, D16 .107 & D1 .126, D16 .884 & rejected: no depth scaling, deeper search hurts \\
+Takai-style GoalHead (predicted-goal distance) & absolute & D1 .137, D2 .037, D16 .060 & D1 .126, D16 .884 & rejected: collapses beyond depth 1 (oracle goal: 1.000) \\
+\midrule
+Sparse multidepth prefix supervision & supervision & best cell D16 .550; most .1--.3 & .884 & rejected: dilutes endpoint-ranking signal \\
+Dense within-horizon endpoint loss & supervision & D16 .053--.183 & .884 & rejected: conflicts with endpoint ordering \\
+Fixed training horizon $H{=}4$ & supervision & D2 .290 (D4 .910) & D2 .450 & rejected: incoherent off training support \\
+$H{=}16$ in training horizon mix & supervision & D16 .833 (3 seeds) & .875 (2 seeds) & rejected: budget dilution, no D16 benefit \\
+Horizon input to Energy head & supervision & D16 .801 (5 seeds) vs .818 (2 seeds) & --- & dropped: unnecessary (simplification) \\
+\midrule
+Straightening (raw) & geometry & D16 .187 (control .373) & .884 & rejected: no benefit, often harmful \\
+Straightening (projected) & geometry & D16 .290 / .493 & .884 & rejected: no consistent benefit \\
+Monotonicity (raw) & geometry & D16 .273 (control .373) & .884 & rejected: no benefit \\
+Monotonicity (projected) & geometry & D16 .300 (control .373) & .884 & rejected: no benefit \\
+\midrule
+Non-residual MLP prediction & architecture & D16 .860 & .884 $\pm$ .023 & neutral ($\sim$1 SD below); residual kept \\
+Causal-transformer predictor & architecture & GAR D1 .366 $\pm$ .047 vs .433 $\pm$ .019 (5 seeds) & --- & open: endpoint-recipe cell untested \\
+\bottomrule
+\end{tabular}
+\end{table}
