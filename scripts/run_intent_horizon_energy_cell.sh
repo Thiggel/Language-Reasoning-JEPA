@@ -17,6 +17,7 @@ horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
 ranking_kind=logistic; chunk_weight=2; vicreg_weight=1
 horizon_input=true; predictor_residual=true; td_auxiliary=none
 score_mode=horizon; rollout_for_h1=true; td_q_weight=0; expectile_weight=0
+td_jepa_weight=0; goal_head_weight=0
 case "$variant" in
   fixed_h4) ;;
   mix_pow2_16_aux0)
@@ -164,6 +165,22 @@ case "$variant" in
     horizon=1; horizons=null; dense_depth=0; dense_weight=0; rollouts=1
     rollout_for_h1=false; horizon_rank_weight=0; root_distill_weight=0
     score_mode=expectile_value; expectile_weight=1 ;;
+  baseline_td_jepa)
+    # Faithful TD-JEPA competitor (Bagatella et al., arXiv:2510.00739):
+    # successor features T(z, u(a), tau(z_0)) with bootstrapped feature TD;
+    # z_r is ridge-regressed at plan time (scripts/plan.py).  Same cheap
+    # data settings and unchanged backbone objectives as baseline_td_q.
+    horizon=1; horizons=null; dense_depth=0; dense_weight=0; rollouts=1
+    rollout_for_h1=false; horizon_rank_weight=0; root_distill_weight=0
+    score_mode=td_jepa; td_jepa_weight=1 ;;
+  baseline_goal_head)
+    # Takai et al. (JSAI 2026) GoalHead competitor: g(z_0) trained toward the
+    # EMA solved-trajectory endpoint (L2 + cosine); planner scores imagined
+    # endpoints by LN-L1 distance to g(z_0).  Non-oracle counterpart of the
+    # oracle_goal diagnostic; cheap data settings as baseline_td_q.
+    horizon=1; horizons=null; dense_depth=0; dense_weight=0; rollouts=1
+    rollout_for_h1=false; horizon_rank_weight=0; root_distill_weight=0
+    score_mode=goal_head; goal_head_weight=1 ;;
   *) echo "unknown horizon-Energy variant: $variant" >&2; exit 2 ;;
 esac
 
@@ -208,6 +225,8 @@ fi
   objective.geo_horizon_rank.kind="$ranking_kind" \
   objective.td_q.weight="$td_q_weight" \
   objective.expectile_value.weight="$expectile_weight" \
+  objective.td_jepa.weight="$td_jepa_weight" \
+  objective.goal_head.weight="$goal_head_weight" \
   objective.counterfactual_state.weight="$counterfactual_weight" \
   objective.latent_pred.weight="$latent_weight" \
   objective.chunk_pred.weight="$chunk_weight" \

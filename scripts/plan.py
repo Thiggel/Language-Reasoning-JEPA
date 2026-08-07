@@ -32,6 +32,30 @@ def main(cfg: DictConfig) -> None:
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
     device = torch.device(cfg.device)
+    if (
+        run_cfg.data.get("name", "igsm") == "igsm"
+        and getattr(model, "geo_rank_score_mode", "value") == "td_jepa"
+    ):
+        # Faithful TD-JEPA needs the task-reward projection z_r, ridge-
+        # regressed from rewards on training-trace states.  Fit it here at
+        # plan time from the checkpoint's own training distribution.
+        from textjepa.data.igsm.dataset import collate
+
+        fit_dataset = build_dataset(run_cfg, vocab, split="train")
+        n_fit = min(
+            len(fit_dataset), int(cfg.get("td_jepa_fit_examples", 256))
+        )
+        batches = []
+        for start in range(0, n_fit, 32):
+            items = [
+                fit_dataset[i] for i in range(start, min(start + 32, n_fit))
+            ]
+            batch = collate(items, vocab.pad_id)
+            batches.append({
+                k: v.to(device) if torch.is_tensor(v) else v
+                for k, v in batch.items()
+            })
+        model.fit_td_jepa_reward_projection(batches)
     measure_flops = bool(cfg.get("measure_flops", False))
     try:
         from torch.utils.flop_counter import FlopCounterMode
