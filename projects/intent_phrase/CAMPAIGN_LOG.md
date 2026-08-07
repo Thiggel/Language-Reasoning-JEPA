@@ -38,14 +38,22 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   collapses after D1. Same family signature as TD-Q/expectile: absolute
   calibrations don't survive recursive imagination. Details in the
   competitor-baselines report.
-- Frozen-backbone Energy head (backbone frozen, head reset + retrained):
-  recipe-shaped backbone .137/.433/.830/.840/.837; ranking-free TD-shaped
-  backbone (init = baseline_td_q, value_detach=false so TD gradients DID
-  shape it) .153/.360/.907/.927/.913 — ABOVE the jointly trained recipe at
-  D4+ (single seed). Registered prediction (pure backbone clearly below)
-  falsified: post-hoc distillation from a backbone that never saw ranking
-  gradients works at full strength. Plain-JEPA backbone (no value/TD/rank
-  gradients at all) now training to complete the triangle.
+- Frozen-backbone triangle COMPLETE (1 seed each, identical frozen
+  distillation protocol, strict D1..D16):
+  plain JEPA-only backbone .100/.257/.643/.773/.783;
+  TD-shaped backbone (td_q gradients, no ranking) .153/.360/.907/.927/.913;
+  ranking-shaped backbone .137/.433/.830/.840/.837;
+  joint-training reference (5 seeds) .126/.450/.837/.879/.884.
+  Reading: (a) post-hoc distillation works on ALL three — ordinal
+  structure largely emerges from JEPA objectives alone (plain .78 at D16
+  vs random .05); (b) value-gradient shaping of the backbone adds ~.1
+  (plain vs TD is the clean pair — same cheap data settings); (c) TD is a
+  good geometry SHAPER but a bad SCORE (TD-JEPA/TD-Q planners fail with
+  depth, yet TD-shaped backbone + ranking head is the best cell so far) —
+  vindicates the owner's "TD as an ingredient" idea in modified form.
+  Caveat: ranking-shaped backbone saw richer data (H mix, R=4) than
+  plain/TD (H=1, R=1), so (b) uses plain-vs-TD only. Seeds running
+  (pure s1, plain s1).
 - Counterfactual K sweep COMPLETE (seed 0, D2 strict): K=0 .237, K=1 .410,
   K=2 .450 (5 seeds), K=3 .323, K=8 .313, K=16 .407, K=64 .407. Deep depths
   all ~.85-.93. Two caveats found: (a) K saturates at catalogue size
