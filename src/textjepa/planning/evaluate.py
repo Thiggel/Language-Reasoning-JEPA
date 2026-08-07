@@ -61,9 +61,11 @@ def oracle_episode(problem: Problem, rng: random.Random) -> EpisodeResult:
     return EpisodeResult(True, len(env.resolved), len(necessary_set), 0)
 
 
-def _aggregate(results: list[EpisodeResult]) -> dict[str, float]:
+def _aggregate(
+    results: list[EpisodeResult], max_slack: int | None = None
+) -> dict[str, float]:
     n = len(results)
-    return {
+    metrics = {
         "success": sum(r.solved for r in results) / n,
         "mean_steps": sum(r.steps for r in results) / n,
         "mean_necessary": sum(r.n_necessary for r in results) / n,
@@ -72,6 +74,22 @@ def _aggregate(results: list[EpisodeResult]) -> dict[str, float]:
         "invalid_action_rate": sum(r.n_invalid for r in results)
         / max(sum(r.steps for r in results), 1),
     }
+    if max_slack is not None:
+        # The policy never reads the remaining budget, so one run at
+        # slack=max_slack yields every smaller-slack success rate exactly:
+        # an episode solved with excess e behaves identically under any
+        # budget >= necessary + e.
+        excess = [
+            r.steps - r.n_necessary if r.solved else None for r in results
+        ]
+        metrics["success_by_slack"] = {
+            str(k): sum(e is not None and e <= k for e in excess) / n
+            for k in range(max_slack + 1)
+        }
+        metrics["excess_steps"] = [
+            e if e is not None else -1 for e in excess
+        ]
+    return metrics
 
 
 def evaluate_planning(
@@ -80,6 +98,7 @@ def evaluate_planning(
     n_episodes: int,
     slack: int = 0,
     seed: int = 0,
+    slack_curve: bool = False,
 ) -> dict[str, dict[str, float]]:
     rng = random.Random(seed)
     planned, rand_, first_, oracle = [], [], [], []
@@ -92,7 +111,8 @@ def evaluate_planning(
     planner_name = (
         "latent_planner" if planner.energy == "value" else f"latent_planner_{planner.energy}"
     )
-    planned_metrics = _aggregate(planned)
+    max_slack = slack if slack_curve else None
+    planned_metrics = _aggregate(planned, max_slack)
     if hasattr(planner, "n_macro_decisions"):
         total = planner.n_macro_decisions + planner.n_flat_decisions
         planned_metrics.update({
@@ -102,7 +122,7 @@ def evaluate_planning(
         })
     return {
         planner_name: planned_metrics,
-        "random_policy": _aggregate(rand_),
-        "first_feasible_policy": _aggregate(first_),
-        "oracle": _aggregate(oracle),
+        "random_policy": _aggregate(rand_, max_slack),
+        "first_feasible_policy": _aggregate(first_, max_slack),
+        "oracle": _aggregate(oracle, max_slack),
     }

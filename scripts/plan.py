@@ -80,10 +80,14 @@ def main(cfg: DictConfig) -> None:
                 invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
             )
             results = evaluate_planning(
-                planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
+                planner, dataset, cfg.n_episodes, slack=cfg.slack,
+                seed=cfg.seed, slack_curve=cfg.get("slack_curve", False),
             )
     for name, metrics in results.items():
-        line = "  ".join(f"{k}={v:.3f}" for k, v in metrics.items())
+        line = "  ".join(
+            f"{k}={v:.3f}" for k, v in metrics.items()
+            if isinstance(v, (int, float))
+        )
         print(f"{name:16s} {line}")
     suffix = "" if cfg.energy == "value" else f"_{cfg.energy}"
     if cfg.get("hierarchy", False):
