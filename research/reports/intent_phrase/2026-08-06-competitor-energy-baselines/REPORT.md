@@ -158,3 +158,14 @@ calibrations, and neither survives recursive imagination — while the same
 backbone under ranking distillation reaches .884. This is the paper's
 contrast axis measured on the actual competitor methods, not adaptations of
 convenience.
+
+### Three-seed update (2026-08-07, strict success, mean ± sd)
+
+| Method | D1 | D2 | D4 | D8 | D16 |
+|---|---:|---:|---:|---:|---:|
+| Faithful TD-JEPA | .124±.008 | .106±.023 | .100±.015 | .089±.016 | .089±.016 |
+| Takai GoalHead | .139±.010 | .061±.022 | .084±.025 | .082±.022 | .082±.022 |
+
+The single-seed picture replicates: both faithful competitors match the
+ranking recipe at depth 1 and then decline or collapse as search deepens,
+with no overlap of error bars against the recipe's .450→.884 curve.
