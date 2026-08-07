@@ -106,6 +106,20 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   sentence-vjepa VariationalAction) so planning needs no menu at all, and
   LM baselines move to free generation (parse-or-invalid). Report every
   method under both protocols.
+- Learned action prior IMPLEMENTED (commit bb300f5): GaussianActionPrior
+  head (state -> Gaussian over action embeddings, NLL on observed actions),
+  planner `candidate_interface=learned_catalogue` (prior-filtered catalogue
+  top-k/top-p, no menu, no feasibility oracle), `mean_prior_rank`
+  diagnostic; suite 731 green. First menu-free training cell
+  `mix4-prior-s0-v1` (variant `mix4_aux025_nohorizon_prior`, snapshot
+  `f27403a`) RUNNING on gruenau1 GPU0: recipe + full-catalogue ranking
+  candidates + prior + support head, eval fully menu-free (top-k 8).
+- Five-seed headline slack-curve re-eval RUNNING on gruenau1 GPU1
+  (round `2026-08-07-intent-headline-slackcurve-v1`; s0 done, .120/.410/
+  .813/.850/.860 strict — consistent with the headline mean).
+- Frozen-backbone triangle now 2-SEED on all three legs (s1: plain
+  .107/.250/.643/.797/.803; TD-shaped .143/.383/.893/.917/.910;
+  ranking-shaped .133/.390/.807/.830/.830 — all replicate s0).
 - `run_intent_terminal_energy_eval.sh` now does ONE generous run per depth
   (MAX_SLACK=4, `slack_curve=true`): exact success at every slack 0..4 +
   per-episode excess steps (`slack_curves` in metrics.json; legacy per-slack
