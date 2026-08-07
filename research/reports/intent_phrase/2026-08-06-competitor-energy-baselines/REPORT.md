@@ -11,7 +11,8 @@ ICLR paper. No experiments in this report._
 | Temporal-Distance JEPA | Bai & Xiong, arXiv:2607.25337 | (b) TD-shaped geometry (quasimetric distance = steps-to-go) |
 | FF-JEPA | Masip et al., arXiv:2606.09311 | (c) subgoal proposal + rollout latent distance |
 | LAGO | Barbeau et al., arXiv:2606.20627 | (c) language-conditioned subgoal latents + soft-min rollout cost |
-| "Takai et al." | **No such paper found — do not cite.** Closest real method: Destrade, Bounou, Le Lidec, Ponce, LeCun, "Value-guided action planning with JEPA world models", arXiv:2601.00844 | (b) V(s,g) = -||E(s)-E(g)|| with IQL-style expectile TD |
+| Takai et al. | **CORRECTED (user-provided): found.** Takai, Takahashi, Ishida, Suzuki, Matsuo, "Language-Conditioned Latent Planning without Goal Images in JEPA World Models", JSAI 2026, 1E4-OS-39b-04 | (c) learned GoalHead g(z_0, u_text) -> z_goal_hat supervised by encoded goal image (L2 + cosine); plan by CEM/MPC minimizing d(imagined endpoint, z_goal_hat). MetaWorld reach: .15 vs .52 goal-image oracle |
+| (kept as extra family-b row) | Destrade et al., "Value-guided action planning with JEPA world models", arXiv:2601.00844 | (b) V(s,g) = -||E(s)-E(g)|| with IQL-style expectile TD (implemented as `expectile_value`) |
 | PLDM | Sobal et al., arXiv:2502.14819 | (c) rollout + latent distance to encoded goal |
 | HWM | Zhang et al., arXiv:2604.03208 | (c) hierarchical, already studied and negative here |
 | DINO-WM | Zhou et al., arXiv:2411.04983 | (c) frozen encoder + distance energy |
@@ -70,6 +71,25 @@ ICLR paper. No experiments in this report._
    (family b, Temporal-Distance JEPA).
 4. `subgoal_proposer` G(z_t, z_0, rho): enables non-oracle family (c)
    (FF-JEPA/LAGO-style) rows.
+
+## Faithfulness upgrades required (2026-08-07, after user confirmation)
+
+1. **TD-JEPA (arXiv:2510.00739) exact adaptation**: our `td_q` SARSA head is an
+   honest TD-family representative but not the paper's parameterization.
+   Faithful version: successor-feature predictor T(phi(s), u(a), z) with task
+   embedding z and factorization Q(s,a) = T(phi(s),u(a),z_r)^T z_r; offline TD
+   loss || T(phi(s),a,z) - sg[psi(s')] - gamma*sg[T(phi(s'),a',z)] ||^2 with
+   psi a learned state-feature head; test-time z_r regressed from the sparse
+   task reward r(s)=1[solved] on training traces. Keep `td_q` as the simple
+   TD ablation row; add `td_jepa` as the faithful row.
+2. **Takai et al. (JSAI 2026) adaptation**: GoalHead g(z_0) -> z_goal_hat
+   trained with ||z_goal_hat - sg[z_goal_EMA]||^2 + lambda*(1 - cos), where
+   z_goal_EMA is the EMA-encoded solved trajectory endpoint (training only);
+   plan with the existing distance planner but scoring
+   d(imagined endpoint, z_goal_hat). This is the non-oracle counterpart of
+   our oracle-goal diagnostic (oracle goal = 100% success), and the natural
+   family-(c) row without symbolic goal access. In our environment the
+   "instruction" is the problem statement, already encoded in z_0.
 
 ## First results (added 2026-08-06 night, one seed, 300 episodes, identical protocol)
 
