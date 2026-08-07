@@ -11,6 +11,14 @@ to preserve existing links and run provenance. Current work includes fixed
 and semantic boundaries, dense multilevel rollout, representation probes,
 oracle-terminal planning diagnostics, token support priors, and top-down CEM.
 
+Current strict-nested implementation contracts:
+
+- [`NORMATIVE_CONTRACT.md`](NORMATIVE_CONTRACT.md) fixes indexing, causal
+  state/action timing, training stages, and dependency-preserving token search.
+- [`FULL_HIERARCHICAL_LANGUAGE_EXPERIMENT.md`](FULL_HIERARCHICAL_LANGUAGE_EXPERIMENT.md)
+  defines oracle/value planning, open- versus closed-loop execution,
+  prior-support ablations, and planning-effort evaluation.
+
 Run families are `hard_hier_*`, `text_hier_*`, `deltajepa_text_*`, and the
 controller rounds under `runs/autonomy/`. This project's conclusions must not
 be transferred to the observed intent-phrase project without an explicit

@@ -7,6 +7,7 @@ from textjepa.models.hierarchical_language_jepa import (
 from textjepa.planning.nested_language_runtime import (
     advance_sentence_planning_state,
     contextual_prior_cem,
+    contextual_action_cem,
     macro_action_log_probability,
     make_sentence_planning_state,
     rollout_prior_noise,
@@ -179,3 +180,22 @@ def test_grounded_cem_keeps_trust_region_penalty():
     )
     raw = -100.0 * result.noise[0].square().mean().sqrt()
     assert result.cost > float(raw)
+
+
+def test_ambient_action_cem_does_not_decode_through_prior():
+    model = tiny_model()
+    root = make_sentence_planning_state(
+        model, torch.zeros(1, 1, 4), torch.empty(1, 0, 2)
+    )
+
+    def objective(rollout):
+        cost = (rollout.actions[:, 0, 0] - 2.0).square()
+        return cost, torch.zeros_like(cost, dtype=torch.long)
+
+    result = contextual_action_cem(
+        model, root, torch.zeros(3), objective,
+        horizon=1, population=256, iterations=5,
+        elite_fraction=0.1,
+        generator=torch.Generator().manual_seed(19),
+    )
+    assert abs(float(result.rollout.actions[0, 0, 0]) - 2.0) < 0.25

@@ -25,11 +25,31 @@ frozen during value-only distillation, preventing the value learner from
 shifting the frozen macro prior's conditioning distribution.
 
 The high-level manager samples supported macro actions in `Pi1` coordinates.
-Its first predicted successor is the sentence waypoint. The frozen Qwen LM
-proposes complete token spans, `P0` predicts their endpoints, and the worker
-selects text by coarse waypoint cost plus LM prior cost. After execution, the
-frozen LM is run again and all imagined states are discarded. This is exact
-hierarchical receding-horizon control.
+Its first predicted successor is the sentence waypoint. The primary token
+worker is no longer a one-shot Qwen sample-and-rerank procedure. At every live
+prefix, Qwen supplies only supported next-token proposals; `P0` predicts their
+consequences and JEPA waypoint discrepancy selects the surviving beam or CEM
+elites. Qwen log likelihood is absent from the primary worker objective. A
+small likelihood penalty and likelihood-only selection are isolated
+ablations, while one-shot reranking is retained as the historical control.
+
+The worker-search comparison contains: full-prefix JEPA beam search,
+elite-prefix autoregressive CEM, sparse first-order Markov CEM, and an
+independent-position categorical CEM negative control. The autoregressive
+methods preserve complete prefixes; they never splice independently selected
+future token positions.
+
+Two hierarchy execution policies are evaluated. Open-loop execution retains
+the complete high-level waypoint sequence while the worker realizes it.
+Closed-loop execution commits only to the first waypoint, exactly re-encodes
+the achieved worker state, replaces the imagined manager state, and reruns
+high-level CEM. After every executed reasoning step, the frozen LM and both
+bounded predictor histories are rebuilt from the real prefix.
+
+High-level support is separately ablated as ambient-action CEM, `Pi1`-coordinate
+CEM, `Pi1`-coordinate CEM with a noise trust region, and the latter plus an
+explicit prior NLL cost. This distinguishes proposal support from an additive
+likelihood objective.
 
 ## Two evaluation modes
 
@@ -107,3 +127,5 @@ decision-grade single-seed mechanism run, not a multi-seed paper estimate.
 
 The entry point is
 [`scripts/run_full_hierarchical_language_experiment.py`](../../scripts/run_full_hierarchical_language_experiment.py).
+Checkpoint-only search matrices use
+[`scripts/run_hierarchical_mpc_search_matrix.py`](../../scripts/run_hierarchical_mpc_search_matrix.py).

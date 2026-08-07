@@ -43,6 +43,14 @@ class FakeTokenizer:
         return "Final answer: \\boxed{8}\n"
 
 
+class TwoStepTokenizer:
+    def decode(self, tokens, **kwargs):
+        return (
+            "Final answer: \\boxed{8}\n"
+            if len(tokens) >= 2 else "reasoning step\n"
+        )
+
+
 @pytest.mark.parametrize("mode", ["oracle", "value"])
 def test_mpc_cli_executes_worker_and_exactly_reencodes_without_value_leakage(
     tmp_path, monkeypatch, mode
@@ -143,3 +151,104 @@ def test_mpc_cli_executes_worker_and_exactly_reencodes_without_value_leakage(
     )
     batch = collate_counterfactual_records(replay["counterfactual_records"])
     assert batch["sentence_eligible"].all()
+
+
+@pytest.mark.parametrize(
+    "execution, expected_manager_calls",
+    [("open_loop", 1), ("closed_loop", 2)],
+)
+def test_hierarchy_commits_or_replans_after_exact_worker_state(
+    tmp_path, monkeypatch, execution, expected_manager_calls
+):
+    config = HierarchicalLanguageJEPAConfig(
+        d_backbone=8, vocab_size=19, pad_id=0,
+        d_token=6, d_sentence=4, d_action=2, d_task=3,
+        predictor_width=8, token_layers=1, sentence_layers=1,
+        n_heads=2, token_context=4, sentence_context=4,
+        max_span=4, enable_macro_actions=True,
+    )
+    model = HierarchicalLanguageJEPA(config).eval()
+    learner = HierarchicalLanguageLearner(
+        model, ResearchStage.MACRO_ACTION
+    ).eval()
+    checkpoint = tmp_path / "model.pt"
+    torch.save({
+        "architecture": HIERARCHICAL_LANGUAGE_ARCHITECTURE,
+        "config": config.__dict__, "model": model.state_dict(),
+        "learner": learner.state_dict(),
+        "stage": ResearchStage.MACRO_ACTION.name,
+    }, checkpoint)
+    features = tmp_path / "features.pt"
+    torch.save({
+        "hidden_states": torch.randn(1, 6, 8),
+        "input_ids": torch.tensor([[1, 2, 3, 4, 5, 6]]),
+        "prompt_len": torch.tensor([3]), "solution_end": torch.tensor([6]),
+        "problem_id": ["p"], "dataset_fingerprint": "data",
+        "model_id": MODEL_ID, "model_revision": MODEL_REVISION,
+        "transformers_version": TRANSFORMERS_VERSION,
+        "symbolically_verified": [True],
+    }, features)
+    examples = tmp_path / "examples.jsonl"
+    examples.write_text(json.dumps({
+        "problem_id": "p", "answer": 8, "reasoning_depth": 1,
+    }) + "\n")
+    frozen = FakeFrozen({})
+    monkeypatch.setattr(
+        evaluator, "load_reference_model",
+        lambda device, dtype: (TwoStepTokenizer(), frozen),
+    )
+    manager_roots = []
+
+    def fake_manager(model, initial, task, objective, **kwargs):
+        manager_roots.append(initial.state.detach().clone())
+        states = torch.stack([
+            initial.state[0] + 1, initial.state[0] + 2,
+        ])[None]
+        return SimpleNamespace(
+            rollout=SimpleNamespace(states=states),
+            selected_prefix=1, diagnostics=[],
+        )
+
+    def fake_optimized(
+        model, frozen, tokenizer, prefix, hidden, requested_waypoint,
+        metric, **kwargs
+    ):
+        endpoint = model.e0_to_1(model.e0(torch.ones(1, 8)))
+        ids = torch.tensor([[7]])
+        return WorkerBank(
+            candidates=[(torch.tensor([7]), False)],
+            predicted_coarse=requested_waypoint[None],
+            exact_coarse=endpoint,
+            actions=model.a1(ids, torch.ones_like(ids, dtype=torch.bool)),
+            lm_log_probability=torch.zeros(1),
+            generation_seconds=0.0, exact_grounding_seconds=0.0,
+            token_rollout_seconds=0.0, search_algorithm="beam",
+            proposed_tokens=2, transition_evaluations=2,
+        )
+
+    monkeypatch.setattr(evaluator, "contextual_prior_cem", fake_manager)
+    monkeypatch.setattr(
+        evaluator, "build_optimized_worker_bank", fake_optimized
+    )
+    output = tmp_path / f"{execution}.json"
+    monkeypatch.setattr(sys, "argv", [
+        "evaluate_hierarchical_language_mpc.py",
+        "--features", str(features), "--examples", str(examples),
+        "--checkpoint", str(checkpoint), "--output", str(output),
+        "--dataset-split", "id_test", "--mode", "oracle",
+        "--metric", "euclidean", "--k0", "8", "--k1", "2",
+        "--worker-search", "beam", "--worker-objective", "jepa",
+        "--manager-grounding", "none",
+        "--hierarchy-execution", execution,
+        "--worker-population", "2", "--manager-population", "4",
+        "--cem-iterations", "1", "--max-examples", "1",
+        "--max-reasoning-steps", "2", "--device", "cpu",
+    ])
+    evaluator.main()
+    result = json.loads(output.read_text())
+    assert result["accuracy"] == 1.0
+    assert result["rows"][0]["generated_steps"] == 2
+    assert result["rows"][0]["manager_replans"] == expected_manager_calls
+    assert len(manager_roots) == expected_manager_calls
+    if execution == "closed_loop":
+        assert not torch.equal(manager_roots[0], manager_roots[1])

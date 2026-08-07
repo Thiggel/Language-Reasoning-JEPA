@@ -278,6 +278,48 @@ def rollout_prior_noise(
     )
 
 
+def rollout_macro_actions(
+    model: HierarchicalLanguageJEPA,
+    initial: SentencePlanningState,
+    task: Tensor,
+    actions: Tensor,
+) -> MacroRollout:
+    """Roll ambient macro actions while preserving every contextual branch.
+
+    This is the explicit no-prior search ablation.  Pi1 is used only to record
+    diagnostic log probabilities; it does not transform or constrain actions.
+    """
+
+    if actions.ndim != 3 or actions.shape[-1] != model.config.d_action:
+        raise ValueError("actions must be [population,horizon,d_action]")
+    population, horizon, _ = actions.shape
+    if horizon < 1:
+        raise ValueError("macro rollout horizon must be positive")
+    state = repeat_sentence_planning_state(initial, population)
+    if task.ndim == 1:
+        task = task[None].expand(population, -1)
+    if task.shape != (population, model.config.d_task):
+        raise ValueError("task embedding does not align with population")
+    states, contexts, log_probabilities = [], [], []
+    for step in range(horizon):
+        action = actions[:, step]
+        if model.pi1 is None:
+            logp = action.new_zeros(population)
+        else:
+            logp = macro_action_log_probability(model, state, task, action)
+        state = advance_sentence_planning_state(model, state, action)
+        states.append(state.state)
+        contexts.append(state.context)
+        log_probabilities.append(logp)
+    return MacroRollout(
+        actions=actions,
+        states=torch.stack(states, 1),
+        contexts=torch.stack(contexts, 1),
+        log_probabilities=torch.stack(log_probabilities, 1),
+        final_planning_state=state,
+    )
+
+
 def macro_action_log_probability(
     model: HierarchicalLanguageJEPA,
     planning_state: SentencePlanningState,
@@ -446,6 +488,80 @@ def contextual_prior_cem(
                 len(grounded_ids) if grounded_ids is not None else 0
             ),
             "optimizer_curse_regret": optimizer_regret,
+        })
+    assert best is not None
+    return ContextualCEMResult(
+        noise=best[1], rollout=best[2], selected_prefix=best[3],
+        cost=best[0], diagnostics=diagnostics,
+    )
+
+
+def contextual_action_cem(
+    model: HierarchicalLanguageJEPA,
+    initial: SentencePlanningState,
+    task: Tensor,
+    objective: Callable[[MacroRollout], tuple[Tensor, Tensor]],
+    *,
+    horizon: int,
+    population: int,
+    iterations: int,
+    elite_fraction: float = 0.1,
+    smoothing: float = 0.1,
+    covariance_floor: float = 0.05,
+    generator: torch.Generator | None = None,
+) -> ContextualCEMResult:
+    """Unconstrained Gaussian CEM over ambient sentence-action vectors."""
+
+    if min(horizon, population, iterations) < 1:
+        raise ValueError("CEM sizes must be positive")
+    if not 0 < elite_fraction <= 1 or not 0 <= smoothing < 1:
+        raise ValueError("invalid CEM update configuration")
+    if covariance_floor <= 0:
+        raise ValueError("CEM covariance floor must be positive")
+    mean = initial.state.new_zeros(horizon, model.config.d_action)
+    std = initial.state.new_ones(horizon, model.config.d_action)
+    elite_count = max(1, round(population * elite_fraction))
+    best: tuple[float, Tensor, MacroRollout, int] | None = None
+    diagnostics: list[dict[str, float]] = []
+    for iteration in range(iterations):
+        actions = mean + std * torch.randn(
+            population, horizon, model.config.d_action,
+            device=mean.device, dtype=mean.dtype, generator=generator,
+        )
+        rollout = rollout_macro_actions(model, initial, task, actions)
+        cost, prefix = objective(rollout)
+        if cost.shape != (population,) or prefix.shape != (population,):
+            raise ValueError("CEM objective must return aligned vectors")
+        if not bool(torch.isfinite(cost).all()):
+            raise ValueError("ambient CEM objective must be finite")
+        elite_ids = cost.topk(elite_count, largest=False).indices
+        elite = actions[elite_ids]
+        new_mean = elite.mean(0)
+        new_std = elite.std(0, unbiased=False).clamp_min(covariance_floor)
+        mean = smoothing * mean + (1 - smoothing) * new_mean
+        std = smoothing * std + (1 - smoothing) * new_std
+        selected = int(cost.argmin())
+        selected_cost = float(cost[selected])
+        if best is None or selected_cost < best[0]:
+            winner = rollout_macro_actions(
+                model, initial, task, actions[selected:selected + 1]
+            )
+            best = (
+                selected_cost, actions[selected].clone(), winner,
+                int(prefix[selected]),
+            )
+        diagnostics.append({
+            "iteration": float(iteration),
+            "best_predicted_cost": float(cost.min()),
+            "median_predicted_cost": float(cost.median()),
+            "elite_action_norm": float(elite.square().mean((-1, -2)).sqrt().mean()),
+            "cem_std": float(std.mean()),
+            "unique_plans": float(torch.unique(
+                rollout.actions.detach(), dim=0
+            ).shape[0]),
+            "best_grounded_cost": float("nan"),
+            "grounded_candidates": 0.0,
+            "optimizer_curse_regret": float("nan"),
         })
     assert best is not None
     return ContextualCEMResult(

@@ -117,6 +117,31 @@ once per problem and is invariant to the solution suffix.
    only for oracle high-level planning and offline value-teacher construction.
    The student and inference planner never receive this set.
 
+## Hierarchical search contract
+
+High-level CEM predicts up to `K1` sentence transitions before applying the
+oracle terminal discrepancy or deployable value. Its primary supported form
+optimizes standard-normal coordinates decoded by `Pi1`; ambient-action CEM,
+an explicit noise trust region, and additive prior NLL are separate ablations.
+
+The primary token objective is only:
+
+```text
+distance(E0_to_1(P0^K0(current_token_state, candidate_tokens)), waypoint)
+```
+
+Qwen supplies causally supported next-token proposals but its likelihood is
+not part of this primary score. Likelihood-only and small-NLL-addition controls
+are reported separately. Full-prefix beam search and elite-prefix
+autoregressive CEM are the faithful workers. Sparse first-order Markov CEM is
+a weaker dependency ablation. Independent-position categorical CEM is an
+explicit negative control and cannot be described as faithful language CEM.
+
+Open-loop hierarchy executes the waypoint sequence originally imagined by one
+manager call. Closed-loop hierarchy executes only the first waypoint, exactly
+re-encodes the achieved sentence state and causal histories, and replans from
+that corrected state. Both are reported; closed-loop is the primary MPC mode.
+
 ## Stage order
 
 | Stage | Active addition |
