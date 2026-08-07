@@ -99,7 +99,14 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
    saturation-depth prediction test. T1/T2/T4 done (see results above).
 4. Re-run five-seed headline evals with the slack-curve evaluator for full
    excess-step curves in the paper figures.
-5. Causal-predictor endpoint-Energy cell (needs training-time recursive
+5. Stabilizer sweep (owner 2026-08-07, run AFTER menu-free recipe locked):
+   backbone variants {EMA/stopgrad/online_nosg} x {VICReg/SIGReg/VISReg/
+   LDAD/none} under the FROZEN distillation protocol (removes the EMA-label
+   confound; labels from the frozen encoder). Stage 1: ~8 single-seed
+   screening cells incl. Delta-JEPA claim (LDAD, no EMA, no stopgrad) and
+   collusion control (online_nosg). Ports: SIGReg/VISReg/latent-LDAD from
+   sibling tracks; state_target switch already in DiscourseJEPA.
+6. Causal-predictor endpoint-Energy cell (needs training-time recursive
    imagination for the transformer predictor; guard currently blocks it).
-6. Transfer to a second established environment (multi-hop logical
+7. Transfer to a second established environment (multi-hop logical
    reasoning) once the iGSM matrix is locked.
