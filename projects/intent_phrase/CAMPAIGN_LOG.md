@@ -65,6 +65,15 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
 - Pure-JEPA frozen-backbone control `frozen-backbone-pure-s0-v1`: gruenau1
   RTX 6000 (round `2026-08-07-intent-frozen-backbone-v1`, INIT_CKPT =
   baseline_td_q s0 best.pt — backbone never saw ranking gradients).
+- Interface controls (owner's directive 2026-08-07): full-catalogue evals of
+  recipe s0 + faithful baselines (no feasibility oracle, no symbolic future
+  menus, invalid=noop) running as
+  `2026-08-07-intent-interface-controls-v1/eval-fullcat-noop-s0-v1` on
+  gruenau10 GPU1. Next: full-catalogue TRAINING cell; then learned action
+  prior p(u(a)|s) (Gaussian MLP over action embeddings, port of
+  sentence-vjepa VariationalAction) so planning needs no menu at all, and
+  LM baselines move to free generation (parse-or-invalid). Report every
+  method under both protocols.
 - `run_intent_terminal_energy_eval.sh` now does ONE generous run per depth
   (MAX_SLACK=4, `slack_curve=true`): exact success at every slack 0..4 +
   per-episode excess steps (`slack_curves` in metrics.json; legacy per-slack
