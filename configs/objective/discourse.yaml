@@ -169,6 +169,14 @@ expectile_value:
   weight: 0.0  # Destrade-style expectile goal value (baseline_expectile_value)
   gamma: 0.98
   tau: 0.9
+td_jepa:
+  _target_: textjepa.objectives.TDJEPASuccessor
+  weight: 0.0  # faithful TD-JEPA successor features (baseline_td_jepa)
+  gamma: 0.98
+goal_head:
+  _target_: textjepa.objectives.GoalHeadDistill
+  weight: 0.0  # Takai-style predicted-goal head (baseline_goal_head)
+  cos_weight: 1.0
 geo_rollout_advantage_mse:
   _target_: textjepa.objectives.GeoRolloutAdvantageRegression
   weight: 0.0

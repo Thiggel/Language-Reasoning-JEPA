@@ -468,6 +468,44 @@ class LatentPlanner:
                 )
                 total[torch.tensor(selected, device=self.device)] = -q
                 continue
+            if score_mode == "td_jepa" and length > 0:
+                # Faithful TD-JEPA score: Q = T(z_pre_final, u(a_final),
+                # tau(z_0))^T z_r, with the same pre-final-state convention
+                # as td_q (no rollout needed at depth 1) and z_r the ridge-
+                # regressed task-reward projection fitted after training.
+                core = self.model.core
+                if not bool(core.td_jepa_z_r_fitted):
+                    raise RuntimeError(
+                        "td_jepa planning requires a fitted task-reward "
+                        "projection; call fit_td_jepa_reward_projection on "
+                        "training batches first (scripts/plan.py does this)"
+                    )
+                pre_final = (
+                    s.expand(len(selected), -1) if length == 1
+                    else rollout_states[:, -2]
+                )
+                task = core.td_jepa_task_head(s0.expand(len(selected), -1))
+                features = core.successor_feature_head(
+                    pre_final, future[:, -1], task
+                )
+                q = features @ core.td_jepa_z_r
+                total[torch.tensor(selected, device=self.device)] = -q
+                continue
+            if score_mode == "goal_head" and length > 0:
+                # Takai-style predicted-goal energy: LN-L1 distance of the
+                # imagined endpoint to g(z_0) — mirrors energy=oracle_goal
+                # with the learned goal prediction instead of the oracle
+                # terminal encoding.
+                goal_hat = self.model.core.goal_head(
+                    s0.expand(len(selected), -1)
+                )
+                ln = lambda x: torch.nn.functional.layer_norm(
+                    x, x.shape[-1:]
+                )
+                total[torch.tensor(selected, device=self.device)] = (
+                    (ln(cur) - ln(goal_hat)).abs().mean(-1)
+                )
+                continue
             if score_mode == "expectile_value" and length > 0:
                 v = self.model.core.expectile_value_head(
                     cur, s0.expand(len(selected), -1)
