@@ -28,7 +28,7 @@ macro_support_scales: [3.0]
 dense_rollout_depth: 0
 high_dense_rollout_depth: 0
 value_detach: true
-geo_rank_score_mode: value  # transition | value | distance | direct
+geo_rank_score_mode: value  # transition | value | distance | direct | td_q | expectile_value | td_jepa | goal_head
 geo_energy_target: advantage  # advantage | distance
 geo_energy_state_source: predicted  # predicted | true
 geo_energy_rollout_depths: []  # state-Energy calibration at 0=observed, d>0=imagined
@@ -40,6 +40,8 @@ geo_horizon_supervise_prefixes: false
 geo_horizon_prefix_depths: []
 geo_horizon_input: true  # false: horizon-blind endpoint Energy (one shared Energy)
 geo_td_auxiliary: none  # none | td_q | expectile_value (TD shaping alongside ranking)
+td_jepa_d_psi: 32   # successor/state feature width (baseline_td_jepa)
+td_jepa_d_task: 32  # task embedding width tau(z_0) (baseline_td_jepa)
 dropout: 0.0
 geo_proj: false
 state_target: ema

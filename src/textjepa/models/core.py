@@ -21,7 +21,11 @@ from textjepa.models.heads import (
     ControllerOutcomeHead,
     DirectActionRankHead,
     ExpectileValueHead,
+    GoalHead,
     HorizonEnergyHead,
+    StateFeatureHead,
+    SuccessorFeatureHead,
+    TaskEmbeddingHead,
     TDQHead,
     TransitionEnergyHead,
     SubgoalActionHead,
@@ -69,6 +73,8 @@ class LatentDynamicsCore(nn.Module):
         action_support_kind: str = "pairwise",
         action_support_history_mode: str = "aligned",
         action_support_heads: int = 2,
+        td_jepa_d_psi: int = 32,
+        td_jepa_d_task: int = 32,
     ):
         super().__init__()
         self.d_action = d_action
@@ -149,6 +155,20 @@ class LatentDynamicsCore(nn.Module):
         self.horizon_energy_head = HorizonEnergyHead(d_model)
         self.td_q_head = TDQHead(d_model, d_action)
         self.expectile_value_head = ExpectileValueHead(d_model)
+        # Faithful TD-JEPA parameterization (Bagatella et al., 2510.00739):
+        # successor features T(z, u(a), tau(z_0)) over random psi features,
+        # with the task-reward projection z_r regressed after training
+        # (``DiscourseJEPA.fit_td_jepa_reward_projection``) and stored here.
+        self.state_feature_head = StateFeatureHead(d_model, td_jepa_d_psi)
+        self.td_jepa_task_head = TaskEmbeddingHead(d_model, td_jepa_d_task)
+        self.successor_feature_head = SuccessorFeatureHead(
+            d_model, d_action, td_jepa_d_task, td_jepa_d_psi
+        )
+        self.register_buffer("td_jepa_z_r", torch.zeros(td_jepa_d_psi))
+        self.register_buffer(
+            "td_jepa_z_r_fitted", torch.zeros((), dtype=torch.bool)
+        )
+        self.goal_head = GoalHead(d_model)
         self.hi_value_head = ValueHead(d_model)
         self.macro_value_head = MacroValueHead(d_model, d_macro)
         self.macro_support_head = MacroSupportHead(d_model, d_macro)

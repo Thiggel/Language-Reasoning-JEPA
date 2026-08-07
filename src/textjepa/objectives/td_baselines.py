@@ -10,6 +10,7 @@ Reward convention is steps-to-go: r = -1 per executed step, 0 at terminal.
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 
 from textjepa.objectives.base import Objective, masked_mean
 
@@ -61,3 +62,56 @@ class ExpectileValueTD(Objective):
         return masked_mean(
             weight * delta.square(), out.extras["td_valid"].float()
         )
+
+
+class TDJEPASuccessor(Objective):
+    """Faithful TD-JEPA successor-feature TD loss (Bagatella et al.,
+    arXiv:2510.00739, adapted to demonstrated intent-phrase traces).
+
+    || T(z_t, u(a_t), tau(z_0)) - sg[psi(z_{t+1})]
+       - gamma * sg[T(z_{t+1}, u(a_{t+1}), tau(z_0))] ||^2
+
+    The bootstrapped term is dropped on the terminal (solving) step, mirroring
+    the terminal handling of :class:`TDQ`.  The squared norm is averaged over
+    the d_psi feature dimension (same optimum; keeps the loss scale comparable
+    across d_psi choices).  Rewards never appear here: they enter only through
+    the post-training ridge regression of the task-reward projection z_r
+    (``DiscourseJEPA.fit_td_jepa_reward_projection``).
+    """
+
+    def __init__(self, gamma: float = 0.98):
+        super().__init__()
+        self.gamma = float(gamma)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "td_jepa_pred" not in out.extras:
+            return out.step_states.sum() * 0.0
+        keep = (~out.extras["td_terminal"]).float().unsqueeze(-1)
+        target = (
+            out.extras["td_jepa_next_features"].detach()
+            + self.gamma * out.extras["td_jepa_next_pred"].detach() * keep
+        )
+        error = (out.extras["td_jepa_pred"] - target).square().mean(-1)
+        return masked_mean(error, out.extras["td_valid"].float())
+
+
+class GoalHeadDistill(Objective):
+    """GoalHead loss (Takai et al., JSAI 2026, adapted): L2 + cosine to the
+    EMA-encoded solved-trajectory endpoint.
+
+    || g(z_0) - sg[z_goal_EMA] ||^2 + cos_weight * (1 - cos(g(z_0), sg[...])),
+    with the squared norm averaged over the state dimension.
+    """
+
+    def __init__(self, cos_weight: float = 1.0):
+        super().__init__()
+        self.cos_weight = float(cos_weight)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        if "goal_head_pred" not in out.extras:
+            return out.step_states.sum() * 0.0
+        pred = out.extras["goal_head_pred"]
+        target = out.extras["goal_head_target"].detach()
+        mse = (pred - target).square().mean(-1)
+        cosine = F.cosine_similarity(pred, target, dim=-1)
+        return (mse + self.cos_weight * (1.0 - cosine)).mean()

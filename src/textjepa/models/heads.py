@@ -105,6 +105,115 @@ class ExpectileValueHead(nn.Module):
         )
 
 
+class StateFeatureHead(nn.Module):
+    """psi(z) -> R^{d_psi} state features for TD-JEPA successor prediction.
+
+    Following the faithful TD-JEPA loss (Bagatella et al., arXiv:2510.00739,
+    as specified for this repo) the psi term appears only under stop-gradient,
+    so this head stays at its random initialization: successor features of a
+    fixed random feature map are still well-defined, and the task-reward
+    projection z_r is regressed against exactly these features.
+    """
+
+    def __init__(self, d_state: int, d_psi: int = 32, hidden_mult: int = 2):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.LayerNorm(d_state),
+            mlp([d_state, d_state * hidden_mult], d_psi),
+        )
+
+    def forward(self, state: torch.Tensor) -> torch.Tensor:
+        return self.net(state)
+
+
+class TaskEmbeddingHead(nn.Module):
+    """tau(z_0) -> R^{d_task} task embedding for TD-JEPA.
+
+    Adaptation choice: in the intent-phrase environment the task is fully
+    specified by the problem statement, which ``z_0`` encodes, so the task
+    embedding is a small MLP of the prompt state instead of a separately
+    sampled task latent.
+    """
+
+    def __init__(self, d_state: int, d_task: int = 32, hidden_mult: int = 2):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.LayerNorm(d_state),
+            mlp([d_state, d_state * hidden_mult], d_task),
+        )
+
+    def forward(self, initial: torch.Tensor) -> torch.Tensor:
+        return self.net(initial)
+
+
+class SuccessorFeatureHead(nn.Module):
+    """T(z, u(a), z_task) -> R^{d_psi} successor features (TD-JEPA).
+
+    Predicts the discounted sum of future ``psi`` state features under the
+    demonstrated policy; Q(s, a) is recovered as ``T(...)^T z_r`` with the
+    task-reward projection ``z_r`` regressed from rewards on training traces.
+    """
+
+    def __init__(
+        self,
+        d_state: int,
+        d_action: int,
+        d_task: int,
+        d_psi: int = 32,
+        hidden_mult: int = 2,
+    ):
+        super().__init__()
+        width = d_state + d_action + d_task
+        self.net = nn.Sequential(
+            nn.LayerNorm(width),
+            mlp([width, d_state * hidden_mult], d_psi),
+        )
+
+    def forward(
+        self, state: torch.Tensor, action: torch.Tensor, task: torch.Tensor
+    ) -> torch.Tensor:
+        while task.dim() < state.dim():
+            task = task.unsqueeze(-2)
+        task = task.expand(*state.shape[:-1], task.shape[-1])
+        return self.net(torch.cat([state, action, task], dim=-1))
+
+
+def ridge_reward_projection(
+    features: torch.Tensor, rewards: torch.Tensor, eps: float = 1e-4
+) -> torch.Tensor:
+    """z_r = argmin_z sum_s (psi(s)^T z - r(s))^2 + eps * ||z||^2.
+
+    ``features`` is [N, d_psi], ``rewards`` is [N]; returns [d_psi].
+    """
+    d_psi = features.shape[-1]
+    gram = features.T @ features + eps * torch.eye(
+        d_psi, dtype=features.dtype, device=features.device
+    )
+    return torch.linalg.solve(gram, features.T @ rewards)
+
+
+class GoalHead(nn.Module):
+    """g(z_0) -> predicted terminal goal state (Takai et al., JSAI 2026).
+
+    Adaptation choice: Takai et al. condition on a language instruction; in
+    the intent-phrase environment the instruction is the problem statement,
+    already encoded in ``z_0``, so the head is a two-layer MLP of the prompt
+    state.  Trained toward the EMA-encoded solved-trajectory endpoint
+    (training only); planning scores imagined endpoints by latent distance
+    to this prediction — the non-oracle counterpart of ``energy=oracle_goal``.
+    """
+
+    def __init__(self, d_state: int, hidden_mult: int = 2):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.LayerNorm(d_state),
+            mlp([d_state, d_state * hidden_mult], d_state),
+        )
+
+    def forward(self, initial: torch.Tensor) -> torch.Tensor:
+        return self.net(initial)
+
+
 class TransitionEnergyHead(nn.Module):
     """Lower-is-better Energy of a predicted state transition."""
 

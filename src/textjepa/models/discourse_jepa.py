@@ -144,6 +144,8 @@ class DiscourseJEPA(nn.Module):
         macro_support_scales: list[float] | None = None,
         dense_rollout_depth: int = 0,
         high_dense_rollout_depth: int = 0,
+        td_jepa_d_psi: int = 32,
+        td_jepa_d_task: int = 32,
     ):
         super().__init__()
         self.chunk_target = chunk_target
@@ -151,7 +153,7 @@ class DiscourseJEPA(nn.Module):
         self.state_target = state_target
         if geo_rank_score_mode not in {
             "transition", "horizon", "value", "distance", "direct",
-            "td_q", "expectile_value",
+            "td_q", "expectile_value", "td_jepa", "goal_head",
         }:
             raise ValueError(
                 f"unknown GAR score mode: {geo_rank_score_mode}"
@@ -287,6 +289,8 @@ class DiscourseJEPA(nn.Module):
             high_predictor_residual=high_predictor_residual,
             dense_rollout_depth=dense_rollout_depth,
             high_dense_rollout_depth=high_dense_rollout_depth,
+            td_jepa_d_psi=td_jepa_d_psi,
+            td_jepa_d_task=td_jepa_d_task,
         )
         # Keep the active policy-head budget information matched.  Inactive
         # heads remain in the module only for checkpoint compatibility.
@@ -312,6 +316,13 @@ class DiscourseJEPA(nn.Module):
         self.core.expectile_value_head.requires_grad_(
             geo_rank_score_mode == "expectile_value"
         )
+        for module in (
+            self.core.successor_feature_head,
+            self.core.td_jepa_task_head,
+            self.core.state_feature_head,
+        ):
+            module.requires_grad_(geo_rank_score_mode == "td_jepa")
+        self.core.goal_head.requires_grad_(geo_rank_score_mode == "goal_head")
         self.chunk_teacher = EMATeacher(self.chunk_encoder)
         self.state_teacher = EMATeacher(self.state_model)
         self.predictor_teacher = EMATeacher(self.core.predictor)
@@ -505,6 +516,10 @@ class DiscourseJEPA(nn.Module):
             self._rollout_state_energy(out)
         if self.geo_rank_score_mode in {"td_q", "expectile_value"}:
             self._td_baseline_supervision(out, self.geo_rank_score_mode)
+        elif self.geo_rank_score_mode == "td_jepa":
+            self._td_jepa_supervision(out)
+        elif self.geo_rank_score_mode == "goal_head":
+            self._goal_head_supervision(out)
         elif self.geo_td_auxiliary != "none":
             self._td_baseline_supervision(out, self.geo_td_auxiliary)
         return out
@@ -546,6 +561,10 @@ class DiscourseJEPA(nn.Module):
                 out.extras["td_next_value"] = self.core.expectile_value_head(
                     out.step_states_tgt, out.extras["s0_tgt"]
                 )
+        self._emit_td_step_masks(out)
+
+    @staticmethod
+    def _emit_td_step_masks(out) -> None:
         last = out.step_mask.sum(1).clamp(min=1) - 1
         positions = torch.arange(
             out.step_mask.shape[1], device=out.step_mask.device
@@ -554,6 +573,104 @@ class DiscourseJEPA(nn.Module):
             positions[None, :] == last[:, None]
         ) & out.step_mask
         out.extras["td_valid"] = out.step_mask
+
+    def _td_jepa_supervision(self, out) -> None:
+        """Emit faithful TD-JEPA successor-feature supervision (2510.00739).
+
+        Online prediction: T(z_t, u(a_t), tau(z_0)) with gradients into T and
+        tau.  Bootstrapped targets follow the ``_td_baseline_supervision``
+        convention: EMA-teacher next states under no_grad, detached online
+        action codes as a_{t+1} (the action encoder has no EMA teacher), and
+        the same terminal/valid masks.  psi appears only inside no_grad, per
+        the specified loss with sg[psi(z_{t+1})]; it therefore remains a fixed
+        random feature map (see ``StateFeatureHead``).
+        """
+        detach = self.core.value_detach
+        current = out.prev_states.detach() if detach else out.prev_states
+        initial = out.s0.detach() if detach else out.s0
+        action = out.actions.detach() if detach else out.actions
+        task = self.core.td_jepa_task_head(initial)
+        out.extras["td_jepa_pred"] = self.core.successor_feature_head(
+            current, action, task
+        )
+        with torch.no_grad():
+            # a_{t+1} aligned with z_{t+1}; the trailing zero code is masked
+            # out by the terminal indicator (no bootstrap on the last step).
+            next_action = torch.cat([
+                out.actions[:, 1:], torch.zeros_like(out.actions[:, :1])
+            ], dim=1)
+            task_tgt = self.core.td_jepa_task_head(out.extras["s0_tgt"])
+            out.extras["td_jepa_next_features"] = self.core.state_feature_head(
+                out.step_states_tgt
+            )
+            out.extras["td_jepa_next_pred"] = self.core.successor_feature_head(
+                out.step_states_tgt, next_action, task_tgt
+            )
+        self._emit_td_step_masks(out)
+
+    def _goal_head_supervision(self, out) -> None:
+        """Emit GoalHead supervision (Takai et al., JSAI 2026, adapted).
+
+        Target: the EMA-encoded final state of the demonstrated solved
+        trajectory (the same EMA goal used by ``_geo_rank``), under no_grad.
+        The head reads the prompt state z_0 only; in this environment the
+        instruction is the problem statement, which z_0 encodes.
+        """
+        detach = self.core.value_detach
+        initial = out.s0.detach() if detach else out.s0
+        out.extras["goal_head_pred"] = self.core.goal_head(initial)
+        with torch.no_grad():
+            B = out.s0.shape[0]
+            last = out.step_mask.sum(1).clamp(min=1) - 1
+            out.extras["goal_head_target"] = out.step_states_tgt[
+                torch.arange(B, device=out.s0.device), last
+            ]
+
+    @torch.no_grad()
+    def fit_td_jepa_reward_projection(self, batches, eps: float = 1e-4) -> None:
+        """Ridge-regress the TD-JEPA task-reward projection z_r on traces.
+
+        Faithful zero-shot TD-JEPA regresses z_r from reward samples;
+        here the regression runs over training-trace states, encoded with the
+        EMA teacher exactly as the psi targets during training.  Reward
+        convention matches the repo's steps-to-go TD baselines: r(s) = -1 for
+        every non-solved state (including z_0) and 0 at the solved terminal
+        state (an affine shift of 1[solved]).  z_r solves
+        argmin_z sum_s (psi(s)^T z - r(s))^2 with ridge ``eps`` and is stored
+        in the ``core.td_jepa_z_r`` buffer.  Implementation route: a small
+        utility invoked at eval/plan time from the checkpoint (see
+        ``scripts/plan.py``), which avoids touching the training loop.
+        """
+        device = self.core.td_jepa_z_r.device
+        d_psi = self.core.td_jepa_z_r.shape[0]
+        gram = torch.zeros(d_psi, d_psi, device=device)
+        moment = torch.zeros(d_psi, device=device)
+        for batch in batches:
+            s0_tgt, states_tgt = self.encode_states(
+                batch["prompt_tokens"], batch["prompt_mask"],
+                batch["step_tokens"], batch["step_mask"], teacher=True,
+            )
+            states = torch.cat([s0_tgt.unsqueeze(1), states_tgt], dim=1)
+            step_mask = batch["step_mask"]
+            valid = torch.cat([
+                torch.ones_like(step_mask[:, :1]), step_mask
+            ], dim=1)
+            last = step_mask.sum(1).clamp(min=1)  # terminal index in ``states``
+            positions = torch.arange(
+                valid.shape[1], device=step_mask.device
+            )
+            solved = positions[None, :] == last[:, None]
+            rewards = (~solved).to(states.dtype) * -1.0
+            psi = self.core.state_feature_head(states)
+            keep = valid.reshape(-1)
+            flat_psi = psi.reshape(-1, d_psi)[keep]
+            flat_r = rewards.reshape(-1)[keep]
+            gram += flat_psi.T @ flat_psi
+            moment += flat_psi.T @ flat_r
+        eye = torch.eye(d_psi, device=device)
+        z_r = torch.linalg.solve(gram + eps * eye, moment)
+        self.core.td_jepa_z_r.copy_(z_r)
+        self.core.td_jepa_z_r_fitted.fill_(True)
 
     def _rollout_state_energy(self, out) -> None:
         """Calibrate state Energy on the states queried by latent planning.
@@ -1129,7 +1246,9 @@ class DiscourseJEPA(nn.Module):
         true_successors = torch.cat(
             [out.step_states_tgt[bidx, t].unsqueeze(1), s_alt_true], dim=1
         )
-        if score_mode in {"transition", "horizon", "value", "expectile_value"}:
+        if score_mode in {
+            "transition", "horizon", "value", "expectile_value", "goal_head",
+        }:
             use_true = self.geo_energy_state_source == "true"
             successors = true_successors if use_true else predicted_successors
             current = (
@@ -1154,6 +1273,13 @@ class DiscourseJEPA(nn.Module):
                 )
             elif score_mode == "expectile_value":
                 energies = -self.core.expectile_value_head(successors, initial)
+            elif score_mode == "goal_head":
+                # Diagnostic mirror of the goal_head planner cost: LN-L1
+                # distance of candidate successors to the predicted goal.
+                goal_hat = self.core.goal_head(initial)
+                energies = (
+                    ln(successors) - ln(goal_hat).unsqueeze(1)
+                ).abs().mean(-1)
             else:
                 energies = self.core.value_head(successors, initial)
             e_exec, e_alt = energies[:, 0], energies[:, 1:]
@@ -1173,7 +1299,10 @@ class DiscourseJEPA(nn.Module):
         ga_label = d
         if self.training and self.geo_rank_label_control == "cyclic_shuffle":
             ga_label = self._cyclic_shuffle_valid_labels(d, candidate_valid)
-        out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
+        if e_exec is not None:
+            # td_jepa has no training-time scalar energy (its Q needs the
+            # post-training reward projection z_r), so no ga_energy is emitted.
+            out.extras["ga_energy"] = torch.cat([e_exec.unsqueeze(1), e_alt], 1)
         out.extras["ga_label"] = ga_label
         out.extras["ga_valid"] = candidate_valid
         current_true = out.extras["prev_states_tgt"][bidx, t]
