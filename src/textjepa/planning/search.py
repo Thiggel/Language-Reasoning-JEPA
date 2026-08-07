@@ -141,6 +141,7 @@ class LatentPlanner:
         invalid_action_mode: str = "noop",
         prior_top_k: int = 0,
         prior_top_p: float = 1.0,
+        prior_feasibility_gate: bool = False,
     ):
         if candidate_interface not in {
             "feasible_menu", "full_catalogue", "learned_catalogue"
@@ -161,6 +162,7 @@ class LatentPlanner:
             raise ValueError("prior_top_p must lie in (0, 1]")
         self.prior_top_k = prior_top_k
         self.prior_top_p = prior_top_p
+        self.prior_feasibility_gate = prior_feasibility_gate
         if (
             lookahead > 1
             and candidate_interface == "feasible_menu"
@@ -426,9 +428,15 @@ class LatentPlanner:
                 "head found on the model)"
             )
         codes = self._catalogue_codes(problem)
-        return prior.log_prob(
-            state.reshape(1, -1).expand(codes.shape[0], -1), codes
-        )
+        expanded = state.reshape(1, -1).expand(codes.shape[0], -1)
+        log_probs = prior.log_prob(expanded, codes)
+        if self.prior_feasibility_gate:
+            # Soft gate by the LEARNED feasibility head (trained with
+            # objective.action_feasibility): adds log sigma(logit). No
+            # oracle is consulted; both scores come from the checkpoint.
+            logits = self.model.core.action_support_head(expanded, codes)
+            log_probs = log_probs + torch.nn.functional.logsigmoid(logits)
+        return log_probs
 
     def _prior_candidates(
         self, problem: Problem, state: torch.Tensor

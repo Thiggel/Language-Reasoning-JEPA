@@ -107,6 +107,9 @@ def main(cfg: DictConfig) -> None:
                 invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
                 prior_top_k=int(cfg.get("prior_top_k", 0)),
                 prior_top_p=float(cfg.get("prior_top_p", 1.0)),
+                prior_feasibility_gate=bool(
+                    cfg.get("prior_feasibility_gate", False)
+                ),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,

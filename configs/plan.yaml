@@ -37,6 +37,7 @@ candidate_interface: feasible_menu  # feasible_menu | full_catalogue | learned_c
 # prior (top-p nucleus over the catalogue-normalized prior, then top-k).
 prior_top_k: 0   # 0 = keep all
 prior_top_p: 1.0
+prior_feasibility_gate: false
 invalid_action_mode: noop  # noop | failure
 # oracle_goal encodes the solved trajectory and scores representation distance.
 # symbolic_distance reads exact remaining steps from the environment and also
