@@ -31,10 +31,19 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
 - Repo: researchctl removed 2026-08-06; paper lives in
   `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/` (own git).
 
-## Running / queued
+## Running / queued (2026-08-07)
 
-- (nothing running right now on Grünau; Lise dense-factorial stragglers
-  irrelevant to decisions)
+- Counterfactual-scaling sweep: frozen recipe with K in {0, 8, 32} on
+  gruenau10 (round `2026-08-07-intent-counterfactual-scaling-v1`, snapshot
+  `2d025b6`); K in {1, 3, 16, 64} queued for free GPUs. K=0 uses the new
+  `data.geo_rank_factual_only` flag (same-root continuation ranking only;
+  H=1 rows contribute no pairs by construction).
+- Faithful-baseline implementation agent (worktree): exact TD-JEPA
+  (successor features + task embedding, arXiv:2510.00739) and Takai GoalHead
+  (JSAI 2026) score modes + cell variants.
+- Single-pass slack-curve evaluator landed (`slack_curve=true` in plan.py):
+  one generous-budget run yields success_by_slack for all N + per-episode
+  excess steps. Use for all new evals.
 
 ## Next steps (priority order)
 
