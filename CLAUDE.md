@@ -30,6 +30,19 @@ and `docs/clusters/*.md` (per-cluster ssh/Slurm details).
   `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/` (own git repo; `overleaf/` is
   the Overleaf project).
 
+## Handoff discipline (required)
+
+- Maintain `projects/intent_phrase/CAMPAIGN_LOG.md` as the living handoff:
+  current frozen recipe + headline numbers, what is running where, last
+  decisions, and next planned steps. Update it after every experiment round
+  or decision; never rely on chat context alone to carry project state.
+- Keep it short: when a stage completes, compress its entries to a few lines
+  and move the detail into a dated report under
+  `research/reports/intent_phrase/<date>-<topic>/REPORT.md` (mirrored to
+  `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`).
+- `HANDOFF.md` and `RESULTS.md` at the repo root are frozen 2026-07 history;
+  do not extend them.
+
 ## Communication preferences (project owner)
 
 - Explain findings in plain, intuitive, concise English; no invented jargon.
