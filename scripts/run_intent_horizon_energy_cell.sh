@@ -166,6 +166,13 @@ case "$variant" in
   frozen_mix)
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     frozen=true ;;
+  frozen_backbone)
+    # Frozen-backbone ablation: the exact frozen recipe, but the encoder /
+    # predictor stack is loaded from INIT_CKPT and frozen; only a freshly
+    # reset Energy head trains. Tests whether the head can be distilled
+    # post hoc from fixed JEPA geometry (no joint adaptation).
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false; frozen=true ;;
   baseline_td_q)
     # TD-JEPA-adapted SARSA Q competitor: fixed_h4 backbone objectives, no
     # endpoint ranking or root distillation, no geometry rollouts needed.
