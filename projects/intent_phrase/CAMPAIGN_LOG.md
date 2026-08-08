@@ -97,15 +97,23 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
 - Plain-backbone chain (gruenau1 RTX 6000): `plain-backbone-s0-v1` trains
   backbone objectives only (no value/TD/ranking gradients), then
   `frozen-backbone-plain-s0-v1` distills the Energy head on it frozen.
-- Interface controls (owner's directive 2026-08-07): full-catalogue evals of
-  recipe s0 + faithful baselines (no feasibility oracle, no symbolic future
-  menus, invalid=noop) running as
-  `2026-08-07-intent-interface-controls-v1/eval-fullcat-noop-s0-v1` on
-  gruenau10 GPU1. Next: full-catalogue TRAINING cell; then learned action
-  prior p(u(a)|s) (Gaussian MLP over action embeddings, port of
-  sentence-vjepa VariationalAction) so planning needs no menu at all, and
-  LM baselines move to free generation (parse-or-invalid). Report every
-  method under both protocols.
+- Interface controls RESULTS (2026-08-08): WITHOUT the feasible menu every
+  method collapses to ~0 strict success at every depth (invalid-action
+  rates 73-100%, invalid=noop): recipe s0 evaluated full-catalogue;
+  TD-JEPA and GoalHead evaluated full-catalogue; recipe RETRAINED with
+  full-catalogue ranking candidates; recipe + flat Gaussian action prior
+  (learned_catalogue, top-8/top-3/top-2, with and without feasibility
+  gate). Collapse is uniform — no method is privileged by the menu
+  relative to another. Diagnosis: the prior has signal (correct action
+  mean rank 3.6 of ~9 catalogue entries) but the PAIRWISE feasibility head
+  is uninformative (58% acc, near-constant logits) because feasibility in
+  iGSM is relational (all prerequisites executed). Fix committed
+  (`1321619`): history-attention feasibility head wired into the intent
+  track (causal executed-action history in training + planner gating);
+  cell `mix4-prior-hist-s0-v1` RUNNING on gruenau1 GPU2. If it works,
+  planning needs no menu (prior + learned feasibility, both from the
+  checkpoint); LM baselines then move to free generation
+  (parse-or-invalid). Report every method under both protocols either way.
 - Learned action prior IMPLEMENTED (commit bb300f5): GaussianActionPrior
   head (state -> Gaussian over action embeddings, NLL on observed actions),
   planner `candidate_interface=learned_catalogue` (prior-filtered catalogue
