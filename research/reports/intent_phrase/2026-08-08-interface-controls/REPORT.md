@@ -79,3 +79,27 @@ Feasible menu at D1 = environment interface (not privileged). Symbolic
 future menus at D>1 = candidate-privileged (labelled throughout the
 paper). Full-catalogue and learned_catalogue protocols use no oracle at
 plan time; `mean_prior_rank` uses oracle labels for measurement only.
+
+## Final result (2026-08-08, after the fix)
+
+The `mix4-prior-hist-s0-v1` failure above had a second, separate cause:
+the recipe experiment config sets `value_detach=false`, so the prior NLL
+gradients reached the action encoder and collapsed all intent-phrase
+embeddings within one epoch (action_std 2.4 -> 0.002) — every candidate
+became indistinguishable, which also explains the constant feasibility
+logits at exactly the majority-class rate. Fix `d2f1cf5`: prior and
+feasibility supervision always detach their inputs (read-outs, never
+shapers).
+
+The rerun `mix4-prior-hist-s0-v2` trained with healthy embeddings
+(action_std 7.5) and STILL fails menu-free: strict ~0 at all depths,
+invalid 72–82%, feasibility accuracy 52% (chance), prior rank ~4.3 of ~9.
+
+**Conclusion.** Menu-free planning fails for every method, and after three
+training iterations (pairwise head; history-attention head; collapse fix)
+the reason is clear: deciding whether an action is executable requires the
+candidate's prerequisite list, which is stated in the prompt text, and
+nothing in JEPA training forces that relational structure into the pooled
+state. The paper reports the interface axis as: headline protocol with the
+environment menu (fair — collapse without it is uniform across methods),
+plus this section as the documented limitation with the collapse control.

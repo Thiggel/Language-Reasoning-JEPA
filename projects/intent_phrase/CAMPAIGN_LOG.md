@@ -110,10 +110,30 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   iGSM is relational (all prerequisites executed). Fix committed
   (`1321619`): history-attention feasibility head wired into the intent
   track (causal executed-action history in training + planner gating);
-  cell `mix4-prior-hist-s0-v1` RUNNING on gruenau1 GPU2. If it works,
-  planning needs no menu (prior + learned feasibility, both from the
-  checkpoint); LM baselines then move to free generation
-  (parse-or-invalid). Report every method under both protocols either way.
+  cell `mix4-prior-hist-s0-v1` came back collapsed for a DIFFERENT reason:
+  the recipe experiment sets value_detach=false, so the prior NLL
+  collapsed the action encoder (action_std 2.4 -> 0.002 in one epoch).
+  Fixed (`d2f1cf5`: prior/feasibility supervision always detaches inputs);
+  rerun `mix4-prior-hist-s0-v2` had HEALTHY embeddings (action_std 7.5)
+  and STILL fails menu-free (~0 strict, invalid 72-82%, feasibility acc
+  52% = chance, prior rank ~4.3/9). CONCLUSION (3 training iterations):
+  menu-free planning fails for every method because the pooled state does
+  not expose per-candidate prerequisite structure (it lives in the prompt
+  text; nothing in JEPA training forces it into the state). This is the
+  paper's honest interface-axis story: headline WITH menu (fair — uniform
+  collapse without it for all methods), menu-free as a documented
+  limitation + the collapse control. LM free-generation baselines
+  predictably consistent; skip unless a reviewer asks.
+- STABILIZER SWEEP UNBLOCKED (owner gated it on "the eventual menu-free
+  recipe"; that recipe is now a documented negative result, so the sweep
+  runs on the standard with-menu frozen recipe). Stage 1 screening
+  launched on gruenau1 (round `2026-08-08-intent-stabilizer-sweep-v1`,
+  snapshot `6cf9424`, joint-training screening — frozen-protocol
+  replication for survivors): stab-online-nosg (collusion control, no
+  EMA/stopgrad targets), stab-ldad-only (Delta-JEPA claim: LDAD, no
+  EMA/stopgrad, no VICReg), stab-sigreg (SIGReg replaces VICReg).
+  Reference rows already exist (recipe 5 seeds = EMA+stopgrad+VICReg).
+  SIGReg objective existed in-tree; VISReg port still pending (stage 2).
 - Learned action prior IMPLEMENTED (commit bb300f5): GaussianActionPrior
   head (state -> Gaussian over action embeddings, NLL on observed actions),
   planner `candidate_interface=learned_catalogue` (prior-filtered catalogue
