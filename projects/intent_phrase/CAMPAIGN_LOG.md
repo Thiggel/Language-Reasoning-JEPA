@@ -52,10 +52,11 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   depth, yet TD-shaped backbone + ranking head is the best cell so far) —
   vindicates the owner's "TD as an ingredient" idea in modified form.
   Caveat: ranking-shaped backbone saw richer data (H mix, R=4) than
-  plain/TD (H=1, R=1), so (b) uses plain-vs-TD only. All legs replicate:
-  plain 2 seeds (s1 .107/.250/.643/.797/.803; s2 running), TD-shaped
-  3 SEEDS (s1 .143/.383/.893/.917/.910; s2 .150/.393/.883/.890/.883 —
-  D16 .902+-.017), ranking-shaped 2 seeds (s1 .133/.390/.807/.830/.830).
+  plain/TD (H=1, R=1), so (b) uses plain-vs-TD only. All legs replicate;
+  the decisive pair is now 3-SEED: plain D16 .786+-.015
+  (.783/.803/.773), TD-shaped D16 .902+-.017 (.913/.910/.883) — the ~.12
+  value-shaping gain at depth is non-overlapping. Ranking-shaped 2 seeds
+  (s1 .133/.390/.807/.830/.830).
   Note: each run dir holds TWO eval sets — the paper-relevant pure
   endpoint-Energy planner is under `horizon_only/`; the root-level
   slackcurve files are a hybrid local-pruning variant (worse deep) —
