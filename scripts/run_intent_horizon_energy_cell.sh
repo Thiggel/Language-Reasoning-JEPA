@@ -182,6 +182,11 @@ case "$variant" in
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     root_distill_weight=0.25; horizon_input=false
     candidate_interface=full_catalogue ;;
+  mix4_aux025_nohorizon_novicreg)
+    # Stabilizer sweep: the frozen recipe without VICReg. Combine with
+    # EXTRA_OVERRIDES (state_target / LDAD / SIGReg) for sweep cells.
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false; vicreg_weight=0 ;;
   mix4_aux025_nohorizon_prior)
     # Menu-free recipe: frozen recipe trained with full-catalogue ranking
     # candidates PLUS the learned Gaussian action prior p(u(a)|s) and the
