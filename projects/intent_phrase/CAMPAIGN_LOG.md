@@ -134,6 +134,14 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   EMA/stopgrad, no VICReg), stab-sigreg (SIGReg replaces VICReg).
   Reference rows already exist (recipe 5 seeds = EMA+stopgrad+VICReg).
   SIGReg objective existed in-tree; VISReg port still pending (stage 2).
+  STAGE-1 RESULTS (strict D1..D16, 1 seed): online_nosg+VICReg
+  .093/.317/.670/.727/.727 and LDAD-only .080/.223/.637/.723/.720 — both
+  train WITHOUT collapse (Delta-JEPA's no-EMA/no-stopgrad claim holds for
+  stability) but lose ~.16 deep vs the reference .884: EMA+stopgrad buys
+  real performance here, not just anti-collapse. SIGReg (replacing
+  VICReg, EMA+stopgrad kept): .143/.423/.877/.947/.950 — BEATS the
+  five-seed reference by ~.07 at D8/D16 (outside seed noise ~.02); seeds
+  1-2 replicating now on gruenau1.
 - Learned action prior IMPLEMENTED (commit bb300f5): GaussianActionPrior
   head (state -> Gaussian over action embeddings, NLL on observed actions),
   planner `candidate_interface=learned_catalogue` (prior-filtered catalogue
