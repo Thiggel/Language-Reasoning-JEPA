@@ -11,9 +11,12 @@ Out of the stabilizer sweep: identical recipe but
 (strict D1..D16): .143/.434/.888/.959/.959 (sd .011-.018) vs the
 2026-08-07 recipe .126/.450/.837/.879/.884 — ~+.07 at D4-D16, all other
 depths within noise. New headline candidate `mix4_aux025_nohorizon` +
-SIGReg (round `2026-08-08-intent-stabilizer-sweep-v1`). Downstream
-re-anchoring pending (frozen-backbone distillation from a SIGReg
-backbone; slack curves for figures).
+SIGReg (round `2026-08-08-intent-stabilizer-sweep-v1`). Frozen-protocol check PASSED
+(1 seed): Energy head distilled from the FROZEN SIGReg backbone reaches
+.140/.360/.853/.940/.953 vs .829+-.009 for the frozen VICReg-recipe
+backbone at D16 — the gain lives in the backbone geometry, not in the
+EMA-label confound. Remaining re-anchoring: slack-curve figures already
+produced by the sweep cells.
 
 ## Frozen method (2026-08-07, superseded above for the headline)
 
