@@ -139,9 +139,12 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   train WITHOUT collapse (Delta-JEPA's no-EMA/no-stopgrad claim holds for
   stability) but lose ~.16 deep vs the reference .884: EMA+stopgrad buys
   real performance here, not just anti-collapse. SIGReg (replacing
-  VICReg, EMA+stopgrad kept): .143/.423/.877/.947/.950 — BEATS the
-  five-seed reference by ~.07 at D8/D16 (outside seed noise ~.02); seeds
-  1-2 replicating now on gruenau1.
+  VICReg, EMA+stopgrad kept): 3 SEEDS .877/.917/.873 at D4 and D16
+  .950/.970/.950 — D16 .957+-.012 vs reference .884+-.023: a REPLICATED
+  ~.07 deep-depth improvement over the frozen recipe. Seeds 3-4 running
+  to reach the 5-seed headline convention; if they hold, the paper
+  recipe becomes SIGReg (candidate `mix4_aux025_nohorizon` +
+  objective.sigreg.weight=1, vicreg 0) and downstream tables re-anchor.
 - Learned action prior IMPLEMENTED (commit bb300f5): GaussianActionPrior
   head (state -> Gaussian over action embeddings, NLL on observed actions),
   planner `candidate_interface=learned_catalogue` (prior-filtered catalogue
