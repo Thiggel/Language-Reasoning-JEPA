@@ -27,3 +27,23 @@ Findings:
    combination, VICReg/SIGReg/VISReg combinations, and frozen-protocol
    replication (distill the Energy head from a frozen SIGReg backbone)
    to remove the EMA-label confound from the comparison.
+
+## Update: LDAD five-seed result — new headline recipe
+
+LDAD added to the unchanged recipe (EMA+stopgrad+VICReg kept), five
+seeds, strict D1..D16: **.202+-.049 / .729+-.026 / .885+-.026 /
+.965+-.015 / .975+-.012** — dominates the 2026-08-07 recipe at every
+depth. The D2 gain (+.28) removes the recipe's known shallow-depth
+weakness, matching theory prediction T4 (the best-of-R rollout label is
+least reliable at horizon 1; LDAD's latent action-displacement decoding
+supervises exactly the one-step geometry the label cannot).
+
+Frozen-protocol check (1 seed): an Energy head distilled from the frozen
+LDAD backbone reaches .183/.763/.887/.940/.940 — the shallow-depth gain
+persists, so it lives in the backbone geometry, not the joint training.
+
+Composition: SIGReg+LDAD without VICReg does NOT compose
+(.130/.403/.783/.840/.843, 1 seed). VICReg+SIGReg+LDAD three-way cell
+pending. Current recommendation: promote LDAD+EMA+stopgrad+VICReg to the
+paper headline; keep SIGReg-for-VICReg as the deep-depth-only runner-up
+row in the sweep table.

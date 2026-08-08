@@ -4,19 +4,21 @@ _Keep short. Compress completed stages into a few lines; details live in
 `research/reports/intent_phrase/<date>-*/REPORT.md` and are mirrored to
 `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-07._
 
-## RECIPE UPDATE (2026-08-08): SIGReg replaces VICReg
+## RECIPE UPDATE (2026-08-08): LDAD added to the recipe (new headline)
 
-Out of the stabilizer sweep: identical recipe but
-`objective.sigreg.weight=1, objective.vicreg.weight=0`. FIVE SEEDS
-(strict D1..D16): .143/.434/.888/.959/.959 (sd .011-.018) vs the
-2026-08-07 recipe .126/.450/.837/.879/.884 — ~+.07 at D4-D16, all other
-depths within noise. New headline candidate `mix4_aux025_nohorizon` +
-SIGReg (round `2026-08-08-intent-stabilizer-sweep-v1`). Frozen-protocol check PASSED
-(1 seed): Energy head distilled from the FROZEN SIGReg backbone reaches
-.140/.360/.853/.940/.953 vs .829+-.009 for the frozen VICReg-recipe
-backbone at D16 — the gain lives in the backbone geometry, not in the
-EMA-label confound. Remaining re-anchoring: slack-curve figures already
-produced by the sweep cells.
+Out of the owner's stabilizer sweep. New headline recipe =
+`mix4_aux025_nohorizon` + `model.observed_action_ldad=true,
+objective.observed_action_ldad.weight=1` (EMA+stopgrad+VICReg kept).
+FIVE SEEDS (strict D1..D16): .202+-.049 / .729+-.026 / .885+-.026 /
+.965+-.015 / .975+-.012 — dominates the 2026-08-07 recipe
+(.126/.450/.837/.879/.884) at EVERY depth; D2 +.28 fixes the known
+shallow-depth weakness (theory T4: best-of-R label noisiest at H=1;
+LDAD's action-displacement decoding sharpens one-step geometry).
+Frozen-protocol check PASSED (1 seed): head distilled from the FROZEN
+LDAD backbone .183/.763/.887/.940/.940 — the gain is in the geometry.
+Runner-up: SIGReg replacing VICReg (5 seeds .143/.434/.888/.959/.959,
+frozen check .953 D16) — deep-depth gain only. SIGReg+LDAD without
+VICReg does NOT compose (.843 D16); three-way combo running.
 
 ## Frozen method (2026-08-07, superseded above for the headline)
 
