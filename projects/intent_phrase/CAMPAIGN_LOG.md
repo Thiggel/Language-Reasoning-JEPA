@@ -148,6 +148,12 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   EMA/stopgrad, no VICReg), stab-sigreg (SIGReg replaces VICReg).
   Reference rows already exist (recipe 5 seeds = EMA+stopgrad+VICReg).
   SIGReg objective existed in-tree; VISReg port still pending (stage 2).
+  LDAD + full recipe (EMA+stopgrad+VICReg+LDAD, 1 seed):
+  .213/.757/.867/.943/.960 — a LARGE shallow-depth gain (D2 .757 vs
+  recipe .450, D1 .213 vs .126), deep on par with SIGReg. Matches theory
+  T4 (best-of-R label weakest at H=1): LDAD's action-displacement
+  decoding plausibly sharpens one-step geometry. Seeds 1-2 and the
+  SIGReg+LDAD combination launched on gruenau1.
   STAGE-1 RESULTS (strict D1..D16, 1 seed): online_nosg+VICReg
   .093/.317/.670/.727/.727 and LDAD-only .080/.223/.637/.723/.720 — both
   train WITHOUT collapse (Delta-JEPA's no-EMA/no-stopgrad claim holds for
