@@ -152,8 +152,10 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   .213/.757/.867/.943/.960 — a LARGE shallow-depth gain (D2 .757 vs
   recipe .450, D1 .213 vs .126), deep on par with SIGReg. Matches theory
   T4 (best-of-R label weakest at H=1): LDAD's action-displacement
-  decoding plausibly sharpens one-step geometry. Seeds 1-2 and the
-  SIGReg+LDAD combination launched on gruenau1.
+  decoding plausibly sharpens one-step geometry. REPLICATED at 3 seeds:
+  D2 .741+-.021 (vs recipe .450+-.031), D16 .972+-.012 (vs SIGReg
+  .959+-.011) — LDAD+recipe is the best variant overall so far.
+  SIGReg+LDAD combination still running.
   STAGE-1 RESULTS (strict D1..D16, 1 seed): online_nosg+VICReg
   .093/.317/.670/.727/.727 and LDAD-only .080/.223/.637/.723/.720 — both
   train WITHOUT collapse (Delta-JEPA's no-EMA/no-stopgrad claim holds for
