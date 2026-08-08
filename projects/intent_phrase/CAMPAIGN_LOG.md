@@ -155,7 +155,11 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   decoding plausibly sharpens one-step geometry. REPLICATED at 3 seeds:
   D2 .741+-.021 (vs recipe .450+-.031), D16 .972+-.012 (vs SIGReg
   .959+-.011) — LDAD+recipe is the best variant overall so far.
-  SIGReg+LDAD combination still running.
+  SIGReg+LDAD (i.e. LDAD with VICReg REPLACED by SIGReg, 1 seed): does
+  NOT compose — .130/.403/.783/.840/.843, worse than either alone.
+  VICReg seems necessary for the LDAD gain. Candidate headline:
+  LDAD+EMA+stopgrad+VICReg; seeds 3-4 + frozen-protocol distill from the
+  LDAD backbone running on gruenau1.
   STAGE-1 RESULTS (strict D1..D16, 1 seed): online_nosg+VICReg
   .093/.317/.670/.727/.727 and LDAD-only .080/.223/.637/.723/.720 — both
   train WITHOUT collapse (Delta-JEPA's no-EMA/no-stopgrad claim holds for
