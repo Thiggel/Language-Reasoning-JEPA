@@ -47,3 +47,8 @@ Composition: SIGReg+LDAD without VICReg does NOT compose
 pending. Current recommendation: promote LDAD+EMA+stopgrad+VICReg to the
 paper headline; keep SIGReg-for-VICReg as the deep-depth-only runner-up
 row in the sweep table.
+
+Three-way VICReg+SIGReg+LDAD (1 seed): .120/.417/.777/.860/.867 — also
+fails; SIGReg actively interferes with the LDAD gain regardless of
+VICReg. Final sweep verdict: **LDAD+EMA+stopgrad+VICReg is the recipe**;
+SIGReg is a deep-depth-only alternative that must not be mixed with LDAD.
