@@ -4,7 +4,18 @@ _Keep short. Compress completed stages into a few lines; details live in
 `research/reports/intent_phrase/<date>-*/REPORT.md` and are mirrored to
 `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-07._
 
-## Frozen method (2026-08-07)
+## RECIPE UPDATE (2026-08-08): SIGReg replaces VICReg
+
+Out of the stabilizer sweep: identical recipe but
+`objective.sigreg.weight=1, objective.vicreg.weight=0`. FIVE SEEDS
+(strict D1..D16): .143/.434/.888/.959/.959 (sd .011-.018) vs the
+2026-08-07 recipe .126/.450/.837/.879/.884 — ~+.07 at D4-D16, all other
+depths within noise. New headline candidate `mix4_aux025_nohorizon` +
+SIGReg (round `2026-08-08-intent-stabilizer-sweep-v1`). Downstream
+re-anchoring pending (frozen-backbone distillation from a SIGReg
+backbone; slack curves for figures).
+
+## Frozen method (2026-08-07, superseded above for the headline)
 
 Horizon-blind endpoint Energy `E(root, imagined endpoint, z_0)` — no depth
 input — logistic pairwise ranking of recursively imagined endpoints, labels =
