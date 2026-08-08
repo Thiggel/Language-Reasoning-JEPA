@@ -265,6 +265,11 @@ if [[ "$action_prior" == true ]]; then
     extra+=("model.action_support_kind=$support_kind")
   fi
 fi
+if [[ -n "${EXTRA_OVERRIDES:-}" ]]; then
+  # Space-separated additional hydra overrides (stabilizer sweep etc.).
+  read -r -a extra_overrides <<< "$EXTRA_OVERRIDES"
+  extra+=("${extra_overrides[@]}")
+fi
 
 "$py" "$TEXTJEPA_ROOT/scripts/train.py" \
   +experiment=paper_gar_scoring_screen \
