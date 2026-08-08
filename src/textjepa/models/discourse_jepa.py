@@ -777,9 +777,11 @@ class DiscourseJEPA(nn.Module):
                 torch.cat([out.s0.unsqueeze(1), out.rollout[:, :-1]], dim=1),
             ])
         states = torch.stack(states, dim=1)
-        if self.core.value_detach:
-            states = states.detach()
-        action_features = actions.detach() if self.core.value_detach else actions
+        # ALWAYS detached: feasibility supervision is a read-out, never a
+        # shaper (same collapse risk as the action prior, see
+        # _action_prior_supervision).
+        states = states.detach()
+        action_features = actions.detach()
         M = states.shape[1]
         hist = hist_mask = None
         from textjepa.models.heads import ActionSupportHead
@@ -846,14 +848,12 @@ class DiscourseJEPA(nn.Module):
                 torch.cat([out.s0.unsqueeze(1), out.preds[:, :-1]], dim=1),
                 torch.cat([out.s0.unsqueeze(1), out.rollout[:, :-1]], dim=1),
             ])
-        states = torch.stack(states, dim=1)  # [B, M, T, D]
-        if self.core.value_detach:
-            states = states.detach()
-        targets = (
-            action_codes.detach()
-            if self.core.value_detach
-            else action_codes
-        )
+        # ALWAYS detached: the prior is a read-out of the representation,
+        # never a shaper. With gradients enabled the NLL collapses every
+        # action embedding onto the predicted mean within one epoch
+        # (observed: action_std 2.4 -> 0.002 in mix4-prior-s0).
+        states = torch.stack(states, dim=1).detach()  # [B, M, T, D]
+        targets = action_codes.detach()
         B, M, T, _ = states.shape
         nll = self.action_prior.nll(
             states, targets.unsqueeze(1).expand(B, M, T, -1)
