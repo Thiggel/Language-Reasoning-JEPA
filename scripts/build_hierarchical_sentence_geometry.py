@@ -97,6 +97,28 @@ def _logical_groups(tokenizer) -> list[dict]:
     return records
 
 
+def _align_examples_to_features(
+    examples: list[dict], feature_problem_ids: list[str]
+) -> list[dict]:
+    """Join a possibly larger source manifest to a feature shard by ID."""
+
+    source: dict[str, dict] = {}
+    for example in examples:
+        problem_id = str(example["problem_id"])
+        if problem_id in source:
+            raise ValueError(f"duplicate source problem_id: {problem_id}")
+        source[problem_id] = example
+    feature_ids = [str(problem_id) for problem_id in feature_problem_ids]
+    if len(set(feature_ids)) != len(feature_ids):
+        raise ValueError("feature problem_id values must be unique")
+    missing = [problem_id for problem_id in feature_ids if problem_id not in source]
+    if missing:
+        raise ValueError(
+            f"source manifest is missing {len(missing)} feature problem IDs"
+        )
+    return [source[problem_id] for problem_id in feature_ids]
+
+
 @torch.no_grad()
 def main() -> None:
     args = parse_args()
@@ -104,10 +126,9 @@ def main() -> None:
         raise ValueError("group and batch sizes must be positive")
     features = torch.load(args.features, map_location="cpu", weights_only=True)
     examples = [json.loads(line) for line in args.examples.read_text().splitlines() if line]
-    if len(examples) != len(features["problem_id"]):
-        raise ValueError("feature and source-example counts differ")
-    if [row["problem_id"] for row in examples] != list(features["problem_id"]):
-        raise ValueError("feature and source-example ordering differs")
+    examples = _align_examples_to_features(
+        examples, list(features["problem_id"])
+    )
     tokenizer, frozen = load_reference_model(args.device, args.dtype)
     planning, learner = load_hierarchical_checkpoint(args.checkpoint, args.device)
 
