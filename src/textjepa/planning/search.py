@@ -802,16 +802,22 @@ class LatentPlanner:
                         )
                         continue
                     if self.candidate_interface == "ldad_cycle":
-                        expanded.extend(
-                            sequence + [action]
-                            for action in self._cycle_candidates(
-                                problem,
-                                self._imagined_state(problem, s, sequence),
-                                executed=resolved | {
-                                    a for a in sequence if a is not None
-                                },
-                            )
+                        if sequence[-1] is None:
+                            expanded.append(sequence)
+                            continue
+                        cands = self._cycle_candidates(
+                            problem,
+                            self._imagined_state(problem, s, sequence),
+                            executed=resolved | {
+                                a for a in sequence if a is not None
+                            },
                         )
+                        if cands:
+                            expanded.extend(
+                                sequence + [action] for action in cands
+                            )
+                        else:
+                            expanded.append(sequence + [None])
                         continue
                     reached = resolved | {
                         a for a in sequence if a is not None
