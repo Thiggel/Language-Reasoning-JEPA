@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "project": "predictive_state",
+  "stage": "stage2",
+  "entrypoint": "scripts/train_action_transition_rollout.py",
+  "curriculum": [
+    {"horizon": 1, "tokens": 10000000, "on_policy_fraction": 0.0},
+    {"horizon": 4, "tokens": 10000000, "on_policy_fraction": 0.0},
+    {"horizon": 8, "tokens": 10000000, "on_policy_fraction": 0.0},
+    {"horizon": 16, "tokens": 10000000, "on_policy_fraction": 0.25},
+    {"horizon": 32, "tokens": 20000000, "on_policy_fraction": 0.25}
+  ],
+  "optimization": {
+    "predictor_learning_rate": 0.0001,
+    "lora_learning_rate": 0.00005,
+    "discount": 0.97,
+    "cross_entropy_weight": 0.1
+  },
+  "evaluation_horizons": [1, 4, 8, 16, 32, 64, 128, 256],
+  "refresh_intervals": [16, 32, 64],
+  "success_gate": {
+    "task_retention": 0.9,
+    "maximum_excess_nll_h128": 0.3,
+    "minimum_throughput_ratio": 1.4
+  }
+}

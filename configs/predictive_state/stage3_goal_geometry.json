@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "project": "predictive_state",
+  "stage": "stage3",
+  "oracle_probe_entrypoint": "scripts/probe_predictive_state_goal_geometry.py",
+  "goal_training_entrypoint": "scripts/train_predictive_state_goal.py",
+  "data": {
+    "primary": "GSM8K",
+    "transfer": ["MATH-500", "held-out arithmetic reasoning"],
+    "minimum_correct_trajectories_per_problem": 4,
+    "minimum_incorrect_trajectories_per_problem": 4,
+    "boundary": "newline_or_sentence",
+    "oracle_terminal_states": true,
+    "candidate_privileged_verified_outcomes": true
+  },
+  "geometry": {
+    "dimension": 128,
+    "monotonic_margin": 0.25,
+    "negative_margin": 4.0,
+    "loss_weights": {"terminal": 1.0, "time": 1.0, "monotonicity": 0.5, "negative": 0.5}
+  },
+  "beam": {
+    "beam_width": 4,
+    "candidates_per_beam": 4,
+    "chunk_tokens": 8,
+    "depth_chunks": 4,
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "alpha_lm": 0.2,
+    "beta_distance": 1.0,
+    "eta_value": 1.0,
+    "kappa_uncertainty": 0.0,
+    "exact_state_gate": true
+  }
+}

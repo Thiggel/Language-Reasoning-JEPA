@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "project": "predictive_state",
+  "stage": "stage1",
+  "entrypoint": "scripts/train_action_transition.py",
+  "model_id": "Qwen/Qwen2.5-0.5B",
+  "model_revision": "060db6499f32faf8b98477b0a26969ef7d8b9987",
+  "architecture": {
+    "target_layer": 12,
+    "source_layers": [18, 24],
+    "lora_first_layer": 13,
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "variants": ["ntp_only", "full", "no_action", "action_only", "same_layer", "nitp"]
+  },
+  "data": {
+    "ordinary_language_only": true,
+    "tokens": 20000000,
+    "context_length": 1024,
+    "oracle_information": false,
+    "candidate_privileged_information": false
+  },
+  "optimization": {
+    "predictor_learning_rate": 0.0003,
+    "lora_learning_rate": 0.0001,
+    "prediction_weight": [0.03, 0.1, 0.3],
+    "scale_weight": 0.01,
+    "warmup_fraction": 0.02,
+    "final_learning_rate_fraction": 0.1,
+    "predictor_weight_decay": 0.1,
+    "lora_weight_decay": 0.0,
+    "gradient_clip": 1.0
+  },
+  "admission_gate": "full beats no-action/action-only on held-out conditional error before scaling"
+}

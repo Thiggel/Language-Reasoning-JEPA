@@ -28,6 +28,11 @@ language-planning = [
     "hf-xet==1.5.2",
     "safetensors==0.8.0",
 ]
+predictive-state = [
+    "transformers==5.13.0",
+    "huggingface-hub==1.26.0",
+    "safetensors==0.8.0",
+]
 visualization = ["umap-learn"]
 alfworld = [
     "alfworld @ git+https://github.com/alfworld/alfworld.git@aaba6870f86c5be6a08a491f32a50b906227bc3e",

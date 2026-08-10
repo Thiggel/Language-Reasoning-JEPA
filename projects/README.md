@@ -1,6 +1,6 @@
 # TextJEPA subprojects
 
-The repository has three scientific subprojects. They share reusable code in
+The repository has four scientific subprojects. They share reusable code in
 `src/textjepa/`, but claims, protocols, experiment records, and paper plans are
 kept separate.
 
@@ -9,6 +9,7 @@ kept separate.
 | Observed intent-phrase JEPA | Can an action-conditioned latent world model learn counterfactual reasoning dynamics and non-symbolic action selection? | [`intent_phrase/`](intent_phrase/README.md) |
 | Token-level causal iGSM JEPA | Can token-to-phrase-to-sentence predictive hierarchy induce useful abstraction and support language generation/planning? | [`token_igsm/`](token_igsm/README.md) |
 | Sequence-edit JEPA | Can a latent world model plan edits over a mutable reasoning buffer? | [`sequence_edit/`](sequence_edit/README.md) |
+| Action-conditioned predictive state | Can cross-layer next-state supervision make a causal LM more predictively sufficient, recursively executable, and eventually goal-directed? | [`predictive_state/`](predictive_state/README.md) |
 
 ## Ownership convention
 

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "project": "predictive_state",
+  "stage": "stage1",
+  "entrypoint": "scripts/train_action_transition.py",
+  "model_id": "allenai/OLMo-2-0425-1B",
+  "model_revision": "a1847dff35000b4271fa70afc5db10fd29fedbdf",
+  "architecture": {
+    "target_layer": 8,
+    "source_layers": [12, 16],
+    "lora_first_layer": 9,
+    "lora_rank": 16,
+    "lora_alpha": 32
+  },
+  "data": {
+    "ordinary_language_only": true,
+    "tokens": 100000000,
+    "context_length": 1024,
+    "global_batch_tokens": 65536,
+    "seeds": [0, 1, 2]
+  },
+  "optimization": {
+    "predictor_learning_rate": 0.0003,
+    "lora_learning_rate": 0.0001,
+    "prediction_weight": 0.1,
+    "scale_weight": 0.01,
+    "warmup_fraction": 0.02,
+    "predictor_weight_decay": 0.1,
+    "lora_weight_decay": 0.0
+  }
+}
