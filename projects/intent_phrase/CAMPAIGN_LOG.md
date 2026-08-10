@@ -140,6 +140,12 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   collapse without it for all methods), menu-free as a documented
   limitation + the collapse control. LM free-generation baselines
   predictably consistent; skip unless a reviewer asks.
+  CLOSED 2026-08-10 after two final escalations on the LDAD backbone:
+  Gaussian-NLL prior (rank ~5, menu-free ~0) and CONTRASTIVE prior
+  (catalogue-softmax CE trained on exactly the plan-time ranking; ends AT
+  the chance floor 2.57, menu-free .000-.030). Decisive: the pooled state
+  does not carry per-candidate prerequisite information. No further
+  menu-free work; see interface-controls report closure section.
 - STABILIZER SWEEP UNBLOCKED (owner gated it on "the eventual menu-free
   recipe"; that recipe is now a documented negative result, so the sweep
   runs on the standard with-menu frozen recipe). Stage 1 screening

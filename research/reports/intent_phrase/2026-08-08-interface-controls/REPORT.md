@@ -103,3 +103,30 @@ nothing in JEPA training forces that relational structure into the pooled
 state. The paper reports the interface axis as: headline protocol with the
 environment menu (fair — collapse without it is uniform across methods),
 plus this section as the documented limitation with the collapse control.
+
+## Closure (2026-08-10): LDAD backbone + contrastive prior — still negative
+
+Two final escalations on the NEW LDAD headline recipe (the backbone with
+explicit action-displacement structure, .729 strict at D2 with menu):
+
+1. LDAD recipe + Gaussian-NLL prior + history-attention feasibility head
+   (`mix4-prior-hist-ldad-s0-v1`): menu-free strict ~0, invalid 73-88%,
+   prior rank 4.6-5.8, feasibility accuracy 59%.
+2. LDAD recipe + CONTRASTIVE prior (catalogue-softmax cross-entropy of
+   the observed action index — trains exactly the plan-time ranking,
+   scale-invariant; 4 mixture components)
+   (`mix4-prior-ce-ldad-s0-v1`): training CE ends at 2.57, i.e. AT the
+   categorical chance floor (ln of catalogue size ~2.2-2.5); prior rank
+   4.9-6.0; feasibility accuracy 57%; menu-free strict .000-.030.
+
+The contrastive result is decisive: even when the training objective is
+literally the plan-time task (rank the catalogue at each observed
+state), the pooled state does not carry enough information to beat
+chance. Next-action identity and feasibility in iGSM require reading
+per-candidate prerequisite lists from the prompt; the discourse-level
+JEPA state provably (empirically, five escalations) does not retain
+them. Menu-free planning is out of reach for this model class without a
+prompt-reading proposal module — which would be a token-level component,
+i.e. a different contribution. The paper reports the with-menu protocol
+as primary (uniform cross-method collapse without it keeps the
+comparison fair) and this section as the documented limitation.
