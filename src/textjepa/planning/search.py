@@ -20,7 +20,7 @@ import torch
 
 from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.graph import Problem
-from textjepa.data.igsm.render import prompt_sentences
+from textjepa.data.igsm.render import action_phrase, prompt_sentences
 from textjepa.data.vocab import Vocab
 
 
@@ -144,7 +144,8 @@ class LatentPlanner:
         prior_feasibility_gate: bool = False,
     ):
         if candidate_interface not in {
-            "feasible_menu", "full_catalogue", "learned_catalogue"
+            "feasible_menu", "full_catalogue", "learned_catalogue",
+            "ldad_cycle",
         }:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface}"
@@ -287,7 +288,7 @@ class LatentPlanner:
             step_texts.append(
                 env.step_or_invalid(chosen)
                 if self.candidate_interface
-                in {"full_catalogue", "learned_catalogue"}
+                in {"full_catalogue", "learned_catalogue", "ldad_cycle"}
                 else env.step(chosen)
             )
             action_history.append(chosen)
@@ -476,6 +477,53 @@ class LatentPlanner:
         if self.prior_top_k > 0:
             keep = min(keep, self.prior_top_k)
         return order[:keep].tolist()
+
+    def _cycle_candidates(
+        self,
+        problem: Problem,
+        state: torch.Tensor,
+        executed: frozenset[int] = frozenset(),
+    ) -> list[int]:
+        """Catalogue actions filtered by LDAD cycle-consistency (no oracle).
+
+        Score(a) = mean token log-prob of a's own intent phrase under the
+        LDAD displacement decoder applied to the predictor's imagined
+        displacement for a. Feasible actions produce action-identifiable
+        displacements (probe: AUC .94 on the LDAD recipe); infeasible ones
+        decode to noise. Keeps prior_top_k best (0 = all). ``executed``
+        masks the planner's OWN executed/imagined actions (no oracle:
+        already-computed variables stay "computable" per the decoder, so
+        without the mask the planner loops on no-op re-proposals).
+        """
+        decoder = getattr(self.model, "observed_action_decoder", None)
+        if decoder is None:
+            raise RuntimeError(
+                "candidate_interface=ldad_cycle requires a checkpoint "
+                "trained with model.observed_action_ldad=true"
+            )
+        codes = self._catalogue_codes(problem)
+        V = codes.shape[0]
+        flat = state.reshape(1, -1)
+        nxt = self.model.predictor(flat.expand(V, -1), codes)
+        logits = decoder(nxt - flat)
+        scores = []
+        for c in range(V):
+            ids = torch.tensor(
+                self.vocab.encode(action_phrase(problem, c)),
+                device=logits.device,
+            )
+            L = min(ids.shape[0], logits.shape[1])
+            scores.append(-torch.nn.functional.cross_entropy(
+                logits[c, :L], ids[:L], reduction="mean"
+            ))
+        order = [
+            c for c in torch.argsort(
+                torch.stack(scores), descending=True, stable=True
+            ).tolist()
+            if c not in executed
+        ]
+        keep = self.prior_top_k if self.prior_top_k > 0 else V
+        return order[:keep]
 
     def _imagined_state(
         self, problem: Problem, s: torch.Tensor, sequence: list[int]
@@ -716,6 +764,8 @@ class LatentPlanner:
             roots = list(range(len(problem.vars)))
         elif self.candidate_interface == "learned_catalogue":
             roots = self._prior_candidates(problem, s, history=action_history)
+        elif self.candidate_interface == "ldad_cycle":
+            roots = self._cycle_candidates(problem, s, executed=resolved)
         else:
             roots = _feasible(problem, resolved)
         beam = [[action] for action in roots]
@@ -748,6 +798,18 @@ class LatentPlanner:
                                     ],
                                     dim=1,
                                 ),
+                            )
+                        )
+                        continue
+                    if self.candidate_interface == "ldad_cycle":
+                        expanded.extend(
+                            sequence + [action]
+                            for action in self._cycle_candidates(
+                                problem,
+                                self._imagined_state(problem, s, sequence),
+                                executed=resolved | {
+                                    a for a in sequence if a is not None
+                                },
                             )
                         )
                         continue
