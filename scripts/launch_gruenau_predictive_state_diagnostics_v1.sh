@@ -40,7 +40,10 @@ check_gpu() {
   local admission
   admission=$(awk -F, -v selected="$selected_gpu" '
     { for (i=1; i<=3; i++) gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i) }
-    $1 == selected { found=1; print ($2 < 1024 && $3 < 10) ? "FREE" : "BUSY" }
+    $1 == selected {
+      found=1
+      print (($2 + 0 < 1024 && $3 + 0 < 10) ? "FREE" : "BUSY")
+    }
     END { if (!found) print "MISSING" }
   ' "$inventory")
   if [[ "$admission" != FREE ]]; then

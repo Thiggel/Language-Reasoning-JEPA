@@ -9,6 +9,7 @@ def test_gruenau_launcher_enforces_dashboard_and_direct_gpu_admission():
     assert "gruenau-gpus" in text
     assert "memory.used" in text and "utilization.gpu" in text
     assert "refusing busy GPU" in text
+    assert 'print (($2 + 0 < 1024 && $3 + 0 < 10) ? "FREE" : "BUSY")' in text
     assert "run_summary.json" in text
 
 
