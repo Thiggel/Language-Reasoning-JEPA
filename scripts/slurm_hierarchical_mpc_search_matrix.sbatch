@@ -17,6 +17,14 @@ shift 6
 python_bin=/home/atuin/c107fa/c107fa12/.venv/bin/python
 deps_root=/home/atuin/c107fa/c107fa12/TextJEPA/_deps
 mkdir -p "$run_dir"
+# Serialize writers even when an SSH retry accidentally submits the same run
+# twice. The descriptor lock is released automatically if Slurm kills a job;
+# the harmless lock file may remain for later resumptions.
+exec 9>"$run_dir/.writer.lock"
+if ! flock -n 9; then
+  echo "another job is already writing $run_dir" >&2
+  exit 75
+fi
 printf 'RUNNING\n' > "$run_dir/state"
 printf '%s\n' "${SLURM_JOB_ID:-manual}" > "$run_dir/job_id"
 

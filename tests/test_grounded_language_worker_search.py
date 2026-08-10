@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
+import pytest
 import torch
+
+import textjepa.planning.grounded_language_worker as worker
 
 from textjepa.models.hierarchical_language_jepa import (
     HierarchicalLanguageJEPA,
@@ -73,3 +76,32 @@ def test_beam_worker_optimizes_token_jepa_endpoint_not_qwen_likelihood():
     assert bank.search_algorithm == "beam"
     assert bank.proposed_tokens == 6
     torch.testing.assert_close(bank.predicted_coarse[0], desired)
+
+
+@pytest.mark.parametrize("algorithm", ["markov_cem", "factorized_cem"])
+def test_population_worker_reports_missing_complete_support_as_runtime_failure(
+    monkeypatch, algorithm
+):
+    model = tiny_model()
+    frozen = PrefixProposalFrozen()
+    prefix = torch.tensor([3, 4, 5])
+    hidden = frozen(
+        input_ids=prefix[None], output_hidden_states=True
+    ).hidden_states[-1][0]
+    monkeypatch.setattr(
+        worker, "generate_complete_reasoning_candidates",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("no complete candidates")
+        ),
+    )
+    with pytest.raises(RuntimeError, match="no supported complete proposal"):
+        build_optimized_worker_bank(
+            model, frozen, NewlineTokenizer(), prefix, hidden,
+            torch.zeros(model.config.d_sentence),
+            lambda left, right: (left - right).square().sum(-1),
+            prompt_len=3, algorithm=algorithm, objective="jepa",
+            population=4, k0=2, iterations=1, elite_fraction=0.25,
+            beam_width=2, branch_factor=2, preserve_prefix=1,
+            prior_weight=0.0, temperature=0.8, top_p=0.95, top_k=0,
+            seed=1,
+        )

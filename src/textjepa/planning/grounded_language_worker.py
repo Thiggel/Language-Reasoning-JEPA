@@ -340,6 +340,11 @@ def build_optimized_worker_bank(
             )
         elif algorithm == "markov_cem":
             initial = generated(None, population, 0)
+            if not initial:
+                raise RuntimeError(
+                    "Markov CEM found no supported complete proposal "
+                    f"within K0={k0}"
+                )
             result = first_order_markov_cem(
                 initial, rollout, semantic, horizon=k0,
                 population=population, iterations=iterations,
@@ -349,6 +354,11 @@ def build_optimized_worker_bank(
             )
         else:
             initial = generated(None, population, 0)
+            if not initial:
+                raise RuntimeError(
+                    "factorized CEM found no supported complete proposal "
+                    f"within K0={k0}"
+                )
             result = factorized_position_cem(
                 initial, rollout, semantic, horizon=k0,
                 population=population, iterations=iterations,
