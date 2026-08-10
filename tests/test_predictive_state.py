@@ -14,6 +14,7 @@ from textjepa.data.predictive_state import (
     pack_documents,
     split_wikitext_articles,
     split_whitespace_documents,
+    token_tensor_fingerprint,
     validate_reasoning_bundle,
 )
 from textjepa.models.action_transition import (
@@ -63,6 +64,14 @@ def test_document_packing_resets_positions_to_block_cross_document_attention():
         [[1, 2], [3, 4]], context_length=6, eos_token_id=9
     )
     assert packed["position_ids"].tolist() == [[0, 1, 2, 0, 1, 2]]
+
+
+def test_token_tensor_fingerprint_is_path_and_serialization_independent():
+    left = pack_documents([[1, 2], [3, 4]], context_length=6, eos_token_id=9)
+    right = {key: value.clone() for key, value in left.items()}
+    assert token_tensor_fingerprint(left) == token_tensor_fingerprint(right)
+    right["input_ids"][0, 0] += 1
+    assert token_tensor_fingerprint(left) != token_tensor_fingerprint(right)
 
 
 def test_whitespace_only_lines_split_wikitext_documents():

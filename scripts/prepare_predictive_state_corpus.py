@@ -16,6 +16,7 @@ from textjepa.data.predictive_state import (
     sha256_path,
     split_wikitext_articles,
     text_fingerprint,
+    token_tensor_fingerprint,
 )
 from textjepa.training.predictive_state import require_transformers_runtime
 
@@ -117,6 +118,7 @@ def main() -> None:
         "validation_documents": len(validation_text),
         "train_blocks": len(train["input_ids"]),
         "validation_blocks": len(validation["input_ids"]),
+        "token_tensor_sha256": token_tensor_fingerprint(train, validation),
         "boundary_safe_target_mask": True,
         "packed_attention_isolates_documents": True,
         "document_unit": "wikitext_top_level_article",

@@ -29,3 +29,10 @@ The subsequent implementation audit found a nested scale-weight bug in all
 v1–v4 code snapshots. V3/v4 remain interpretable for transition direction but
 not scale calibration. V5 is the first protocol-faithful scale run and adds the
 missing equal-capacity action-only control.
+
+V5 completed. Full beat action-only by 26.7% in held-out cosine loss and was
+strongly harmed by action permutation, satisfying the frozen-interface
+direction test. Full activation RMS remains 33% above target. The next
+falsifiable decision is a narrow scale-coefficient/LR cross-check; proceed to
+upper-LoRA representation shaping only if calibration improves RMS without
+erasing the direction advantage.

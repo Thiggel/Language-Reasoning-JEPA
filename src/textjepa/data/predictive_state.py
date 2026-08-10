@@ -34,6 +34,21 @@ def text_fingerprint(texts: Iterable[str]) -> str:
     return digest.hexdigest()
 
 
+def token_tensor_fingerprint(*splits: dict[str, torch.Tensor]) -> str:
+    """Hash token tensors independently of serialization and source paths."""
+    digest = hashlib.sha256()
+    keys = ("input_ids", "attention_mask", "target_mask", "position_ids")
+    for split_index, split in enumerate(splits):
+        digest.update(split_index.to_bytes(4, "little"))
+        for key in keys:
+            value = split[key].detach().cpu().contiguous()
+            digest.update(key.encode("utf-8"))
+            digest.update(str(value.dtype).encode("ascii"))
+            digest.update(json.dumps(list(value.shape)).encode("ascii"))
+            digest.update(value.numpy().tobytes())
+    return digest.hexdigest()
+
+
 def split_whitespace_documents(text: str) -> list[str]:
     """Split paragraphs on empty or whitespace-only separator lines."""
     documents, current = [], []

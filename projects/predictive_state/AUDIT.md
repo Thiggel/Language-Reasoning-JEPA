@@ -55,7 +55,7 @@ Each confirmed defect received a regression that failed before the repair.
   fallback summary artifacts on failure. Slurm termination is trapped and a
   missing command or invalid snapshot is rejected before execution.
 
-The focused suite contains 34 predictive-state and operational regressions.
-The final audited snapshot passed all 771 repository tests (215 pre-existing
+The focused suite contains 35 predictive-state and operational regressions.
+The final audited snapshot passed all 772 repository tests (215 pre-existing
 warnings). Repository-wide verification is required again after any change to
 these interfaces.

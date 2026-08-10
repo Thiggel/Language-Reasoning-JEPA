@@ -39,7 +39,27 @@ matched-action diagnostics remain required before upper-layer adaptation.
 
 ## Corrected audit cells
 
-`2026-08-10-qwen-frozen-transition-diagnostic-v5` reruns full and action-only
+`2026-08-10-qwen-frozen-transition-diagnostic-v5` reran full and action-only
 with equal 8,830,976-parameter predictors, independent objective weights,
 fixed validation samples, article-level WikiText documents, and packed
-block-diagonal attention. Results are pending.
+block-diagonal attention. Both completed at 101,976 valid transitions from
+source revision `b051c23`. All train/validation tensors were bit-identical;
+their path-independent tensor digest is
+`5290dc0206a3f1db11d8568625120bba19481f5cb83f07c4966c4533fb2e4b66`.
+
+| Metric | Full | Action only |
+|---|---:|---:|
+| Held-out cosine loss | 0.2133 | 0.2910 |
+| Normalized MSE | 0.4266 | 0.5821 |
+| Scale loss | 0.0454 | 0.0139 |
+| Predicted RMS | 0.7243 | 0.5844 |
+| Target RMS | 0.5438 | 0.5438 |
+| Permuted-action cosine loss | 0.4497 | 0.5405 |
+| Predictor-removed NLL | 2.9746 | 2.9746 |
+
+Full reduces direction error by 0.0777, or 26.7% relative to action-only. Its
+action-permutation loss gap is +0.2364, and matched-action state/consequence
+distance Spearman is 0.6625 over 2,836 pairs. This is positive frozen-interface
+evidence that both state and realized action matter. It remains neither a
+representation result nor a recurrent-decoding result. The full predictor's
+1.33 RMS ratio requires calibration before injection.
