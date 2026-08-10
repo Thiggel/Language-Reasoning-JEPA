@@ -287,7 +287,7 @@ def main() -> None:
     if args.variant != "ntp_only":
         predictor = make_predictor(
             model, args.variant, target_layer, source_layers
-        ).to(device=args.device, dtype=dtype).train()
+        ).to(device=args.device).train()
     capture_layers = set(source_layers) | {capture_target}
     capture = ResidualCapture(model, capture_layers)
     groups = []

@@ -118,24 +118,31 @@ class ActionConditionedTransition(nn.Module):
         action_embedding: torch.Tensor | None,
     ) -> torch.Tensor:
         pieces = []
+        output_dtype = None
         for layer in self.config.used_source_layers:
             if layer not in sources:
                 raise KeyError(f"missing source residual from layer {layer}")
             normalized = parameter_free_rms_norm(
                 sources[layer], self.config.eps
             )
-            pieces.append(self.state_projections[str(layer)](normalized))
+            output_dtype = output_dtype or normalized.dtype
+            projection = self.state_projections[str(layer)]
+            pieces.append(projection(normalized.to(projection.weight.dtype)))
         if self.config.uses_action:
             if action_embedding is None:
                 raise ValueError("action embedding is required")
             normalized_action = parameter_free_rms_norm(
                 action_embedding.detach(), self.config.eps
             )
-            pieces.append(self.action_projection(normalized_action))
+            output_dtype = output_dtype or normalized_action.dtype
+            pieces.append(self.action_projection(
+                normalized_action.to(self.action_projection.weight.dtype)
+            ))
         combined = torch.cat(pieces, dim=-1)
         update = torch.nn.functional.silu(self.gate(combined))
         update = update * self.value(combined)
-        return self.skip(combined) + self.output(update)
+        prediction = self.skip(combined) + self.output(update)
+        return prediction.to(output_dtype)
 
     def metadata(self) -> dict:
         return {
@@ -211,14 +218,23 @@ class LoRALinear(nn.Module):
         self.rank = int(rank)
         self.alpha = float(alpha)
         self.scaling = self.alpha / self.rank
-        self.lora_a = nn.Parameter(torch.empty(rank, base.in_features))
-        self.lora_b = nn.Parameter(torch.zeros(base.out_features, rank))
+        self.lora_a = nn.Parameter(torch.empty(
+            rank, base.in_features, device=base.weight.device,
+            dtype=torch.float32,
+        ))
+        self.lora_b = nn.Parameter(torch.zeros(
+            base.out_features, rank, device=base.weight.device,
+            dtype=torch.float32,
+        ))
         nn.init.kaiming_uniform_(self.lora_a, a=math.sqrt(5))
 
     def forward(self, hidden: torch.Tensor) -> torch.Tensor:
-        low_rank = torch.nn.functional.linear(hidden, self.lora_a)
+        base_output = self.base(hidden)
+        low_rank = torch.nn.functional.linear(
+            hidden.to(self.lora_a.dtype), self.lora_a
+        )
         low_rank = torch.nn.functional.linear(low_rank, self.lora_b)
-        return self.base(hidden) + low_rank * self.scaling
+        return base_output + low_rank.to(base_output.dtype) * self.scaling
 
 
 def decoder_layers(model: nn.Module) -> nn.ModuleList:

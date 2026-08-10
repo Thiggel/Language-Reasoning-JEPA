@@ -71,6 +71,20 @@ def test_transition_detaches_action_but_not_state_and_records_capacity():
     assert predictor.output.weight.std().item() < 0.002
 
 
+def test_fp16_residuals_keep_trainable_predictor_gradients_fp32():
+    predictor = ActionConditionedTransition(TransitionConfig(
+        hidden_size=8, source_layers=(3, 4), target_layer=2,
+        action_dim=8, variant="full",
+    ))
+    states = {3: torch.randn(2, 8).half(), 4: torch.randn(2, 8).half()}
+    action = torch.randn(2, 8).half()
+    prediction = predictor(states, action)
+    assert prediction.dtype == torch.float16
+    prediction.float().square().mean().backward()
+    assert all(parameter.dtype == torch.float32 for parameter in predictor.parameters())
+    assert all(parameter.grad is not None for parameter in predictor.parameters())
+
+
 def test_action_only_and_no_action_interfaces_are_distinct():
     action_only = ActionConditionedTransition(TransitionConfig(
         hidden_size=8, source_layers=(3, 4), target_layer=2,
@@ -142,6 +156,8 @@ def test_upper_lora_freezes_base_and_starts_with_zero_update():
     torch.testing.assert_close(wrapped(hidden), expected)
     assert accounting["trainable_parameters"] > 0
     assert not wrapped.base.weight.requires_grad
+    assert wrapped.lora_a.dtype == torch.float32
+    assert wrapped.lora_b.dtype == torch.float32
 
 
 def test_raw_residual_capture_uses_one_indexed_blocks():

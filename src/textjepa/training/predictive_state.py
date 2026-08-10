@@ -86,7 +86,7 @@ def load_stage1_checkpoint(
         config_dict["source_layers"] = tuple(config_dict["source_layers"])
         predictor = ActionConditionedTransition(
             TransitionConfig(**config_dict)
-        ).to(device=device, dtype=dtype)
+        ).to(device=device)
     modules = (model,) if predictor is None else (model, predictor)
     load_trainable_state_dict(payload["trainable_state"], *modules)
     return model, predictor, payload
@@ -123,7 +123,7 @@ def load_stage2_checkpoint(
     config_dict["source_layers"] = tuple(config_dict["source_layers"])
     predictor = ActionConditionedTransition(
         TransitionConfig(**config_dict)
-    ).to(device=device, dtype=dtype)
+    ).to(device=device)
     load_trainable_state_dict(payload["trainable_state"], model, predictor)
     return model, predictor, payload
 
