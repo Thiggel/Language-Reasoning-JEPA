@@ -97,6 +97,13 @@ def test_action_only_and_no_action_interfaces_are_distinct():
     action = torch.randn(2, 8)
     assert action_only({}, action).shape == (2, 8)
     assert no_action({3: action, 4: action}, None).shape == (2, 8)
+    full = ActionConditionedTransition(TransitionConfig(
+        hidden_size=8, source_layers=(3, 4), target_layer=2,
+        action_dim=8, variant="full",
+    ))
+    assert sum(p.numel() for p in no_action.parameters()) == sum(
+        p.numel() for p in full.parameters()
+    )
 
 
 def test_transition_loss_separates_direction_and_scale():

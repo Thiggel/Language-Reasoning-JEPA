@@ -66,6 +66,14 @@ class TransitionConfig:
         return self.variant in {"full", "action_only", "same_layer"}
 
     @property
+    def has_action_channel(self) -> bool:
+        # no_action retains an identically sized zero channel so its parameter
+        # count matches full; only the realized-token information is removed.
+        return self.variant in {
+            "full", "no_action", "action_only", "same_layer"
+        }
+
+    @property
     def used_source_layers(self) -> tuple[int, ...]:
         if self.variant == "action_only":
             return ()
@@ -90,11 +98,11 @@ class ActionConditionedTransition(nn.Module):
             for layer in config.used_source_layers
         })
         self.action_projection = None
-        if config.uses_action:
+        if config.has_action_channel:
             self.action_projection = nn.Linear(
                 config.action_dim or config.hidden_size, projection, bias=False
             )
-        parts = len(config.used_source_layers) + int(config.uses_action)
+        parts = len(config.used_source_layers) + int(config.has_action_channel)
         if parts < 1:
             raise ValueError("transition has no inputs")
         input_size = parts * projection
@@ -128,12 +136,16 @@ class ActionConditionedTransition(nn.Module):
             output_dtype = output_dtype or normalized.dtype
             projection = self.state_projections[str(layer)]
             pieces.append(projection(normalized.to(projection.weight.dtype)))
-        if self.config.uses_action:
-            if action_embedding is None:
-                raise ValueError("action embedding is required")
-            normalized_action = parameter_free_rms_norm(
-                action_embedding.detach(), self.config.eps
-            )
+        if self.config.has_action_channel:
+            if self.config.uses_action:
+                if action_embedding is None:
+                    raise ValueError("action embedding is required")
+                normalized_action = parameter_free_rms_norm(
+                    action_embedding.detach(), self.config.eps
+                )
+            else:
+                reference = next(iter(sources.values()))
+                normalized_action = torch.zeros_like(reference)
             output_dtype = output_dtype or normalized_action.dtype
             pieces.append(self.action_projection(
                 normalized_action.to(self.action_projection.weight.dtype)

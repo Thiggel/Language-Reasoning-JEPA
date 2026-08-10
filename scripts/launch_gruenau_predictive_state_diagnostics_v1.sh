@@ -2,10 +2,10 @@
 set -euo pipefail
 
 root=/vol/home-vol2/ml/laitenbf/TextJEPA
-round=2026-08-10-qwen-frozen-transition-diagnostic-v3
+round=2026-08-10-qwen-frozen-transition-diagnostic-v4
 host=1
-variants=(full no_action)
-gpus=(0 1)
+variants=(no_action)
+gpus=(1)
 cd "$root"
 
 [[ -z "$(git status --porcelain)" ]] || {
@@ -30,7 +30,7 @@ ssh -n -o BatchMode=yes -o ConnectTimeout=10 \
 for index in "${!variants[@]}"; do
   variant=${variants[$index]}
   gpu=${gpus[$index]}
-  job_id="qwen05-frozen-${variant//_/-}-s0-v3"
+  job_id="qwen05-frozen-${variant//_/-}-capacity-matched-s0-v4"
   run_dir="$root/runs/autonomy/predictive_state/$round/$job_id"
   if [[ -s "$run_dir/state" ]]; then
     state=$(tr -d '[:space:]' < "$run_dir/state")
