@@ -130,3 +130,42 @@ prompt-reading proposal module — which would be a token-level component,
 i.e. a different contribution. The paper reports the with-menu protocol
 as primary (uniform cross-method collapse without it keeps the
 comparison fair) and this section as the documented limitation.
+
+## Reopened via the dynamics (2026-08-10): LDAD cycle-consistency works
+
+All failures above read the POOLED STATE. The feasibility knowledge turns
+out to live in the DYNAMICS: score each catalogue candidate by how well
+the LDAD displacement decoder reconstructs the candidate's own intent
+phrase from the predictor's imagined displacement for it. Feasible
+actions produce action-identifiable displacements (mean token log-prob
+-0.28), infeasible ones decode to noise (-4.5); AUC .94. No oracle, no
+extra training — computed from the LDAD-recipe checkpoint. One necessary
+planner rule: mask the planner's own executed actions (already-computed
+variables remain "computable", causing no-op proposal loops; this is
+self-knowledge, not an oracle).
+
+Menu-free results (`candidate_interface=ldad_cycle`, LDAD checkpoint s0,
+300 episodes, invalid=noop, no feasibility oracle, no symbolic menus):
+
+| filter | strict D1..D16 | slack-4 D1..D16 | invalid |
+|---|---|---|---|
+| cycle top-2 | .027/.020/.007/.007/.007 | .290/.313/.287/.253/.263 | .24-.43 |
+| cycle top-3 | .017/.010/.007/.007/.003 | .197/.207/.247/.250/.233 | .29-.59 |
+
+vs ~0 at every slack for every state-readout attempt, and .053 strict for
+random WITH the oracle menu. Top-2 is the reference (tighter filter wins:
+each invalid proposal burns budget). Strict success stays low because a
+single invalid no-op already exceeds slack 0; the slack-4 column shows
+the planner is finding the goal, spending its budget on feasibility
+probing.
+
+Interpretation for the paper: the JEPA model DOES contain the
+feasibility structure — in predictor+LDAD-decoder, not in the pooled
+state — and planning without any menu becomes possible the moment the
+recipe includes LDAD (which the stabilizer sweep independently promoted
+to the headline). Catalogue enumeration (variable names, derivable from
+the prompt text by a trivial parser) remains, and is the standard
+planning formulation; the owner accepts this for the paper. Optional
+stretch: a state-conditioned intent-phrase generator head vetted by
+cycle-consistency would remove even the catalogue and let LM baselines
+run pure free generation.
