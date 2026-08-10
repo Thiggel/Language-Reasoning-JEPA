@@ -145,7 +145,20 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   (catalogue-softmax CE trained on exactly the plan-time ranking; ends AT
   the chance floor 2.57, menu-free .000-.030). Decisive: the pooled state
   does not carry per-candidate prerequisite information. No further
-  menu-free work; see interface-controls report closure section.
+  menu-free work via STATE-readout heads; see interface-controls report.
+  REOPENED 2026-08-10 via the DYNAMICS: LDAD cycle-consistency — score
+  each catalogue candidate by how well the LDAD displacement decoder
+  reconstructs the candidate's own phrase from the predictor's imagined
+  displacement (feasible/infeasible AUC .94, no oracle, no training),
+  mask the planner's own executed actions. First real menu-free numbers
+  (`2026-08-10-intent-ldad-cycle-v1`, LDAD checkpoint, top-2): slack-4
+  .25-.31 at ALL depths, invalid 24-43% (all state-readout attempts: ~0).
+  Top-3 eval running. Owner position 2026-08-10: catalogue enumeration
+  (variable names, prompt-derivable) is acceptable for the paper — the
+  privileged part was feasibility, now learned. OPTIONAL STRETCH: fully
+  open-ended proposals via a state-conditioned intent-phrase generator
+  head vetted by cycle-consistency; would let LM baselines run pure
+  free-generation (parse-or-invalid) with no candidate naming anywhere.
 - STABILIZER SWEEP UNBLOCKED (owner gated it on "the eventual menu-free
   recipe"; that recipe is now a documented negative result, so the sweep
   runs on the standard with-menu frozen recipe). Stage 1 screening
