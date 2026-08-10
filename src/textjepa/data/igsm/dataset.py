@@ -454,6 +454,7 @@ class IGSMDataset(Dataset):
                     for variable in p.vars
                 ],
                 action_feasible=action_feasible,
+                action_indices=list(trace),
             )
         if self.n_alt:
             out["alt_actions"] = alt_actions
@@ -606,6 +607,7 @@ def collate(batch: list[dict], pad_id: int) -> dict:
         candidate_mask = torch.zeros(B, V, dtype=torch.bool)
         feasible = torch.zeros(B, T, V, dtype=torch.bool)
         candidate_observed = torch.zeros(B, T, V, dtype=torch.bool)
+        action_indices = torch.full((B, T), -1, dtype=torch.long)
         for b, item in enumerate(batch):
             for v, action in enumerate(item.get("action_candidate_tokens", [])):
                 candidate_tokens[b, v, :len(action)] = torch.tensor(action)
@@ -614,6 +616,9 @@ def collate(batch: list[dict], pad_id: int) -> dict:
             if labels:
                 tensor = torch.tensor(labels, dtype=torch.bool)
                 feasible[b, :tensor.shape[0], :tensor.shape[1]] = tensor
+            indices = item.get("action_indices", [])
+            if indices:
+                action_indices[b, :len(indices)] = torch.tensor(indices)
             observed = item.get("action_candidate_observed")
             if observed is None:
                 candidate_observed[
@@ -629,6 +634,7 @@ def collate(batch: list[dict], pad_id: int) -> dict:
             action_candidate_mask=candidate_mask,
             action_candidate_observed=candidate_observed,
             action_feasible=feasible,
+            action_indices=action_indices,
         )
     if any("ga_t" in b for b in batch):
         K = max((len(b.get("ga_alt_actions", [])) for b in batch), default=1)

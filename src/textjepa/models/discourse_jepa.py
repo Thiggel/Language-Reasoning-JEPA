@@ -519,7 +519,7 @@ class DiscourseJEPA(nn.Module):
                 if self.var_action is None
                 else self.encode_actions(batch["action_tokens"])
             )
-            self._action_prior_supervision(out, observed_codes)
+            self._action_prior_supervision(out, observed_codes, batch)
         if self.observed_action_decoder is not None:
             if self.observed_action_ldad_horizon == 1:
                 out.extras["observed_action_logits"] = self.observed_action_decoder(
@@ -833,7 +833,7 @@ class DiscourseJEPA(nn.Module):
             action_support_target=target,
         )
 
-    def _action_prior_supervision(self, out, action_codes) -> None:
+    def _action_prior_supervision(self, out, action_codes, batch=None) -> None:
         """NLL of the observed next action's embedding under p(a | s).
 
         Supervises the Gaussian action prior at every observed prefix state
@@ -855,10 +855,43 @@ class DiscourseJEPA(nn.Module):
         states = torch.stack(states, dim=1).detach()  # [B, M, T, D]
         targets = action_codes.detach()
         B, M, T, _ = states.shape
-        nll = self.action_prior.nll(
-            states, targets.unsqueeze(1).expand(B, M, T, -1)
-        )
-        valid = out.step_mask.unsqueeze(1).expand(B, M, T)
+        if (
+            self.action_prior_candidate_scope == "catalogue"
+            and batch is not None
+            and "action_candidate_tokens" in batch
+            and "action_indices" in batch
+        ):
+            # Contrastive (catalogue-softmax) training: cross-entropy of the
+            # observed action's index against the prior's log-density over
+            # ALL catalogue candidates. Trains exactly the ranking used at
+            # plan time and is invariant to the embedding scale (the raw
+            # Gaussian NLL saturates its logvar clamp on wide embeddings).
+            cand = self.encode_actions(
+                batch["action_candidate_tokens"]
+            ).detach()  # [B, V, d]
+            V = cand.shape[1]
+            logits = self.action_prior.log_prob(
+                states.unsqueeze(3).expand(B, M, T, V, states.shape[-1]),
+                cand.reshape(B, 1, 1, V, -1).expand(B, M, T, V, -1),
+            )
+            cand_mask = batch["action_candidate_mask"]  # [B, V]
+            logits = logits.masked_fill(
+                ~cand_mask.reshape(B, 1, 1, V), float("-inf")
+            )
+            index = batch["action_indices"].clamp_min(0)  # [B, T]
+            nll = torch.nn.functional.cross_entropy(
+                logits.reshape(B * M * T, V),
+                index.unsqueeze(1).expand(B, M, T).reshape(-1),
+                reduction="none",
+            ).reshape(B, M, T)
+            valid = (
+                out.step_mask & (batch["action_indices"] >= 0)
+            ).unsqueeze(1).expand(B, M, T)
+        else:
+            nll = self.action_prior.nll(
+                states, targets.unsqueeze(1).expand(B, M, T, -1)
+            )
+            valid = out.step_mask.unsqueeze(1).expand(B, M, T)
         if M == 1:
             nll = nll[:, 0]
             valid = valid[:, 0]
