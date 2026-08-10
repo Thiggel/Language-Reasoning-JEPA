@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 
 
@@ -35,6 +36,8 @@ def main() -> None:
     summary = {
         "schema_version": 1,
         "status": "completed",
+        "process_status": "COMPLETED",
+        "run_id": os.environ.get("RUN_ID"),
         "variant": metrics["variant"],
         "backbone_mode": metrics["backbone_mode"],
         "source_revision": metrics.get("source_revision"),
@@ -55,6 +58,10 @@ def main() -> None:
         "oracle_information": False,
         "candidate_privileged_information": False,
         "cross_project_information": False,
+        "artifacts": [
+            "model/best.pt", "model/last.pt", "model/metrics.json",
+            "eval_summary.json", "run_summary.json",
+        ],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

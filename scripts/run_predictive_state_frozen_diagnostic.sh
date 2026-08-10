@@ -30,4 +30,5 @@ mkdir -p "$RUN_DIR/data" "$RUN_DIR/model"
 
 "$python_bin" scripts/summarize_predictive_state_stage1.py \
   --metrics "$RUN_DIR/model/metrics.json" \
-  --output "$RUN_DIR/eval_summary.json"
+  --output "$RUN_DIR/run_summary.json"
+cp "$RUN_DIR/run_summary.json" "$RUN_DIR/eval_summary.json"
