@@ -1,6 +1,6 @@
 # Current cycle
 
-`2026-08-10-qwen-frozen-transition-diagnostic`
+`2026-08-10-qwen-frozen-transition-diagnostic-v5`
 
 Observed decision: full beat the equal-capacity no-action control on held-out
 direction error and depended strongly on correct action identity. The remaining
@@ -24,3 +24,8 @@ to FP16 trainable weights. Both are operational failures. In v3, the full cell
 completed but the no-action predictor was smaller; only the full result and its
 same-capacity action-permutation audit are retained. The v4 no-action cell is
 the admissible equal-parameter control.
+
+The subsequent implementation audit found a nested scale-weight bug in all
+v1–v4 code snapshots. V3/v4 remain interpretable for transition direction but
+not scale calibration. V5 is the first protocol-faithful scale run and adds the
+missing equal-capacity action-only control.

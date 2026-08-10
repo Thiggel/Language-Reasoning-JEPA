@@ -110,7 +110,11 @@ def stage1_loss(
         prediction, target_state, target_mask, scale_weight=scale_weight
     )
     return Stage1Loss(
-        total=ntp + prediction_weight * auxiliary.total,
+        total=(
+            ntp
+            + prediction_weight * auxiliary.cosine
+            + scale_weight * auxiliary.scale
+        ),
         ntp=ntp,
         transition=auxiliary,
     )

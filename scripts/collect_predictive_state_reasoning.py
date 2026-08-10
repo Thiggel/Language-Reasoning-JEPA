@@ -59,7 +59,14 @@ def load(args, dtype):
             )
         model_id = payload.get("model_id", payload.get("stage1_payload", {}).get("model_id"))
         revision = payload.get("model_revision", payload.get("stage1_payload", {}).get("model_revision"))
-        sources = tuple(args.source_layer or predictor.config.source_layers)
+        if args.source_layer:
+            sources = tuple(args.source_layer)
+        elif predictor is not None:
+            sources = tuple(predictor.config.source_layers)
+        else:
+            sources = tuple(
+                architecture_defaults(model_id, len(decoder_layers(model)))["sources"]
+            )
     else:
         if not args.model_id or not args.model_revision:
             raise ValueError("original model extraction needs model ID and revision")
@@ -85,6 +92,23 @@ def boundary_positions(text: str, offsets: list[tuple[int, int]],
     if not positions or positions[-1] != len(offsets) - 1:
         positions.append(len(offsets) - 1)
     return sorted(set(positions))
+
+
+def prompt_state_index(
+    offsets: list[tuple[int, int]], prompt_characters: int
+) -> int:
+    """Find the last token wholly contained in the prompt text.
+
+    Deriving this from the joint prompt-plus-trajectory encoding avoids BPE
+    boundary merges that make a separately tokenized prompt length invalid.
+    """
+    contained = [
+        index for index, (begin, end) in enumerate(offsets)
+        if end > begin and end <= prompt_characters
+    ]
+    if not contained:
+        raise ValueError("joint tokenization contains no complete prompt token")
+    return contained[-1]
 
 
 @torch.no_grad()
@@ -113,11 +137,7 @@ def main() -> None:
         output = teacher_forward(
             model, ids, capture=capture, attention_mask=None, use_cache=False
         )
-        prompt_tokens = tokenizer(
-            prompt + separator, add_special_tokens=False,
-            return_attention_mask=False,
-        )["input_ids"]
-        prompt_index = max(0, len(prompt_tokens) - 1)
+        prompt_index = prompt_state_index(offsets, len(prompt + separator))
         positions = boundary_positions(text, offsets, len(prompt + separator))
         fused = torch.cat([
             parameter_free_rms_norm(output.states[layer][0])

@@ -128,6 +128,22 @@ def load_stage2_checkpoint(
     return model, predictor, payload
 
 
+def load_transition_checkpoint(
+    path,
+    *,
+    device: str,
+    dtype: torch.dtype,
+) -> tuple[nn.Module, ActionConditionedTransition | None, dict]:
+    """Load either a Stage 1 seed or a preceding Stage 2 curriculum cell."""
+    header = torch.load(path, map_location="cpu", weights_only=True)
+    kind = header.get("kind")
+    if kind == "action_conditioned_cross_layer_stage1":
+        return load_stage1_checkpoint(path, device=device, dtype=dtype)
+    if kind == "action_conditioned_cross_layer_stage2":
+        return load_stage2_checkpoint(path, device=device, dtype=dtype)
+    raise ValueError(f"unsupported transition checkpoint kind: {kind!r}")
+
+
 @dataclass
 class TeacherOutput:
     logits: torch.Tensor
@@ -141,12 +157,14 @@ def teacher_forward(
     *,
     capture: ResidualCapture,
     attention_mask: torch.Tensor | None = None,
+    position_ids: torch.Tensor | None = None,
     use_cache: bool = False,
 ) -> TeacherOutput:
     capture.clear()
     output = model(
         input_ids=input_ids,
         attention_mask=attention_mask,
+        position_ids=position_ids,
         use_cache=use_cache,
         return_dict=True,
     )
@@ -225,16 +243,39 @@ class UpperStackRunner:
         injected: torch.Tensor,
         *,
         past_key_values: Any,
-        position_index: int,
+        position_index: int | torch.Tensor,
+        key_valid: torch.Tensor | None = None,
     ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
         if injected.ndim == 2:
             injected = injected[:, None, :]
         if injected.ndim != 3 or injected.shape[1] != 1:
             raise ValueError("upper-stack step expects B x 1 x D")
-        position_ids = torch.full(
-            (1, 1), int(position_index), dtype=torch.long,
-            device=injected.device,
-        )
+        if isinstance(position_index, torch.Tensor):
+            position_ids = position_index.to(
+                device=injected.device, dtype=torch.long
+            )
+            if position_ids.ndim == 1:
+                position_ids = position_ids[:, None]
+            if position_ids.shape != injected.shape[:2]:
+                raise ValueError("position_index must be scalar or B x 1")
+        else:
+            position_ids = torch.full(
+                injected.shape[:2], int(position_index), dtype=torch.long,
+                device=injected.device,
+            )
+        attention_mask = None
+        if key_valid is not None:
+            if key_valid.ndim != 2 or key_valid.shape[0] != injected.shape[0]:
+                raise ValueError("key_valid must be B x cached-and-current length")
+            key_valid = key_valid.to(device=injected.device, dtype=torch.bool)
+            attention_mask = torch.zeros(
+                (*key_valid.shape[:1], 1, 1, key_valid.shape[1]),
+                device=injected.device, dtype=injected.dtype,
+            )
+            attention_mask.masked_fill_(
+                ~key_valid[:, None, None, :],
+                torch.finfo(injected.dtype).min,
+            )
         position_embeddings = self.backbone.rotary_emb(
             injected, position_ids
         )
@@ -244,7 +285,7 @@ class UpperStackRunner:
         for zero_index in range(self.target_layer, len(self.layers)):
             layer = self.layers[zero_index]
             kwargs = {
-                "attention_mask": None,
+                "attention_mask": attention_mask,
                 "position_ids": position_ids,
                 "position_embeddings": position_embeddings,
                 "past_key_values": past_key_values,
@@ -276,6 +317,17 @@ def crop_cache(past_key_values: Any, length: int) -> Any:
     return past_key_values
 
 
+def active_segment_key_mask(
+    position_ids: torch.Tensor, end_index: int
+) -> torch.Tensor:
+    """Select keys in the packed segment ending at an absolute token index."""
+    if position_ids.ndim != 2 or not 0 <= end_index < position_ids.shape[1]:
+        raise ValueError("position_ids/end_index do not describe a token")
+    segment_start = end_index - position_ids[:, end_index]
+    keys = torch.arange(end_index + 1, device=position_ids.device)[None]
+    return keys >= segment_start[:, None]
+
+
 @dataclass
 class RolloutLossOutput:
     total: torch.Tensor
@@ -298,20 +350,30 @@ def recurrent_rollout_loss(
     start_index: int,
     horizon: int,
     capture: ResidualCapture,
+    position_ids: torch.Tensor | None = None,
     discount: float = 0.97,
     ce_weight: float = 0.1,
+    initial_source_noise: float = 0.0,
 ) -> RolloutLossOutput:
     """Unroll teacher actions from one shared exact start position."""
     if start_index < 0 or start_index + horizon + 1 >= input_ids.shape[1]:
         raise ValueError("sequence is too short for requested rollout")
     teacher = teacher_forward(
-        model, input_ids, capture=capture, attention_mask=None, use_cache=True
+        model, input_ids, capture=capture, attention_mask=None,
+        position_ids=position_ids, use_cache=True,
     )
     cache = crop_cache(teacher.past_key_values, start_index + 1)
     sources = {
         layer: teacher.states[layer][:, start_index:start_index + 1]
         for layer in predictor.config.used_source_layers
     }
+    if initial_source_noise < 0:
+        raise ValueError("initial_source_noise must be non-negative")
+    if initial_source_noise:
+        sources = {
+            layer: state + initial_source_noise * torch.randn_like(state)
+            for layer, state in sources.items()
+        }
     runner = UpperStackRunner(
         model,
         target_layer=predictor.config.target_layer,
@@ -325,14 +387,35 @@ def recurrent_rollout_loss(
         "excess_nll", "top1_agreement", "top20_agreement", "log_rms_drift"
     )}
     rows = []
+    key_valid = (
+        active_segment_key_mask(position_ids, start_index)
+        if position_ids is not None else None
+    )
+    starting_position = (
+        position_ids[:, start_index:start_index + 1]
+        if position_ids is not None else None
+    )
     for step in range(1, horizon + 1):
         position = start_index + step
         action_ids = input_ids[:, position:position + 1]
         predicted = transition_prediction(
             predictor, model, sources, action_ids
         )
+        if key_valid is not None:
+            key_valid = torch.cat([
+                key_valid,
+                torch.ones(
+                    key_valid.shape[0], 1, dtype=torch.bool,
+                    device=key_valid.device,
+                ),
+            ], dim=1)
         sources, jump_logits = runner.step(
-            predicted, past_key_values=cache, position_index=position
+            predicted, past_key_values=cache,
+            position_index=(
+                starting_position + step
+                if starting_position is not None else position
+            ),
+            key_valid=key_valid,
         )
         target = teacher.states[predictor.config.target_layer][
             :, position:position + 1
@@ -380,21 +463,23 @@ def _sample_top_p(
 
 
 @torch.no_grad()
-def generate_jump_actions(
+def generate_jump_trajectory(
     *,
     model: nn.Module,
     predictor: ActionConditionedTransition,
     prompt_ids: torch.Tensor,
     action_count: int,
     capture: ResidualCapture,
+    position_ids: torch.Tensor | None = None,
     temperature: float = 0.8,
     top_p: float = 0.95,
-) -> torch.Tensor:
-    """Sample actions from the jump model for generated-prefix replay."""
+) -> tuple[torch.Tensor, dict[int, torch.Tensor]]:
+    """Sample a jump rollout and retain the predictor states it visited."""
     if action_count < 1 or prompt_ids.shape[1] < 1:
         raise ValueError("prompt and action count must be non-empty")
     exact = teacher_forward(
-        model, prompt_ids, capture=capture, attention_mask=None, use_cache=True
+        model, prompt_ids, capture=capture, attention_mask=None,
+        position_ids=position_ids, use_cache=True,
     )
     cache = exact.past_key_values
     position = prompt_ids.shape[1] - 1
@@ -407,8 +492,18 @@ def generate_jump_actions(
         source_layers=predictor.config.source_layers,
     )
     current_logits = exact.logits[:, -1]
+    key_valid = (
+        active_segment_key_mask(position_ids, position)
+        if position_ids is not None else None
+    )
+    starting_position = (
+        position_ids[:, -1:] if position_ids is not None else None
+    )
     actions = []
+    visited = {layer: [] for layer in predictor.config.used_source_layers}
     for offset in range(1, action_count + 1):
+        for layer in visited:
+            visited[layer].append(sources[layer].detach())
         action = _sample_top_p(
             current_logits, temperature=temperature, top_p=top_p
         )
@@ -416,8 +511,31 @@ def generate_jump_actions(
         predicted = transition_prediction(
             predictor, model, sources, action[:, None]
         )
+        if key_valid is not None:
+            key_valid = torch.cat([
+                key_valid,
+                torch.ones(
+                    key_valid.shape[0], 1, dtype=torch.bool,
+                    device=key_valid.device,
+                ),
+            ], dim=1)
         sources, logits = runner.step(
-            predicted, past_key_values=cache, position_index=position + offset
+            predicted, past_key_values=cache,
+            position_index=(
+                starting_position + offset
+                if starting_position is not None else position + offset
+            ),
+            key_valid=key_valid,
         )
         current_logits = logits[:, -1]
-    return torch.stack(actions, dim=1)
+    return (
+        torch.stack(actions, dim=1),
+        {layer: torch.cat(values, dim=1) for layer, values in visited.items()},
+    )
+
+
+@torch.no_grad()
+def generate_jump_actions(**kwargs) -> torch.Tensor:
+    """Compatibility wrapper returning only actions from a jump rollout."""
+    actions, _ = generate_jump_trajectory(**kwargs)
+    return actions

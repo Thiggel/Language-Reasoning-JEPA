@@ -93,9 +93,19 @@ def distances(record: dict, transform: torch.Tensor | None,
     valid = record["valid"].bool()
     state = record["states"][valid].float()
     goal = record["states"][int(record["terminal_index"])].float()
+    return state_goal_distances(state, goal, transform, kind, mean)
+
+
+def state_goal_distances(
+    state: torch.Tensor,
+    goal: torch.Tensor,
+    transform: torch.Tensor | None,
+    kind: str,
+    mean: torch.Tensor | None = None,
+) -> torch.Tensor:
     if kind == "cosine":
         return 1.0 - torch.nn.functional.cosine_similarity(
-            state, goal[None], dim=-1
+            state, goal.expand_as(state), dim=-1
         )
     if mean is not None:
         state = state - mean
@@ -104,6 +114,78 @@ def distances(record: dict, transform: torch.Tensor | None,
         state = state @ transform
         goal = goal @ transform
     return (state - goal).norm(dim=-1)
+
+
+def goal_specificity_controls(
+    records: list[dict],
+    *,
+    test_ids: set[str],
+    transform: torch.Tensor | None,
+    kind: str,
+    mean: torch.Tensor | None,
+) -> dict:
+    """Evaluate all retrospective goal substitutions on held-out problems."""
+    correct = [record for record in records if record["correct"]]
+    eligible = [
+        record for record in correct
+        if str(record["problem_id"]) in test_ids
+    ]
+    controls: dict[str, list[torch.Tensor]] = {
+        "another_correct_same_problem": [],
+        "different_problem_same_answer": [],
+        "random_terminal": [],
+        "same_relative_position_other_trajectory": [],
+    }
+    for index, record in enumerate(eligible):
+        valid = record["valid"].bool()
+        state = record["states"][valid].float()
+        same_problem = next((
+            other for other in correct
+            if other is not record
+            and str(other["problem_id"]) == str(record["problem_id"])
+        ), None)
+        answer = record.get("answer")
+        same_answer = next((
+            other for other in correct
+            if str(other["problem_id"]) != str(record["problem_id"])
+            and answer is not None and str(other.get("answer")) == str(answer)
+        ), None)
+        other_problem = next((
+            eligible[(index + offset) % len(eligible)]
+            for offset in range(1, len(eligible))
+            if str(eligible[(index + offset) % len(eligible)]["problem_id"])
+            != str(record["problem_id"])
+        ), None)
+        for label, other in (
+            ("another_correct_same_problem", same_problem),
+            ("different_problem_same_answer", same_answer),
+            ("random_terminal", other_problem),
+        ):
+            if other is None:
+                continue
+            goal = other["states"][int(other["terminal_index"])].float()
+            controls[label].append(state_goal_distances(
+                state, goal, transform, kind, mean
+            ))
+        if other_problem is not None:
+            other_state = other_problem["states"][
+                other_problem["valid"].bool()
+            ].float()
+            if len(state) == 1:
+                indices = torch.zeros(1, dtype=torch.long)
+            else:
+                indices = torch.linspace(
+                    0, len(other_state) - 1, len(state)
+                ).round().long()
+            controls["same_relative_position_other_trajectory"].append(
+                state_goal_distances(
+                    state, other_state[indices], transform, kind, mean
+                )
+            )
+    return {
+        label: progress_metrics(values) | {"pairs": len(values)}
+        for label, values in controls.items()
+    }
 
 
 def remaining_r2(train_rows, test_rows) -> float:
@@ -127,6 +209,10 @@ def main() -> None:
     validate_reasoning_bundle(payload)
     records = payload["records"]
     train_ids = training_problem_ids(records)
+    test_ids = {
+        str(record["problem_id"]) for record in records
+        if str(record["problem_id"]) not in train_ids
+    }
     width = records[0]["states"].shape[-1]
     fitted = fit_transforms(records, args.pca_dim, train_ids)
     mahalanobis = fit_mahalanobis(
@@ -196,6 +282,10 @@ def main() -> None:
             candidate_ranking_accuracy(
                 torch.stack(correct_values), torch.stack(incorrect_values)
             ) if correct_values else float("nan")
+        )
+        metric["goal_specificity_controls"] = goal_specificity_controls(
+            records, test_ids=test_ids, transform=transform,
+            kind="cosine" if name == "cosine" else name, mean=mean,
         )
         results[name] = metric
     report = {

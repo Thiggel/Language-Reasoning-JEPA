@@ -30,6 +30,7 @@ Entry points:
 - [`EXPERIMENT_INDEX.md`](EXPERIMENT_INDEX.md): immutable run-family index.
 - [`ARTIFACTS.md`](ARTIFACTS.md): code/config/run ownership.
 - [`DECISIONS.md`](DECISIONS.md): durable design decisions.
+- [`AUDIT.md`](AUDIT.md): adversarial implementation passes and regressions.
 - [`QUESTION_BACKLOG.md`](QUESTION_BACKLOG.md): unresolved questions.
 
 The implementation is shared under `src/textjepa/`; run artifacts belong under

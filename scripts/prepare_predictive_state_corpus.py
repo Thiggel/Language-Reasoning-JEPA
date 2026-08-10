@@ -14,7 +14,7 @@ from textjepa.data.predictive_state import (
     pack_documents,
     save_token_blocks,
     sha256_path,
-    split_whitespace_documents,
+    split_wikitext_articles,
     text_fingerprint,
 )
 from textjepa.training.predictive_state import require_transformers_runtime
@@ -47,7 +47,7 @@ def read_documents(path: Path) -> list[str]:
     # WikiText uses whitespace-only lines between paragraphs (often a single
     # space, not a literal empty line). Keeping headings as their own documents
     # makes boundary handling explicit and reproducible.
-    return split_whitespace_documents(path.read_text(encoding="utf-8"))
+    return split_wikitext_articles(path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
@@ -118,6 +118,8 @@ def main() -> None:
         "train_blocks": len(train["input_ids"]),
         "validation_blocks": len(validation["input_ids"]),
         "boundary_safe_target_mask": True,
+        "packed_attention_isolates_documents": True,
+        "document_unit": "wikitext_top_level_article",
         "ordinary_language_only": True,
         "oracle_information": False,
         "candidate_privileged_information": False,

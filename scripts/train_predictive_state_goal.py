@@ -15,8 +15,8 @@ from textjepa.analysis.predictive_state import progress_metrics
 from textjepa.data.predictive_state import sha256_path, validate_reasoning_bundle
 from textjepa.planning.predictive_state import (
     DirectValueModel,
-    GoalDistanceModel,
     goal_distance_loss,
+    make_goal_distance_model,
 )
 
 
@@ -25,6 +25,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--geometry-size", type=int, default=128)
+    parser.add_argument(
+        "--distance-kind", choices=("euclidean", "quasimetric"),
+        default="euclidean",
+    )
     parser.add_argument("--steps", type=int, default=5000)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=0)
@@ -56,7 +60,7 @@ def tensors(record: dict, device: str) -> dict:
 
 @torch.no_grad()
 def evaluate(distance_model, value_model, records, train_ids, device: str) -> dict:
-    trajectories, value_logits, labels = [], [], []
+    trajectories, value_logits, distance_values, labels = [], [], [], []
     for record in records:
         if str(record["problem_id"]) in train_ids:
             continue
@@ -68,14 +72,32 @@ def evaluate(distance_model, value_model, records, train_ids, device: str) -> di
         budget = batch["remaining"] / batch["remaining"].max().clamp_min(1)
         logit = value_model(batch["state"], batch["prompt"], budget)
         value_logits.append(logit[valid].cpu())
+        distance_values.append(distance[valid].cpu())
         labels.append(torch.full_like(logit[valid].cpu(), float(record["correct"])))
     progress = progress_metrics(trajectories)
     if value_logits:
         logits = torch.cat(value_logits)
+        distance = torch.cat(distance_values)
         target = torch.cat(labels)
+        distance_probability = torch.exp(-distance).clamp(1e-6, 1 - 1e-6)
+        distance_logit = torch.logit(distance_probability)
+        hybrid = logits - distance
+        direct_bce = F.binary_cross_entropy_with_logits(logits, target)
+        hybrid_bce = F.binary_cross_entropy_with_logits(hybrid, target)
         progress.update({
-            "direct_value_bce": float(F.binary_cross_entropy_with_logits(logits, target)),
+            "distance_value_bce": float(
+                F.binary_cross_entropy_with_logits(distance_logit, target)
+            ),
+            "distance_value_accuracy": float(
+                ((distance_logit >= 0) == target.bool()).float().mean()
+            ),
+            "direct_value_bce": float(direct_bce),
             "direct_value_accuracy": float(((logits >= 0) == target.bool()).float().mean()),
+            "hybrid_value_bce": float(hybrid_bce),
+            "hybrid_value_accuracy": float(
+                ((hybrid >= 0) == target.bool()).float().mean()
+            ),
+            "hybrid_bce_improvement_over_direct": float(direct_bce - hybrid_bce),
             "value_examples": len(target),
         })
     return progress
@@ -95,7 +117,9 @@ def main() -> None:
     if not train_records:
         raise ValueError("no training trajectories")
     width = int(train_records[0]["states"].shape[-1])
-    distance_model = GoalDistanceModel(width, args.geometry_size).to(args.device)
+    distance_model = make_goal_distance_model(
+        args.distance_kind, width, args.geometry_size
+    ).to(args.device)
     value_model = DirectValueModel(width).to(args.device)
     optimizer = torch.optim.AdamW(
         list(distance_model.parameters()) + list(value_model.parameters()),
@@ -145,6 +169,7 @@ def main() -> None:
         "kind": "predictive_state_goal_distance_and_value_v1",
         "state_size": width,
         "geometry_size": args.geometry_size,
+        "distance_kind": args.distance_kind,
         "features_sha256": sha256_path(args.features),
         "features_metadata": payload["metadata"],
         "distance_model": distance_model.state_dict(),

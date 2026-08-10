@@ -58,6 +58,9 @@ def sample_features(model, capture, dataset, *, source_layers, target_layer,
         tokens = torch.stack([
             dataset[int(index)]["input_ids"] for index in indices
         ]).to(device)
+        position_ids = torch.stack([
+            dataset[int(index)]["position_ids"] for index in indices
+        ]).to(device)
         target_mask = torch.stack([
             dataset[int(index)]["target_mask"] for index in indices
         ])
@@ -70,7 +73,8 @@ def sample_features(model, capture, dataset, *, source_layers, target_layer,
         if not bool(target_mask[:, begin:anchor + horizon].all()):
             continue
         exact = teacher_forward(
-            model, tokens, capture=capture, attention_mask=None, use_cache=False
+            model, tokens, capture=capture, attention_mask=None,
+            position_ids=position_ids, use_cache=False,
         )
         state_history = torch.cat([
             exact.states[layer][:, begin:anchor + 1]

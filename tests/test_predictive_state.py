@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+import pytest
 
 from textjepa.analysis.predictive_state import (
     effective_rank,
@@ -9,8 +10,11 @@ from textjepa.analysis.predictive_state import (
     spearman,
 )
 from textjepa.data.predictive_state import (
+    REASONING_STATE_SCHEMA,
     pack_documents,
+    split_wikitext_articles,
     split_whitespace_documents,
+    validate_reasoning_bundle,
 )
 from textjepa.models.action_transition import (
     ActionConditionedTransition,
@@ -19,7 +23,7 @@ from textjepa.models.action_transition import (
     TransitionConfig,
     install_upper_lora,
 )
-from textjepa.objectives.predictive_state import transition_loss
+from textjepa.objectives.predictive_state import stage1_loss, transition_loss
 from textjepa.planning.predictive_state import (
     GoalDistanceModel,
     block_beam_search,
@@ -27,10 +31,21 @@ from textjepa.planning.predictive_state import (
     potential_shaped_reward,
 )
 from textjepa.training.predictive_state import (
+    UpperStackRunner,
+    active_segment_key_mask,
     dense_stage1_prediction,
+    generate_jump_trajectory,
     recurrent_rollout_loss,
     teacher_forward,
 )
+from scripts.evaluate_action_transition_rollout import (
+    full_greedy_decode,
+    speculative_greedy_decode,
+)
+from scripts.collect_predictive_state_reasoning import prompt_state_index
+from scripts.probe_predictive_state_goal_geometry import goal_specificity_controls
+from scripts.plan_predictive_state_blocks import answers_equal, generate_jump_candidates
+from scripts.build_predictive_state_shaped_rewards import calibrate_potential_weight
 
 
 def test_document_packing_masks_only_cross_document_transition():
@@ -43,11 +58,109 @@ def test_document_packing_masks_only_cross_document_transition():
     ]
 
 
+def test_document_packing_resets_positions_to_block_cross_document_attention():
+    packed = pack_documents(
+        [[1, 2], [3, 4]], context_length=6, eos_token_id=9
+    )
+    assert packed["position_ids"].tolist() == [[0, 1, 2, 0, 1, 2]]
+
+
 def test_whitespace_only_lines_split_wikitext_documents():
     text = " \n = Heading = \n \n First paragraph.\n \t\nSecond paragraph.\n"
     assert split_whitespace_documents(text) == [
         "= Heading =", "First paragraph.", "Second paragraph."
     ]
+
+
+def test_wikitext_article_split_keeps_paragraph_context():
+    text = " = A = \n \n first\n \nsecond\n \n = B = \n \nthird\n"
+    assert split_wikitext_articles(text) == [
+        "= A =\n\nfirst\n\nsecond", "= B =\n\nthird"
+    ]
+
+
+def _reasoning_payload(record_overrides=None):
+    record = {
+        "problem_id": "p1", "trajectory_id": "t1",
+        "prompt_state": torch.zeros(4),
+        "states": torch.zeros(3, 4),
+        "valid": torch.ones(3, dtype=torch.bool),
+        "remaining_chunks": torch.tensor([2.0, 1.0, 0.0]),
+        "correct": True, "terminal_index": 2,
+    }
+    record.update(record_overrides or {})
+    return {
+        "schema_version": REASONING_STATE_SCHEMA,
+        "metadata": {
+            "model_id": "m", "model_revision": "r",
+            "checkpoint_fingerprint": "f",
+            "oracle_terminal_states": True,
+            "candidate_privileged_outcomes": True,
+            "cross_project_information": False,
+        },
+        "records": [record],
+    }
+
+
+@pytest.mark.parametrize("payload", [
+    {
+        "schema_version": REASONING_STATE_SCHEMA,
+        "metadata": {
+            "model_id": "m", "model_revision": "r",
+            "checkpoint_fingerprint": "f",
+            "oracle_terminal_states": True,
+            "candidate_privileged_outcomes": True,
+            "cross_project_information": False,
+        },
+        "records": [],
+    },
+    _reasoning_payload({"terminal_index": 3}),
+    _reasoning_payload({"terminal_index": 1, "valid": torch.tensor([True, False, True])}),
+    _reasoning_payload({"prompt_state": torch.zeros(5)}),
+    _reasoning_payload({"states": torch.tensor([
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, float("nan"), 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0],
+    ])}),
+])
+def test_reasoning_bundle_rejects_empty_or_malformed_records(payload):
+    with pytest.raises(ValueError):
+        validate_reasoning_bundle(payload)
+
+
+def test_prompt_state_index_uses_joint_token_offsets():
+    # The final token straddles the prompt/trajectory boundary and must not be
+    # treated as a pure prompt state.
+    assert prompt_state_index([(0, 2), (2, 5), (5, 8)], 6) == 1
+
+
+def test_oracle_probe_reports_all_goal_specificity_controls():
+    def record(problem, trajectory, answer, offset):
+        states = torch.tensor([
+            [3.0 + offset, 0.0], [1.0 + offset, 0.0], [offset, 0.0]
+        ])
+        return {
+            "problem_id": problem, "trajectory_id": trajectory,
+            "states": states, "valid": torch.ones(3, dtype=torch.bool),
+            "terminal_index": 2, "correct": True, "answer": answer,
+        }
+    records = [
+        record("p1", "a", "7", 0.0),
+        record("p1", "b", "7", 0.1),
+        record("p2", "c", "7", 1.0),
+        record("p3", "d", "9", 2.0),
+    ]
+    controls = goal_specificity_controls(
+        records, test_ids={"p1", "p2", "p3"}, transform=None,
+        kind="euclidean", mean=None,
+    )
+    assert set(controls) == {
+        "another_correct_same_problem", "different_problem_same_answer",
+        "random_terminal", "same_relative_position_other_trajectory",
+    }
+    assert controls["another_correct_same_problem"]["pairs"] == 2
+    assert controls["different_problem_same_answer"]["pairs"] == 3
+    assert controls["random_terminal"]["pairs"] == 4
 
 
 def test_transition_detaches_action_but_not_state_and_records_capacity():
@@ -104,6 +217,9 @@ def test_action_only_and_no_action_interfaces_are_distinct():
     assert sum(p.numel() for p in no_action.parameters()) == sum(
         p.numel() for p in full.parameters()
     )
+    assert sum(p.numel() for p in action_only.parameters()) == sum(
+        p.numel() for p in full.parameters()
+    )
 
 
 def test_transition_loss_separates_direction_and_scale():
@@ -114,6 +230,29 @@ def test_transition_loss_separates_direction_and_scale():
     assert equal_direction.scale.item() > 0
     exact = transition_loss(target, target, mask)
     assert exact.total.item() < 1e-6
+
+
+def test_stage1_scale_coefficient_is_not_multiplied_by_prediction_weight():
+    logits = torch.randn(1, 3, 7)
+    tokens = torch.tensor([[1, 2, 3]])
+    mask = torch.ones(1, 2, dtype=torch.bool)
+    target = torch.randn(1, 2, 8)
+    prediction = 3.0 * target.roll(1, dims=-1)
+    result = stage1_loss(
+        logits=logits,
+        input_ids=tokens,
+        target_mask=mask,
+        prediction=prediction,
+        target_state=target,
+        prediction_weight=0.1,
+        scale_weight=0.01,
+    )
+    expected = (
+        result.ntp
+        + 0.1 * result.transition.cosine
+        + 0.01 * result.transition.scale
+    )
+    torch.testing.assert_close(result.total, expected)
 
 
 class _Attention(nn.Module):
@@ -202,6 +341,14 @@ def test_potential_shaping_uses_negative_distance_potential_and_clips():
     torch.testing.assert_close(shaped, torch.tensor([0.1, 1.1]))
 
 
+def test_shaping_budget_uses_one_global_fixed_weight():
+    weight = calibrate_potential_weight(
+        [torch.tensor([4.0, -6.0]), torch.tensor([1.0, 1.0])],
+        requested_weight=0.2, maximum_absolute_return=0.5,
+    )
+    assert weight == 0.05
+
+
 def test_block_beam_keeps_highest_scored_leaf():
     def generate(latent, tokens, count):
         chunks = torch.arange(count).view(1, count, 1).repeat(len(tokens), 1, 1)
@@ -221,6 +368,27 @@ def test_block_beam_keeps_highest_scored_leaf():
     )
     assert result.tokens.shape == (2, 2)
     assert result.score[0] >= result.score[1]
+
+
+def test_block_beam_never_mixes_independent_batch_roots():
+    def generate(latent, tokens, count):
+        chunks = torch.arange(count).view(1, count, 1).repeat(len(tokens), 1, 1)
+        return chunks, torch.zeros(len(tokens), count)
+
+    def advance(latent, chunks):
+        return latent + chunks.float()
+
+    def score(latent, _tokens, _cumulative):
+        return latent[:, 0]
+
+    result = block_beam_search(
+        initial_latent=torch.tensor([[0.0], [100.0]]),
+        initial_tokens=torch.zeros(2, 0, dtype=torch.long),
+        generate_candidates=generate, advance=advance, score_leaves=score,
+        beam_width=2, candidates_per_beam=3, chunk_length=1, depth=1,
+    )
+    assert result.root_ids.tolist() == [0, 0, 1, 1]
+    assert result.tokens[:, 0].tolist() == [2, 1, 2, 1]
 
 
 def test_progress_and_rank_metrics_have_expected_direction():
@@ -268,3 +436,113 @@ def test_tiny_qwen_teacher_and_recurrent_upper_stack():
     assert torch.isfinite(rollout.total)
     assert len(rollout.per_step) == 3
     assert 0 <= rollout.top20_agreement <= 1
+
+
+def test_upper_stack_accepts_per_example_positions_and_key_mask():
+    transformers = __import__("transformers")
+    model = transformers.Qwen2ForCausalLM(transformers.Qwen2Config(
+        vocab_size=32, hidden_size=16, intermediate_size=32,
+        num_hidden_layers=4, num_attention_heads=4,
+        num_key_value_heads=2, max_position_embeddings=64,
+        layer_types=["full_attention"] * 4,
+    )).eval()
+    tokens = torch.randint(0, 32, (2, 3))
+    cache = model(tokens, use_cache=True, return_dict=True).past_key_values
+    runner = UpperStackRunner(model, target_layer=2, source_layers=(3, 4))
+    states, logits = runner.step(
+        torch.randn(2, 1, 16), past_key_values=cache,
+        position_index=torch.tensor([[3], [7]]),
+        key_valid=torch.tensor([
+            [True, True, True, True],
+            [False, True, True, True],
+        ]),
+    )
+    assert states[4].shape == (2, 1, 16)
+    assert logits.shape == (2, 1, 32)
+
+
+def test_jump_trajectory_retains_each_visited_source_state():
+    transformers = __import__("transformers")
+    model = transformers.Qwen2ForCausalLM(transformers.Qwen2Config(
+        vocab_size=32, hidden_size=16, intermediate_size=32,
+        num_hidden_layers=4, num_attention_heads=4,
+        num_key_value_heads=2, max_position_embeddings=64,
+        layer_types=["full_attention"] * 4,
+    )).eval()
+    predictor = ActionConditionedTransition(TransitionConfig(
+        hidden_size=16, source_layers=(3, 4), target_layer=2,
+        action_dim=16, variant="full",
+    )).eval()
+    capture = ResidualCapture(model, (2, 3, 4))
+    actions, states = generate_jump_trajectory(
+        model=model, predictor=predictor,
+        prompt_ids=torch.randint(0, 32, (2, 3)), action_count=5,
+        capture=capture, temperature=0.0,
+    )
+    assert actions.shape == (2, 5)
+    assert states[3].shape == states[4].shape == (2, 5, 16)
+    assert not states[3].requires_grad
+    capture.__exit__(None, None, None)
+
+
+def test_active_segment_mask_excludes_prior_packed_documents():
+    positions = torch.tensor([
+        [0, 1, 2, 0, 1, 2],
+        [0, 1, 2, 3, 4, 5],
+    ])
+    assert active_segment_key_mask(positions, 4).tolist() == [
+        [False, False, False, True, True],
+        [True, True, True, True, True],
+    ]
+
+
+def test_speculative_jump_verification_preserves_exact_greedy_tokens():
+    transformers = __import__("transformers")
+    model = transformers.Qwen2ForCausalLM(transformers.Qwen2Config(
+        vocab_size=32, hidden_size=16, intermediate_size=32,
+        num_hidden_layers=4, num_attention_heads=4,
+        num_key_value_heads=2, max_position_embeddings=64,
+        layer_types=["full_attention"] * 4,
+    )).eval()
+    predictor = ActionConditionedTransition(TransitionConfig(
+        hidden_size=16, source_layers=(3, 4), target_layer=2,
+        action_dim=16, variant="full",
+    )).eval()
+    capture = ResidualCapture(model, (2, 3, 4))
+    prompt = torch.randint(0, 32, (1, 4))
+    expected = full_greedy_decode(model, prompt, 5)
+    actual, statistics = speculative_greedy_decode(
+        model, predictor, capture, prompt, 5, draft_length=2
+    )
+    torch.testing.assert_close(actual, expected)
+    assert statistics["verifier_passes"] >= 1
+    capture.__exit__(None, None, None)
+
+
+def test_jump_planning_generates_actions_and_leaves_on_recurrent_path():
+    transformers = __import__("transformers")
+    model = transformers.Qwen2ForCausalLM(transformers.Qwen2Config(
+        vocab_size=32, hidden_size=16, intermediate_size=32,
+        num_hidden_layers=4, num_attention_heads=4,
+        num_key_value_heads=2, max_position_embeddings=64,
+        layer_types=["full_attention"] * 4,
+    )).eval()
+    predictor = ActionConditionedTransition(TransitionConfig(
+        hidden_size=16, source_layers=(3, 4), target_layer=2,
+        action_dim=16, variant="full",
+    )).eval()
+    capture = ResidualCapture(model, (2, 3, 4))
+    chunks, log_probability, leaves = generate_jump_candidates(
+        model, predictor, capture, torch.randint(0, 32, (1, 3)),
+        torch.randint(0, 32, (1, 2)), count=3, length=4,
+        temperature=0.8, top_p=0.95,
+    )
+    assert chunks.shape == (3, 4)
+    assert log_probability.shape == (3,)
+    assert leaves.shape == (3, 32)
+    capture.__exit__(None, None, None)
+
+
+def test_numeric_verifier_accepts_equivalent_answer_formats():
+    assert answers_equal("1,024.0", "1024")
+    assert not answers_equal("1024", "1025")

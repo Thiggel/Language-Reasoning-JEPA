@@ -10,6 +10,9 @@
   smaller no-action cell retained only as an operational precursor.
 - `2026-08-10-qwen-frozen-transition-diagnostic-v4`: completed
   capacity-matched no-action control; this is the admitted comparison cell.
+- `2026-08-10-qwen-frozen-transition-diagnostic-v5`: corrected independent
+  scale weighting, packed document attention, full versus equal-capacity
+  action-only; pending/active audit comparison.
 - `qwen-stage1-screen-*`: 20M-token upper-half rank-16 LoRA controls.
 - `olmo1b-stage1-main-*`: 100M-token three-seed main comparison.
 - `olmo1b-stage2-h{1,4,8,16,32}-*`: recurrent rollout curriculum.

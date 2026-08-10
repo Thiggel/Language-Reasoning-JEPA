@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import Path
+import re
 from typing import Any, Iterable, Sequence
 
 import torch
@@ -45,6 +46,22 @@ def split_whitespace_documents(text: str) -> list[str]:
     if current:
         documents.append("\n".join(current))
     return documents
+
+
+def split_wikitext_articles(text: str) -> list[str]:
+    """Group WikiText paragraphs by top-level `= Article =` headings."""
+    paragraphs = split_whitespace_documents(text)
+    articles: list[str] = []
+    current: list[str] = []
+    top_level = re.compile(r"^= [^=].* =$")
+    for paragraph in paragraphs:
+        if top_level.fullmatch(paragraph) and current:
+            articles.append("\n\n".join(current))
+            current = []
+        current.append(paragraph)
+    if current:
+        articles.append("\n\n".join(current))
+    return articles
 
 
 def pack_documents(
@@ -93,7 +110,28 @@ def pack_documents(
         "input_ids": input_ids,
         "attention_mask": torch.ones_like(input_ids, dtype=torch.bool),
         "target_mask": target_mask,
+        # Transformers 5 recognizes a reset in position_ids as a packed
+        # sequence boundary and constructs a block-diagonal causal mask. This
+        # prevents states in one document from reading a preceding document.
+        # A context block is itself a context boundary, so positions restart
+        # at zero even when a long source document spans adjacent blocks.
+        "position_ids": packed_position_ids(target_mask),
     }
+
+
+def packed_position_ids(target_mask: torch.Tensor) -> torch.Tensor:
+    """Build per-block positions, resetting after every masked transition."""
+    if target_mask.ndim != 2:
+        raise ValueError("target_mask must be B x (T-1)")
+    positions = torch.zeros(
+        target_mask.shape[0], target_mask.shape[1] + 1, dtype=torch.long,
+        device=target_mask.device,
+    )
+    for index in range(1, positions.shape[1]):
+        positions[:, index] = torch.where(
+            target_mask[:, index - 1], positions[:, index - 1] + 1, 0
+        )
+    return positions
 
 
 class TokenBlockDataset(Dataset):
@@ -115,6 +153,13 @@ class TokenBlockDataset(Dataset):
             raise ValueError("input_ids and attention_mask must be B x T")
         if target.shape != (inputs.shape[0], inputs.shape[1] - 1):
             raise ValueError("target_mask must align adjacent token pairs")
+        positions = data.get("position_ids")
+        if positions is None:
+            # Backward-compatible repair for v1 corpora prepared before
+            # packed-attention isolation was enforced.
+            data["position_ids"] = packed_position_ids(target)
+        elif positions.shape != inputs.shape or positions.dtype != torch.long:
+            raise ValueError("position_ids must be long B x T tensors")
         self.data = data
 
     def __len__(self) -> int:
@@ -168,7 +213,18 @@ def validate_reasoning_bundle(payload: dict[str, Any]) -> None:
     }
     if not required_metadata <= metadata.keys():
         raise ValueError("reasoning bundle lacks information-scope labels")
-    for record in payload.get("records", []):
+    for key in (
+        "oracle_terminal_states", "candidate_privileged_outcomes",
+        "cross_project_information",
+    ):
+        if not isinstance(metadata[key], bool):
+            raise ValueError(f"metadata {key} must be boolean")
+    records = payload.get("records")
+    if not isinstance(records, list) or not records:
+        raise ValueError("reasoning bundle must contain records")
+    width = None
+    trajectory_ids: set[str] = set()
+    for record in records:
         required = {
             "problem_id", "trajectory_id", "prompt_state", "states",
             "valid", "remaining_chunks", "correct", "terminal_index",
@@ -176,10 +232,48 @@ def validate_reasoning_bundle(payload: dict[str, Any]) -> None:
         if not required <= record.keys():
             raise ValueError("reasoning state record is incomplete")
         states = record["states"]
-        if states.ndim != 2 or record["valid"].shape != states.shape[:1]:
+        prompt = record["prompt_state"]
+        valid = record["valid"]
+        remaining = record["remaining_chunks"]
+        if not all(isinstance(value, torch.Tensor) for value in (
+            states, prompt, valid, remaining
+        )):
+            raise ValueError("reasoning state values must be tensors")
+        if states.ndim != 2 or valid.shape != states.shape[:1]:
             raise ValueError("reasoning states must be chunks x width")
-        if record["remaining_chunks"].shape != states.shape[:1]:
+        if len(states) < 1 or states.shape[1] < 1:
+            raise ValueError("reasoning state record cannot be empty")
+        if prompt.shape != states.shape[1:]:
+            raise ValueError("prompt and trajectory state widths differ")
+        if remaining.shape != states.shape[:1]:
             raise ValueError("remaining-chunk targets do not align")
+        if valid.dtype != torch.bool:
+            raise ValueError("reasoning validity mask must be boolean")
+        if not bool(valid.any()):
+            raise ValueError("reasoning record has no valid state")
+        if not torch.isfinite(states).all() or not torch.isfinite(prompt).all():
+            raise ValueError("reasoning states must be finite")
+        if not torch.isfinite(remaining).all() or bool((remaining < 0).any()):
+            raise ValueError("remaining-chunk targets must be finite and nonnegative")
+        if not isinstance(record["correct"], bool):
+            raise ValueError("correctness label must be boolean")
+        terminal = record["terminal_index"]
+        if not isinstance(terminal, int) or not 0 <= terminal < len(states):
+            raise ValueError("terminal index is outside the state sequence")
+        if not bool(valid[terminal]):
+            raise ValueError("terminal state must be valid")
+        if float(remaining[terminal]) != 0.0:
+            raise ValueError("terminal state must have zero remaining chunks")
+        current_width = int(states.shape[1])
+        width = current_width if width is None else width
+        if current_width != width:
+            raise ValueError("reasoning bundle mixes state widths")
+        trajectory_id = str(record["trajectory_id"])
+        if not str(record["problem_id"]) or not trajectory_id:
+            raise ValueError("problem and trajectory IDs must be non-empty")
+        if trajectory_id in trajectory_ids:
+            raise ValueError("trajectory IDs must be unique")
+        trajectory_ids.add(trajectory_id)
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:

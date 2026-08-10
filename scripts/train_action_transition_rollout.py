@@ -18,16 +18,23 @@ from textjepa.models.action_transition import (
     lora_parameters,
     trainable_state_dict,
 )
+from textjepa.objectives.predictive_state import transition_loss
 from textjepa.training.predictive_state import (
-    generate_jump_actions,
-    load_stage1_checkpoint,
+    generate_jump_trajectory,
+    load_transition_checkpoint,
     recurrent_rollout_loss,
+    teacher_forward,
+    transition_prediction,
 )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage1-checkpoint", type=Path, required=True)
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument(
+        "--stage1-checkpoint", type=Path,
+        help="deprecated alias for --checkpoint",
+    )
     parser.add_argument("--token-blocks", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--horizon", type=int, required=True)
@@ -41,6 +48,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--discount", type=float, default=0.97)
     parser.add_argument("--ce-weight", type=float, default=0.1)
     parser.add_argument("--on-policy-fraction", type=float, default=0.0)
+    parser.add_argument("--replay-length", type=int, default=96)
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--clip-grad", type=float, default=1.0)
@@ -60,7 +68,7 @@ def schedule(step: int, total: int, warmup: int) -> float:
 
 def sample_valid_batch(dataset, *, size: int, sequence_length: int | None,
                        horizon: int, generator: torch.Generator,
-                       device: str) -> tuple[torch.Tensor, int]:
+                       device: str) -> tuple[torch.Tensor, torch.Tensor, int]:
     for _ in range(128):
         indices = torch.randint(len(dataset), (size,), generator=generator)
         inputs = torch.stack([
@@ -69,9 +77,13 @@ def sample_valid_batch(dataset, *, size: int, sequence_length: int | None,
         target_mask = torch.stack([
             dataset[int(index)]["target_mask"] for index in indices
         ])
+        position_ids = torch.stack([
+            dataset[int(index)]["position_ids"] for index in indices
+        ])
         if sequence_length is not None:
             inputs = inputs[:, :sequence_length]
             target_mask = target_mask[:, :sequence_length - 1]
+            position_ids = position_ids[:, :sequence_length]
         maximum_start = inputs.shape[1] - horizon - 2
         if maximum_start < 0:
             raise ValueError("sequence is shorter than horizon plus two")
@@ -79,27 +91,31 @@ def sample_valid_batch(dataset, *, size: int, sequence_length: int | None,
             maximum_start + 1, (), generator=generator
         ))
         if bool(target_mask[:, start:start + horizon + 1].all()):
-            return inputs.to(device), start
+            return inputs.to(device), position_ids.to(device), start
     raise RuntimeError("could not sample a rollout that stays within documents")
 
 
 def save(path: Path, *, model, predictor, payload, args, step, history) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    base = (
+        payload["stage1_payload"]
+        if payload["kind"] == "action_conditioned_cross_layer_stage2"
+        else {key: payload[key] for key in (
+            "model_id", "model_revision", "variant", "transition_config", "lora"
+        )}
+    )
     torch.save({
         "schema_version": 1,
         "kind": "action_conditioned_cross_layer_stage2",
-        "stage1_checkpoint": str(args.stage1_checkpoint),
-        "stage1_sha256": sha256_path(args.stage1_checkpoint),
-        "stage1_payload": {
-            key: payload[key] for key in (
-                "model_id", "model_revision", "variant", "transition_config", "lora"
-            )
-        },
+        "initial_checkpoint": str(args.checkpoint),
+        "initial_checkpoint_kind": payload["kind"],
+        "initial_checkpoint_sha256": sha256_path(args.checkpoint),
+        "stage1_payload": base,
         "step": step,
         "horizon": args.horizon,
         "training": {
             **vars(args),
-            "stage1_checkpoint": str(args.stage1_checkpoint),
+            "checkpoint": str(args.checkpoint),
             "token_blocks": str(args.token_blocks),
             "output": str(args.output),
         },
@@ -110,6 +126,9 @@ def save(path: Path, *, model, predictor, payload, args, step, history) -> None:
 
 def main() -> None:
     args = parse_args()
+    if (args.checkpoint is None) == (args.stage1_checkpoint is None):
+        raise ValueError("provide exactly one of --checkpoint or --stage1-checkpoint")
+    args.checkpoint = args.checkpoint or args.stage1_checkpoint
     args.output = args.output or (
         Path(os.environ["RUN_DIR"]) / "model" if "RUN_DIR" in os.environ else None
     )
@@ -121,10 +140,12 @@ def main() -> None:
         raise ValueError("on-policy fraction must be in [0, 1]")
     if args.horizon < 16 and args.on_policy_fraction:
         raise ValueError("generated-prefix replay starts at horizon 16")
+    if args.on_policy_fraction and not 64 <= args.replay_length <= 128:
+        raise ValueError("replay length must be in [64, 128]")
     dtype = getattr(torch, args.dtype)
     torch.manual_seed(args.seed)
-    model, predictor, stage1 = load_stage1_checkpoint(
-        args.stage1_checkpoint, device=args.device, dtype=dtype
+    model, predictor, initial_payload = load_transition_checkpoint(
+        args.checkpoint, device=args.device, dtype=dtype
     )
     if predictor is None:
         raise ValueError("NTP-only checkpoint has no recurrent transition")
@@ -165,8 +186,11 @@ def main() -> None:
             "excess_nll", "top1_agreement", "top20_agreement", "log_rms_drift"
         )}
         replay_batches = 0
+        rollout_batches = 0
+        replay_cosine = 0.0
+        replay_scale = 0.0
         for _ in range(args.gradient_accumulation):
-            inputs, start = sample_valid_batch(
+            inputs, position_ids, start = sample_valid_batch(
                 dataset, size=args.microbatch_size,
                 sequence_length=args.sequence_length, horizon=args.horizon,
                 generator=generator, device=args.device,
@@ -174,25 +198,60 @@ def main() -> None:
             use_replay = torch.rand((), generator=generator).item() < args.on_policy_fraction
             if use_replay:
                 prompt = inputs[:, :start + 1]
-                actions = generate_jump_actions(
+                actions, visited_sources = generate_jump_trajectory(
                     model=model, predictor=predictor, prompt_ids=prompt,
-                    action_count=args.horizon + 1, capture=capture,
+                    action_count=args.replay_length, capture=capture,
+                    position_ids=position_ids[:, :start + 1],
                     temperature=args.temperature, top_p=args.top_p,
                 )
                 inputs = torch.cat([prompt, actions], dim=1)
+                position_ids = torch.cat([
+                    position_ids[:, :start + 1],
+                    position_ids[:, start:start + 1]
+                    + torch.arange(
+                        1, actions.shape[1] + 1, device=args.device
+                    )[None],
+                ], dim=1)
                 replay_batches += 1
-            with torch.autocast(
-                device_type="cuda", dtype=dtype,
-                enabled=args.device.startswith("cuda") and dtype != torch.float32,
-            ):
-                losses = recurrent_rollout_loss(
-                    model=model, predictor=predictor, input_ids=inputs,
-                    start_index=start, horizon=args.horizon, capture=capture,
-                    discount=args.discount, ce_weight=args.ce_weight,
-                )
-            scaler.scale(losses.total / args.gradient_accumulation).backward()
-            for key in sums:
-                sums[key] += float(getattr(losses, key).detach())
+                with torch.no_grad():
+                    exact = teacher_forward(
+                        model, inputs, capture=capture, attention_mask=None,
+                        position_ids=position_ids, use_cache=False,
+                    )
+                    targets = exact.states[predictor.config.target_layer][
+                        :, start + 1:start + 1 + args.replay_length
+                    ].detach()
+                with torch.autocast(
+                    device_type="cuda", dtype=dtype,
+                    enabled=args.device.startswith("cuda") and dtype != torch.float32,
+                ):
+                    predictions = transition_prediction(
+                        predictor, model, visited_sources, actions
+                    )
+                    correction = transition_loss(
+                        predictions, targets,
+                        torch.ones_like(actions, dtype=torch.bool),
+                        scale_weight=0.01,
+                    )
+                batch_loss = correction.total
+                replay_cosine += float(correction.cosine.detach())
+                replay_scale += float(correction.scale.detach())
+            else:
+                with torch.autocast(
+                    device_type="cuda", dtype=dtype,
+                    enabled=args.device.startswith("cuda") and dtype != torch.float32,
+                ):
+                    losses = recurrent_rollout_loss(
+                        model=model, predictor=predictor, input_ids=inputs,
+                        start_index=start, horizon=args.horizon, capture=capture,
+                        position_ids=position_ids,
+                        discount=args.discount, ce_weight=args.ce_weight,
+                    )
+                batch_loss = losses.total
+                rollout_batches += 1
+                for key in sums:
+                    sums[key] += float(getattr(losses, key).detach())
+            scaler.scale(batch_loss / args.gradient_accumulation).backward()
         scaler.unscale_(optimizer)
         parameters = [parameter for group in groups for parameter in group["params"]]
         grad_norm = torch.nn.utils.clip_grad_norm_(parameters, args.clip_grad)
@@ -201,8 +260,18 @@ def main() -> None:
         scheduler.step()
         row = {
             "step": step,
-            **{key: value / args.gradient_accumulation for key, value in sums.items()},
+            **{
+                key: (value / rollout_batches if rollout_batches else None)
+                for key, value in sums.items()
+            },
             "generated_replay_batches": replay_batches,
+            "teacher_rollout_batches": rollout_batches,
+            "replay_cosine": (
+                replay_cosine / replay_batches if replay_batches else None
+            ),
+            "replay_scale": (
+                replay_scale / replay_batches if replay_batches else None
+            ),
             "grad_norm": float(grad_norm),
             "learning_rates": scheduler.get_last_lr(),
             "elapsed_seconds": perf_counter() - started,
@@ -213,14 +282,16 @@ def main() -> None:
         if step % args.save_every == 0 or step == args.steps:
             save(
                 args.output / "last.pt", model=model, predictor=predictor,
-                payload=stage1, args=args, step=step, history=history,
+                payload=initial_payload, args=args, step=step, history=history,
             )
     metrics = {
         "schema_version": 1,
         "status": "completed",
         "horizon": args.horizon,
         "on_policy_fraction": args.on_policy_fraction,
-        "stage1_sha256": sha256_path(args.stage1_checkpoint),
+        "initial_checkpoint": str(args.checkpoint),
+        "initial_checkpoint_kind": initial_payload["kind"],
+        "initial_checkpoint_sha256": sha256_path(args.checkpoint),
         "dataset_metadata": metadata,
         "history": history,
         "wall_seconds": perf_counter() - started,

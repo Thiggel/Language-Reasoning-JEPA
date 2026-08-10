@@ -81,6 +81,14 @@ class TransitionConfig:
             return (self.source_layers[-1],)
         return self.source_layers
 
+    @property
+    def parameter_source_layers(self) -> tuple[int, ...]:
+        # action_only retains zero-valued state channels so that a failure to
+        # match the full predictor cannot be attributed to lower capacity.
+        if self.variant in {"nitp", "same_layer"}:
+            return (self.source_layers[-1],)
+        return self.source_layers
+
 
 class ActionConditionedTransition(nn.Module):
     """Bias-free projected-state/action SwiGLU transition.
@@ -95,14 +103,14 @@ class ActionConditionedTransition(nn.Module):
         projection = config.d_projection
         self.state_projections = nn.ModuleDict({
             str(layer): nn.Linear(config.hidden_size, projection, bias=False)
-            for layer in config.used_source_layers
+            for layer in config.parameter_source_layers
         })
         self.action_projection = None
         if config.has_action_channel:
             self.action_projection = nn.Linear(
                 config.action_dim or config.hidden_size, projection, bias=False
             )
-        parts = len(config.used_source_layers) + int(config.has_action_channel)
+        parts = len(config.parameter_source_layers) + int(config.has_action_channel)
         if parts < 1:
             raise ValueError("transition has no inputs")
         input_size = parts * projection
@@ -127,12 +135,20 @@ class ActionConditionedTransition(nn.Module):
     ) -> torch.Tensor:
         pieces = []
         output_dtype = None
-        for layer in self.config.used_source_layers:
-            if layer not in sources:
-                raise KeyError(f"missing source residual from layer {layer}")
-            normalized = parameter_free_rms_norm(
-                sources[layer], self.config.eps
-            )
+        for layer in self.config.parameter_source_layers:
+            if self.config.variant == "action_only":
+                if action_embedding is None:
+                    raise ValueError("action embedding is required")
+                normalized = torch.zeros(
+                    *action_embedding.shape[:-1], self.config.hidden_size,
+                    dtype=action_embedding.dtype, device=action_embedding.device,
+                )
+            else:
+                if layer not in sources:
+                    raise KeyError(f"missing source residual from layer {layer}")
+                normalized = parameter_free_rms_norm(
+                    sources[layer], self.config.eps
+                )
             output_dtype = output_dtype or normalized.dtype
             projection = self.state_projections[str(layer)]
             pieces.append(projection(normalized.to(projection.weight.dtype)))

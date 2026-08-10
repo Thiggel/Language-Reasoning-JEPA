@@ -67,6 +67,16 @@ class NeuralQuasimetric(nn.Module):
         return (directional_gap * F.softplus(self.weights)).sum(-1)
 
 
+def make_goal_distance_model(
+    kind: str, state_size: int, geometry_size: int = 128
+) -> nn.Module:
+    if kind == "euclidean":
+        return GoalDistanceModel(state_size, geometry_size)
+    if kind == "quasimetric":
+        return NeuralQuasimetric(state_size, geometry_size)
+    raise ValueError(f"unknown goal-distance kind: {kind}")
+
+
 class DirectValueModel(nn.Module):
     """Budget-conditioned success probability baseline."""
 
@@ -190,6 +200,7 @@ class BeamState:
     latent: torch.Tensor
     log_probability_sum: torch.Tensor
     score: torch.Tensor
+    root_ids: torch.Tensor
 
 
 def block_beam_search(
@@ -222,6 +233,8 @@ def block_beam_search(
         raise ValueError("beam settings must be positive")
     latent = initial_latent
     tokens = initial_tokens
+    root_count = len(tokens)
+    root_ids = torch.arange(root_count, device=tokens.device)
     log_sum = torch.zeros(len(tokens), device=tokens.device)
     score = torch.zeros_like(log_sum)
     for _ in range(depth):
@@ -237,19 +250,28 @@ def block_beam_search(
         flat_chunks = candidate_tokens.flatten(0, 1)
         repeated_latent = latent.repeat_interleave(candidates_per_beam, 0)
         repeated_tokens = tokens.repeat_interleave(candidates_per_beam, 0)
+        candidate_roots = root_ids.repeat_interleave(candidates_per_beam)
         leaf = advance(repeated_latent, flat_chunks)
         flat_log = candidate_log_prob.reshape(-1)
         cumulative = log_sum.repeat_interleave(candidates_per_beam) + flat_log
         expanded_tokens = torch.cat([repeated_tokens, flat_chunks], dim=-1)
         leaf_score = score_leaves(leaf, expanded_tokens, cumulative)
-        keep = min(beam_width, len(leaf_score))
-        selected = torch.topk(leaf_score, keep).indices
+        selected_parts = []
+        for root in range(root_count):
+            members = torch.nonzero(candidate_roots == root).flatten()
+            keep = min(beam_width, len(members))
+            if keep:
+                within = torch.topk(leaf_score[members], keep).indices
+                selected_parts.append(members[within])
+        selected = torch.cat(selected_parts)
         latent = leaf[selected]
         tokens = expanded_tokens[selected]
         log_sum = cumulative[selected]
         score = leaf_score[selected]
+        root_ids = candidate_roots[selected]
     return BeamState(tokens=tokens, latent=latent,
-                     log_probability_sum=log_sum, score=score)
+                     log_probability_sum=log_sum, score=score,
+                     root_ids=root_ids)
 
 
 def potential_shaped_reward(

@@ -103,7 +103,7 @@ def sample_batch(dataset, size: int, generator: torch.Generator,
     indices = torch.randint(len(dataset), (size,), generator=generator)
     batch = {
         key: torch.stack([dataset[int(index)][key] for index in indices]).to(device)
-        for key in ("input_ids", "attention_mask", "target_mask")
+        for key in ("input_ids", "attention_mask", "target_mask", "position_ids")
     }
     if sequence_length is not None:
         if sequence_length < 2 or sequence_length > batch["input_ids"].shape[1]:
@@ -111,6 +111,7 @@ def sample_batch(dataset, size: int, generator: torch.Generator,
         batch["input_ids"] = batch["input_ids"][:, :sequence_length]
         batch["attention_mask"] = batch["attention_mask"][:, :sequence_length]
         batch["target_mask"] = batch["target_mask"][:, :sequence_length - 1]
+        batch["position_ids"] = batch["position_ids"][:, :sequence_length]
     return batch
 
 
@@ -147,7 +148,7 @@ def evaluate(model, predictor, dataset, capture, args, generator) -> dict:
         )
         teacher = teacher_forward(
             model, batch["input_ids"], capture=capture,
-            attention_mask=batch["attention_mask"], use_cache=False,
+            attention_mask=None, position_ids=batch["position_ids"], use_cache=False,
         )
         prediction = target = None
         if predictor is not None:
@@ -312,7 +313,6 @@ def main() -> None:
         "cuda", enabled=args.dtype == "float16" and args.device.startswith("cuda")
     )
     train_generator = torch.Generator().manual_seed(args.seed + 101)
-    eval_generator = torch.Generator().manual_seed(args.seed + 202)
     history, evaluations = [], {}
     tokens_seen = 0
     best_transition = float("inf")
@@ -332,7 +332,8 @@ def main() -> None:
             ):
                 teacher = teacher_forward(
                     model, batch["input_ids"], capture=capture,
-                    attention_mask=batch["attention_mask"], use_cache=False,
+                    attention_mask=None, position_ids=batch["position_ids"],
+                    use_cache=False,
                 )
                 prediction = target = None
                 if predictor is not None:
@@ -376,7 +377,8 @@ def main() -> None:
             print(json.dumps(row), flush=True)
         if step % args.eval_every == 0 or step == args.steps:
             result = evaluate(
-                model, predictor, validation_data, capture, args, eval_generator
+                model, predictor, validation_data, capture, args,
+                torch.Generator().manual_seed(args.seed + 202),
             )
             evaluations[str(step)] = result
             print(json.dumps({"step": step, "evaluation": result}), flush=True)

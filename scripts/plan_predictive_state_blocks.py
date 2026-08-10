@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 import re
@@ -15,10 +16,11 @@ from textjepa.models.action_transition import (
     ResidualCapture,
     parameter_free_rms_norm,
 )
+from textjepa.analysis.predictive_state import distance_bellman_residual
 from textjepa.planning.predictive_state import (
     DirectValueModel,
-    GoalDistanceModel,
     candidate_score,
+    make_goal_distance_model,
 )
 from textjepa.training.predictive_state import (
     UpperStackRunner,
@@ -40,6 +42,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidates-per-beam", type=int, default=4)
     parser.add_argument("--chunk-length", type=int, default=8)
     parser.add_argument("--depth", type=int, default=4)
+    parser.add_argument(
+        "--commits", type=int, default=4,
+        help="number of receding-horizon chunks to commit",
+    )
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--alpha", type=float, default=0.2)
@@ -72,39 +78,45 @@ def sample_top_p(logits, temperature, top_p):
 
 
 @torch.no_grad()
-def generate_candidates(model, prefix, *, count, length, temperature, top_p):
+def generate_exact_candidates(
+    model, capture, prefix, source_layers, *,
+    count, length, temperature, top_p,
+):
     sequences = prefix.repeat(count, 1)
     log_sum = torch.zeros(count, device=prefix.device)
     chunks = []
+    output = teacher_forward(
+        model, sequences, capture=capture, attention_mask=None, use_cache=True
+    )
+    cache = output.past_key_values
+    logits = output.logits[:, -1]
     for _ in range(length):
-        logits = model(sequences, use_cache=False, return_dict=True).logits[:, -1]
         token, log_probability = sample_top_p(logits, temperature, top_p)
         sequences = torch.cat([sequences, token], dim=1)
         chunks.append(token[:, 0])
         log_sum += log_probability
-    return torch.stack(chunks, dim=1), log_sum
-
-
-def fused_source(states, source_layers, position=-1):
-    return torch.cat([
-        parameter_free_rms_norm(states[layer][:, position])
-        for layer in source_layers
-    ], dim=-1)
-
-
-@torch.no_grad()
-def exact_leaf(model, capture, tokens, sources):
-    output = teacher_forward(
-        model, tokens, capture=capture, attention_mask=None, use_cache=False
-    )
-    return fused_source(output.states, sources)
+        output = model(
+            input_ids=token, past_key_values=cache,
+            use_cache=True, return_dict=True,
+        )
+        logits = output.logits[:, -1]
+    leaf = fused_source(capture.values, source_layers)
+    return torch.stack(chunks, dim=1), log_sum, leaf
 
 
 @torch.no_grad()
-def jump_leaf(model, predictor, capture, prompt, suffix):
+def generate_jump_candidates(
+    model, predictor, capture, prompt, suffix, *,
+    count, length, temperature, top_p,
+):
+    """Generate candidates and leaves entirely on the recurrent jump path."""
+    repeated_prompt = prompt.repeat(count, 1)
+    repeated_suffix = suffix.repeat(count, 1)
     exact = teacher_forward(
-        model, prompt, capture=capture, attention_mask=None, use_cache=True
+        model, repeated_prompt, capture=capture,
+        attention_mask=None, use_cache=True,
     )
+    cache = exact.past_key_values
     sources = {
         layer: exact.states[layer][:, -1:]
         for layer in predictor.config.used_source_layers
@@ -113,14 +125,40 @@ def jump_leaf(model, predictor, capture, prompt, suffix):
         model, target_layer=predictor.config.target_layer,
         source_layers=predictor.config.source_layers,
     )
-    for offset in range(suffix.shape[1]):
-        action = suffix[:, offset:offset + 1]
+    logits = exact.logits[:, -1]
+    for offset in range(repeated_suffix.shape[1]):
+        action = repeated_suffix[:, offset:offset + 1]
         predicted = transition_prediction(predictor, model, sources, action)
-        sources, _ = runner.step(
-            predicted, past_key_values=exact.past_key_values,
+        sources, output_logits = runner.step(
+            predicted, past_key_values=cache,
             position_index=prompt.shape[1] + offset,
         )
-    return fused_source(sources, predictor.config.source_layers, position=-1)
+        logits = output_logits[:, -1]
+    chunks = []
+    log_sum = torch.zeros(count, device=prompt.device)
+    for offset in range(length):
+        token, log_probability = sample_top_p(logits, temperature, top_p)
+        chunks.append(token[:, 0])
+        log_sum += log_probability
+        predicted = transition_prediction(
+            predictor, model, sources, token
+        )
+        sources, output_logits = runner.step(
+            predicted, past_key_values=cache,
+            position_index=(
+                prompt.shape[1] + repeated_suffix.shape[1] + offset
+            ),
+        )
+        logits = output_logits[:, -1]
+    leaf = fused_source(sources, predictor.config.source_layers)
+    return torch.stack(chunks, dim=1), log_sum, leaf
+
+
+def fused_source(states, source_layers, position=-1):
+    return torch.cat([
+        parameter_free_rms_norm(states[layer][:, position])
+        for layer in source_layers
+    ], dim=-1)
 
 
 def extract_number(text: str) -> str | None:
@@ -131,11 +169,22 @@ def extract_number(text: str) -> str | None:
     return numbers[-1] if numbers else None
 
 
+def answers_equal(predicted: str | None, target: str | None) -> bool:
+    if predicted is None or target is None:
+        return False
+    left = predicted.replace(",", "").strip()
+    right = target.replace(",", "").strip()
+    try:
+        return Decimal(left) == Decimal(right)
+    except InvalidOperation:
+        return left == right
+
+
 @torch.no_grad()
 def main() -> None:
     args = parse_args()
     if min(args.beam_width, args.candidates_per_beam,
-           args.chunk_length, args.depth) < 1:
+           args.chunk_length, args.depth, args.commits) < 1:
         raise ValueError("beam settings must be positive")
     torch.manual_seed(args.seed)
     dtype = getattr(torch, args.dtype)
@@ -155,8 +204,9 @@ def main() -> None:
     )
     tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision, use_fast=True)
     goal_payload = torch.load(args.goal_checkpoint, map_location="cpu", weights_only=True)
-    goal_model = GoalDistanceModel(
-        int(goal_payload["state_size"]), int(goal_payload["geometry_size"])
+    goal_model = make_goal_distance_model(
+        goal_payload.get("distance_kind", "euclidean"),
+        int(goal_payload["state_size"]), int(goal_payload["geometry_size"]),
     ).to(args.device)
     value_model = DirectValueModel(int(goal_payload["state_size"])).to(args.device)
     goal_model.load_state_dict(goal_payload["distance_model"])
@@ -182,68 +232,103 @@ def main() -> None:
             model, prompt, capture=capture, attention_mask=None, use_cache=False
         )
         prompt_state = fused_source(prompt_output.states, source_layers)
-        beams = [{
-            "tokens": prompt,
-            "suffix": prompt.new_empty((1, 0)),
-            "log_sum": 0.0,
-            "score": 0.0,
-        }]
-        depth_trace = []
-        for depth_index in range(args.depth):
-            candidates = []
-            for beam in beams:
-                chunks, log_prob = generate_candidates(
-                    model, beam["tokens"], count=args.candidates_per_beam,
-                    length=args.chunk_length, temperature=args.temperature,
-                    top_p=args.top_p,
-                )
-                for candidate_index in range(args.candidates_per_beam):
-                    chunk = chunks[candidate_index:candidate_index + 1]
-                    tokens = torch.cat([beam["tokens"], chunk], dim=1)
-                    suffix = torch.cat([beam["suffix"], chunk], dim=1)
+        committed = prompt.new_empty((1, 0))
+        commit_trace = []
+        final_beams = []
+        for commit_index in range(args.commits):
+            beams = [{
+                "tokens": torch.cat([prompt, committed], dim=1),
+                "suffix": committed,
+                "log_sum": 0.0,
+                "score": 0.0,
+                "distance": float(goal_model(prompt_state, prompt_state)),
+            }]
+            depth_trace = []
+            for depth_index in range(args.depth):
+                candidates = []
+                bellman_residuals = []
+                for beam in beams:
                     if args.state_mode == "exact":
-                        leaf = exact_leaf(model, capture, tokens, source_layers)
+                        chunks, log_prob, leaves = generate_exact_candidates(
+                            model, capture, beam["tokens"], source_layers,
+                            count=args.candidates_per_beam,
+                            length=args.chunk_length,
+                            temperature=args.temperature, top_p=args.top_p,
+                        )
                     else:
-                        leaf = jump_leaf(model, predictor, capture, prompt, suffix)
-                    distance = goal_model(leaf, prompt_state)
-                    remaining_budget = torch.tensor(
-                        [(args.depth - depth_index - 1) / max(args.depth, 1)],
+                        chunks, log_prob, leaves = generate_jump_candidates(
+                            model, predictor, capture, prompt, beam["suffix"],
+                            count=args.candidates_per_beam,
+                            length=args.chunk_length,
+                            temperature=args.temperature, top_p=args.top_p,
+                        )
+                    distances = goal_model(leaves, prompt_state)
+                    remaining_budget = torch.full(
+                        (args.candidates_per_beam,),
+                        (args.depth - depth_index - 1) / max(args.depth, 1),
                         device=args.device,
                     )
-                    value = value_model(leaf, prompt_state, remaining_budget)
-                    cumulative = beam["log_sum"] + float(log_prob[candidate_index])
-                    score = candidate_score(
-                        log_probability_sum=torch.tensor([cumulative], device=args.device),
-                        token_count=torch.tensor([suffix.shape[1]], device=args.device),
-                        distance=distance, value_logit=value,
+                    values = value_model(leaves, prompt_state, remaining_budget)
+                    bellman_residuals.append(float(distance_bellman_residual(
+                        torch.tensor(beam["distance"], device=args.device),
+                        distances,
+                    )))
+                    cumulative = beam["log_sum"] + log_prob
+                    scores = candidate_score(
+                        log_probability_sum=cumulative,
+                        token_count=torch.full_like(
+                            cumulative, (depth_index + 1) * args.chunk_length
+                        ),
+                        distance=distances, value_logit=values,
                         alpha=args.alpha, beta=args.beta, eta=args.eta,
                     )
-                    candidates.append({
-                        "tokens": tokens, "suffix": suffix,
-                        "log_sum": cumulative, "score": float(score),
-                        "distance": float(distance), "value_logit": float(value),
-                    })
-            candidates.sort(key=lambda row: row["score"], reverse=True)
-            beams = candidates[:args.beam_width]
-            depth_trace.append([{key: row[key] for key in (
-                "score", "distance", "value_logit", "log_sum"
-            )} for row in beams])
-        samples = []
-        for beam in beams:
-            text = tokenizer.decode(beam["suffix"][0], skip_special_tokens=True)
-            predicted = extract_number(text)
-            target = None if problem.get("answer") is None else str(problem["answer"])
-            samples.append({
-                "text": text, "predicted_answer": predicted,
-                "target_answer": target,
-                "correct": None if target is None else predicted == target,
-                "score": beam["score"], "distance": beam["distance"],
-                "value_logit": beam["value_logit"],
+                    for candidate_index in range(args.candidates_per_beam):
+                        chunk = chunks[candidate_index:candidate_index + 1]
+                        candidates.append({
+                            "tokens": torch.cat([beam["tokens"], chunk], dim=1),
+                            "suffix": torch.cat([beam["suffix"], chunk], dim=1),
+                            "log_sum": float(cumulative[candidate_index]),
+                            "score": float(scores[candidate_index]),
+                            "distance": float(distances[candidate_index]),
+                            "value_logit": float(values[candidate_index]),
+                        })
+                candidates.sort(key=lambda row: row["score"], reverse=True)
+                beams = candidates[:args.beam_width]
+                depth_trace.append({
+                    "beams": [{key: row[key] for key in (
+                        "score", "distance", "value_logit", "log_sum"
+                    )} for row in beams],
+                    "distance_bellman_residual_mean": (
+                        sum(bellman_residuals) / len(bellman_residuals)
+                    ),
+                    "candidate_support_per_parent": args.candidates_per_beam,
+                })
+            begin = committed.shape[1]
+            chosen_chunk = beams[0]["suffix"][:, begin:begin + args.chunk_length]
+            committed = torch.cat([committed, chosen_chunk], dim=1)
+            commit_trace.append({
+                "commit": commit_index + 1,
+                "chosen_text": tokenizer.decode(
+                    chosen_chunk[0], skip_special_tokens=True
+                ),
+                "lookahead": depth_trace,
             })
+            final_beams = beams
+        text = tokenizer.decode(committed[0], skip_special_tokens=True)
+        predicted = extract_number(text)
+        target = None if problem.get("answer") is None else str(problem["answer"])
+        samples = [{
+            "text": text, "predicted_answer": predicted,
+            "target_answer": target,
+            "correct": None if target is None else answers_equal(predicted, target),
+            "score": final_beams[0]["score"],
+            "distance": final_beams[0]["distance"],
+            "value_logit": final_beams[0]["value_logit"],
+        }]
         results.append({
             "problem_id": str(problem.get("problem_id", problem_index)),
             "state_mode": args.state_mode,
-            "depth_trace": depth_trace,
+            "receding_horizon_commits": commit_trace,
             "beams": samples,
             "top1_correct": samples[0]["correct"],
         })

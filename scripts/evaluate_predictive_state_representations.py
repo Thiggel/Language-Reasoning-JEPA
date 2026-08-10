@@ -55,6 +55,9 @@ def sample_pair(model, capture, dataset, *, layer, offset, passage,
     for _ in range(128):
         indices = torch.randint(len(dataset), (batch_size,), generator=generator)
         tokens = torch.stack([dataset[int(index)]["input_ids"] for index in indices])
+        position_ids = torch.stack([
+            dataset[int(index)]["position_ids"] for index in indices
+        ])
         masks = torch.stack([dataset[int(index)]["target_mask"] for index in indices])
         maximum = tokens.shape[1] - offset - passage
         if maximum < 1:
@@ -64,7 +67,8 @@ def sample_pair(model, capture, dataset, *, layer, offset, passage,
             continue
         output = teacher_forward(
             model, tokens.to(device), capture=capture,
-            attention_mask=None, use_cache=False,
+            attention_mask=None, position_ids=position_ids.to(device),
+            use_cache=False,
         )
         hidden = output.states[layer]
         query = hidden[:, anchor]
@@ -126,8 +130,12 @@ def collect_states(model, capture, dataset, *, layer, batches, batch_size, devic
         begin = batch_index * batch_size
         rows = [(begin + offset) % len(dataset) for offset in range(batch_size)]
         tokens = torch.stack([dataset[row]["input_ids"] for row in rows]).to(device)
+        position_ids = torch.stack([
+            dataset[row]["position_ids"] for row in rows
+        ]).to(device)
         output = teacher_forward(
-            model, tokens, capture=capture, attention_mask=None, use_cache=False
+            model, tokens, capture=capture, attention_mask=None,
+            position_ids=position_ids, use_cache=False,
         )
         result.append(output.states[layer].detach().cpu())
     return torch.cat(result)

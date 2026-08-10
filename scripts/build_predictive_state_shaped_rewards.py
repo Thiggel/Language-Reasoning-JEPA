@@ -11,9 +11,26 @@ import torch
 
 from textjepa.data.predictive_state import validate_reasoning_bundle
 from textjepa.planning.predictive_state import (
-    GoalDistanceModel,
+    make_goal_distance_model,
     potential_shaped_reward,
 )
+
+
+def calibrate_potential_weight(
+    distance_deltas: list[torch.Tensor],
+    requested_weight: float,
+    maximum_absolute_return: float = 0.5,
+) -> float:
+    """Choose one fixed coefficient for every trajectory in a dataset."""
+    if requested_weight < 0 or maximum_absolute_return <= 0:
+        raise ValueError("invalid shaping calibration")
+    maximum = max(
+        (float(delta.abs().sum()) for delta in distance_deltas),
+        default=0.0,
+    )
+    if maximum == 0:
+        return requested_weight
+    return min(requested_weight, maximum_absolute_return / maximum)
 
 
 def main() -> None:
@@ -31,12 +48,13 @@ def main() -> None:
     checkpoint = torch.load(
         args.goal_checkpoint, map_location="cpu", weights_only=True
     )
-    model = GoalDistanceModel(
-        int(checkpoint["state_size"]), int(checkpoint["geometry_size"])
+    model = make_goal_distance_model(
+        checkpoint.get("distance_kind", "euclidean"),
+        int(checkpoint["state_size"]), int(checkpoint["geometry_size"]),
     ).to(args.device)
     model.load_state_dict(checkpoint["distance_model"])
     model.eval()
-    records, totals = [], []
+    prepared = []
     with torch.no_grad():
         for record in features["records"]:
             valid = record["valid"].bool()
@@ -45,19 +63,21 @@ def main() -> None:
             distance = model(states, prompt)
             if len(distance) < 2:
                 continue
+            delta = distance[:-1] - args.gamma * distance[1:]
+            prepared.append((record, distance, delta))
+    effective_weight = calibrate_potential_weight(
+        [row[2] for row in prepared], args.weight, 0.5
+    )
+    records, totals = [], []
+    with torch.no_grad():
+        for record, distance, _delta in prepared:
             terminal = torch.zeros(len(distance) - 1, device=args.device)
             if bool(record["correct"]):
                 terminal[-1] = 1.0
-            _, raw_increment = potential_shaped_reward(
+            shaped, increment = potential_shaped_reward(
                 terminal, distance[:-1], distance[1:], gamma=args.gamma,
-                weight=args.weight, clip=args.clip,
+                weight=effective_weight, clip=args.clip,
             )
-            absolute = raw_increment.abs().sum()
-            # Enforce the protocol's per-trajectory shaping budget without
-            # changing the frozen distance model.
-            scale = min(1.0, 0.5 / max(float(absolute), 1e-12))
-            increment = raw_increment * scale
-            shaped = terminal + increment
             totals.append(float(increment.abs().sum()))
             records.append({
                 "problem_id": str(record["problem_id"]),
@@ -66,7 +86,6 @@ def main() -> None:
                 "distance": distance.cpu(),
                 "shaping_increment": increment.cpu(),
                 "shaped_rewards": shaped.cpu(),
-                "trajectory_scale": scale,
             })
     output = {
         "schema_version": 1,
@@ -76,8 +95,10 @@ def main() -> None:
             "goal_checkpoint": str(args.goal_checkpoint),
             "gamma": args.gamma,
             "requested_weight": args.weight,
+            "effective_fixed_weight": effective_weight,
             "increment_clip": args.clip,
             "maximum_absolute_shaping_return": 0.5,
+            "weight_calibration_scope": "single_global_dataset_coefficient",
             "distance_model_frozen": True,
             "exact_terminal_verifier_retained": True,
             "policy_invariance_guarantee_claimed": False,

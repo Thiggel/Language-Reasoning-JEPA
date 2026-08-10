@@ -2,11 +2,16 @@
 set -euo pipefail
 
 root=/vol/home-vol2/ml/laitenbf/TextJEPA
-round=2026-08-10-qwen-frozen-transition-diagnostic-v4
+round=2026-08-10-qwen-frozen-transition-diagnostic-v5
 host=1
-variants=(no_action)
-gpus=(1)
+variants=(full action_only)
+gpus=(0 1)
 cd "$root"
+
+[[ ${#variants[@]} -eq ${#gpus[@]} ]] || {
+  echo "variant/GPU arrays differ in length" >&2
+  exit 2
+}
 
 [[ -z "$(git status --porcelain)" ]] || {
   echo "refusing to snapshot a dirty worktree" >&2
@@ -20,17 +25,37 @@ if [[ ! -d "$snapshot" ]]; then
   mv "$temporary" "$snapshot"
 fi
 
-# The caller must run gruenau-gpus immediately before this script. Repeat a
-# direct device check to narrow, but not eliminate, the placement race.
-ssh -n -o BatchMode=yes -o ConnectTimeout=10 \
-  "laitenbf@gruenau${host}.informatik.hu-berlin.de" \
-  "nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader,nounits" \
-  > "/tmp/predictive-state-gruenau${host}-inventory.txt"
+inventory_dir="$root/runs/autonomy/predictive_state/$round"
+mkdir -p "$inventory_dir"
+# Preserve the authoritative cluster-wide view immediately before placement.
+gruenau-gpus > "$inventory_dir/gruenau-gpus-before-launch.txt"
+
+check_gpu() {
+  local selected_gpu=$1
+  local inventory="$inventory_dir/gruenau${host}-gpu${selected_gpu}-direct.csv"
+  ssh -n -o BatchMode=yes -o ConnectTimeout=10 \
+    "laitenbf@gruenau${host}.informatik.hu-berlin.de" \
+    "nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader,nounits" \
+    > "$inventory"
+  local admission
+  admission=$(awk -F, -v selected="$selected_gpu" '
+    { for (i=1; i<=3; i++) gsub(/^[[:space:]]+|[[:space:]]+$/, "", $i) }
+    $1 == selected { found=1; print ($2 < 1024 && $3 < 10) ? "FREE" : "BUSY" }
+    END { if (!found) print "MISSING" }
+  ' "$inventory")
+  if [[ "$admission" != FREE ]]; then
+    echo "refusing busy GPU gruenau${host}:${selected_gpu} admission=$admission" >&2
+    return 3
+  fi
+}
 
 for index in "${!variants[@]}"; do
   variant=${variants[$index]}
   gpu=${gpus[$index]}
-  job_id="qwen05-frozen-${variant//_/-}-capacity-matched-s0-v4"
+  # Repeat both low-memory and low-utilization admission immediately before
+  # each launch; this narrows but cannot remove the shared-cluster race.
+  check_gpu "$gpu"
+  job_id="qwen05-frozen-${variant//_/-}-capacity-matched-s0-v5"
   run_dir="$root/runs/autonomy/predictive_state/$round/$job_id"
   if [[ -s "$run_dir/state" ]]; then
     state=$(tr -d '[:space:]' < "$run_dir/state")
@@ -86,6 +111,20 @@ elif [[ "\$code" -eq 124 ]]; then state=TIMEOUT
 else state=FAILED
 fi
 printf '%s\n' "\$state" > "\$run_dir/state"
+if [[ ! -s "\$run_dir/run_summary.json" ]]; then
+  "\$TEXTJEPA_PYTHON" - "\$run_dir" "\$run_id" "\$state" "\$code" <<'PY'
+import json, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+(path / 'run_summary.json').write_text(json.dumps({
+    'schema_version': 1,
+    'run_id': sys.argv[2],
+    'status': sys.argv[3],
+    'exit_code': int(sys.argv[4]),
+    'scientific_validity': 'not_admitted',
+    'failure_summary': 'see stderr.log and stdout.log',
+}, indent=2) + '\n')
+PY
+fi
 exit "\$code"
 EOF
   chmod +x "$job"
