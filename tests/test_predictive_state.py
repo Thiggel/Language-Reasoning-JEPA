@@ -8,7 +8,10 @@ from textjepa.analysis.predictive_state import (
     progress_metrics,
     spearman,
 )
-from textjepa.data.predictive_state import pack_documents
+from textjepa.data.predictive_state import (
+    pack_documents,
+    split_whitespace_documents,
+)
 from textjepa.models.action_transition import (
     ActionConditionedTransition,
     LoRALinear,
@@ -37,6 +40,13 @@ def test_document_packing_masks_only_cross_document_transition():
     assert packed["input_ids"].tolist() == [[1, 2, 9, 3, 4, 9]]
     assert packed["target_mask"].tolist() == [
         [True, True, False, True, True]
+    ]
+
+
+def test_whitespace_only_lines_split_wikitext_documents():
+    text = " \n = Heading = \n \n First paragraph.\n \t\nSecond paragraph.\n"
+    assert split_whitespace_documents(text) == [
+        "= Heading =", "First paragraph.", "Second paragraph."
     ]
 
 

@@ -33,6 +33,20 @@ def text_fingerprint(texts: Iterable[str]) -> str:
     return digest.hexdigest()
 
 
+def split_whitespace_documents(text: str) -> list[str]:
+    """Split paragraphs on empty or whitespace-only separator lines."""
+    documents, current = [], []
+    for line in text.splitlines():
+        if line.strip():
+            current.append(line.strip())
+        elif current:
+            documents.append("\n".join(current))
+            current = []
+    if current:
+        documents.append("\n".join(current))
+    return documents
+
+
 def pack_documents(
     token_documents: Sequence[Sequence[int]],
     *,

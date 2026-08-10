@@ -14,6 +14,7 @@ from textjepa.data.predictive_state import (
     pack_documents,
     save_token_blocks,
     sha256_path,
+    split_whitespace_documents,
     text_fingerprint,
 )
 from textjepa.training.predictive_state import require_transformers_runtime
@@ -43,10 +44,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def read_documents(path: Path) -> list[str]:
-    # WikiText uses blank lines between paragraphs. Keeping headings as their
-    # own documents makes boundary handling explicit and reproducible.
-    pieces = path.read_text(encoding="utf-8").split("\n\n")
-    return [piece.strip() for piece in pieces if piece.strip()]
+    # WikiText uses whitespace-only lines between paragraphs (often a single
+    # space, not a literal empty line). Keeping headings as their own documents
+    # makes boundary handling explicit and reproducible.
+    return split_whitespace_documents(path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
