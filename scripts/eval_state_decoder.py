@@ -36,6 +36,8 @@ from textjepa.probing.state_decoder_io import (
     imagined_states,
     load_frozen,
     make_loader,
+    one_step_states,
+    prompt_state,
     true_states,
 )
 from textjepa.training.trainer import to_device
@@ -151,6 +153,11 @@ def main() -> None:
     true_all = Accumulator()
     true_by_depth = {d: Accumulator() for d in range(1, args.max_depth + 1)}
     imagined_by_depth = {d: Accumulator() for d in range(1, args.max_depth + 1)}
+    # Controls: (i) s_0 alone, nothing predicted -- how much of a step is
+    # simply guessable from the problem statement; (ii) one predictor step
+    # from the TRUE encoded prefix -- one-step fidelity without compounding.
+    prompt_by_depth = {d: Accumulator() for d in range(1, args.max_depth + 1)}
+    one_step_by_depth = {d: Accumulator() for d in range(1, args.max_depth + 1)}
     answer_hits = answer_n = 0
     samples: list[dict] = []
 
@@ -161,11 +168,17 @@ def main() -> None:
             B, T = mask.shape
             states = true_states(model, batch)
             imagined = imagined_states(model, batch, args.max_depth)
+            one_step = one_step_states(model, batch, args.max_depth)
+            s0 = prompt_state(model, batch)
 
             flat = decoder.generate(states.reshape(B * T, -1))
             imag_flat = decoder.generate(
                 imagined.reshape(B * imagined.shape[1], -1)
             )
+            one_flat = decoder.generate(
+                one_step.reshape(B * one_step.shape[1], -1)
+            )
+            s0_flat = decoder.generate(s0)
             for b in range(B):
                 for t in range(T):
                     if not bool(mask[b, t]):
@@ -189,6 +202,12 @@ def main() -> None:
                     imagined_by_depth[d].add(
                         imag_flat[b * imagined.shape[1] + t], reference, vocab
                     )
+                    one_step_by_depth[d].add(
+                        one_flat[b * one_step.shape[1] + t], reference, vocab
+                    )
+                    # The prompt-only hypothesis does not depend on t: the
+                    # same s_0 decode is scored against every step's sentence.
+                    prompt_by_depth[d].add(s0_flat[b], reference, vocab)
 
             last = mask.sum(1).clamp(min=1) - 1
             final = states[torch.arange(B, device=states.device), last]
@@ -210,6 +229,12 @@ def main() -> None:
         "imagined_by_depth": {
             str(d): a.as_dict() for d, a in imagined_by_depth.items() if a.n
         },
+        "prompt_only_by_depth": {
+            str(d): a.as_dict() for d, a in prompt_by_depth.items() if a.n
+        },
+        "one_step_by_depth": {
+            str(d): a.as_dict() for d, a in one_step_by_depth.items() if a.n
+        },
         "answer_head_acc": answer_hits / max(answer_n, 1),
         "answer_head_n": answer_n,
         "samples": samples,
@@ -223,6 +248,14 @@ def main() -> None:
         + markdown("Imagined states (predictor rollout from s0)",
                    [(f"depth {d}", m)
                     for d, m in result["imagined_by_depth"].items()])
+        + "\n"
+        + markdown("CONTROL: prompt-only s0 (no predictor applied)",
+                   [(f"step {d}", m)
+                    for d, m in result["prompt_only_by_depth"].items()])
+        + "\n"
+        + markdown("CONTROL: one predictor step from the true prefix",
+                   [(f"step {d}", m)
+                    for d, m in result["one_step_by_depth"].items()])
         + f"\nAnswer-head accuracy (final true state): "
           f"{result['answer_head_acc']:.3f} over {answer_n} problems\n"
     )

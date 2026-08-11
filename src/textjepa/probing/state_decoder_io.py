@@ -67,6 +67,42 @@ def true_states(model, batch: dict) -> torch.Tensor:
 
 
 @torch.no_grad()
+def prompt_state(model, batch: dict) -> torch.Tensor:
+    """[B, D] ``s_0``: the state after the prompt only, no reasoning read.
+
+    Decoding step ``t`` from this is the *prompt-only control*: whatever the
+    read-out can say about step ``t`` here is guessable from the problem
+    statement alone, with no action and no prediction involved.
+    """
+    s0, _ = model.encode_states(
+        batch["prompt_tokens"], batch["prompt_mask"],
+        batch["step_tokens"], batch["step_mask"],
+    )
+    return s0
+
+
+@torch.no_grad()
+def one_step_states(model, batch: dict, depth: int) -> torch.Tensor:
+    """[B, depth, D] single predictor step from the TRUE encoded prefix.
+
+    Entry ``d`` is ``predictor(s_{d-1}, a_d)`` where ``s_{d-1}`` is the
+    *encoded* state after genuinely reading steps ``1..d-1`` (``s_0`` for
+    ``d = 1``).  Compared with :func:`imagined_states`, which compounds its own
+    errors, this isolates one-step predictor fidelity.
+    """
+    s0, states = model.encode_states(
+        batch["prompt_tokens"], batch["prompt_mask"],
+        batch["step_tokens"], batch["step_mask"],
+    )
+    codes = model.encode_actions(batch["action_tokens"])
+    out = []
+    for d in range(min(depth, codes.shape[1])):
+        previous = s0 if d == 0 else states[:, d - 1]
+        out.append(model.predictor(previous, codes[:, d]))
+    return torch.stack(out, dim=1)
+
+
+@torch.no_grad()
 def imagined_states(model, batch: dict, depth: int) -> torch.Tensor:
     """[B, depth, D] predictor rollout from ``s_0`` along the true actions.
 
