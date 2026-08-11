@@ -359,3 +359,16 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   on emitting this-problem variable names; ldad_cycle (catalogue + cycle
   feasibility) is the paper's menu-free result. Report:
   research/reports/intent_phrase/2026-08-11-openended-screen/ (mirrored).
+
+## 2026-08-11 (cont. 4): faithful-iGSM admission gate — one real defect found+fixed
+
+- Ran the paper admission gate (run_igsm_paper_admission_gate.sh, tiny cells,
+  gate-s0-v1). Passed: oracle 1.0 / random .11 strict bounds sensible,
+  geometry beats random, dropout zero, EMA eval-mode invariants OK.
+  DEFECT: the shuffled-actions control was bit-identical to the aligned cell
+  — the faithful adapter (src/textjepa/data/faithful.py) silently dropped
+  data.shuffle_actions via **_ kwargs. Fixed (80cb55e): alignment permuted
+  last after all other randomness, stylized-dataset contract; regression
+  test added (shuffle must change alignment, nothing else). Shuffled gate
+  cell rerunning from the fixed snapshot; LR screen admitted once
+  shuffle-hurts is confirmed.
