@@ -353,3 +353,9 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   and was killed before producing output. Expectation: same grounding
   ceiling (CEM decodes phrases from optimized embeddings), screen closes
   the "catalogue-free" question either way.
+- cem_cycle result: parse rate .032, zero usable proposals in 100% of
+  episodes, strict .000 — same grounding failure, worst of the three.
+  SCREEN CLOSED: all catalogue-free proposers (generator/CEM/codebook) fail
+  on emitting this-problem variable names; ldad_cycle (catalogue + cycle
+  feasibility) is the paper's menu-free result. Report:
+  research/reports/intent_phrase/2026-08-11-openended-screen/ (mirrored).
