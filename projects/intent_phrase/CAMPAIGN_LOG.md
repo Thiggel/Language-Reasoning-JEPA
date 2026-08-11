@@ -372,3 +372,13 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   test added (shuffle must change alignment, nothing else). Shuffled gate
   cell rerunning from the fixed snapshot; LR screen admitted once
   shuffle-hurts is confirmed.
+- Shuffle-flag bug had a SECOND half: build_dataset's igsm_real branch
+  enumerates kwargs and omitted shuffle_actions (fixed ce2581c, end-to-end
+  verified). Tiny gate cell (64 problems) now differs but is ambiguous;
+  scaled pair (512 problems, 200 eval episodes) running to settle
+  shuffle-hurts. AUDIT NOTE for later faithful work: the faithful adapter
+  also silently drops (via **_) stylized-only flags incl.
+  invalid_action_mode, steps_range/strict_steps_range,
+  geo_rank_factual_only, geo_rank_candidate_interface — any faithful
+  length-OOD or invalid-mode experiment must add explicit support first,
+  not assume the config key works.
