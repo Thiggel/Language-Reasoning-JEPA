@@ -119,13 +119,15 @@ explicit action-displacement structure, .729 strict at D2 with menu):
    categorical chance floor (ln of catalogue size ~2.2-2.5); prior rank
    4.9-6.0; feasibility accuracy 57%; menu-free strict .000-.030.
 
-The contrastive result is decisive: even when the training objective is
+The contrastive result showed that even when the training objective is
 literally the plan-time task (rank the catalogue at each observed
-state), the pooled state does not carry enough information to beat
-chance. Next-action identity and feasibility in iGSM require reading
-per-candidate prerequisite lists from the prompt; the discourse-level
-JEPA state provably (empirically, five escalations) does not retain
-them. Menu-free planning is out of reach for this model class without a
+state), the head stays at chance IN THE TRAINER. [CORRECTED 2026-08-11,
+see 2026-08-11-state-readout-controls: oracle probes decode feasibility
+from the same (s_t, u) at AUC .935 and the identical head trained
+offline lands 0.47 nats below chance — the information IS in the state;
+the imitation objective, which rewards trace preference and only weakly
+the conjunctive parent-lookup, is what fails to extract it.]
+Menu-free planning is out of reach for this model class without a
 prompt-reading proposal module — which would be a token-level component,
 i.e. a different contribution. The paper reports the with-menu protocol
 as primary (uniform cross-method collapse without it keeps the

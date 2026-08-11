@@ -85,20 +85,35 @@ def phrase_log_probs(logits: Tensor, token_ids: list[list[int]]) -> Tensor:
     return torch.stack(scores)
 
 
-def greedy_phrases(logits: Tensor, vocab) -> tuple[list[str], Tensor]:
+def greedy_phrases(
+    logits: Tensor, vocab, terminator: str | None = "."
+) -> tuple[list[str], Tensor]:
     """Greedy-decode a phrase per logits row and score its own tokens.
 
     The LDAD decoder emits each position from the displacement alone, so
-    greedy decoding is a per-position argmax.  A phrase ends at its first PAD;
-    its score is the mean log-probability of the emitted (pre-PAD) tokens, on
-    the same scale as :func:`phrase_log_probs`.  Rows that decode to nothing
-    get :data:`INVALID_SCORE`.
+    greedy decoding is a per-position argmax.  A phrase ends at its first PAD
+    or just after the first ``terminator`` token (every intent phrase ends
+    with a period, and checkpoints whose LDAD loss never supervised the PAD
+    position continue with junk after the true phrase — the terminator cut
+    recovers the phrase without retraining); its score is the mean
+    log-probability of the kept tokens, on the same scale as
+    :func:`phrase_log_probs`.  Rows that decode to nothing get
+    :data:`INVALID_SCORE`.
     """
     log_probs = logits.log_softmax(-1)
     chosen = log_probs.argmax(-1)  # [n, max_len]
     token_log_probs = log_probs.gather(-1, chosen.unsqueeze(-1)).squeeze(-1)
     # Keep only the prefix before the first PAD.
     prefix = chosen.ne(vocab.pad_id).to(torch.int32).cumprod(dim=-1).bool()
+    if terminator is not None:
+        term_ids = vocab.encode(terminator)
+        if len(term_ids) == 1:
+            # Keep everything up to and including the first terminator.
+            after_term = (
+                chosen.eq(term_ids[0]).to(torch.int32).cumsum(dim=-1)
+                - chosen.eq(term_ids[0]).to(torch.int32)
+            ).bool()
+            prefix = prefix & ~after_term
     lengths = prefix.sum(-1)
     scores = torch.where(
         lengths > 0,

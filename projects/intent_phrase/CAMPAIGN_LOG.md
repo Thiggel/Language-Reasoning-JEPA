@@ -143,9 +143,16 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   CLOSED 2026-08-10 after two final escalations on the LDAD backbone:
   Gaussian-NLL prior (rank ~5, menu-free ~0) and CONTRASTIVE prior
   (catalogue-softmax CE trained on exactly the plan-time ranking; ends AT
-  the chance floor 2.57, menu-free .000-.030). Decisive: the pooled state
-  does not carry per-candidate prerequisite information. No further
-  menu-free work via STATE-readout heads; see interface-controls report.
+  the chance floor 2.57, menu-free .000-.030). No further menu-free work
+  via STATE-readout heads; see interface-controls report.
+  CORRECTED 2026-08-11 (state-readout-controls report): the information IS
+  in the state — oracle probes decode feasibility from (s_t,u) at AUC .935
+  (resolvedness .982), and the same head trained offline lands 0.47 nats
+  BELOW chance. The failure is the next-action-imitation objective (rewards
+  preference, barely rewards the conjunctive parent-lookup), not missing
+  information. Say "imitation-trained state readouts stay near chance;
+  cycle-consistency recovers the same information through the trained
+  dynamics" — NOT "the state lacks the information".
   REOPENED 2026-08-10 via the DYNAMICS: LDAD cycle-consistency — score
   each catalogue candidate by how well the LDAD displacement decoder
   reconstructs the candidate's own phrase from the predictor's imagined
@@ -278,3 +285,32 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   monitors/shell (use PID kills or bracket-escaped patterns). Parallel
   "predictive-state" subproject commits on main are NOT intent_phrase; leave
   alone.
+
+## 2026-08-11 (cont.): probe verdict; codebook stage-1 negative; decoder stop-token fix
+
+- STATE-READOUT CONTROLS (research/reports/intent_phrase/
+  2026-08-11-state-readout-controls/): (A) "info absent from state" REFUTED
+  — feasibility probe AUC .935, resolvedness .982 (oracle labels,
+  candidate-privileged diagnostic). Residual is the OBJECTIVE: four
+  imitation-trained heads (71k..1.65M params, incl. cross-attention over the
+  sentence sequence) all stall >=0.48 nats above the feasible-entropy floor
+  with feas. AUC <=.83, while a directly supervised same-shape MLP hits
+  .935. One-hot ablation proves the conjunctive parent-lookup is the hard
+  part (.935 -> .755). Campaign-log + interface-report overclaims corrected.
+- CODEBOOK (owner idea, stage 1 eval-time k-means over training action
+  embeddings, candidate_interface=codebook_cycle, committed da421db):
+  NEGATIVE on existing LDAD checkpoints. Two causes found: (1) LDAD decoder
+  free-decoding never stops (PAD position unsupervised — same defect family
+  the adversarial review fixed in the generator loss); mitigated eval-time
+  by terminator ('.') truncation in greedy_phrases. (2) After the fix,
+  grounding is the blocker: codes decode to plausible but WRONG-problem
+  variable names (1/64 parseable at a real state; own-catalogue embeddings
+  reconstruct exactly teacher-forced but only 2/9 free-decoded). Free
+  decoding from off-catalogue embeddings is not grounded by state
+  conditioning on current checkpoints. Stage 2 options if pursued: supervise
+  LDAD PAD position (retrain), or rely on the generator head (trained for
+  free generation, PAD fix in). Screening evals eval-codebook-k{64,128}
+  recorded the honest 0-parse numbers pre-fix.
+- Length-OOD first number (s1, near band 10-12 steps, nvars 20-28):
+  strict .047, slack-4 .233 (in-dist ~.96 strict) — large drop; graph-size
+  control cells queued.
