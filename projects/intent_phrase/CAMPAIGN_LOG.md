@@ -330,3 +330,26 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   plan-relevant geometry (what cycle-consistency/Energy read), not
   arithmetic; explains why calibrated-value baselines fail with depth.
   Feeds theory T3 (drift is immediate, not accumulated).
+
+## 2026-08-11 (cont. 3): open-ended screen — generator negative, CEM eval launched
+
+- gen-ldad-s0-v1 (LDAD recipe + state-conditioned action-generator head,
+  PAD fix in, snapshot 318d6c2) trained clean (LDAD token acc .999,
+  generator CE plateau 0.62/token) but generator_cycle planning fails:
+  parse rate .132, no-usable-proposal in 98.7% of episodes, strict .013
+  (random-with-menu .050). Direct sampling from the checkpoint shows the
+  SAME grounding failure as the codebook: phrases are fluent, correctly
+  formatted, but recombine adjectives/nouns across problems ("square
+  beads", "large apples" for a problem that has neither) and are all leaf
+  lookups; lowering temperature only shrinks the sample set, parseable
+  fraction stays ~1-2 of 16. Consistent conclusion across codebook +
+  generator: emitting THIS problem's variable names from the pooled state
+  is the shared bottleneck for every catalogue-free proposer — same
+  conjunctive-binding gap the state-readout probes localized. ldad_cycle
+  (catalogue enumeration + cycle feasibility) remains the menu-free result.
+- cem_cycle eval launched eval-cem-s0-v1 (frozen stab-ldad-ema-s0, fresh
+  snapshot 734bc58 WITH the greedy_phrases terminator fix; pop 64, elites 8,
+  3 iters, prior anchor 0.1). Note: first launch used a pre-fix snapshot
+  and was killed before producing output. Expectation: same grounding
+  ceiling (CEM decodes phrases from optimized embeddings), screen closes
+  the "catalogue-free" question either way.
