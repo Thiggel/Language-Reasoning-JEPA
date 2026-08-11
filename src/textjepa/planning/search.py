@@ -77,6 +77,58 @@ class EpisodeResult:
     parse_rate: float | None = None
     proposal_counts: dict[str, float] | None = None
     n_no_proposal: int = 0
+    # Number of executed actions after which the goal was first reached, or
+    # ``None`` when the episode never solved. Recording it lets one generous
+    # budget run be scored at every smaller slack (a slack curve) without the
+    # policy ever reading the budget.
+    solved_at: int | None = None
+
+
+def endpoint_energy(
+    model,
+    cur: torch.Tensor,
+    s0: torch.Tensor,
+    steps: torch.Tensor,
+    energy: str = "value",
+    goal_state: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Endpoint Energy of imagined states, shared by every latent planner."""
+    n = cur.shape[0]
+    if energy == "symbolic_distance":
+        raise RuntimeError(
+            "symbolic_distance must be evaluated from exact environment states"
+        )
+    if (
+        getattr(model, "geo_rank_score_mode", "value") == "distance"
+        and goal_state is None
+    ):
+        raise RuntimeError(
+            "geometry-only GAR requires energy=oracle_goal; its terminal "
+            "state is a labeled diagnostic, not a deployable planner"
+        )
+    if goal_state is not None:
+        geo = getattr(model.core, "geo_head", None)
+        fin, goal = (
+            (geo(cur), geo(goal_state)) if geo is not None
+            else (cur, goal_state)
+        )
+        ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
+        return (ln(fin) - ln(goal)).abs().mean(-1)
+    return steps + model.value_head(cur, s0.expand(n, -1))
+
+
+def controlled_argmin(
+    costs: torch.Tensor, seed: str, score_control: str = "model"
+) -> int:
+    """Apply an enumeration-leakage control before candidate selection."""
+    if score_control == "zero":
+        return 0
+    if score_control == "shuffle":
+        permutation = list(range(len(costs)))
+        random.Random(seed).shuffle(permutation)
+        index = torch.tensor(permutation, device=costs.device)
+        return int(costs[index].argmin().item())
+    return int(costs.argmin().item())
 
 
 def _feasible(problem: Problem, resolved: frozenset[int]) -> list[int]:
@@ -507,25 +559,9 @@ class LatentPlanner:
         self, cur: torch.Tensor, s0: torch.Tensor, steps: torch.Tensor,
         goal_state: torch.Tensor | None,
     ) -> torch.Tensor:
-        n = cur.shape[0]
-        if self.energy == "symbolic_distance":
-            raise RuntimeError(
-                "symbolic_distance must be evaluated from exact environment states"
-            )
-        if (
-            getattr(self.model, "geo_rank_score_mode", "value") == "distance"
-            and goal_state is None
-        ):
-            raise RuntimeError(
-                "geometry-only GAR requires energy=oracle_goal; its terminal "
-                "state is a labeled diagnostic, not a deployable planner"
-            )
-        if goal_state is not None:
-            geo = getattr(self.model.core, "geo_head", None)
-            fin, goal = (geo(cur), geo(goal_state)) if geo is not None else (cur, goal_state)
-            ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
-            return (ln(fin) - ln(goal)).abs().mean(-1)
-        return steps + self.model.value_head(cur, s0.expand(n, -1))
+        return endpoint_energy(
+            self.model, cur, s0, steps, self.energy, goal_state
+        )
 
     def _action_codes(self, problem: Problem, idxs: list[int]) -> torch.Tensor:
         from textjepa.data.igsm.render import action_phrase
@@ -1299,12 +1335,4 @@ class LatentPlanner:
         return seqs[self._controlled_argmin(total, score_seed)]
 
     def _controlled_argmin(self, costs: torch.Tensor, seed: str) -> int:
-        """Apply an enumeration-leakage control before candidate selection."""
-        if self.score_control == "zero":
-            return 0
-        if self.score_control == "shuffle":
-            permutation = list(range(len(costs)))
-            random.Random(seed).shuffle(permutation)
-            index = torch.tensor(permutation, device=costs.device)
-            return int(costs[index].argmin().item())
-        return int(costs.argmin().item())
+        return controlled_argmin(costs, seed, self.score_control)

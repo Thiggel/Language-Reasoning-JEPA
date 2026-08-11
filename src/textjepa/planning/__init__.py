@@ -1,5 +1,13 @@
 from textjepa.planning.search import LatentPlanner, EpisodeResult
-from textjepa.planning.evaluate import evaluate_planning
+from textjepa.planning.evaluate import (
+    aggregate_episodes,
+    evaluate_planning,
+    slack_curve_metrics,
+)
+from textjepa.planning.observed_action_search import (
+    ObservedActionPlanner,
+    evaluate_observed_action_planning,
+)
 from textjepa.planning.hierarchical_search import HierarchicalLatentPlanner
 from textjepa.planning.catalogue import (
     CatalogueEpisodeResult,
@@ -38,6 +46,10 @@ __all__ = [
     "CEMCycleProposer",
     "cem_gaussian",
     "diagonal_prior",
+    "aggregate_episodes",
+    "slack_curve_metrics",
+    "ObservedActionPlanner",
+    "evaluate_observed_action_planning",
     "exact_endpoint_control",
     "prior_coordinate_cem",
     "receding_horizon_step",

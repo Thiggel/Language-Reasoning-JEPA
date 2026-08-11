@@ -76,7 +76,40 @@ def main(cfg: DictConfig) -> None:
         else nullcontext()
     )
     with flop_counter:
-        if run_cfg.data.get("name", "igsm") == "igsm_real":
+        if run_cfg.data.get("name", "igsm") == "observed_action":
+            from textjepa.planning.observed_action_search import (
+                evaluate_observed_action_planning,
+            )
+
+            from textjepa.planning.observed_action_search import (
+                CANDIDATE_INTERFACES,
+            )
+
+            interface = cfg.get("candidate_interface", "feasible_menu")
+            if interface not in CANDIDATE_INTERFACES:
+                # The open-ended interfaces (ldad_cycle / generator_cycle /
+                # cem_cycle) are implemented for the iGSM planners only; fail
+                # loudly rather than silently planning with a menu.
+                raise ValueError(
+                    f"candidate_interface={interface!r} is not implemented "
+                    "for the observed-action domain; supported interfaces: "
+                    + ", ".join(sorted(CANDIDATE_INTERFACES))
+                )
+
+            results = evaluate_observed_action_planning(
+                model, dataset, vocab, device,
+                n_episodes=cfg.n_episodes,
+                slack=cfg.slack,
+                slack_curve=cfg.get("slack_curve", False),
+                candidate_interface=interface,
+                lookahead=cfg.lookahead,
+                max_expand=cfg.max_expand,
+                energy=cfg.get("energy", "value"),
+                invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
+                score_control=cfg.get("score_control", "model"),
+                seed=cfg.seed,
+            )
+        elif run_cfg.data.get("name", "igsm") == "igsm_real":
             from textjepa.planning.faithful_search import (
                 FaithfulPlanner, evaluate_faithful_planning,
             )
@@ -87,7 +120,8 @@ def main(cfg: DictConfig) -> None:
                 allow_oracle_future_actions=cfg.allow_oracle_future_actions,
             )
             results = evaluate_faithful_planning(
-                planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
+                planner, dataset, cfg.n_episodes, slack=cfg.slack,
+                seed=cfg.seed, slack_curve=cfg.get("slack_curve", False),
             )
         elif run_cfg.data.get("name", "igsm") == "igsm_edit":
             planner = EditPlanner(model, vocab, device, energy=cfg.energy)
@@ -147,9 +181,15 @@ def main(cfg: DictConfig) -> None:
     for name, metrics in results.items():
         line = "  ".join(
             f"{k}={v:.3f}" for k, v in metrics.items()
-            if isinstance(v, (int, float))
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
         )
         print(f"{name:16s} {line}")
+        curve = metrics.get("success_by_slack")
+        if curve:
+            print(
+                f"{'':16s} success_by_slack  "
+                + "  ".join(f"{k}={v:.3f}" for k, v in curve.items())
+            )
     suffix = "" if cfg.energy == "value" else f"_{cfg.energy}"
     if cfg.get("hierarchy", False):
         suffix += "_hier"
@@ -157,6 +197,10 @@ def main(cfg: DictConfig) -> None:
         suffix += "_sym"
     if cfg.lookahead > 1:
         suffix += "_oracle_actions"
+    if cfg.get("slack_curve", False):
+        # A slack curve is scored from one generous-budget run, so it would
+        # otherwise overwrite the fixed-slack run at the same nominal slack.
+        suffix += "_slackcurve"
     split_suffix = "" if split == "val" else f"_{split}"
     out = Path(
         cfg.out or Path(cfg.ckpt).parent

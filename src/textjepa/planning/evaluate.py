@@ -61,9 +61,7 @@ def oracle_episode(problem: Problem, rng: random.Random) -> EpisodeResult:
     return EpisodeResult(True, len(env.resolved), len(necessary_set), 0)
 
 
-def _aggregate(
-    results: list[EpisodeResult], max_slack: int | None = None
-) -> dict[str, float]:
+def _aggregate(results: list[EpisodeResult]) -> dict[str, float]:
     n = len(results)
     metrics = {
         "success": sum(r.solved for r in results) / n,
@@ -109,21 +107,49 @@ def _aggregate(
         metrics["no_proposal_episode_rate"] = (
             sum(r.n_no_proposal > 0 for r in results) / n
         )
-    if max_slack is not None:
-        # The policy never reads the remaining budget, so one run at
-        # slack=max_slack yields every smaller-slack success rate exactly:
-        # an episode solved with excess e behaves identically under any
-        # budget >= necessary + e.
-        excess = [
-            r.steps - r.n_necessary if r.solved else None for r in results
-        ]
-        metrics["success_by_slack"] = {
-            str(k): sum(e is not None and e <= k for e in excess) / n
-            for k in range(max_slack + 1)
-        }
-        metrics["excess_steps"] = [
-            e if e is not None else -1 for e in excess
-        ]
+    return metrics
+
+
+def slack_curve_metrics(
+    results: list[EpisodeResult], slack: int
+) -> dict[str, object]:
+    """Score ONE generous-budget run at every slack from 0 to ``slack``.
+
+    The policy never reads its budget, so a single episode run at the largest
+    slack contains the answer for every smaller slack: the episode counts as a
+    success at slack ``s`` exactly when it reached the goal within
+    ``optimal + s`` executed actions. ``excess_steps`` reports, per episode,
+    how many actions beyond the reference plan length were needed (``None``
+    when the episode never solved).
+    """
+    n = max(len(results), 1)
+    # ``solved_at`` is the step index at which the goal was first reached.
+    # Policies that stop exactly at the goal (the reference baselines) leave
+    # it unset, in which case the executed-step count is the same quantity.
+    excess = [
+        None if not r.solved else
+        (r.steps if r.solved_at is None else r.solved_at) - r.n_necessary
+        for r in results
+    ]
+    return {
+        "success_by_slack": {
+            str(s): sum(1 for e in excess if e is not None and e <= s) / n
+            for s in range(int(slack) + 1)
+        },
+        "excess_steps": excess,
+    }
+
+
+def aggregate_episodes(
+    results: list[EpisodeResult],
+    *,
+    slack_curve: bool = False,
+    slack: int = 0,
+) -> dict[str, object]:
+    """Planning-metrics JSON shape shared by every domain's evaluator."""
+    metrics: dict[str, object] = dict(_aggregate(results))
+    if slack_curve:
+        metrics.update(slack_curve_metrics(results, slack))
     return metrics
 
 
@@ -146,8 +172,12 @@ def evaluate_planning(
     planner_name = (
         "latent_planner" if planner.energy == "value" else f"latent_planner_{planner.energy}"
     )
-    max_slack = slack if slack_curve else None
-    planned_metrics = _aggregate(planned, max_slack)
+    def agg(results: list[EpisodeResult]) -> dict[str, object]:
+        return aggregate_episodes(
+            results, slack_curve=slack_curve, slack=slack
+        )
+
+    planned_metrics = agg(planned)
     if hasattr(planner, "n_macro_decisions"):
         total = planner.n_macro_decisions + planner.n_flat_decisions
         planned_metrics.update({
@@ -157,7 +187,7 @@ def evaluate_planning(
         })
     return {
         planner_name: planned_metrics,
-        "random_policy": _aggregate(rand_, max_slack),
-        "first_feasible_policy": _aggregate(first_, max_slack),
-        "oracle": _aggregate(oracle, max_slack),
+        "random_policy": agg(rand_),
+        "first_feasible_policy": agg(first_),
+        "oracle": agg(oracle),
     }
