@@ -32,7 +32,15 @@ transition_energy_composition: terminal  # terminal | cumulative (control) | roo
 # For horizon-Energy checkpoints, use the preserved one-step GAR value head
 # to prune partial beams and the horizon head only for the final beam choice.
 hybrid_local_pruning: false
-candidate_interface: feasible_menu  # feasible_menu | full_catalogue | learned_catalogue
+candidate_interface: feasible_menu  # feasible_menu | full_catalogue | learned_catalogue | ldad_cycle | generator_cycle
+# generator_cycle only (fully open-ended proposals): K intent phrases are
+# sampled from the state-conditioned generator head, parsed against the
+# problem's action space (unparseable samples discarded and counted), and the
+# survivors ranked by LDAD cycle-consistency, keeping prior_top_k. Requires a
+# checkpoint with model.action_generator=true AND model.observed_action_ldad=true.
+generator_samples: 16
+generator_top_p: 1.0
+generator_temperature: 1.0
 # learned_catalogue only: filter catalogue candidates by the learned action
 # prior (top-p nucleus over the catalogue-normalized prior, then top-k).
 prior_top_k: 0   # 0 = keep all

@@ -1,4 +1,4 @@
-"""Action decoding from latent displacements."""
+"""Action decoding from latent displacements, and open-ended proposal."""
 
 from __future__ import annotations
 
@@ -72,4 +72,32 @@ class ObservedActionLDAD(Objective):
         # PAD is id 0 in the shared synthetic vocabulary.  A transition must
         # be valid and a token position must contain observed action content.
         mask = out.step_mask.unsqueeze(-1) & (target != 0)
+        return masked_mean(token_loss, mask.float())
+
+
+class ActionGeneration(Objective):
+    """Teacher-forced CE of the observed intent phrase given the state.
+
+    Trains the state-conditioned generator head used for open-ended
+    (catalogue-free) proposals.  The model detaches the state before this
+    head, so the loss trains the head alone and cannot shape the JEPA
+    representation.  Masking matches the LDAD loss: a valid transition and a
+    non-PAD token position (PAD is id 0 and doubles as the end marker).
+    """
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        logits = out.extras.get("action_generator_logits")
+        if logits is None:
+            return out.step_states.sum() * 0.0
+        target = batch["action_tokens"]
+        L = min(logits.shape[-2], target.shape[-1])
+        logits = logits[..., :L, :]
+        target = target[..., :L]
+        token_loss = F.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]),
+            target.reshape(-1), reduction="none",
+        ).reshape_as(target)
+        mask = out.extras["action_generator_valid"].unsqueeze(-1) & (
+            target != 0
+        )
         return masked_mean(token_loss, mask.float())

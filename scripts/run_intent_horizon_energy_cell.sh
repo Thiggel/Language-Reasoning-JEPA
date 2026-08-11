@@ -20,6 +20,7 @@ factual_only=false
 score_mode=horizon; rollout_for_h1=true; td_q_weight=0; expectile_weight=0
 td_jepa_weight=0; goal_head_weight=0
 action_prior=false; eval_candidate_interface=""; support_kind=""
+observed_ldad=false; action_generator=false
 case "$variant" in
   fixed_h4) ;;
   mix_pow2_16_aux0)
@@ -182,6 +183,18 @@ case "$variant" in
     horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
     root_distill_weight=0.25; horizon_input=false
     candidate_interface=full_catalogue ;;
+  mix4_aux025_nohorizon_ldad_gen)
+    # Headline LDAD recipe PLUS the state-conditioned intent-phrase generator
+    # head, evaluated with fully open-ended proposals: the generator writes
+    # candidate phrases from the current state, they are parsed against the
+    # problem's action space, and survivors are ranked by LDAD
+    # cycle-consistency (generator_cycle). No catalogue, no feasibility
+    # oracle. Both auxiliary heads read a DETACHED state, so the trained
+    # JEPA objective is identical to the headline recipe.
+    horizon=8; horizons='[1,2,4,8]'; dense_depth=0; dense_weight=0
+    root_distill_weight=0.25; horizon_input=false
+    observed_ldad=true; action_generator=true
+    eval_candidate_interface=generator_cycle ;;
   mix4_aux025_nohorizon_novicreg)
     # Stabilizer sweep: the frozen recipe without VICReg. Combine with
     # EXTRA_OVERRIDES (state_target / LDAD / SIGReg) for sweep cells.
@@ -270,6 +283,18 @@ if [[ "$action_prior" == true ]]; then
     extra+=("model.action_support_kind=$support_kind")
   fi
 fi
+if [[ "$observed_ldad" == true ]]; then
+  extra+=(
+    model.observed_action_ldad=true
+    objective.observed_action_ldad.weight=1.0
+  )
+fi
+if [[ "$action_generator" == true ]]; then
+  extra+=(
+    model.action_generator=true
+    "objective.action_generator.weight=${ACTION_GENERATOR_WEIGHT:-0.25}"
+  )
+fi
 if [[ -n "${EXTRA_OVERRIDES:-}" ]]; then
   # Space-separated additional hydra overrides (stabilizer sweep etc.).
   read -r -a extra_overrides <<< "$EXTRA_OVERRIDES"
@@ -319,12 +344,14 @@ if [[ "$frozen" == true ]]; then
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
     CANDIDATE_INTERFACE="${eval_candidate_interface:-$candidate_interface}" \
     INVALID_ACTION_MODE="$invalid_mode" \
+    GENERATOR_SAMPLES="${GENERATOR_SAMPLES:-16}" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-horizon-only"
   N_EPISODES="$episodes" BEAM_WIDTH="$width" \
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=true \
     CANDIDATE_INTERFACE="${eval_candidate_interface:-$candidate_interface}" \
     INVALID_ACTION_MODE="$invalid_mode" \
+    GENERATOR_SAMPLES="${GENERATOR_SAMPLES:-16}" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant-hybrid"
 else
@@ -332,6 +359,7 @@ else
     SEARCH_ALGORITHM=root_balanced_beam HYBRID_LOCAL_PRUNING=false \
     CANDIDATE_INTERFACE="${eval_candidate_interface:-$candidate_interface}" \
     INVALID_ACTION_MODE="$invalid_mode" \
+    GENERATOR_SAMPLES="${GENERATOR_SAMPLES:-16}" \
     bash "$TEXTJEPA_ROOT/scripts/run_intent_terminal_energy_eval.sh" \
     "$py" "$model_dir/best.pt" "$variant"
 fi

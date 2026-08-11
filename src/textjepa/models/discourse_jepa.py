@@ -132,6 +132,8 @@ class DiscourseJEPA(nn.Module):
         observed_action_ldad: bool = False,
         observed_action_ldad_horizon: int = 1,
         ldad_decoder_layers: int = 2,
+        action_generator: bool = False,
+        action_generator_layers: int = 2,
         macro_encoder_kind: str = "transformer",
         macro_variational: bool = False,
         macro_concat_width: int = 8,
@@ -276,6 +278,19 @@ class DiscourseJEPA(nn.Module):
             )
             if observed_action_ldad else None
         )
+        # Open-ended proposal head: p(next intent phrase | current state).
+        # Optional (default off) so existing checkpoints load unchanged.
+        from textjepa.models.action_generator import (
+            StateConditionedActionGenerator,
+        )
+
+        self.action_generator = (
+            StateConditionedActionGenerator(
+                d_model, vocab_size, max_chunk_len,
+                n_layers=action_generator_layers, n_heads=chunk_heads,
+            )
+            if action_generator else None
+        )
         from textjepa.models.layers import mlp as _mlp
 
         self.act_decode = (
@@ -402,6 +417,29 @@ class DiscourseJEPA(nn.Module):
         token_emb = self.chunk_encoder.tok(action_tokens)
         return self.action_encoder(
             token_emb, action_tokens.ne(self.chunk_encoder.pad_id)
+        )
+
+    @torch.no_grad()
+    def generate_action_phrases(
+        self,
+        state: torch.Tensor,
+        k: int = 8,
+        top_p: float = 1.0,
+        max_len: int | None = None,
+        temperature: float = 1.0,
+    ) -> list[list[int]]:
+        """Sample ``k`` deduplicated intent-phrase token sequences from a state.
+
+        ``state`` is a single pooled state ([D] or [1, D]).  Used by
+        open-ended (``generator_cycle``) planning, where proposals are parsed
+        against the problem's action space instead of being enumerated.
+        """
+        if self.action_generator is None:
+            raise RuntimeError(
+                "generate_action_phrases requires model.action_generator=true"
+            )
+        return self.action_generator.sample(
+            state, k=k, top_p=top_p, max_len=max_len, temperature=temperature
         )
 
     def _encode_alt(self, batch: dict) -> torch.Tensor | None:
@@ -535,6 +573,8 @@ class DiscourseJEPA(nn.Module):
                 out.extras["observed_action_multistep_logits"] = (
                     self.observed_action_decoder(displacement)
                 )
+        if self.action_generator is not None:
+            self._action_generator_supervision(batch, out)
         if "alt_preds" in out.extras and "alt_step_tokens" in batch:
             B, T, K, L = batch["alt_step_tokens"].shape
             with torch.no_grad():
@@ -832,6 +872,21 @@ class DiscourseJEPA(nn.Module):
             action_support_valid=valid,
             action_support_target=target,
         )
+
+    def _action_generator_supervision(self, batch: dict, out) -> None:
+        """Teacher-forced CE of the observed next intent phrase given s_t.
+
+        ALWAYS detached (same discipline as ``_action_support`` /
+        ``_action_prior_supervision``): the generator is a proposal read-out of
+        the representation, never a shaper, so no gradient may reach the state
+        encoder or the predictor through it.  Validity uses the same step/token
+        masks as the LDAD loss (a valid transition, non-PAD token positions).
+        """
+        logits = self.action_generator(
+            out.prev_states.detach(), batch["action_tokens"]
+        )
+        out.extras["action_generator_logits"] = logits
+        out.extras["action_generator_valid"] = out.step_mask
 
     def _action_prior_supervision(self, out, action_codes, batch=None) -> None:
         """NLL of the observed next action's embedding under p(a | s).

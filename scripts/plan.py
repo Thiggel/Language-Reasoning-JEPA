@@ -110,6 +110,11 @@ def main(cfg: DictConfig) -> None:
                 prior_feasibility_gate=bool(
                     cfg.get("prior_feasibility_gate", False)
                 ),
+                generator_samples=int(cfg.get("generator_samples", 16)),
+                generator_top_p=float(cfg.get("generator_top_p", 1.0)),
+                generator_temperature=float(
+                    cfg.get("generator_temperature", 1.0)
+                ),
             )
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,
@@ -161,6 +166,11 @@ def main(cfg: DictConfig) -> None:
             "candidate_interface": str(cfg.get(
                 "candidate_interface", "feasible_menu"
             )),
+            "generator_samples": int(cfg.get("generator_samples", 16)),
+            "generator_top_p": float(cfg.get("generator_top_p", 1.0)),
+            "generator_temperature": float(
+                cfg.get("generator_temperature", 1.0)
+            ),
             "candidate_protocol": (
                 "global-beam-v1"
                 if cfg.get("search_algorithm", "shooting") == "beam"

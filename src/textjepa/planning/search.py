@@ -20,7 +20,9 @@ import torch
 
 from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.graph import Problem
-from textjepa.data.igsm.render import action_phrase, prompt_sentences
+from textjepa.data.igsm.render import (
+    action_phrase, parse_action_phrase, prompt_sentences,
+)
 from textjepa.data.vocab import Vocab
 
 
@@ -59,6 +61,13 @@ class EpisodeResult:
     # feasible action under the learned action prior. Diagnostic only: it
     # reads oracle labels for measurement, never for candidate generation.
     prior_rank: float | None = None
+    # generator_cycle diagnostics. ``proposal_recall`` is the fraction of steps
+    # at which at least one TRULY feasible action was among the parsed
+    # generator samples; it reads the environment's feasible set for
+    # measurement only, never for proposal or scoring. ``parse_rate`` is the
+    # fraction of sampled phrases that parsed into the action space.
+    proposal_recall: float | None = None
+    parse_rate: float | None = None
 
 
 def _feasible(problem: Problem, resolved: frozenset[int]) -> list[int]:
@@ -142,10 +151,13 @@ class LatentPlanner:
         prior_top_k: int = 0,
         prior_top_p: float = 1.0,
         prior_feasibility_gate: bool = False,
+        generator_samples: int = 16,
+        generator_top_p: float = 1.0,
+        generator_temperature: float = 1.0,
     ):
         if candidate_interface not in {
             "feasible_menu", "full_catalogue", "learned_catalogue",
-            "ldad_cycle",
+            "ldad_cycle", "generator_cycle",
         }:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface}"
@@ -161,6 +173,11 @@ class LatentPlanner:
             raise ValueError("prior_top_k must be non-negative (0 = off)")
         if not 0.0 < prior_top_p <= 1.0:
             raise ValueError("prior_top_p must lie in (0, 1]")
+        if generator_samples < 1:
+            raise ValueError("generator_samples must be positive")
+        self.generator_samples = int(generator_samples)
+        self.generator_top_p = float(generator_top_p)
+        self.generator_temperature = float(generator_temperature)
         self.prior_top_k = prior_top_k
         self.prior_top_p = prior_top_p
         self.prior_feasibility_gate = prior_feasibility_gate
@@ -235,6 +252,8 @@ class LatentPlanner:
         n_distractor = 0
         n_invalid = 0
         prior_ranks: list[float] = []
+        proposal_hits: list[float] = []
+        parse_rates: list[float] = []
         goal_state = (
             self._oracle_goal_state(problem, prompt_tokens, prompt_mask)
             if self.energy == "oracle_goal"
@@ -257,14 +276,34 @@ class LatentPlanner:
                         problem, s, frozenset(env.resolved_set)
                     )
                 )
+            root_candidates = None
+            if self.candidate_interface == "generator_cycle":
+                # Sample and parse the open-ended proposals once per step:
+                # the diagnostics below and the search must see the same set.
+                parsed, n_samples, unparseable = self._generator_proposals(
+                    problem, s
+                )
+                feasible = set(env.feasible_actions())
+                proposal_hits.append(
+                    float(bool(feasible & set(parsed)))
+                )
+                parse_rates.append(
+                    1.0 - unparseable / max(n_samples, 1)
+                )
+                root_candidates = self._cycle_candidates(
+                    problem, s, executed=frozenset(env.resolved_set),
+                    candidates=parsed,
+                )
             if (
-                self.candidate_interface == "learned_catalogue"
+                self.candidate_interface
+                in {"learned_catalogue", "generator_cycle"}
                 or self.search_algorithm in {"beam", "root_balanced_beam"}
             ):
                 best = self._beam_search(
                     s, s0, problem, frozenset(env.resolved_set), goal_state,
                     state_history, action_codes,
                     score_seed=f"{seed}:{len(step_texts)}:scores",
+                    root_candidates=root_candidates,
                 )
             else:
                 seqs = _sequences(
@@ -282,13 +321,21 @@ class LatentPlanner:
                     score_seed=f"{seed}:{len(step_texts)}:scores",
                 )
             chosen = best[0]
+            if chosen is None:
+                # No candidate at all: under generator_cycle the head can fail
+                # to produce a single parseable proposal. The episode stalls
+                # (counted as unsolved) rather than falling back to a menu.
+                break
             n_distractor += int(chosen not in problem.query_ancestors)
             invalid = chosen not in env.feasible_actions()
             n_invalid += int(invalid)
             step_texts.append(
                 env.step_or_invalid(chosen)
                 if self.candidate_interface
-                in {"full_catalogue", "learned_catalogue", "ldad_cycle"}
+                in {
+                    "full_catalogue", "learned_catalogue", "ldad_cycle",
+                    "generator_cycle",
+                }
                 else env.step(chosen)
             )
             action_history.append(chosen)
@@ -298,6 +345,13 @@ class LatentPlanner:
             n_distractor, n_invalid,
             prior_rank=(
                 sum(prior_ranks) / len(prior_ranks) if prior_ranks else None
+            ),
+            proposal_recall=(
+                sum(proposal_hits) / len(proposal_hits)
+                if proposal_hits else None
+            ),
+            parse_rate=(
+                sum(parse_rates) / len(parse_rates) if parse_rates else None
             ),
         )
 
@@ -483,8 +537,9 @@ class LatentPlanner:
         problem: Problem,
         state: torch.Tensor,
         executed: frozenset[int] = frozenset(),
+        candidates: list[int] | None = None,
     ) -> list[int]:
-        """Catalogue actions filtered by LDAD cycle-consistency (no oracle).
+        """Actions filtered by LDAD cycle-consistency (no oracle).
 
         Score(a) = mean token log-prob of a's own intent phrase under the
         LDAD displacement decoder applied to the predictor's imagined
@@ -494,36 +549,87 @@ class LatentPlanner:
         masks the planner's OWN executed/imagined actions (no oracle:
         already-computed variables stay "computable" per the decoder, so
         without the mask the planner loops on no-op re-proposals).
+
+        ``candidates`` restricts scoring to a given action subset (used by
+        ``generator_cycle``, whose proposals come from the generator head
+        instead of the catalogue); ``None`` scores the whole catalogue.
         """
         decoder = getattr(self.model, "observed_action_decoder", None)
         if decoder is None:
             raise RuntimeError(
-                "candidate_interface=ldad_cycle requires a checkpoint "
-                "trained with model.observed_action_ldad=true"
+                f"candidate_interface={self.candidate_interface} requires a "
+                "checkpoint trained with model.observed_action_ldad=true"
             )
-        codes = self._catalogue_codes(problem)
-        V = codes.shape[0]
+        catalogue = self._catalogue_codes(problem)
+        if candidates is None:
+            candidates = list(range(catalogue.shape[0]))
+        if not candidates:
+            return []
+        codes = catalogue[
+            torch.tensor(candidates, device=catalogue.device)
+        ]
+        V = len(candidates)
         flat = state.reshape(1, -1)
         nxt = self.model.predictor(flat.expand(V, -1), codes)
         logits = decoder(nxt - flat)
         scores = []
-        for c in range(V):
+        for position, action in enumerate(candidates):
             ids = torch.tensor(
-                self.vocab.encode(action_phrase(problem, c)),
+                self.vocab.encode(action_phrase(problem, action)),
                 device=logits.device,
             )
             L = min(ids.shape[0], logits.shape[1])
             scores.append(-torch.nn.functional.cross_entropy(
-                logits[c, :L], ids[:L], reduction="mean"
+                logits[position, :L], ids[:L], reduction="mean"
             ))
         order = [
-            c for c in torch.argsort(
+            candidates[position] for position in torch.argsort(
                 torch.stack(scores), descending=True, stable=True
             ).tolist()
-            if c not in executed
+            if candidates[position] not in executed
         ]
         keep = self.prior_top_k if self.prior_top_k > 0 else V
         return order[:keep]
+
+    def _generator_proposals(
+        self, problem: Problem, state: torch.Tensor
+    ) -> tuple[list[int], int, int]:
+        """Sample intent phrases from the generator head and parse them.
+
+        Fully open-ended: the generator writes free token sequences from the
+        current state, with no candidate catalogue and no feasibility oracle.
+        Each sample is grounded with :func:`parse_action_phrase`; samples that
+        do not denote a well-formed action of this problem are discarded.
+        Returns (parsed action indices, #samples, #unparseable samples), all
+        counted over the DEDUPLICATED samples the head returned.
+        """
+        phrases = self.model.generate_action_phrases(
+            state,
+            k=self.generator_samples,
+            top_p=self.generator_top_p,
+            temperature=self.generator_temperature,
+        )
+        parsed: list[int] = []
+        unparseable = 0
+        for ids in phrases:
+            action = parse_action_phrase(problem, self.vocab.decode(ids))
+            if action is None:
+                unparseable += 1
+            elif action not in parsed:
+                parsed.append(action)
+        return parsed, len(phrases), unparseable
+
+    def _generator_candidates(
+        self,
+        problem: Problem,
+        state: torch.Tensor,
+        executed: frozenset[int] = frozenset(),
+    ) -> list[int]:
+        """Generator proposals, ranked by the LDAD cycle-consistency score."""
+        parsed, _, _ = self._generator_proposals(problem, state)
+        return self._cycle_candidates(
+            problem, state, executed=executed, candidates=parsed
+        )
 
     def _imagined_state(
         self, problem: Problem, s: torch.Tensor, sequence: list[int]
@@ -758,9 +864,17 @@ class LatentPlanner:
         state_history: torch.Tensor,
         action_history: torch.Tensor,
         score_seed: str,
+        root_candidates: list[int] | None = None,
     ) -> list[int | None]:
-        """True global beam search over JEPA-imagined continuations."""
-        if self.candidate_interface == "full_catalogue":
+        """True global beam search over JEPA-imagined continuations.
+
+        ``root_candidates`` supplies the depth-1 candidate set when the caller
+        already produced it (generator_cycle, whose sampling is stochastic and
+        also feeds the per-step proposal diagnostics).
+        """
+        if root_candidates is not None:
+            roots = root_candidates
+        elif self.candidate_interface == "full_catalogue":
             roots = list(range(len(problem.vars)))
         elif self.candidate_interface == "learned_catalogue":
             roots = self._prior_candidates(problem, s, history=action_history)
@@ -801,11 +915,18 @@ class LatentPlanner:
                             )
                         )
                         continue
-                    if self.candidate_interface == "ldad_cycle":
+                    if self.candidate_interface in {
+                        "ldad_cycle", "generator_cycle"
+                    }:
                         if sequence[-1] is None:
                             expanded.append(sequence)
                             continue
-                        cands = self._cycle_candidates(
+                        expand_fn = (
+                            self._cycle_candidates
+                            if self.candidate_interface == "ldad_cycle"
+                            else self._generator_candidates
+                        )
+                        cands = expand_fn(
                             problem,
                             self._imagined_state(problem, s, sequence),
                             executed=resolved | {

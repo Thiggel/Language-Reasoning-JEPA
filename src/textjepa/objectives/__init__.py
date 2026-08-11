@@ -20,7 +20,11 @@ from textjepa.objectives.prediction import (
     SentenceLevelPrediction,
 )
 from textjepa.objectives.vicreg import MultiscaleVICReg, SIGReg, VICReg, VISReg
-from textjepa.objectives.delta_action import DeltaAction, ObservedActionLDAD
+from textjepa.objectives.delta_action import (
+    ActionGeneration,
+    DeltaAction,
+    ObservedActionLDAD,
+)
 from textjepa.objectives.value import (
     ActionDecode, ActionKL, GoalAdvantageDistill, ValueDistill, ValueRegression,
 )
@@ -85,6 +89,7 @@ from textjepa.objectives.hierarchical_language import (
 
 __all__ = [
     "ActionFeasibility",
+    "ActionGeneration",
     "GaussianActionPriorNLL",
     "HierarchyReachability",
     "LowerHierarchyRollout",

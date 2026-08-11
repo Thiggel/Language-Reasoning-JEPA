@@ -57,6 +57,47 @@ def action_phrase(p: Problem, idx: int) -> str:
     )
 
 
+WORD_OPS = {word: op for op, word in OP_WORDS.items()}
+_LOOKUP_PREFIX = ["look", "up", "the", "number", "of"]
+
+
+def parse_action_phrase(p: Problem, text: str) -> int | None:
+    """Inverse of :func:`action_phrase`: ground a phrase in ``p``'s actions.
+
+    Returns the action index whose intent phrase the text denotes, or ``None``
+    if the text is not a well-formed intent phrase for this problem (unknown
+    variable name, wrong arity, or an operation/parent pair that contradicts
+    the stated definition).  Used by open-ended (generator) planning, where
+    proposals are free token sequences that must be parsed or discarded.
+    """
+    words = text.split()
+    while words and words[-1] == ".":
+        words = words[:-1]
+    names = {v.name: v.idx for v in p.vars}
+    if words[: len(_LOOKUP_PREFIX)] == _LOOKUP_PREFIX:
+        idx = names.get(" ".join(words[len(_LOOKUP_PREFIX):]))
+        if idx is None or not p.vars[idx].is_leaf:
+            return None
+        return idx
+    if not words or words[0] != "derive" or "from" not in words:
+        return None
+    split = words.index("from")
+    idx = names.get(" ".join(words[1:split]))
+    rest = words[split + 1:]
+    positions = [i for i, word in enumerate(rest) if word in WORD_OPS]
+    if idx is None or len(positions) != 1:
+        return None
+    at = positions[0]
+    left = names.get(" ".join(rest[:at]))
+    right = names.get(" ".join(rest[at + 1:]))
+    v = p.vars[idx]
+    if left is None or right is None or v.is_leaf:
+        return None
+    if v.op != WORD_OPS[rest[at]] or v.parents != (left, right):
+        return None
+    return idx
+
+
 def answer_sentence(p: Problem) -> str:
     return f"the answer is {p.answer} ."
 

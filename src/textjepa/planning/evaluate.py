@@ -79,6 +79,19 @@ def _aggregate(
         # Learned-catalogue diagnostic: mean rank of the ground-truth next
         # action under the learned prior (1 = the prior's top choice).
         metrics["mean_prior_rank"] = sum(ranks) / len(ranks)
+    recalls = [
+        r.proposal_recall for r in results if r.proposal_recall is not None
+    ]
+    if recalls:
+        # generator_cycle diagnostic: fraction of steps at which at least one
+        # truly feasible action appeared among the parsed generator proposals
+        # (measurement only; proposals and scoring never see the oracle).
+        metrics["proposal_recall"] = sum(recalls) / len(recalls)
+    parse_rates = [
+        r.parse_rate for r in results if r.parse_rate is not None
+    ]
+    if parse_rates:
+        metrics["proposal_parse_rate"] = sum(parse_rates) / len(parse_rates)
     if max_slack is not None:
         # The policy never reads the remaining budget, so one run at
         # slack=max_slack yields every smaller-slack success rate exactly:

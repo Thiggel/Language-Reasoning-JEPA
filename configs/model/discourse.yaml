@@ -58,3 +58,5 @@ variational_actions: false
 observed_action_ldad: false
 observed_action_ldad_horizon: 1
 ldad_decoder_layers: 2
+action_generator: false     # state-conditioned intent-phrase generator head
+action_generator_layers: 2  # autoregressive decoder depth for that head

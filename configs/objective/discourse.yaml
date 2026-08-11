@@ -71,6 +71,12 @@ delta_action:
 observed_action_ldad:
   _target_: textjepa.objectives.ObservedActionLDAD
   weight: 0.0
+action_generator:
+  # Open-ended intent-phrase proposal head. Inert unless the model is built
+  # with model.action_generator=true (the loss is then exactly zero), so the
+  # nonzero default only takes effect in generator runs.
+  _target_: textjepa.objectives.ActionGeneration
+  weight: 0.25
 value:
   _target_: textjepa.objectives.ValueRegression
   weight: 1.0
