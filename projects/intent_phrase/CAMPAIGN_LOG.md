@@ -394,3 +394,10 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   snapshot ce2581c (both shuffle fixes in). All other gate criteria
   passed (oracle/random bounds, dropout, EMA invariants, geometry>random
   in the overfit cell).
+- Screen launch #1 failed at hydra parse: the shared cell script passes
+  stylized-only data keys. Ported to the faithful adapter (42fd571):
+  geo_rank_horizons multi-horizon sampling (stylized-identical RNG stream)
+  + geo_rank_rollout_for_h1 implemented; candidate_interface/factual_only/
+  feasible_k/invalid_k/invalid_action_mode accepted at defaults, raise
+  NotImplementedError otherwise (no more silent drops). CPU dry-run of the
+  full override set trains. Chain relaunched from snapshot 42fd571.
