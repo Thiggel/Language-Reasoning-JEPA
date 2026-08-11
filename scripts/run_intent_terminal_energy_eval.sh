@@ -29,6 +29,8 @@ cem_iters=${CEM_ITERS:-3}
 cem_offmanifold_lambda=${CEM_OFFMANIFOLD_LAMBDA:-1.0}
 cem_prior_anchor=${CEM_PRIOR_ANCHOR:-0.1}
 cem_prior_problems=${CEM_PRIOR_PROBLEMS:-64}
+codebook_k=${CODEBOOK_K:-64}
+codebook_seed=${CODEBOOK_SEED:-0}
 case "$composition" in cumulative|terminal|root) ;; *)
   echo "invalid transition Energy composition: $composition" >&2; exit 2;;
 esac
@@ -55,6 +57,7 @@ for depth in $depths; do
     cem_offmanifold_lambda="$cem_offmanifold_lambda" \
     cem_prior_anchor="$cem_prior_anchor" \
     cem_prior_problems="$cem_prior_problems" \
+    codebook_k="$codebook_k" codebook_seed="$codebook_seed" \
     allow_oracle_future_actions="$oracle" \
     out="$RUN_DIR/terminal_depth${depth}_slackcurve.json"
 done

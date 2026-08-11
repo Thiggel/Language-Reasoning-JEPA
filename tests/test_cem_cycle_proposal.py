@@ -201,9 +201,9 @@ def test_cem_cycle_masks_executed_actions_at_roots_and_expansions():
 
     model.observed_action_decoder.forward = decoder
     action = problem.vars[0].idx
-    roots = planner._cem_candidates(problem, torch.zeros(32), frozenset())
+    roots = planner._proposer_candidates(problem, torch.zeros(32), frozenset())
     assert roots == [action]
-    masked = planner._cem_candidates(
+    masked = planner._proposer_candidates(
         problem, torch.zeros(32), frozenset({action})
     )
     assert masked == []

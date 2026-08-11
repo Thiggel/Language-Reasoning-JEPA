@@ -32,11 +32,13 @@ from typing import Callable
 import torch
 
 from textjepa.data.igsm.graph import Problem
-from textjepa.data.igsm.render import catalogue_phrases, parse_action_phrase
+from textjepa.data.igsm.render import parse_action_phrase
 from textjepa.planning.ldad_decode import (
     delta_logits,
+    encode_phrases,
     greedy_phrases,
     require_ldad_decoder,
+    training_action_codes,
 )
 
 Tensor = torch.Tensor
@@ -149,13 +151,9 @@ class CEMCycleProposer:
     @torch.no_grad()
     def fit_prior(self, problems: list[Problem]) -> ActionPrior:
         """Fit the initialization Gaussian on training-problem phrases."""
-        phrases = [
-            phrase for problem in problems
-            for phrase in catalogue_phrases(problem)
-        ]
-        if not phrases:
-            raise ValueError("no training action phrases to fit the prior on")
-        self.prior = diagonal_prior(self._encode_phrases(phrases))
+        self.prior = diagonal_prior(
+            training_action_codes(self.model, self.vocab, self.device, problems)
+        )
         return self.prior
 
     def _require_prior(self) -> ActionPrior:
@@ -166,21 +164,9 @@ class CEMCycleProposer:
             )
         return self.prior
 
-    def _tokens(self, texts: list[str]) -> Tensor:
-        ids = [self.vocab.encode(text) for text in texts]
-        # An empty decoded phrase still needs one PAD position to encode.
-        L = max(max((len(i) for i in ids), default=1), 1)
-        out = torch.full(
-            (len(ids), 1, L), self.vocab.pad_id, dtype=torch.long
-        )
-        for row, i in enumerate(ids):
-            out[row, 0, : len(i)] = torch.tensor(i)
-        return out.to(self.device)
-
-    @torch.no_grad()
     def _encode_phrases(self, phrases: list[str]) -> Tensor:
-        """[n] phrases -> [n, d_action] action codes."""
-        return self.model.encode_actions(self._tokens(phrases)).squeeze(1)
+        """[n] phrases -> [n, d_action] action codes (shared encode path)."""
+        return encode_phrases(self.model, self.vocab, self.device, phrases)
 
     # --------------------------------------------------------------- decode
     @torch.no_grad()

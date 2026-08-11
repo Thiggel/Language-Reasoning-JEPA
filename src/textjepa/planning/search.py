@@ -224,10 +224,12 @@ class LatentPlanner:
         cem_iters: int = 3,
         cem_offmanifold_lambda: float = 1.0,
         cem_prior_anchor: float = 0.1,
+        codebook_k: int = 64,
+        codebook_seed: int = 0,
     ):
         if candidate_interface not in {
             "feasible_menu", "full_catalogue", "learned_catalogue",
-            "ldad_cycle", "generator_cycle", "cem_cycle",
+            "ldad_cycle", "generator_cycle", "cem_cycle", "codebook_cycle",
         }:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface}"
@@ -306,6 +308,12 @@ class LatentPlanner:
                 offmanifold_lambda=cem_offmanifold_lambda,
                 prior_anchor=cem_prior_anchor,
             )
+        if candidate_interface == "codebook_cycle":
+            from textjepa.planning.codebook import CodebookCycleProposer
+
+            self.proposer = CodebookCycleProposer(
+                model, vocab, device, k=codebook_k, seed=codebook_seed,
+            )
         if self.hybrid_local_pruning and getattr(
             self.model, "geo_rank_score_mode", "value"
         ) != "horizon":
@@ -314,7 +322,10 @@ class LatentPlanner:
             )
 
     def fit_action_prior(self, problems: list[Problem]) -> None:
-        """Fit the CEM initialization Gaussian on TRAINING problems only.
+        """Fit the open-ended proposal distribution on TRAINING problems only.
+
+        That is the CEM initialization Gaussian under ``cem_cycle`` and the
+        k-means action codebook under ``codebook_cycle``.
 
         Using evaluation problems here would leak their action catalogue into
         the proposal distribution, so callers must pass the training split as
@@ -389,7 +400,9 @@ class LatentPlanner:
                     )
                 )
             root_candidates = None
-            if self.candidate_interface in {"generator_cycle", "cem_cycle"}:
+            if self.candidate_interface in {
+                "generator_cycle", "cem_cycle", "codebook_cycle"
+            }:
                 # Produce and parse the open-ended proposals once per step:
                 # the diagnostics below and the search must see the same set.
                 # Both interfaces report the same fields.
@@ -434,7 +447,10 @@ class LatentPlanner:
                     n_no_proposal += 1
             if (
                 self.candidate_interface
-                in {"learned_catalogue", "generator_cycle", "cem_cycle"}
+                in {
+                    "learned_catalogue", "generator_cycle", "cem_cycle",
+                    "codebook_cycle",
+                }
                 or self.search_algorithm in {"beam", "root_balanced_beam"}
             ):
                 best = self._beam_search(
@@ -472,7 +488,7 @@ class LatentPlanner:
                 if self.candidate_interface
                 in {
                     "full_catalogue", "learned_catalogue", "ldad_cycle",
-                    "generator_cycle", "cem_cycle",
+                    "generator_cycle", "cem_cycle", "codebook_cycle",
                 }
                 else env.step(chosen)
             )
@@ -779,13 +795,17 @@ class LatentPlanner:
             problem, state, executed=executed, candidates=parsed
         )
 
-    def _cem_candidates(
+    def _proposer_candidates(
         self,
         problem: Problem,
         state: torch.Tensor,
         executed: frozenset[int] = frozenset(),
     ) -> list[int]:
-        """CEM proposals at ``state``, grounded and executed-masked.
+        """Open-ended proposals at ``state``, grounded and executed-masked.
+
+        Shared by ``cem_cycle`` (a CEM population in the action-embedding
+        space) and ``codebook_cycle`` (the fitted discrete codebook); both
+        expose the same ``propose`` contract.
 
         Used for beam expansions from JEPA-imagined states (the per-step root
         proposals are made in ``plan_episode``, which also records their
@@ -1055,8 +1075,8 @@ class LatentPlanner:
             roots = self._cycle_candidates(problem, s, executed=resolved)
         elif self.candidate_interface == "generator_cycle":
             roots = self._generator_candidates(problem, s, executed=resolved)
-        elif self.candidate_interface == "cem_cycle":
-            roots = self._cem_candidates(problem, s, executed=resolved)
+        elif self.candidate_interface in {"cem_cycle", "codebook_cycle"}:
+            roots = self._proposer_candidates(problem, s, executed=resolved)
         else:
             roots = _feasible(problem, resolved)
         beam = [[action] for action in roots]
@@ -1093,7 +1113,8 @@ class LatentPlanner:
                         )
                         continue
                     if self.candidate_interface in {
-                        "ldad_cycle", "generator_cycle", "cem_cycle"
+                        "ldad_cycle", "generator_cycle", "cem_cycle",
+                        "codebook_cycle",
                     }:
                         if sequence[-1] is None:
                             expanded.append(sequence)
@@ -1101,7 +1122,8 @@ class LatentPlanner:
                         expand_fn = {
                             "ldad_cycle": self._cycle_candidates,
                             "generator_cycle": self._generator_candidates,
-                            "cem_cycle": self._cem_candidates,
+                            "cem_cycle": self._proposer_candidates,
+                            "codebook_cycle": self._proposer_candidates,
                         }[self.candidate_interface]
                         # Every cycle interface masks the planner's OWN
                         # executed and beam-imagined actions here (no oracle).

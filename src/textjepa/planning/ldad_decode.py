@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import torch
 
+from textjepa.data.igsm.graph import Problem
+from textjepa.data.igsm.render import catalogue_phrases
+
 Tensor = torch.Tensor
 
 # Score assigned to a displacement whose greedy decode is empty (immediate
@@ -107,3 +110,40 @@ def greedy_phrases(logits: Tensor, vocab) -> tuple[list[str], Tensor]:
         for row, length in zip(chosen.cpu(), lengths.cpu().tolist())
     ]
     return phrases, scores
+
+
+def phrase_tokens(phrases: list[str], vocab, device) -> Tensor:
+    """[n] phrases -> [n, 1, L] padded token ids for the action encoder."""
+    ids = [vocab.encode(text) for text in phrases]
+    # An empty decoded phrase still needs one PAD position to encode.
+    L = max(max((len(i) for i in ids), default=1), 1)
+    out = torch.full((len(ids), 1, L), vocab.pad_id, dtype=torch.long)
+    for row, i in enumerate(ids):
+        out[row, 0, : len(i)] = torch.tensor(i)
+    return out.to(device)
+
+
+@torch.no_grad()
+def encode_phrases(model, vocab, device, phrases: list[str]) -> Tensor:
+    """[n] phrases -> [n, d_action] action codes."""
+    return model.encode_actions(phrase_tokens(phrases, vocab, device)).squeeze(1)
+
+
+@torch.no_grad()
+def training_action_codes(
+    model, vocab, device, problems: list[Problem]
+) -> Tensor:
+    """Action embeddings of every action phrase of the given problems.
+
+    The one collection path shared by every eval-time proposal distribution
+    fitted without retraining (the ``cem_cycle`` Gaussian prior and the
+    ``codebook_cycle`` k-means codebook).  Callers must pass TRAINING problems
+    only: evaluation problems would leak their action catalogue into the
+    proposal distribution.
+    """
+    phrases = [
+        phrase for problem in problems for phrase in catalogue_phrases(problem)
+    ]
+    if not phrases:
+        raise ValueError("no training action phrases to fit on")
+    return encode_phrases(model, vocab, device, phrases)

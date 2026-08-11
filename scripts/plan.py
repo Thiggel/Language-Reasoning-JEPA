@@ -162,10 +162,13 @@ def main(cfg: DictConfig) -> None:
                     cfg.get("cem_offmanifold_lambda", 1.0)
                 ),
                 cem_prior_anchor=float(cfg.get("cem_prior_anchor", 0.1)),
+                codebook_k=int(cfg.get("codebook_k", 64)),
+                codebook_seed=int(cfg.get("codebook_seed", 0)),
             )
             if planner.proposer is not None:
-                # The proposal Gaussian is fitted on TRAINING problems only,
-                # from the pinned pre-override training distribution.
+                # The proposal distribution (the cem_cycle Gaussian or the
+                # codebook_cycle k-means codebook) is fitted on TRAINING
+                # problems only, from the pinned pre-override distribution.
                 n_prior = int(cfg.get("cem_prior_problems", 64))
                 prior_dataset = build_dataset(
                     train_cfg, vocab, split="train", size=n_prior
@@ -242,6 +245,8 @@ def main(cfg: DictConfig) -> None:
             ),
             "cem_prior_anchor": float(cfg.get("cem_prior_anchor", 0.1)),
             "cem_prior_problems": int(cfg.get("cem_prior_problems", 64)),
+            "codebook_k": int(cfg.get("codebook_k", 64)),
+            "codebook_seed": int(cfg.get("codebook_seed", 0)),
             "generator_samples": int(cfg.get("generator_samples", 16)),
             "generator_top_p": float(cfg.get("generator_top_p", 1.0)),
             "generator_temperature": float(
