@@ -224,9 +224,11 @@ class FaithfulDataset(Dataset):
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
+        shuffle_actions: bool = False,
         hash_bins=None,
         **_,
     ):
+        self.shuffle_actions = bool(shuffle_actions)
         self.n_alt = n_alt
         self.geo_rank_k = geo_rank_k
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
@@ -402,6 +404,13 @@ class FaithfulDataset(Dataset):
                             candidate_rollouts.append(sequence)
                         rollout_steps.append(candidate_rollouts)
                     ga["ga_rollout_steps"] = rollout_steps
+        # Grounding falsifier (named negative control): permute the
+        # correspondence between on-trajectory action phrases and their
+        # rendered transitions.  Drawn last, after all other randomness, to
+        # keep every other field identical to the aligned condition — same
+        # contract as the stylized dataset.
+        if self.shuffle_actions and len(actions) > 1:
+            rng.shuffle(actions)
         out = {
             "prompt": prompt, "steps": steps, "actions": actions,
             "op": op, "value": value, "remaining": remaining,

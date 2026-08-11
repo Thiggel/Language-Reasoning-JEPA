@@ -334,3 +334,24 @@ def test_planner_runs_end_to_end_with_faithful_modes(mode):
         result = planner.plan_episode(problem, slack=1, seed=5)
         assert isinstance(result.solved, bool)
         assert result.steps <= problem.n_necessary_steps + 1
+
+
+def test_faithful_shuffle_actions_permutes_alignment_only():
+    from textjepa.data.faithful import FaithfulDataset
+
+    vocab = build_vocab(23)
+    aligned = FaithfulDataset(vocab, size=6, seed=1)
+    shuffled = FaithfulDataset(vocab, size=6, seed=1, shuffle_actions=True)
+    changed = False
+    for i in range(6):
+        a, b = aligned[i], shuffled[i]
+        # Every non-action field is untouched by the control.
+        assert a["steps"] == b["steps"]
+        assert a["prompt"] == b["prompt"]
+        # Same multiset of action phrases, possibly permuted.
+        assert sorted(map(tuple, a["actions"])) == sorted(
+            map(tuple, b["actions"])
+        )
+        if a["actions"] != b["actions"]:
+            changed = True
+    assert changed, "shuffle_actions was a no-op on the faithful dataset"
