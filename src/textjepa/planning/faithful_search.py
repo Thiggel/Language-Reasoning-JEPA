@@ -15,6 +15,7 @@ import torch
 
 from textjepa.data.faithful import FaithfulDataset, FaithfulEnv
 from textjepa.data.vocab import Vocab
+from textjepa.planning.evaluate import aggregate_episodes
 from textjepa.planning.search import EpisodeResult
 
 
@@ -131,14 +132,23 @@ class FaithfulPlanner:
             n_distr += int(q not in fp.necessary)
             step_texts.append(env.step(q))
         return EpisodeResult(
-            env.solved, len(step_texts), len(fp.necessary), n_distr
+            env.solved, len(step_texts), len(fp.necessary), n_distr,
+            solved_at=len(step_texts) if env.solved else None,
         )
 
 
 def evaluate_faithful_planning(
     planner: FaithfulPlanner, dataset: FaithfulDataset, n_episodes: int,
-    slack: int = 0, seed: int = 0,
-) -> dict[str, dict[str, float]]:
+    slack: int = 0, seed: int = 0, slack_curve: bool = False,
+) -> dict[str, dict]:
+    """Faithful iGSM planning metrics in the shared JSON shape.
+
+    With ``slack_curve`` the episodes are run once at the generous budget
+    ``necessary + slack`` and then scored at every smaller slack; the policy
+    never reads its budget, so the run at slack ``s`` is a prefix of the run at
+    the largest slack. The scalar metrics therefore describe the generous run,
+    and ``success_by_slack[str(slack)]`` equals ``success``.
+    """
     rng = random.Random(seed)
     planned, rand_ = [], []
     for i in range(n_episodes):
@@ -152,16 +162,12 @@ def evaluate_faithful_planning(
             n_d += int(q not in fp.necessary)
             env.step(q)
             steps += 1
-        rand_.append(EpisodeResult(env.solved, steps, len(fp.necessary), n_d))
+        rand_.append(EpisodeResult(
+            env.solved, steps, len(fp.necessary), n_d,
+            solved_at=steps if env.solved else None,
+        ))
 
     def agg(rs):
-        n = len(rs)
-        return {
-            "success": sum(r.solved for r in rs) / n,
-            "mean_steps": sum(r.steps for r in rs) / n,
-            "mean_necessary": sum(r.n_necessary for r in rs) / n,
-            "distractor_rate": sum(r.n_distractor for r in rs)
-            / max(sum(r.steps for r in rs), 1),
-        }
+        return aggregate_episodes(rs, slack_curve=slack_curve, slack=slack)
 
     return {"latent_planner": agg(planned), "random_policy": agg(rand_)}

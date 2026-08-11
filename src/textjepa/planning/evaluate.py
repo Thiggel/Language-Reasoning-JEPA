@@ -74,6 +74,45 @@ def _aggregate(results: list[EpisodeResult]) -> dict[str, float]:
     }
 
 
+def slack_curve_metrics(
+    results: list[EpisodeResult], slack: int
+) -> dict[str, object]:
+    """Score ONE generous-budget run at every slack from 0 to ``slack``.
+
+    The policy never reads its budget, so a single episode run at the largest
+    slack contains the answer for every smaller slack: the episode counts as a
+    success at slack ``s`` exactly when it reached the goal within
+    ``optimal + s`` executed actions. ``excess_steps`` reports, per episode,
+    how many actions beyond the reference plan length were needed (``None``
+    when the episode never solved).
+    """
+    n = max(len(results), 1)
+    excess = [
+        None if r.solved_at is None else r.solved_at - r.n_necessary
+        for r in results
+    ]
+    return {
+        "success_by_slack": {
+            str(s): sum(1 for e in excess if e is not None and e <= s) / n
+            for s in range(int(slack) + 1)
+        },
+        "excess_steps": excess,
+    }
+
+
+def aggregate_episodes(
+    results: list[EpisodeResult],
+    *,
+    slack_curve: bool = False,
+    slack: int = 0,
+) -> dict[str, object]:
+    """Planning-metrics JSON shape shared by every domain's evaluator."""
+    metrics: dict[str, object] = dict(_aggregate(results))
+    if slack_curve:
+        metrics.update(slack_curve_metrics(results, slack))
+    return metrics
+
+
 def evaluate_planning(
     planner: LatentPlanner,
     dataset,

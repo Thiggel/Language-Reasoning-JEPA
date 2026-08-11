@@ -11,6 +11,10 @@ eval_leaf_prob: null
 eval_sample_max_tries: null
 eval_strict_steps_range: null
 slack: 0
+# Score ONE generous-budget run (necessary + slack) at every smaller slack and
+# emit success_by_slack plus per-episode excess_steps. The policy never reads
+# its budget, so the smaller-slack runs are prefixes of the generous one.
+slack_curve: false
 lookahead: 1
 # Depth > 1 uses the reference graph/environment to propose future feasible
 # actions. Keep false for the information-matched evaluation; enable only for
