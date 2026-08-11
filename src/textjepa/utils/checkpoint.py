@@ -233,6 +233,15 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             n_alt=d.get("n_alt", 0),
             geo_rank_k=d.get("geo_rank_k", 0),
             geo_rank_horizon=d.get("geo_rank_horizon", 1),
+            geo_rank_horizons=d.get("geo_rank_horizons", None),
+            geo_rank_rollout_for_h1=d.get("geo_rank_rollout_for_h1", False),
+            geo_rank_candidate_interface=d.get(
+                "geo_rank_candidate_interface", "feasible_menu"
+            ),
+            geo_rank_factual_only=d.get("geo_rank_factual_only", False),
+            geo_rank_feasible_k=d.get("geo_rank_feasible_k", None),
+            geo_rank_invalid_k=d.get("geo_rank_invalid_k", None),
+            invalid_action_mode=d.get("invalid_action_mode", "noop"),
             geo_rank_rollouts=d.get("geo_rank_rollouts", 1),
             geo_rank_policy=d.get("geo_rank_policy", "random"),
             geo_rank_beam_width=d.get("geo_rank_beam_width", 1),

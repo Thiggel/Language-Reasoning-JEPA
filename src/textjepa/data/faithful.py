@@ -217,6 +217,13 @@ class FaithfulDataset(Dataset):
         n_alt: int = 0,
         geo_rank_k: int = 0,
         geo_rank_horizon: int = 1,
+        geo_rank_horizons=None,
+        geo_rank_rollout_for_h1: bool = False,
+        geo_rank_candidate_interface: str = "feasible_menu",
+        geo_rank_factual_only: bool = False,
+        geo_rank_feasible_k=None,
+        geo_rank_invalid_k=None,
+        invalid_action_mode: str = "noop",
         geo_rank_rollouts: int = 1,
         geo_rank_policy: str = "random",
         geo_rank_beam_width: int = 1,
@@ -232,6 +239,33 @@ class FaithfulDataset(Dataset):
         self.n_alt = n_alt
         self.geo_rank_k = geo_rank_k
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
+        self.geo_rank_horizons = tuple(
+            max(1, int(h)) for h in (geo_rank_horizons or [])
+        )
+        self.geo_rank_rollout_for_h1 = bool(geo_rank_rollout_for_h1)
+        # The faithful adapter implements only the default behavior for the
+        # following stylized-dataset knobs.  Accept the defaults so shared
+        # launch scripts can pass them, but fail loudly on anything else —
+        # silently dropping a control flag is how the shuffle_actions gate
+        # defect happened.
+        if geo_rank_candidate_interface != "feasible_menu":
+            raise NotImplementedError(
+                "faithful adapter only supports "
+                "geo_rank_candidate_interface=feasible_menu"
+            )
+        if geo_rank_factual_only:
+            raise NotImplementedError(
+                "faithful adapter does not implement geo_rank_factual_only"
+            )
+        if geo_rank_feasible_k is not None or geo_rank_invalid_k is not None:
+            raise NotImplementedError(
+                "faithful adapter does not implement stratified "
+                "geo_rank_feasible_k/geo_rank_invalid_k sampling"
+            )
+        if invalid_action_mode != "noop":
+            raise NotImplementedError(
+                "faithful adapter only supports invalid_action_mode=noop"
+            )
         self.geo_rank_rollouts = max(1, int(geo_rank_rollouts))
         self.geo_rank_policy = str(geo_rank_policy)
         self.geo_rank_beam_width = max(1, int(geo_rank_beam_width))
@@ -265,6 +299,13 @@ class FaithfulDataset(Dataset):
 
     def __getitem__(self, index: int) -> dict:
         fp, rng = self.problem(index)
+        # Multi-horizon GAR: sample this item's teacher horizon from the
+        # configured set on an independent stream, exactly as the stylized
+        # dataset does, so enabling the set cannot perturb the trajectory.
+        geo_rank_horizon = self.geo_rank_horizon
+        if self.geo_rank_horizons:
+            horizon_rng = random.Random(f"{self.seed}:{index}:ga-horizon")
+            geo_rank_horizon = horizon_rng.choice(self.geo_rank_horizons)
         # Alternative outcomes are an optional supervision view, not part of
         # trajectory generation.  Isolate their randomness so n_alt=0 and
         # n_alt>0 remain exactly paired on every on-trajectory field.
@@ -353,7 +394,7 @@ class FaithfulDataset(Dataset):
                 candidates = [executed, *alternatives]
                 ga = {
                     "ga_t": t_star,
-                    "ga_horizon": self.geo_rank_horizon,
+                    "ga_horizon": geo_rank_horizon,
                     "ga_beam_width": self.geo_rank_beam_width,
                     "ga_candidate_objects": candidates,
                     "ga_alt_actions": [
@@ -365,7 +406,7 @@ class FaithfulDataset(Dataset):
                         for q in alternatives
                     ],
                 }
-                if self.geo_rank_horizon > 1 and self.geo_rank_policy == "greedy":
+                if geo_rank_horizon > 1 and self.geo_rank_policy == "greedy":
                     ga.update(
                         ga_greedy=True,
                         ga_problem=fp,
@@ -373,7 +414,7 @@ class FaithfulDataset(Dataset):
                         ga_vocab=self.vocab,
                         ga_env_kind="faithful",
                     )
-                elif self.geo_rank_horizon > 1:
+                elif geo_rank_horizon > 1 or self.geo_rank_rollout_for_h1:
                     rollout_steps = []
                     for candidate in candidates:
                         candidate_rollouts = []
@@ -391,7 +432,7 @@ class FaithfulDataset(Dataset):
                                     roll_env.step_or_invalid(candidate)
                                 )
                             )
-                            for _depth in range(1, self.geo_rank_horizon):
+                            for _depth in range(1, geo_rank_horizon):
                                 if roll_env.solved:
                                     break
                                 feasible = roll_env.feasible_actions()

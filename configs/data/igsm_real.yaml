@@ -18,6 +18,13 @@ shuffle_actions: false
 n_alt: 0
 geo_rank_k: 0
 geo_rank_horizon: 1
+geo_rank_horizons: null
+geo_rank_rollout_for_h1: false
+geo_rank_candidate_interface: feasible_menu  # only supported value
+geo_rank_factual_only: false                 # only supported value
+geo_rank_feasible_k: null                    # only supported value
+geo_rank_invalid_k: null                     # only supported value
+invalid_action_mode: noop                    # only supported value
 geo_rank_rollouts: 1
 geo_rank_policy: random
 geo_rank_beam_width: 1
