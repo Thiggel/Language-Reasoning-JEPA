@@ -240,6 +240,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             macro_alt_k=d.get("macro_alt_k", 0),
             macro_alt_horizon=d.get("macro_alt_horizon", 3),
             all_action_supervision=d.get("all_action_supervision", False),
+            shuffle_actions=d.get("shuffle_actions", False),
         )
     if d.get("name", "igsm") == "igsm_edit":
         kw = dict(igsm_kwargs)
