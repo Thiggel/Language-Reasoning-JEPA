@@ -207,7 +207,8 @@ def _stub_proposals(planner, problem, vocab, garbage: bool = True):
     if garbage:
         phrases.append(vocab.encode("derive nothing at all ."))
     planner.model.generate_action_phrases = (
-        lambda state, k=8, top_p=1.0, max_len=None, temperature=1.0: phrases
+        lambda state, k=8, top_p=1.0, max_len=None, temperature=1.0,
+        generator=None: phrases
     )
 
 

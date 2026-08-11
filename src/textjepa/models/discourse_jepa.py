@@ -427,19 +427,23 @@ class DiscourseJEPA(nn.Module):
         top_p: float = 1.0,
         max_len: int | None = None,
         temperature: float = 1.0,
+        generator: torch.Generator | None = None,
     ) -> list[list[int]]:
         """Sample ``k`` deduplicated intent-phrase token sequences from a state.
 
         ``state`` is a single pooled state ([D] or [1, D]).  Used by
         open-ended (``generator_cycle``) planning, where proposals are parsed
         against the problem's action space instead of being enumerated.
+        ``generator`` seeds the draw explicitly so a plan is reproducible
+        across processes regardless of the global RNG.
         """
         if self.action_generator is None:
             raise RuntimeError(
                 "generate_action_phrases requires model.action_generator=true"
             )
         return self.action_generator.sample(
-            state, k=k, top_p=top_p, max_len=max_len, temperature=temperature
+            state, k=k, top_p=top_p, max_len=max_len,
+            temperature=temperature, generator=generator,
         )
 
     def _encode_alt(self, batch: dict) -> torch.Tensor | None:

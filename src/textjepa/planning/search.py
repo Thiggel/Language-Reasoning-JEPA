@@ -69,7 +69,11 @@ class EpisodeResult:
     # least one TRULY feasible action was among the parsed proposals; it reads
     # the environment's feasible set for measurement only, never for proposal
     # or scoring. ``parse_rate`` is the fraction of proposals that parsed into
-    # the action space. ``proposal_counts`` holds the per-step means of the
+    # the action space; NOTE the denominator is interface-specific --
+    # generator_cycle counts the distinct non-empty sampled phrases the head
+    # returned, cem_cycle counts the decoded elite phrases -- so the two are
+    # comparable in meaning ("how much of what was proposed was usable") but
+    # not in sample size. ``proposal_counts`` holds the per-step means of the
     # raw counters (n_proposed / n_parseable / n_unparseable / n_unique /
     # n_kept), and ``n_no_proposal`` counts steps at which the interface
     # produced no usable candidate at all (the episode stalls).
@@ -321,8 +325,13 @@ class LatentPlanner:
             raise ValueError("no open-ended proposer to fit a prior for")
         self.proposer.fit_prior(problems)
 
-    def _cem_generator(self, seed, step: int, tag: str = "") -> torch.Generator:
-        """Deterministic per-proposal RNG (process-independent seeding)."""
+    def _proposal_generator(self, seed, step: int, tag: str = "") -> torch.Generator:
+        """Deterministic per-proposal RNG (process-independent seeding).
+
+        Shared by every stochastic proposer (generator_cycle sampling and
+        cem_cycle population draws) so no proposal ever depends on the
+        ambient global RNG.
+        """
         import hashlib
 
         digest = hashlib.blake2b(
@@ -386,7 +395,12 @@ class LatentPlanner:
                 # Both interfaces report the same fields.
                 if self.candidate_interface == "generator_cycle":
                     parsed, n_samples, unparseable = (
-                        self._generator_proposals(problem, s)
+                        self._generator_proposals(
+                            problem, s,
+                            generator=self._proposal_generator(
+                                seed, len(step_texts), "generator"
+                            ),
+                        )
                     )
                     root_candidates = self._cycle_candidates(
                         problem, s, executed=frozenset(env.resolved_set),
@@ -398,13 +412,18 @@ class LatentPlanner:
                         "n_unparseable": float(unparseable),
                         "n_unique": float(len(parsed)),
                         "n_kept": float(len(root_candidates)),
-                        "parse_rate": 1.0 - unparseable / max(n_samples, 1),
+                        # A head that emitted nothing parsed nothing: the
+                        # rate is 0, not the 1.0 an empty denominator gives.
+                        "parse_rate": (
+                            (n_samples - unparseable) / n_samples
+                            if n_samples else 0.0
+                        ),
                     }
                 else:
                     root_candidates, parsed, counts = self.proposer.propose(
                         s, problem, frozenset(env.resolved_set),
                         top_k=self.prior_top_k,
-                        generator=self._cem_generator(seed, len(step_texts)),
+                        generator=self._proposal_generator(seed, len(step_texts)),
                     )
                 proposal_hits.append(
                     float(bool(set(env.feasible_actions()) & set(parsed)))
@@ -703,7 +722,10 @@ class LatentPlanner:
         return order[:keep]
 
     def _generator_proposals(
-        self, problem: Problem, state: torch.Tensor
+        self,
+        problem: Problem,
+        state: torch.Tensor,
+        generator: torch.Generator | None = None,
     ) -> tuple[list[int], int, int]:
         """Sample intent phrases from the generator head and parse them.
 
@@ -719,6 +741,7 @@ class LatentPlanner:
             k=self.generator_samples,
             top_p=self.generator_top_p,
             temperature=self.generator_temperature,
+            generator=generator,
         )
         parsed: list[int] = []
         unparseable = 0
@@ -736,8 +759,22 @@ class LatentPlanner:
         state: torch.Tensor,
         executed: frozenset[int] = frozenset(),
     ) -> list[int]:
-        """Generator proposals, ranked by the LDAD cycle-consistency score."""
-        parsed, _, _ = self._generator_proposals(problem, state)
+        """Generator proposals, ranked by the LDAD cycle-consistency score.
+
+        Used for beam expansions from JEPA-imagined states (the per-step root
+        proposals are drawn in ``plan_episode``, which also records their
+        diagnostics). Seeded from the step's score seed so the resampling is
+        reproducible across processes.
+        """
+        self._expand_index = getattr(self, "_expand_index", 0) + 1
+        parsed, _, _ = self._generator_proposals(
+            problem, state,
+            generator=self._proposal_generator(
+                getattr(self, "_expand_seed", 0),
+                self._expand_index,
+                "expand",
+            ),
+        )
         return self._cycle_candidates(
             problem, state, executed=executed, candidates=parsed
         )
@@ -754,12 +791,12 @@ class LatentPlanner:
         proposals are made in ``plan_episode``, which also records their
         diagnostics). No menu, no catalogue, and no oracle is consulted.
         """
-        self._cem_expand_index = getattr(self, "_cem_expand_index", 0) + 1
+        self._expand_index = getattr(self, "_expand_index", 0) + 1
         actions, _, _ = self.proposer.propose(
             state, problem, executed, top_k=self.prior_top_k,
-            generator=self._cem_generator(
-                getattr(self, "_cem_expand_seed", 0),
-                self._cem_expand_index,
+            generator=self._proposal_generator(
+                getattr(self, "_expand_seed", 0),
+                self._expand_index,
                 "expand",
             ),
         )
@@ -1006,8 +1043,8 @@ class LatentPlanner:
         already produced it (generator_cycle and cem_cycle, whose proposals are
         stochastic and also feed the per-step proposal diagnostics).
         """
-        self._cem_expand_seed = score_seed
-        self._cem_expand_index = 0
+        self._expand_seed = score_seed
+        self._expand_index = 0
         if root_candidates is not None:
             roots = root_candidates
         elif self.candidate_interface == "full_catalogue":
@@ -1016,6 +1053,8 @@ class LatentPlanner:
             roots = self._prior_candidates(problem, s, history=action_history)
         elif self.candidate_interface == "ldad_cycle":
             roots = self._cycle_candidates(problem, s, executed=resolved)
+        elif self.candidate_interface == "generator_cycle":
+            roots = self._generator_candidates(problem, s, executed=resolved)
         elif self.candidate_interface == "cem_cycle":
             roots = self._cem_candidates(problem, s, executed=resolved)
         else:

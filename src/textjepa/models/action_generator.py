@@ -89,11 +89,14 @@ class StateConditionedActionGenerator(nn.Module):
         top_p: float = 1.0,
         max_len: int | None = None,
         temperature: float = 1.0,
+        generator: torch.Generator | None = None,
     ) -> list[list[int]]:
         """Nucleus-sample ``k`` phrases from one state; deduplicated.
 
         Sequences stop at the first PAD token (the learned end marker) and are
-        returned as token-id lists in first-sampled order.
+        returned as token-id lists in first-sampled order.  ``generator``
+        makes the draw reproducible independently of the ambient global RNG;
+        callers that plan deterministically must pass one.
         """
         if k < 1:
             raise ValueError("k must be positive")
@@ -122,7 +125,7 @@ class StateConditionedActionGenerator(nn.Module):
                 probs = torch.zeros_like(probs).scatter(
                     -1, order, sorted_probs
                 )
-            nxt = torch.multinomial(probs, 1)
+            nxt = torch.multinomial(probs, 1, generator=generator)
             tokens = torch.cat([tokens, nxt], dim=1)
             inputs = torch.cat([inputs, self.tok(nxt)], dim=1)
         out: list[list[int]] = []

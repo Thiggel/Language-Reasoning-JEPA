@@ -81,8 +81,12 @@ class ActionGeneration(Objective):
     Trains the state-conditioned generator head used for open-ended
     (catalogue-free) proposals.  The model detaches the state before this
     head, so the loss trains the head alone and cannot shape the JEPA
-    representation.  Masking matches the LDAD loss: a valid transition and a
-    non-PAD token position (PAD is id 0 and doubles as the end marker).
+    representation.  Masking is the LDAD mask (a valid transition, a non-PAD
+    token position) PLUS the first PAD position of each phrase.  That extra
+    position is the end marker: sampling stops at the first PAD, so leaving it
+    unsupervised (as the LDAD scoring loss does, since it never generates)
+    would make it impossible for the head to terminate a phrase — every
+    proposal would run to ``max_len`` and fail to parse.
     """
 
     def forward(self, out, batch: dict) -> torch.Tensor:
@@ -97,7 +101,12 @@ class ActionGeneration(Objective):
             logits.reshape(-1, logits.shape[-1]),
             target.reshape(-1), reduction="none",
         ).reshape_as(target)
+        content = target != 0
+        # First PAD after the phrase: the end marker the sampler stops at.
+        end_marker = torch.arange(
+            L, device=target.device
+        ).expand_as(target) == content.sum(-1, keepdim=True)
         mask = out.extras["action_generator_valid"].unsqueeze(-1) & (
-            target != 0
+            content | end_marker
         )
         return masked_mean(token_loss, mask.float())

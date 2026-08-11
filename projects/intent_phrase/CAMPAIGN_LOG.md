@@ -236,3 +236,45 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
    imagination for the transformer predictor; guard currently blocks it).
 7. Transfer to a second established environment (multi-hop logical
    reasoning) once the iGSM matrix is locked.
+
+## 2026-08-11: open-ended proposers built; domains unlocked; length-OOD running
+
+- Owner directives: (a) implement all four contract domains (faithful iGSM,
+  ProofWriter, PlanBench Blocksworld, text ALFWorld) via supervised
+  subagents; (b) screen MULTIPLE fully open-ended proposal mechanisms
+  (generator head AND CEM-in-embedding-space with decoder grounding +
+  off-manifold control); (c) launch every paper-ready experiment in
+  parallel. Confirmed: nothing had been trained on faithful iGSM yet.
+- Open-ended proposers implemented + merged on main (5f89e47..f0fae8c):
+  generator_cycle (state-conditioned AR phrase head, detached, sampled
+  proposals vetted by LDAD cycle) and cem_cycle (CEM over action embeddings,
+  training-embedding Gaussian prior pinned pre-eval-override, scale-invariant
+  off-manifold penalty, LDAD decode for grounding). One shared decode/score
+  module (planning/ldad_decode.py), one phrase parser (igsm/render.py),
+  unified proposal diagnostics (proposal_recall, proposal_parse_rate —
+  NOTE: parse-rate denominator differs generator=all samples vs CEM=elites).
+  803 tests green. Adversarial review agent with failing-test mandate
+  running over the full diff before any GPU spend.
+- Observed-action planner merged: plan.py can now run slack-curve evals for
+  ProofWriter/Blocksworld/ALFWorld through the same endpoint-Energy code
+  path as stylized iGSM (evaluate_observed_action_planning; oracle row =
+  privileged expert replay, labeled). Faithful iGSM evaluator gained
+  single-pass slack_curve. Slack-curve outputs now get _slackcurve suffix.
+- ProofWriter real-scale data compiled: data/intent_phrase/proofwriter/
+  19884/1962/2000 episodes, depths 1/2/3/5 (OWA, ProofWriter's own splits),
+  validation clean (replay/goal/catalogue-recall 1.0, disjoint splits),
+  smoke-trains. MANIFEST.json has provenance. Blocksworld needs more
+  instance sets + split discipline; ALFWorld needs large collection run.
+- Length-OOD (runs/autonomy/intent_phrase/2026-08-11-intent-length-ood-v3):
+  LDAD seeds s0-s4, feasible_menu lookahead 16. Train lengths 3-9; bands
+  near 10-12 (nvars 20-28), far 13-16 (32-48), extreme 17-20 (40-64),
+  strict length sampling. Two earlier launches were WRONG (EVAL_DEPTHS is
+  lookahead, not problem length; default graphs can't reach length 10+) —
+  discard 2026-08-11-...-v1. First result s1 near: mean_necessary 10.65,
+  strict .047, slack-4 .233 (vs ~.96 strict in-dist) — big length drop.
+  Graph-size confound control queued: length 3-9 at nvars 20-28
+  (ctrl-nvars cells, auto-start when band evals finish).
+- Ops notes: this session runs ON gruenau1 — pkill -f patterns match our own
+  monitors/shell (use PID kills or bracket-escaped patterns). Parallel
+  "predictive-state" subproject commits on main are NOT intent_phrase; leave
+  alone.
