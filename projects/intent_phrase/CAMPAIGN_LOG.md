@@ -314,3 +314,19 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
 - Length-OOD first number (s1, near band 10-12 steps, nvars 20-28):
   strict .047, slack-4 .233 (in-dist ~.96 strict) — large drop; graph-size
   control cells queued.
+
+## 2026-08-11 (cont. 2): frozen-state sentence decoder (owner-requested renderer)
+
+- Report: research/reports/intent_phrase/2026-08-11-state-decoder/ (mirrored).
+  JEPA-pure readout (frozen backbone, zero-grad asserted). TRUE states:
+  77% exact sentence / 96% token / 96% VALUE accuracy; final-answer head 94%
+  (chance 4%) — states are a faithful decodable record incl. arithmetic.
+  IMAGINED states: form survives (token .92 at d1-2), values collapse
+  (.32 -> chance by d5). Controls: prompt-only floor .248 value (one
+  predictor step buys +7pts); one-step-from-true-prefix NO better than
+  compounded rollout at matched depth => SINGLE-STEP fidelity, not
+  compounded drift, is the bottleneck; predictor contributes structure
+  (token .561 -> .923), not computation. Paper story: predictor propagates
+  plan-relevant geometry (what cycle-consistency/Energy read), not
+  arithmetic; explains why calibrated-value baselines fail with depth.
+  Feeds theory T3 (drift is immediate, not accumulated).
