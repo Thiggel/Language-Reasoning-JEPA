@@ -382,3 +382,15 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   geo_rank_factual_only, geo_rank_candidate_interface — any faithful
   length-OOD or invalid-mode experiment must add explicit support first,
   not assume the config key works.
+- Scaled shuffle pair (512 problems): BOTH arms at the random baseline —
+  the tiny gate model does not learn planning at that scale, so the
+  shuffle-hurts criterion cannot be shown in tiny cells. Resolution: test
+  the falsifier at real recipe scale (contract requires it as a causal
+  falsifier anyway). LAUNCHED faithful-iGSM compact LR screen
+  (2026-08-11-intent-faithful-screen-v1): LDAD headline recipe on
+  data=igsm_real, LRs {1e-4,3e-4,1e-3,3e-3} seed 0, PLUS
+  shuffled-actions arm at 3e-4 (real-scale gate check). Sequential chain
+  on gruenau1 GPU 0, order 3e-4 -> 1e-3 -> shuffle -> 1e-4 -> 3e-3;
+  snapshot ce2581c (both shuffle fixes in). All other gate criteria
+  passed (oracle/random bounds, dropout, EMA invariants, geometry>random
+  in the overfit cell).
