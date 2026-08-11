@@ -23,6 +23,12 @@ prior_feasibility_gate=${PRIOR_FEASIBILITY_GATE:-false}
 generator_samples=${GENERATOR_SAMPLES:-16}
 generator_top_p=${GENERATOR_TOP_P:-1.0}
 generator_temperature=${GENERATOR_TEMPERATURE:-1.0}
+cem_population=${CEM_POPULATION:-64}
+cem_elites=${CEM_ELITES:-8}
+cem_iters=${CEM_ITERS:-3}
+cem_offmanifold_lambda=${CEM_OFFMANIFOLD_LAMBDA:-1.0}
+cem_prior_anchor=${CEM_PRIOR_ANCHOR:-0.1}
+cem_prior_problems=${CEM_PRIOR_PROBLEMS:-64}
 case "$composition" in cumulative|terminal|root) ;; *)
   echo "invalid transition Energy composition: $composition" >&2; exit 2;;
 esac
@@ -44,6 +50,11 @@ for depth in $depths; do
     generator_samples="$generator_samples" \
     generator_top_p="$generator_top_p" \
     generator_temperature="$generator_temperature" \
+    cem_population="$cem_population" cem_elites="$cem_elites" \
+    cem_iters="$cem_iters" \
+    cem_offmanifold_lambda="$cem_offmanifold_lambda" \
+    cem_prior_anchor="$cem_prior_anchor" \
+    cem_prior_problems="$cem_prior_problems" \
     allow_oracle_future_actions="$oracle" \
     out="$RUN_DIR/terminal_depth${depth}_slackcurve.json"
 done

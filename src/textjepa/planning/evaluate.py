@@ -83,8 +83,9 @@ def _aggregate(
         r.proposal_recall for r in results if r.proposal_recall is not None
     ]
     if recalls:
-        # generator_cycle diagnostic: fraction of steps at which at least one
-        # truly feasible action appeared among the parsed generator proposals
+        # Open-ended-interface diagnostic (generator_cycle and cem_cycle
+        # report identical fields): fraction of steps at which at least one
+        # truly feasible action appeared among the parsed proposals
         # (measurement only; proposals and scoring never see the oracle).
         metrics["proposal_recall"] = sum(recalls) / len(recalls)
     parse_rates = [
@@ -92,6 +93,22 @@ def _aggregate(
     ]
     if parse_rates:
         metrics["proposal_parse_rate"] = sum(parse_rates) / len(parse_rates)
+    counts = [
+        r.proposal_counts for r in results if r.proposal_counts is not None
+    ]
+    if counts:
+        # Raw per-step proposal counters, averaged over episodes: how many
+        # phrases were proposed, how many parsed, how many distinct actions
+        # survived, and how many the search finally received.
+        for key in counts[0]:
+            metrics[f"proposal_{key}"] = (
+                sum(c[key] for c in counts) / len(counts)
+            )
+        # Fraction of episodes that stalled because a step produced no usable
+        # candidate at all (the planner never falls back to a menu).
+        metrics["no_proposal_episode_rate"] = (
+            sum(r.n_no_proposal > 0 for r in results) / n
+        )
     if max_slack is not None:
         # The policy never reads the remaining budget, so one run at
         # slack=max_slack yields every smaller-slack success rate exactly:

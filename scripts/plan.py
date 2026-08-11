@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -29,6 +30,11 @@ from textjepa.utils.checkpoint import (
 def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
     model, vocab, run_cfg = load_run(cfg.ckpt, cfg.device)
+    # Pinned copy of the checkpoint's own TRAINING data distribution, taken
+    # before any opt-in eval_* distribution-shift override is applied. The
+    # cem_cycle action prior must be fitted on this, not on the (possibly
+    # shifted) evaluation distribution.
+    train_cfg = copy.deepcopy(run_cfg)
     apply_eval_data_overrides(run_cfg, cfg)
     if cfg.get("candidate_interface", "feasible_menu") == "learned_catalogue":
         validate_learned_catalogue_checkpoint(run_cfg)
@@ -115,7 +121,25 @@ def main(cfg: DictConfig) -> None:
                 generator_temperature=float(
                     cfg.get("generator_temperature", 1.0)
                 ),
+                cem_population=int(cfg.get("cem_population", 64)),
+                cem_elites=int(cfg.get("cem_elites", 8)),
+                cem_iters=int(cfg.get("cem_iters", 3)),
+                cem_offmanifold_lambda=float(
+                    cfg.get("cem_offmanifold_lambda", 1.0)
+                ),
+                cem_prior_anchor=float(cfg.get("cem_prior_anchor", 0.1)),
             )
+            if planner.proposer is not None:
+                # The proposal Gaussian is fitted on TRAINING problems only,
+                # from the pinned pre-override training distribution.
+                n_prior = int(cfg.get("cem_prior_problems", 64))
+                prior_dataset = build_dataset(
+                    train_cfg, vocab, split="train", size=n_prior
+                )
+                planner.fit_action_prior([
+                    prior_dataset.problem(i)[0]
+                    for i in range(min(n_prior, len(prior_dataset)))
+                ])
             results = evaluate_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,
                 seed=cfg.seed, slack_curve=cfg.get("slack_curve", False),
@@ -166,6 +190,14 @@ def main(cfg: DictConfig) -> None:
             "candidate_interface": str(cfg.get(
                 "candidate_interface", "feasible_menu"
             )),
+            "cem_population": int(cfg.get("cem_population", 64)),
+            "cem_elites": int(cfg.get("cem_elites", 8)),
+            "cem_iters": int(cfg.get("cem_iters", 3)),
+            "cem_offmanifold_lambda": float(
+                cfg.get("cem_offmanifold_lambda", 1.0)
+            ),
+            "cem_prior_anchor": float(cfg.get("cem_prior_anchor", 0.1)),
+            "cem_prior_problems": int(cfg.get("cem_prior_problems", 64)),
             "generator_samples": int(cfg.get("generator_samples", 16)),
             "generator_top_p": float(cfg.get("generator_top_p", 1.0)),
             "generator_temperature": float(

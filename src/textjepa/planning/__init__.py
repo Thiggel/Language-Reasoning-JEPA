@@ -8,6 +8,12 @@ from textjepa.planning.catalogue import (
     environment_from_episode,
     environment_from_faithful_problem,
 )
+from textjepa.planning.cem_cycle import (
+    ActionPrior,
+    CEMCycleProposer,
+    cem_gaussian,
+    diagonal_prior,
+)
 from textjepa.planning.hierarchical_language import (
     exact_endpoint_control,
     prior_coordinate_cem,
@@ -28,6 +34,10 @@ __all__ = [
     "environment_from_episode",
     "environment_from_faithful_problem",
     "evaluate_planning",
+    "ActionPrior",
+    "CEMCycleProposer",
+    "cem_gaussian",
+    "diagonal_prior",
     "exact_endpoint_control",
     "prior_coordinate_cem",
     "receding_horizon_step",

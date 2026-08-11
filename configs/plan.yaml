@@ -32,7 +32,7 @@ transition_energy_composition: terminal  # terminal | cumulative (control) | roo
 # For horizon-Energy checkpoints, use the preserved one-step GAR value head
 # to prune partial beams and the horizon head only for the final beam choice.
 hybrid_local_pruning: false
-candidate_interface: feasible_menu  # feasible_menu | full_catalogue | learned_catalogue | ldad_cycle | generator_cycle
+candidate_interface: feasible_menu  # feasible_menu | full_catalogue | learned_catalogue | ldad_cycle | generator_cycle | cem_cycle
 # generator_cycle only (fully open-ended proposals): K intent phrases are
 # sampled from the state-conditioned generator head, parsed against the
 # problem's action space (unparseable samples discarded and counted), and the
@@ -41,6 +41,23 @@ candidate_interface: feasible_menu  # feasible_menu | full_catalogue | learned_c
 generator_samples: 16
 generator_top_p: 1.0
 generator_temperature: 1.0
+# cem_cycle only (open-ended CEM in the action-embedding space; no menu and no
+# catalogue is shown to the planner): a population of action codes is scored by
+# the same LDAD cycle as ldad_cycle, the elites are decoded to phrases, and the
+# phrases are parsed against the problem's action space (keeping prior_top_k).
+# Requires a checkpoint with model.observed_action_ldad=true.
+cem_population: 64
+cem_elites: 8
+cem_iters: 3
+# Weight of the off-manifold penalty, in units of the prior's mean embedding
+# norm (scale-invariant, so the value transfers across checkpoints).
+cem_offmanifold_lambda: 1.0
+cem_prior_anchor: 0.1  # mixing weight of the training-phrase Gaussian
+# Training problems used only to fit the CEM initialization Gaussian, drawn
+# from the checkpoint's own TRAINING distribution (before any eval_*
+# distribution-shift override). Using evaluation problems would leak their
+# action catalogue.
+cem_prior_problems: 64
 # learned_catalogue only: filter catalogue candidates by the learned action
 # prior (top-p nucleus over the catalogue-normalized prior, then top-k).
 prior_top_k: 0   # 0 = keep all

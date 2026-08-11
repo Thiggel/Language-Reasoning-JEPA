@@ -57,6 +57,11 @@ def action_phrase(p: Problem, idx: int) -> str:
     )
 
 
+def catalogue_phrases(p: Problem) -> list[str]:
+    """Every action phrase of a problem, indexed by variable."""
+    return [action_phrase(p, v.idx) for v in p.vars]
+
+
 WORD_OPS = {word: op for op, word in OP_WORDS.items()}
 _LOOKUP_PREFIX = ["look", "up", "the", "number", "of"]
 

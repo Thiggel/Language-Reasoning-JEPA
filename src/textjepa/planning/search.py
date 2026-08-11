@@ -23,6 +23,9 @@ from textjepa.data.igsm.graph import Problem
 from textjepa.data.igsm.render import (
     action_phrase, parse_action_phrase, prompt_sentences,
 )
+from textjepa.planning.ldad_decode import (
+    delta_logits, phrase_log_probs, require_ldad_decoder,
+)
 from textjepa.data.vocab import Vocab
 
 
@@ -61,13 +64,19 @@ class EpisodeResult:
     # feasible action under the learned action prior. Diagnostic only: it
     # reads oracle labels for measurement, never for candidate generation.
     prior_rank: float | None = None
-    # generator_cycle diagnostics. ``proposal_recall`` is the fraction of steps
-    # at which at least one TRULY feasible action was among the parsed
-    # generator samples; it reads the environment's feasible set for
-    # measurement only, never for proposal or scoring. ``parse_rate`` is the
-    # fraction of sampled phrases that parsed into the action space.
+    # Open-ended proposal diagnostics, shared by generator_cycle and
+    # cem_cycle. ``proposal_recall`` is the fraction of steps at which at
+    # least one TRULY feasible action was among the parsed proposals; it reads
+    # the environment's feasible set for measurement only, never for proposal
+    # or scoring. ``parse_rate`` is the fraction of proposals that parsed into
+    # the action space. ``proposal_counts`` holds the per-step means of the
+    # raw counters (n_proposed / n_parseable / n_unparseable / n_unique /
+    # n_kept), and ``n_no_proposal`` counts steps at which the interface
+    # produced no usable candidate at all (the episode stalls).
     proposal_recall: float | None = None
     parse_rate: float | None = None
+    proposal_counts: dict[str, float] | None = None
+    n_no_proposal: int = 0
 
 
 def _feasible(problem: Problem, resolved: frozenset[int]) -> list[int]:
@@ -154,10 +163,15 @@ class LatentPlanner:
         generator_samples: int = 16,
         generator_top_p: float = 1.0,
         generator_temperature: float = 1.0,
+        cem_population: int = 64,
+        cem_elites: int = 8,
+        cem_iters: int = 3,
+        cem_offmanifold_lambda: float = 1.0,
+        cem_prior_anchor: float = 0.1,
     ):
         if candidate_interface not in {
             "feasible_menu", "full_catalogue", "learned_catalogue",
-            "ldad_cycle", "generator_cycle",
+            "ldad_cycle", "generator_cycle", "cem_cycle",
         }:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface}"
@@ -224,12 +238,47 @@ class LatentPlanner:
         self.hybrid_local_pruning = bool(hybrid_local_pruning)
         self.candidate_interface = candidate_interface
         self.invalid_action_mode = invalid_action_mode
+        self.proposer = None
+        if candidate_interface == "cem_cycle":
+            from textjepa.planning.cem_cycle import CEMCycleProposer
+
+            self.proposer = CEMCycleProposer(
+                model, vocab, device,
+                population=cem_population,
+                elites=cem_elites,
+                iterations=cem_iters,
+                offmanifold_lambda=cem_offmanifold_lambda,
+                prior_anchor=cem_prior_anchor,
+            )
         if self.hybrid_local_pruning and getattr(
             self.model, "geo_rank_score_mode", "value"
         ) != "horizon":
             raise ValueError(
                 "hybrid local pruning requires a horizon-Energy checkpoint"
             )
+
+    def fit_action_prior(self, problems: list[Problem]) -> None:
+        """Fit the CEM initialization Gaussian on TRAINING problems only.
+
+        Using evaluation problems here would leak their action catalogue into
+        the proposal distribution, so callers must pass the training split as
+        the checkpoint was trained on it (before any eval-time distribution
+        shift overrides).
+        """
+        if self.proposer is None:
+            raise ValueError("no open-ended proposer to fit a prior for")
+        self.proposer.fit_prior(problems)
+
+    def _cem_generator(self, seed, step: int, tag: str = "") -> torch.Generator:
+        """Deterministic per-proposal RNG (process-independent seeding)."""
+        import hashlib
+
+        digest = hashlib.blake2b(
+            f"{seed}:{step}:{tag}".encode(), digest_size=4
+        ).digest()
+        generator = torch.Generator(device=self.device)
+        generator.manual_seed(int.from_bytes(digest, "big"))
+        return generator
 
     def _tokens(self, texts: list[str], min_chunks: int = 0) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -254,6 +303,8 @@ class LatentPlanner:
         prior_ranks: list[float] = []
         proposal_hits: list[float] = []
         parse_rates: list[float] = []
+        proposal_counts: list[dict[str, float]] = []
+        n_no_proposal = 0
         goal_state = (
             self._oracle_goal_state(problem, prompt_tokens, prompt_mask)
             if self.energy == "oracle_goal"
@@ -277,26 +328,42 @@ class LatentPlanner:
                     )
                 )
             root_candidates = None
-            if self.candidate_interface == "generator_cycle":
-                # Sample and parse the open-ended proposals once per step:
+            if self.candidate_interface in {"generator_cycle", "cem_cycle"}:
+                # Produce and parse the open-ended proposals once per step:
                 # the diagnostics below and the search must see the same set.
-                parsed, n_samples, unparseable = self._generator_proposals(
-                    problem, s
-                )
-                feasible = set(env.feasible_actions())
+                # Both interfaces report the same fields.
+                if self.candidate_interface == "generator_cycle":
+                    parsed, n_samples, unparseable = (
+                        self._generator_proposals(problem, s)
+                    )
+                    root_candidates = self._cycle_candidates(
+                        problem, s, executed=frozenset(env.resolved_set),
+                        candidates=parsed,
+                    )
+                    counts = {
+                        "n_proposed": float(n_samples),
+                        "n_parseable": float(n_samples - unparseable),
+                        "n_unparseable": float(unparseable),
+                        "n_unique": float(len(parsed)),
+                        "n_kept": float(len(root_candidates)),
+                        "parse_rate": 1.0 - unparseable / max(n_samples, 1),
+                    }
+                else:
+                    root_candidates, parsed, counts = self.proposer.propose(
+                        s, problem, frozenset(env.resolved_set),
+                        top_k=self.prior_top_k,
+                        generator=self._cem_generator(seed, len(step_texts)),
+                    )
                 proposal_hits.append(
-                    float(bool(feasible & set(parsed)))
+                    float(bool(set(env.feasible_actions()) & set(parsed)))
                 )
-                parse_rates.append(
-                    1.0 - unparseable / max(n_samples, 1)
-                )
-                root_candidates = self._cycle_candidates(
-                    problem, s, executed=frozenset(env.resolved_set),
-                    candidates=parsed,
-                )
+                parse_rates.append(counts.pop("parse_rate"))
+                proposal_counts.append(counts)
+                if not root_candidates:
+                    n_no_proposal += 1
             if (
                 self.candidate_interface
-                in {"learned_catalogue", "generator_cycle"}
+                in {"learned_catalogue", "generator_cycle", "cem_cycle"}
                 or self.search_algorithm in {"beam", "root_balanced_beam"}
             ):
                 best = self._beam_search(
@@ -334,7 +401,7 @@ class LatentPlanner:
                 if self.candidate_interface
                 in {
                     "full_catalogue", "learned_catalogue", "ldad_cycle",
-                    "generator_cycle",
+                    "generator_cycle", "cem_cycle",
                 }
                 else env.step(chosen)
             )
@@ -353,6 +420,15 @@ class LatentPlanner:
             parse_rate=(
                 sum(parse_rates) / len(parse_rates) if parse_rates else None
             ),
+            proposal_counts=(
+                {
+                    key: sum(c[key] for c in proposal_counts)
+                    / len(proposal_counts)
+                    for key in proposal_counts[0]
+                }
+                if proposal_counts else None
+            ),
+            n_no_proposal=n_no_proposal,
         )
 
     def _s0(self, prompt_tokens, prompt_mask) -> torch.Tensor:
@@ -554,12 +630,12 @@ class LatentPlanner:
         ``generator_cycle``, whose proposals come from the generator head
         instead of the catalogue); ``None`` scores the whole catalogue.
         """
-        decoder = getattr(self.model, "observed_action_decoder", None)
-        if decoder is None:
-            raise RuntimeError(
-                f"candidate_interface={self.candidate_interface} requires a "
-                "checkpoint trained with model.observed_action_ldad=true"
-            )
+        # Checked up front, before the empty-candidate shortcut: a checkpoint
+        # without the decoder is a configuration error regardless of whether
+        # anything was proposed at this step.
+        require_ldad_decoder(
+            self.model, f"candidate_interface={self.candidate_interface}"
+        )
         catalogue = self._catalogue_codes(problem)
         if candidates is None:
             candidates = list(range(catalogue.shape[0]))
@@ -569,22 +645,21 @@ class LatentPlanner:
             torch.tensor(candidates, device=catalogue.device)
         ]
         V = len(candidates)
-        flat = state.reshape(1, -1)
-        nxt = self.model.predictor(flat.expand(V, -1), codes)
-        logits = decoder(nxt - flat)
-        scores = []
-        for position, action in enumerate(candidates):
-            ids = torch.tensor(
-                self.vocab.encode(action_phrase(problem, action)),
-                device=logits.device,
-            )
-            L = min(ids.shape[0], logits.shape[1])
-            scores.append(-torch.nn.functional.cross_entropy(
-                logits[position, :L], ids[:L], reduction="mean"
-            ))
+        # Same predictor -> displacement -> decoder path, and the same mean
+        # token log-probability, that cem_cycle scores its population with.
+        scores = phrase_log_probs(
+            delta_logits(
+                self.model, state, codes,
+                context=f"candidate_interface={self.candidate_interface}",
+            ),
+            [
+                self.vocab.encode(action_phrase(problem, action))
+                for action in candidates
+            ],
+        )
         order = [
             candidates[position] for position in torch.argsort(
-                torch.stack(scores), descending=True, stable=True
+                scores, descending=True, stable=True
             ).tolist()
             if candidates[position] not in executed
         ]
@@ -630,6 +705,29 @@ class LatentPlanner:
         return self._cycle_candidates(
             problem, state, executed=executed, candidates=parsed
         )
+
+    def _cem_candidates(
+        self,
+        problem: Problem,
+        state: torch.Tensor,
+        executed: frozenset[int] = frozenset(),
+    ) -> list[int]:
+        """CEM proposals at ``state``, grounded and executed-masked.
+
+        Used for beam expansions from JEPA-imagined states (the per-step root
+        proposals are made in ``plan_episode``, which also records their
+        diagnostics). No menu, no catalogue, and no oracle is consulted.
+        """
+        self._cem_expand_index = getattr(self, "_cem_expand_index", 0) + 1
+        actions, _, _ = self.proposer.propose(
+            state, problem, executed, top_k=self.prior_top_k,
+            generator=self._cem_generator(
+                getattr(self, "_cem_expand_seed", 0),
+                self._cem_expand_index,
+                "expand",
+            ),
+        )
+        return actions
 
     def _imagined_state(
         self, problem: Problem, s: torch.Tensor, sequence: list[int]
@@ -869,9 +967,11 @@ class LatentPlanner:
         """True global beam search over JEPA-imagined continuations.
 
         ``root_candidates`` supplies the depth-1 candidate set when the caller
-        already produced it (generator_cycle, whose sampling is stochastic and
-        also feeds the per-step proposal diagnostics).
+        already produced it (generator_cycle and cem_cycle, whose proposals are
+        stochastic and also feed the per-step proposal diagnostics).
         """
+        self._cem_expand_seed = score_seed
+        self._cem_expand_index = 0
         if root_candidates is not None:
             roots = root_candidates
         elif self.candidate_interface == "full_catalogue":
@@ -880,6 +980,8 @@ class LatentPlanner:
             roots = self._prior_candidates(problem, s, history=action_history)
         elif self.candidate_interface == "ldad_cycle":
             roots = self._cycle_candidates(problem, s, executed=resolved)
+        elif self.candidate_interface == "cem_cycle":
+            roots = self._cem_candidates(problem, s, executed=resolved)
         else:
             roots = _feasible(problem, resolved)
         beam = [[action] for action in roots]
@@ -916,16 +1018,18 @@ class LatentPlanner:
                         )
                         continue
                     if self.candidate_interface in {
-                        "ldad_cycle", "generator_cycle"
+                        "ldad_cycle", "generator_cycle", "cem_cycle"
                     }:
                         if sequence[-1] is None:
                             expanded.append(sequence)
                             continue
-                        expand_fn = (
-                            self._cycle_candidates
-                            if self.candidate_interface == "ldad_cycle"
-                            else self._generator_candidates
-                        )
+                        expand_fn = {
+                            "ldad_cycle": self._cycle_candidates,
+                            "generator_cycle": self._generator_candidates,
+                            "cem_cycle": self._cem_candidates,
+                        }[self.candidate_interface]
+                        # Every cycle interface masks the planner's OWN
+                        # executed and beam-imagined actions here (no oracle).
                         cands = expand_fn(
                             problem,
                             self._imagined_state(problem, s, sequence),
