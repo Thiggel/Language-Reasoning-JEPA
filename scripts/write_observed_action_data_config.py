@@ -25,6 +25,13 @@ def main() -> None:
         "test_seed": 13,
         "geo_rank_k": 4,
         "geo_rank_horizon": 2,
+        "geo_rank_horizons": None,
+        "geo_rank_candidate_interface": "compiled",
+        "dense_geo_anchors": False,
+        "shuffle_actions": False,
+        "train_size": None,
+        "val_size": None,
+        "test_size": None,
         "fresh_per_epoch": False,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -283,7 +283,7 @@ def _branch_counterfactual(
                 return None
         observation, _, done, info = session.step(alternative)
         immediate = str(observation)
-        continuation = []
+        continuation, continuation_actions = [], []
         for _ in range(max_steps - len(prefix) - 1):
             if done:
                 break
@@ -291,12 +291,17 @@ def _branch_counterfactual(
             observation, _, done, info = session.step(action)
             if len(continuation) < horizon:
                 continuation.append(str(observation))
+                continuation_actions.append(str(action))
         if not _won(info):
             return None
         return {
             "action": alternative,
             "outcome": immediate,
             "teacher_rollouts": [continuation],
+            # Horizon-conditioned Energy training rolls the predictor through
+            # these expert continuation actions; without them the horizon
+            # ranking loss silently switches itself off.
+            "teacher_rollout_actions": [continuation_actions],
         }
     except Exception:
         return None

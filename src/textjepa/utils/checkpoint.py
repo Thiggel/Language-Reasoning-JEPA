@@ -110,17 +110,52 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
         path = d.get(f"{split}_path")
         if path is None:
             raise ValueError(f"missing observed-action {split}_path")
+        # Compiled domains fix several knobs at compile time.  Fail loudly on
+        # any non-default value rather than silently dropping it: a silently
+        # dropped data flag has already cost this project two invalid screens.
+        # Structurally fixed by compilation, hence deliberately not runtime
+        # knobs here: ``geo_rank_rollouts`` (compiled data stores exactly the
+        # recorded teacher continuation per candidate) and
+        # ``geo_rank_rollout_for_h1`` (the recorded rollout always includes
+        # the immediate consequence, i.e. the ``true`` semantics), and
+        # ``geo_rank_beam_width`` (a property of the teacher that produced the
+        # recorded continuation, recorded in the domain MANIFEST).
+        for key, default in (
+            ("geo_rank_policy", "random"),
+            ("invalid_action_mode", "noop"),
+            ("geo_rank_factual_only", False),
+            ("all_action_supervision", False),
+            ("macro_alt_k", 0),
+            ("n_alt", 0),
+        ):
+            value = d.get(key, default)
+            if value != default:
+                raise NotImplementedError(
+                    f"observed-action data ignores data.{key}={value!r}; "
+                    "recompile the domain instead of setting it at train time"
+                )
+
         episodes = load_observed_action_jsonl(
             path, expected_domain=d.get("domain")
         )
+        # ``<split>_size`` caps how many recorded episodes are used, which is
+        # how tiny admission cells subset a full compiled corpus.  ``null``
+        # keeps every episode in the file.
+        if size is None:
+            size = d.get(f"{split}_size", None)
         if size is not None:
-            episodes = episodes[:size]
+            episodes = episodes[:int(size)]
         return ObservedActionDataset(
             episodes,
             vocab,
             geo_rank_k=d.get("geo_rank_k", 0),
             geo_rank_horizon=d.get("geo_rank_horizon", 1),
             geo_rank_horizons=d.get("geo_rank_horizons", None),
+            geo_rank_candidate_interface=d.get(
+                "geo_rank_candidate_interface", "compiled"
+            ),
+            geo_rank_feasible_k=d.get("geo_rank_feasible_k", None),
+            geo_rank_invalid_k=d.get("geo_rank_invalid_k", None),
             dense_geo_anchors=(
                 split == "train" and d.get("dense_geo_anchors", False)
             ),
@@ -237,7 +272,7 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             geo_rank_horizons=d.get("geo_rank_horizons", None),
             geo_rank_rollout_for_h1=d.get("geo_rank_rollout_for_h1", False),
             geo_rank_candidate_interface=d.get(
-                "geo_rank_candidate_interface", "feasible_menu"
+                "geo_rank_candidate_interface", "compiled"
             ),
             geo_rank_factual_only=d.get("geo_rank_factual_only", False),
             geo_rank_feasible_k=d.get("geo_rank_feasible_k", None),

@@ -257,3 +257,67 @@ def test_strict_counterfactual_coverage_rejects_missing_branch(
             invalid_counterfactual_k=1,
             require_full_counterfactual_coverage=True,
         )
+
+
+def test_collection_fails_when_grounded_catalogue_omits_expert_action(
+    monkeypatch, tmp_path,
+):
+    """Deployment uses the grounded catalogue, so a miss must stop the run.
+
+    ALFWorld's ``admissible_commands`` are a privileged collection label.  If
+    the separately generated non-oracle catalogue cannot express the expert
+    action, silently continuing would leave the deployed planner unable to
+    reach the goal at all, so collection has to fail loudly.
+    """
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def reset(self):
+            return (
+                "You see a shelf 1. Your task is to: inspect the shelf",
+                {
+                    "won": False,
+                    # The expert wants an object the observation never named,
+                    # so the observation-grounded catalogue cannot contain it.
+                    "admissible_commands": ["take gizmo 7 from shelf 1"],
+                    "extra.expert_plan": ["take gizmo 7 from shelf 1"],
+                },
+            )
+
+        def step(self, action):
+            return "You take gizmo 7.", 1, True, {"won": True}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "textjepa.data.alfworld.AlfworldTextSession", FakeSession
+    )
+    gamefile = tmp_path / "train" / "game.tw-pddl"
+    gamefile.parent.mkdir()
+    gamefile.write_text("{}")
+    with pytest.raises(RuntimeError, match="catalogue misses expert"):
+        collect_alfworld_record(
+            gamefile, tmp_path, "train", seed=1, counterfactual_k=0
+        )
+
+
+def test_compiled_trace_keeps_teacher_rollout_actions_aligned():
+    record = _trace()
+    record["steps"][0]["counterfactuals"] = [{
+        "action": "look",
+        "outcome": "You see nothing new.",
+        "teacher_rollouts": [["You arrive at counter 1.", "You take apple 1."]],
+        "teacher_rollout_actions": [[
+            "go to counter 1", "take apple 1 from counter 1",
+        ]],
+    }]
+    episode = compile_alfworld_trace(record, "train")
+    alternative = episode.transitions[0].counterfactuals[0]
+    assert alternative.teacher_rollout_actions == ((
+        "go to counter 1", "take apple 1 from counter 1",
+    ),)
+    assert len(alternative.teacher_rollout_actions[0]) == len(
+        alternative.teacher_rollouts[0]
+    )

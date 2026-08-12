@@ -195,6 +195,11 @@ def build_observed_action_vocab(
                 for rollout in alternative.teacher_rollouts:
                     for outcome in rollout:
                         tokens.extend(outcome.split())
+                # Teacher rollout actions are fed to the predictor during
+                # horizon-Energy training, so their tokens must be known.
+                for rollout in alternative.teacher_rollout_actions:
+                    for action in rollout:
+                        tokens.extend(action.split())
     return Vocab(tokens)
 
 
@@ -208,7 +213,7 @@ class ObservedActionDataset(Dataset):
         geo_rank_k: int = 0,
         geo_rank_horizon: int = 1,
         geo_rank_horizons: Iterable[int] | None = None,
-        geo_rank_candidate_interface: str = "feasible_menu",
+        geo_rank_candidate_interface: str = "compiled",
         geo_rank_feasible_k: int | None = None,
         geo_rank_invalid_k: int | None = None,
         dense_geo_anchors: bool = False,
@@ -219,11 +224,30 @@ class ObservedActionDataset(Dataset):
             raise ValueError("episodes must be non-empty")
         self.episodes = episodes
         self.vocab = vocab
-        self.geo_rank_k = max(0, int(geo_rank_k))
+        # ``-1`` means "every recorded alternative", matching the stylized
+        # and faithful iGSM datasets; ``0`` disables geometry supervision.
+        self.geo_rank_k = int(geo_rank_k)
+        if self.geo_rank_k < -1:
+            raise ValueError("geo_rank_k must be -1, 0, or positive")
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
         self.geo_rank_horizons = (
             tuple(sorted({max(1, int(value)) for value in geo_rank_horizons}))
             if geo_rank_horizons else None
+        )
+        if geo_rank_candidate_interface not in {
+            "compiled", "feasible_menu", "full_catalogue"
+        }:
+            raise NotImplementedError(
+                "compiled observed-action data supports only the "
+                "'compiled', 'feasible_menu', or 'full_catalogue' ranking "
+                f"interfaces, not {geo_rank_candidate_interface!r}"
+            )
+        self.geo_rank_candidate_interface = geo_rank_candidate_interface
+        self.geo_rank_feasible_k = (
+            None if geo_rank_feasible_k is None else int(geo_rank_feasible_k)
+        )
+        self.geo_rank_invalid_k = (
+            None if geo_rank_invalid_k is None else int(geo_rank_invalid_k)
         )
         self.dense_geo_anchors = bool(dense_geo_anchors)
         self.shuffle_actions = bool(shuffle_actions)
@@ -269,6 +293,36 @@ class ObservedActionDataset(Dataset):
             for index, value in enumerate(catalogue)
         }
         return mapping[action]
+
+    def _ranking_alternatives(
+        self, transition: ObservedTransition, rng: random.Random,
+    ) -> list[Counterfactual]:
+        """Choose which recorded alternatives supply ranking supervision.
+
+        ``feasible_menu`` restricts supervision to alternatives that were
+        executable at the anchor; ``full_catalogue`` keeps the rejected ones
+        too.  Both use only compile-time labels for *training data
+        selection*; neither is visible to the deployed planner.
+        """
+        feasible, invalid = [], []
+        for value in transition.counterfactuals:
+            (feasible if value.action in transition.available
+             else invalid).append(value)
+        rng.shuffle(feasible)
+        rng.shuffle(invalid)
+        if self.geo_rank_feasible_k is not None:
+            feasible = feasible[:max(0, self.geo_rank_feasible_k)]
+        if self.geo_rank_candidate_interface == "feasible_menu":
+            invalid = []
+        elif self.geo_rank_candidate_interface == "compiled":
+            pass
+        elif self.geo_rank_invalid_k is not None:
+            invalid = invalid[:max(0, self.geo_rank_invalid_k)]
+        selected = [*feasible, *invalid]
+        rng.shuffle(selected)
+        if self.geo_rank_k >= 0:
+            selected = selected[:self.geo_rank_k]
+        return selected
 
     def __len__(self) -> int:
         return len(self.examples)
@@ -338,9 +392,7 @@ class ObservedActionDataset(Dataset):
                     else eligible[rng.randrange(len(eligible))]
                 )
                 transition = transitions[anchor]
-                alternatives = list(transition.counterfactuals)
-                rng.shuffle(alternatives)
-                alternatives = alternatives[:self.geo_rank_k]
+                alternatives = self._ranking_alternatives(transition, rng)
                 horizon = self.geo_rank_horizon
                 if self.geo_rank_horizons:
                     horizon = self.geo_rank_horizons[

@@ -334,16 +334,18 @@ def compile_blocksworld_episode(
         for alternative in feasible:
             next_state = transition(state, alternative)
             continuation = shortest_plan(next_state, problem.goal, catalogue)
-            rollout_states = []
+            rollout_states, rollout_actions = [], []
             cursor = next_state
             if continuation is not None:
                 for action in continuation[:max(teacher_horizon - 1, 0)]:
                     cursor = transition(cursor, action)
                     rollout_states.append(render_state(cursor))
+                    rollout_actions.append(action.text)
             counterfactuals.append(Counterfactual(
                 alternative.text,
                 render_state(next_state),
                 (tuple(rollout_states),),
+                (tuple(rollout_actions),),
             ))
         invalid = [
             action for action in catalogue
@@ -353,17 +355,19 @@ def compile_blocksworld_episode(
             invalid = invalid[:int(invalid_counterfactual_k)]
         if invalid:
             continuation = shortest_plan(state, problem.goal, catalogue)
-            rollout_states = []
+            rollout_states, rollout_actions = [], []
             cursor = state
             if continuation is not None:
                 for action in continuation[:max(teacher_horizon - 1, 0)]:
                     cursor = transition(cursor, action)
                     rollout_states.append(render_state(cursor))
+                    rollout_actions.append(action.text)
             counterfactuals.extend(
                 Counterfactual(
                     alternative.text,
                     "The proposed action is invalid and the state is unchanged .",
                     (tuple(rollout_states),),
+                    (tuple(rollout_actions),),
                 )
                 for alternative in invalid
             )

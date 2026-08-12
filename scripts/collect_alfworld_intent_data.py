@@ -135,6 +135,13 @@ def collect_split(args, split: str, limit: int) -> dict:
     else:
         games = _solvable_games(source)
         random.Random(f"{args.seed}:{split}").shuffle(games)
+        if args.shard_count > 1:
+            # Deterministic striping of the shuffled game order.  Each shard
+            # is an independent process collecting its own slice, so the wall
+            # clock scales with the number of shards without sharing a
+            # TextWorld engine or a Fast Downward mapping between them.
+            games = games[args.shard_index::args.shard_count]
+            limit = -(-limit // args.shard_count)
     records, failures = [], []
     context = multiprocessing.get_context("spawn")
     for gamefile in games:
@@ -168,6 +175,14 @@ def collect_split(args, split: str, limit: int) -> dict:
                     raise RuntimeError(
                         "non-oracle catalogue recall is below 100%; dataset blocked"
                     ) from error
+        # Collection spans hours; report progress so a stalled shard is
+        # visible without waiting for the split to finish.
+        print(
+            f"{split} shard {args.shard_index}/{args.shard_count}: "
+            f"{len(records)}/{limit} collected, {len(failures)} failed, "
+            f"last={gamefile.parent.parent.name}",
+            flush=True,
+        )
         if len(records) >= limit:
             break
     if len(records) < limit:
@@ -222,6 +237,14 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=1741)
     parser.add_argument(
+        "--shard-index", type=int, default=0,
+        help="index of this collection shard (deterministic striping)",
+    )
+    parser.add_argument(
+        "--shard-count", type=int, default=1,
+        help="number of parallel shards; each collects size/shard_count",
+    )
+    parser.add_argument(
         "--split", choices=("all", "train", "val", "test"), default="all"
     )
     args = parser.parse_args()
@@ -229,8 +252,12 @@ def main() -> None:
         "train": args.train_size, "val": args.val_size,
         "test": args.test_size,
     }
+    if not 0 <= args.shard_index < args.shard_count:
+        raise SystemExit("shard index must be inside the shard count")
     summary = {
         "schema_version": 1,
+        "shard_index": args.shard_index,
+        "shard_count": args.shard_count,
         "catalogue_policy": CATALOGUE_POLICY_VERSION,
         "seed": args.seed,
         "counterfactual_k": args.counterfactual_k,

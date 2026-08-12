@@ -351,3 +351,129 @@ def test_no_prior_model_skips_action_support_computation():
     )
     out = model(batch)
     assert "action_support_logits" not in out.extras
+
+
+def _two_step_episode():
+    """A two-step episode whose alternative records rollout actions."""
+    return ObservedActionEpisode.from_dict({
+        "episode_id": "plan-1",
+        "domain": "planbench-blocksworld",
+        "split": "train",
+        "prompt": ["block a is clear .", "goal: block a is on block b ."],
+        "goal": "goal: block a is on block b .",
+        "transitions": [
+            {
+                "action": "pick up block a from the table",
+                "outcome": "the hand holds block a .",
+                "catalogue": [
+                    "pick up block a from the table",
+                    "pick up block b from the table",
+                    "stack block a on block b",
+                ],
+                "available": [
+                    "pick up block a from the table",
+                    "pick up block b from the table",
+                ],
+                "counterfactuals": [{
+                    "action": "pick up block b from the table",
+                    "outcome": "the hand holds block b .",
+                    "teacher_rollouts": [[
+                        "block b is on the table .",
+                        "the hand holds block a .",
+                    ]],
+                    "teacher_rollout_actions": [[
+                        "put down block b on the table",
+                        "pick up block a from the table",
+                    ]],
+                }],
+            },
+            {
+                "action": "stack block a on block b",
+                "outcome": "block a is on block b .",
+                "catalogue": [
+                    "pick up block a from the table",
+                    "pick up block b from the table",
+                    "stack block a on block b",
+                ],
+                "available": ["stack block a on block b"],
+                "counterfactuals": [],
+            },
+        ],
+    })
+
+
+def test_horizon_energy_receives_teacher_rollout_action_tokens():
+    """Horizon-mode Energy silently skips without ``ga_rollout_actions``.
+
+    The model only builds the horizon Energy when the batch carries rollout
+    action tokens, so a compiled domain that omits them would train with the
+    recipe's main ranking loss switched off.
+    """
+    episode = _two_step_episode()
+    vocab = build_observed_action_vocab([episode])
+    dataset = ObservedActionDataset(
+        [episode], vocab, geo_rank_k=1, geo_rank_horizon=2, seed=3
+    )
+    item = dataset[0]
+    assert "ga_rollout_actions" in item
+    batch = collate([item], vocab.pad_id)
+    assert "ga_rollout_action_tokens" in batch
+    steps = batch["ga_rollout_step_tokens"]
+    actions = batch["ga_rollout_action_tokens"]
+    # One action code per observed rollout state, for every candidate.
+    assert actions.shape[:4] == steps.shape[:4]
+    assert batch["ga_requested_horizon"].tolist() == [2]
+
+
+def test_multi_horizon_sampling_varies_the_requested_horizon():
+    episode = _two_step_episode()
+    vocab = build_observed_action_vocab([episode])
+    horizons = set()
+    for seed in range(12):
+        dataset = ObservedActionDataset(
+            [episode], vocab, geo_rank_k=1, geo_rank_horizon=8,
+            geo_rank_horizons=[1, 2, 4, 8], seed=seed,
+        )
+        horizons.add(dataset[0]["ga_horizon"])
+    assert horizons.issubset({1, 2, 4, 8})
+    assert len(horizons) > 1
+
+
+def test_feasible_menu_ranking_drops_recorded_invalid_alternatives():
+    """The two ranking interfaces must actually differ on compiled data."""
+    payload = asdict(_two_step_episode())
+    payload["transitions"] = [dict(value) for value in payload["transitions"]]
+    payload["transitions"][0]["counterfactuals"] = [
+        *payload["transitions"][0]["counterfactuals"], {
+        "action": "stack block a on block b",
+        "outcome": "The proposed action is invalid and the state is unchanged .",
+        "teacher_rollouts": [["the hand holds block a ."]],
+        "teacher_rollout_actions": [["pick up block a from the table"]],
+    }]
+    episode = ObservedActionEpisode.from_dict(payload)
+    vocab = build_observed_action_vocab([episode])
+    feasible = ObservedActionDataset(
+        [episode], vocab, geo_rank_k=-1, geo_rank_horizon=2, seed=1,
+        geo_rank_candidate_interface="feasible_menu",
+    )[0]
+    full = ObservedActionDataset(
+        [episode], vocab, geo_rank_k=-1, geo_rank_horizon=2, seed=1,
+        geo_rank_candidate_interface="full_catalogue",
+    )[0]
+    assert len(feasible["ga_alt_actions"]) == 1
+    assert len(full["ga_alt_actions"]) == 2
+
+
+def test_build_dataset_refuses_silently_dropped_observed_action_flags():
+    """A dropped data flag has already invalidated two screens in this repo."""
+    episode = _two_step_episode()
+    vocab = build_observed_action_vocab([episode])
+    cfg = OmegaConf.create({"data": {
+        "name": "observed_action",
+        "domain": "planbench-blocksworld",
+        "train_path": "unused.jsonl",
+        "geo_rank_k": 1,
+        "invalid_action_mode": "failure",
+    }})
+    with pytest.raises(NotImplementedError, match="invalid_action_mode"):
+        build_dataset(cfg, vocab, split="train")
