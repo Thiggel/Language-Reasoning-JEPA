@@ -25,17 +25,44 @@ class Counterfactual:
     action: str
     outcome: str
     teacher_rollouts: tuple[tuple[str, ...], ...] = ()
+    # The action phrases executed along each teacher rollout, aligned with
+    # ``teacher_rollouts``.  Horizon-conditioned Energy training rolls the
+    # predictor forward through these action codes, so a domain that omits
+    # them silently disables the horizon ranking loss.  Empty means "not
+    # recorded" and is accepted for backward compatibility.
+    teacher_rollout_actions: tuple[tuple[str, ...], ...] = ()
 
     @classmethod
     def from_dict(cls, item: dict) -> "Counterfactual":
-        return cls(
+        value = cls(
             action=str(item["action"]),
             outcome=str(item["outcome"]),
             teacher_rollouts=tuple(
                 tuple(str(step) for step in rollout)
                 for rollout in item.get("teacher_rollouts", [])
             ),
+            teacher_rollout_actions=tuple(
+                tuple(str(step) for step in rollout)
+                for rollout in item.get("teacher_rollout_actions", [])
+            ),
         )
+        value.validate()
+        return value
+
+    def validate(self) -> None:
+        if not self.teacher_rollout_actions:
+            return
+        if len(self.teacher_rollout_actions) != len(self.teacher_rollouts):
+            raise ValueError(
+                "teacher_rollout_actions must align with teacher_rollouts"
+            )
+        for states, actions in zip(
+            self.teacher_rollouts, self.teacher_rollout_actions
+        ):
+            if len(states) != len(actions):
+                raise ValueError(
+                    "each teacher rollout needs one action per observed state"
+                )
 
 
 @dataclass(frozen=True)
@@ -180,6 +207,10 @@ class ObservedActionDataset(Dataset):
         vocab: Vocab,
         geo_rank_k: int = 0,
         geo_rank_horizon: int = 1,
+        geo_rank_horizons: Iterable[int] | None = None,
+        geo_rank_candidate_interface: str = "feasible_menu",
+        geo_rank_feasible_k: int | None = None,
+        geo_rank_invalid_k: int | None = None,
         dense_geo_anchors: bool = False,
         shuffle_actions: bool = False,
         seed: int = 0,
@@ -190,6 +221,10 @@ class ObservedActionDataset(Dataset):
         self.vocab = vocab
         self.geo_rank_k = max(0, int(geo_rank_k))
         self.geo_rank_horizon = max(1, int(geo_rank_horizon))
+        self.geo_rank_horizons = (
+            tuple(sorted({max(1, int(value)) for value in geo_rank_horizons}))
+            if geo_rank_horizons else None
+        )
         self.dense_geo_anchors = bool(dense_geo_anchors)
         self.shuffle_actions = bool(shuffle_actions)
         self.seed = int(seed)
@@ -306,19 +341,24 @@ class ObservedActionDataset(Dataset):
                 alternatives = list(transition.counterfactuals)
                 rng.shuffle(alternatives)
                 alternatives = alternatives[:self.geo_rank_k]
+                horizon = self.geo_rank_horizon
+                if self.geo_rank_horizons:
+                    horizon = self.geo_rank_horizons[
+                        rng.randrange(len(self.geo_rank_horizons))
+                    ]
+                continuation = transitions[anchor + 1:anchor + horizon]
                 candidates = [
                     Counterfactual(
                         transition.action,
                         transition.outcome,
-                        (tuple(value.outcome for value in transitions[
-                            anchor + 1:anchor + self.geo_rank_horizon
-                        ]),),
+                        (tuple(value.outcome for value in continuation),),
+                        (tuple(value.action for value in continuation),),
                     ),
                     *alternatives,
                 ]
                 item.update(
                     ga_t=anchor,
-                    ga_horizon=self.geo_rank_horizon,
+                    ga_horizon=horizon,
                     ga_alt_actions=[
                         self.vocab.encode(
                             self._training_action(
@@ -335,9 +375,7 @@ class ObservedActionDataset(Dataset):
                         [
                             [self.vocab.encode(value.outcome)] + [
                                 self.vocab.encode(outcome)
-                                for outcome in rollout[
-                                    : self.geo_rank_horizon - 1
-                                ]
+                                for outcome in rollout[: horizon - 1]
                             ]
                             for rollout in (
                                 value.teacher_rollouts
@@ -347,4 +385,21 @@ class ObservedActionDataset(Dataset):
                         for value in candidates
                     ],
                 )
+                if all(
+                    value.teacher_rollout_actions for value in candidates
+                ):
+                    # Horizon-conditioned Energy rolls the predictor forward
+                    # through these action codes.  Emit them only when every
+                    # candidate has them, so a partially annotated dataset
+                    # cannot silently mix rolled and non-rolled candidates.
+                    item.update(ga_rollout_actions=[
+                        [
+                            [self.vocab.encode(value.action)] + [
+                                self.vocab.encode(action)
+                                for action in rollout[: horizon - 1]
+                            ]
+                            for rollout in value.teacher_rollout_actions
+                        ]
+                        for value in candidates
+                    ])
         return item

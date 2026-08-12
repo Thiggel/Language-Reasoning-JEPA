@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from itertools import permutations
 from pathlib import Path
+import random
 import re
 
 from textjepa.data.observed_action import (
@@ -98,6 +100,92 @@ def parse_blocksworld_pddl(text: str, problem_id: str | None = None) -> BlocksPr
 def load_blocksworld_pddl(path: str | Path) -> BlocksProblem:
     path = Path(path)
     return parse_blocksworld_pddl(path.read_text(), problem_id=path.stem)
+
+
+def _encode_atoms(atoms: State, naming: dict[str, str]) -> tuple:
+    encoded = []
+    for atom in atoms:
+        encoded.append(tuple(
+            naming.get(part, part) for part in atom
+        ))
+    return tuple(sorted(encoded))
+
+
+def canonical_identity(problem: BlocksProblem) -> tuple:
+    """Return a block-renaming-invariant identity for a problem.
+
+    Two Blocksworld problems that differ only in which letters name the
+    blocks pose the same reasoning task, so split disjointness must be
+    checked modulo renaming.  For the corpus sizes used here (at most eight
+    blocks) exhaustive minimisation over permutations is affordable and
+    exact; larger problems fall back to the literal identity.
+    """
+    objects = tuple(sorted(problem.objects))
+    if len(objects) > 8:
+        return ("literal", objects, _encode_atoms(problem.initial, {}),
+                _encode_atoms(problem.goal, {}))
+    best = None
+    slots = [f"#{index}" for index in range(len(objects))]
+    for permutation in permutations(objects):
+        naming = dict(zip(permutation, slots))
+        key = (
+            _encode_atoms(problem.initial, naming),
+            _encode_atoms(problem.goal, naming),
+        )
+        if best is None or key < best:
+            best = key
+    return ("canonical", len(objects), *best)
+
+
+def _random_configuration(rng: random.Random, objects: tuple[str, ...]) -> State:
+    """Sample a uniform-ish random legal tower configuration, hand empty."""
+    blocks = list(objects)
+    rng.shuffle(blocks)
+    towers: list[list[str]] = []
+    for block in blocks:
+        # Either start a new tower or stack on an existing one.  The 1/(k+1)
+        # rule reproduces the mixture of flat and tall states seen in the
+        # official generated instances.
+        if not towers or rng.random() < 1.0 / (len(towers) + 1):
+            towers.append([block])
+        else:
+            towers[rng.randrange(len(towers))].append(block)
+    atoms: list[Atom] = [("handempty",)]
+    for tower in towers:
+        atoms.append(("ontable", tower[0]))
+        for lower, upper in zip(tower, tower[1:]):
+            atoms.append(("on", upper, lower))
+        atoms.append(("clear", tower[-1]))
+    return frozenset(atoms)
+
+
+def random_blocksworld_problem(
+    rng: random.Random,
+    n_blocks: int,
+    problem_id: str,
+) -> BlocksProblem:
+    """Sample one instance from the official ``generated_basic`` recipe.
+
+    The official PlanBench Blocksworld generator draws a random initial
+    configuration and a random goal configuration, then keeps a random
+    non-empty subset of the goal configuration's ``on`` atoms.  This
+    reproduces that recipe so extra training identities can be produced
+    without touching the held-out official instances.
+    """
+    if not 2 <= n_blocks <= 26:
+        raise ValueError("n_blocks must be between 2 and 26")
+    objects = tuple("abcdefghijklmnopqrstuvwxyz"[:n_blocks])
+    initial = _random_configuration(rng, objects)
+    for _ in range(200):
+        target = _random_configuration(rng, objects)
+        on_atoms = sorted(atom for atom in target if atom[0] == "on")
+        if not on_atoms:
+            continue
+        keep = rng.randint(1, len(on_atoms))
+        goal = frozenset(rng.sample(on_atoms, keep))
+        if not goal.issubset(initial):
+            return BlocksProblem(problem_id, objects, initial, goal)
+    raise RuntimeError("failed to sample a non-trivial Blocksworld goal")
 
 
 def action_catalogue(objects: tuple[str, ...]) -> tuple[BlocksAction, ...]:

@@ -474,3 +474,56 @@ a depth axis onto the LM numbers.
   are coarse role/op codes; names live in the state, not the action code.
   Menu-free via prompt-derived catalogue + cycle feasibility stands as the
   right claim; retrieval memories are ruled out in principle.
+
+## 2026-08-12: LM-baseline + scaling program stood up (PREPARED, nothing launched)
+
+Audit of the contract's six learned LM rows: all six have a TRAINING path
+already (`scripts/train_lm.py` with `train.target_kind=intent`,
+`scripts/train_sentlm.py` with `model.latent_target`, and `model.recurrent`
+for the three weight-shared counterparts). Planning eval under the
+feasible-menu interface also existed (`plan_lm.py`, `plan_sentlm.py`), but it
+did NOT produce the JEPA slack-curve metrics: it emitted a single fixed-slack
+success and its own ad-hoc dict. Fixed (d52bae5): both now aggregate through
+`textjepa.planning.evaluate.aggregate_episodes` with `slack_curve=true` and
+record `solved_at` (exact for a greedy policy that stops at the goal), so
+`success_by_slack` / `excess_steps` / `invalid_action_rate` /
+`mean_necessary` match `scripts/plan.py` field-for-field. `invalid_rate` is
+kept as an alias; curve runs get a `_slackcurve` filename suffix.
+`configs/plan.yaml` gained `score` and `eval_loops`.
+
+New `scripts/run_intent_lm_screen_cell.sh` is the LM analogue of
+`run_intent_horizon_energy_cell.sh`: trains one row, then evaluates it under
+the identical feasible-menu protocol, writing `metrics.json` with
+`slack_curves`. It keys curves by RECURRENT LOOP COUNT (contract loops
+{1,2,4,8,16}) and sets `planning_depth_axis: false`, so a loop count can
+never be misread as a JEPA simulated-transition depth.
+
+Trained LM checkpoints that already exist (usable NOW for the frozen-feature
+state-readout probes — `scripts/export_intent_representations.py` already
+supports `--kind token_lm|sentence_lm`): token LM d_model=288 and sentence LM
+(+/- latent) d_model=256, seeds {1,2,3}, on BOTH stylized (`runs/lm_intent*`,
+`runs/sentlm_intent*`, `runs/sentlm_latent_intent*`) and faithful
+(`*_faithful*`) iGSM, all at lr 3e-4 (faithful token LM at 1e-3), 20 epochs,
+train_size 100000. NOTE these are off-contract widths (288/256, not
+128/256/512) and off-contract seeds (1..3, not 0..4), so they are probe/
+diagnostic material, not headline rows. NO recurrent LM checkpoint exists.
+
+PREPARED (not launched):
+- `runs/autonomy/intent_phrase/2026-08-12-intent-lm-screen-v1/` — compact LR
+  screen {1e-4,3e-4,1e-3,3e-3}, width 256, seed 0, stylized iGSM, for token
+  LM and sentence LM (8 cells + `run_chain_gpu0.sh`). EPOCHS=10
+  TRAIN_SIZE=30000 BATCH_SIZE=32, matching the JEPA screen cells.
+- `runs/autonomy/intent_phrase/2026-08-12-intent-width-scaling-v1/` — JEPA
+  LDAD recipe (`mix4_aux025_nohorizon` + observed_action_ldad) at widths
+  {128, 512}, lr 3e-4, seed 0, stylized iGSM (2 cells +
+  `run_chain_gpu1.sh`). Width key is `model.d_model`; verified to
+  instantiate at 6.05M / 22.82M / 89.41M params for 128/256/512. Width 256
+  is already covered by `stab-ldad-ema-s0-v1`.
+Both rounds run from the immutable snapshot `runs/autonomy/_code/d52bae5...`.
+
+Still unimplemented (documented, not fixed): the three recurrent LM rows have
+no screen cells yet (the runner supports them via `token_lm_rec` /
+`sentence_lm_rec` / `sentence_lm_latent_rec`, but no checkpoint has ever
+been trained, so their loop axis is untested); full_catalogue LM baselines
+still raise on faithful iGSM; the LM rows have no matched-FLOPs axis
+(they have no lookahead to trade compute against).
