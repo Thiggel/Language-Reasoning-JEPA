@@ -2,7 +2,7 @@
 
 _Keep short. Compress completed stages into a few lines; details live in
 `research/reports/intent_phrase/<date>-*/REPORT.md` and are mirrored to
-`/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-07._
+`/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-12._
 
 ## RECIPE UPDATE (2026-08-08): LDAD added to the recipe (new headline)
 
@@ -722,3 +722,73 @@ alex_submit_intent_long_mains.sh,alex_submit_proofwriter_lr_screen.sh,
 alex_submit_intent_faithful_mains.sh,sync_back_round.sh,
 write_cell_environment.sh}`. Per-round READMEs with the exact rsync-back
 command live in each local round directory.
+
+## 2026-08-12 (cont. 5): PlanBench Blocksworld + text-ALFWorld corpora built, admission gates run
+
+Report: `research/reports/intent_phrase/2026-08-12-planbench-alfworld-unlock/`.
+Round dir: `runs/autonomy/intent_phrase/2026-08-12-intent-domains-v1/`.
+
+CORPORA (both frozen, with provenance MANIFESTs; `data/` is gitignored):
+- PlanBench Blocksworld `data/intent_phrase/planbench_blocksworld/`: 3000 train
+  / 60 val / 80 test episodes + a 48-episode 6-block length-OOD test set.
+  Instance sets `generated_basic_3`, `generated_basic`, `generated` (official
+  pool 263). Identity = (initial, goal) atom set minimised over all block
+  RENAMINGS, so relabelled duplicates cannot straddle splits; val/test are
+  official instances only. Rejections recorded (2420 held-out-identity, 505
+  renaming-duplicate, 1683 literal-duplicate, 335 block-count).
+- text-ALFWorld `data/intent_phrase/alfworld/paper_v1/`: 840 train / 80 val /
+  80 test episodes, 12204/1111/1244 transitions, 48816/4444/4976
+  counterfactuals (half deliberately infeasible). Splits are the official
+  train / valid_seen / valid_unseen game sets, zero gamefile overlap, all six
+  task families present in every split. 100% of counterfactual branches carry
+  `teacher_rollout_actions`. Collected by 48+8+8 deterministic shard stripes;
+  40 of 48 train stripes completed (2 wedged on games that outlive the 900 s
+  episode timeout, 6 were still slow-collecting when the round was frozen), so
+  the corpus is 840 rather than 1000 episodes. Re-running the missing stripe
+  indices extends it reproducibly; contributing shards are listed per split in
+  MANIFEST.json.
+
+INFORMATION BOUNDARY (the thing reviewers will attack): ALFWorld's
+`admissible_commands` and both domains' expert plans are COLLECTION labels
+only. Deployment scores a separately generated grounded catalogue
+(`observed-entities-v1` for ALFWorld: 35-2895 actions/step; formable block
+operations for PlanBench: 18-50). Collection FAILS HARD if that catalogue
+omits the expert action, pinned by
+`tests/test_alfworld_adapter.py::test_collection_fails_when_grounded_catalogue_omits_expert_action`,
+so 100% catalogue recall is an invariant, not a survivor average.
+
+ADMISSION GATES — both domains pass every DATA-side gate, both FAIL the
+tiny-overfit gate. PlanBench (`_gate_planbench_v2`, 6/8 checks):
+schema/replay/recall/disjointness pass (exact replay 1.0, catalogue recall
+1.0, goal success 1.0 on ALL 3000+60+80 episodes); horizon Energy live;
+random 0.0 vs oracle 1.0; dropout zero + EMA eval pass; closed loop runs on
+both interfaces. But a 0.36M model trained 400 epochs on 24 episodes reaches
+strict success 0.0 on its own TRAINING set (random 0.0), while memorising the
+data well (`observed_action_sequence_exact` 0.702, token acc 0.950,
+`goal_dist_corr` 0.579) and emitting invalid actions 92% of the time on the
+full catalogue. Length-2 control (`_gate_planbench_len2`, 7/8): with only
+2-step plans and near-perfect geometry (`goal_dist_corr` 0.995) the model gets
+0.167 vs RANDOM 0.250 — i.e. the failure is NOT plan-length compounding, it is
+that the endpoint-Energy selection does not beat random on this domain at tiny
+scale. The shuffle falsifier IS wired and bites hard at the loss level
+(sequence-exact 0.702 aligned vs 0.013 shuffled); it only scores "false" in
+the summary because that check compares strict success, which is at floor for
+both cells. ALFWorld (`_gate_alfworld`): data gates pass (exact replay 1.0,
+recall 1.0, goal success 1.0 on 40 sampled episodes/split — full live-engine
+replay of 1000 episodes is hours), horizon Energy live at h=1 and h=8,
+random 0.0 vs oracle 1.0; learning-side cells (40 epochs) were still running
+when this entry was written — see `_gate_alfworld/gate_summary.json`.
+
+CONSEQUENCE: per the admission rules in PAPER_EXPERIMENTS.md neither domain is
+admitted for the LR sweep yet. Both first cells are PREPARED, NOT LAUNCHED:
+`2026-08-12-intent-domains-v1/{planbench,alfworld}-ldad-lr3e4-s0-v1/job.sh`
+(LDAD, lr 3e-4, seed 0, width 256, `state=PREPARED`, snapshot under
+`runs/autonomy/_code/<sha>`). Open question for the owner: whether the
+tiny-overfit criterion is the right admission bar for domains whose plans are
+7-15 steps long, or whether it should be scored on a non-floored metric
+(LDAD sequence-exact / goal_dist_corr), which both domains pass clearly.
+
+Gate-tooling fixes committed this round: `TINY_DATA_ROOT` so the tiny cells can
+use a cheap subset while replay/bounds still read the full corpus; and
+`check_compiled_domain_horizon_loss.py` no longer hardcodes iGSM's
+`max_chunk_len=96`, which had made the ALFWorld gate impossible to run at all.
