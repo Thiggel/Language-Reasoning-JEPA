@@ -831,3 +831,15 @@ use a cheap subset while replay/bounds still read the full corpus; and
   freed gruenau1 GPU2: all 6 bands (ID 15-25 through 45-50) at slack 16
   with full curves (subsumes any smaller budget); 200 eps/band. Wide-slack
   ID eval still running on gruenau2.
+- Faithful REVERSAL: lr 1e-4 wins (.337 strict @d16) AND restores depth
+  monotonicity (.247 d1 -> .337 d16), vs flat .24 at 3e-4. The negative
+  shuffle verdict was measured at the WRONG LR; queued
+  faith-ldad-shuffle-lr1e4-s0-v1 behind the last screen cell (3e-3).
+  Faithful mains remain held until shuffle@1e-4 is in.
+- Long-trace LR CONFIRMED 3e-4 (1e-3 crosscheck: slack4 .037 @d16 vs
+  .073) — Alex mains already at 3e-4, no action.
+- ALFWorld gate_summary.json: all data-side checks pass; tiny-overfit and
+  shuffle fail on floored strict (as reported) — owner decision pending.
+- ProofWriter LM screens (Alex, synced): all 8 LM cells strict .61-.65,
+  slack4 .94-.97 — LMs are STRONG on ProofWriter; PW LDAD cells still
+  running. The JEPA-vs-LM comparison on PW will be the interesting one.
