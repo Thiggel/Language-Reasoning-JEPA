@@ -282,12 +282,15 @@ def standardize(Xtr, Xva):
     return (Xtr - mu) / sd, (Xva - mu) / sd
 
 
-def run_control1(train_rec, val_rec, seed: int) -> dict:
+DEFAULT_FEATURE_SPECS = [
+    ("u_action", dict(u_key="u_small", onehot=False)),
+    ("onehot_var", dict(u_key="u_small", onehot=True)),
+]
+
+
+def run_control1(train_rec, val_rec, seed: int, feature_specs=None) -> dict:
     results: dict = {}
-    for feat_name, kwargs in [
-        ("u_action", dict(u_key="u_small", onehot=False)),
-        ("onehot_var", dict(u_key="u_small", onehot=True)),
-    ]:
+    for feat_name, kwargs in feature_specs or DEFAULT_FEATURE_SPECS:
         Str, Utr, Rtr, Ftr, Dtr, _ = build_pair_rows(train_rec, **kwargs)
         Sva, Uva, Rva, Fva, Dva, _ = build_pair_rows(val_rec, **kwargs)
         d_s, d_u = Str.shape[1], Utr.shape[1]
