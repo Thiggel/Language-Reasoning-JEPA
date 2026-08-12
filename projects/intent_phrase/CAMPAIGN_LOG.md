@@ -589,3 +589,22 @@ PREPARED (not launched):
   was silently Markov inside horizon GAR — real bug), cells queued on
   gruenau2 waiter; LM LR screen (8 cells) + width scaling {128,512} chains
   launched on gruenau2 (metric-parity fixes d52bae5).
+
+## 2026-08-12 (cont.): long-trace retrain (owner-ordered redesign of length OOD)
+
+- Owner: train on 15-25-step traces (like official iGSM's longer op counts),
+  eval bands 25-30 ... 45-50; cancel superseded runs. CANCELLED: v3 extreme
+  reruns (s2/s3/s4), ctrl-nvars cells/waiters, LM OOD evals on 3-9-trained
+  checkpoints. v3 near/far 5-seed numbers stay recorded (near strict
+  .055±.062, slack-4 .282±.255; far ~0; extreme 0 on 2 seeds; protocol was
+  feasible_menu + candidate-privileged future menus at lookahead 16).
+- Design probing: stylized generator cannot produce >~37-step cones at
+  default leaf_prob .35; leaf_prob=0.1 (held FIXED across train and eval so
+  length is the only axis) makes all bands samplable fast: train [15,25]
+  @ nvars [30,60]; eval [25,30]@[60,120], [30,35]@[90,160], [35,40]@
+  [110,180], [40,45]@[130,200], [45,50]@[150,220]. Longest episodes ~205
+  chunks -> model.max_chunks=256; batch 16.
+- LAUNCHED 2026-08-12-intent-long-traces-v1 on gruenau1: jepa-ldad-long-s0
+  (GPU2, LDAD recipe lr 3e-4), tok-lm-long-s0 (lr 3e-3) -> sent-lm-long-s0
+  (lr 3e-4) chained on GPU1. Band evals to follow after training.
+- codebook_ground 300-ep eval COMPLETED — results to be read/reported.
