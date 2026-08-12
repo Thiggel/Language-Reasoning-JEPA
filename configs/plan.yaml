@@ -85,6 +85,15 @@ out: null
 # null infers outcome/intent from the training checkpoint. Override only for
 # diagnostics; the paper evaluates each LM using its matched training target.
 score_kind: null
+# Sentence-LM evaluation rule (scripts/plan_sentlm.py). The sentence-plus-
+# latent row is ONE trained model with TWO predeclared rules: `decoder`
+# (candidate reconstruction likelihood) and `latent` (LN-L1 distance to the
+# predicted next latent). Not a tuning knob.
+score: decoder
+# Recurrent (weight-shared) LM rows only: number of shared-block loops at
+# evaluation. Null keeps the checkpoint's trained default. The paper contract
+# evaluates loops {1,2,4,8,16}. This is NOT a planning depth.
+eval_loops: null
 eval_dataset_seed: null
 # Compare candidate strings by mean token likelihood.  Summed likelihood has
 # an avoidable preference for shorter intent wording.

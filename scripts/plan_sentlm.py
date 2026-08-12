@@ -26,6 +26,8 @@ from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.render import action_phrase, prompt_sentences, step_sentence
 from textjepa.models.sent_lm import SentenceLM
+from textjepa.planning.evaluate import aggregate_episodes
+from textjepa.planning.search import EpisodeResult
 from textjepa.utils import seed_everything
 from textjepa.utils.checkpoint import apply_eval_data_overrides, build_dataset
 
@@ -36,8 +38,15 @@ def main(cfg: DictConfig) -> None:
     ckpt = torch.load(cfg.ckpt, map_location=cfg.device, weights_only=False)
     run_cfg = OmegaConf.create(ckpt["cfg"])
     apply_eval_data_overrides(run_cfg, cfg)
+    candidate_interface = cfg.get("candidate_interface", "feasible_menu")
+    if candidate_interface not in {"feasible_menu", "full_catalogue"}:
+        raise ValueError(f"unknown candidate_interface: {candidate_interface}")
     device = torch.device(cfg.device)
     faithful = run_cfg.data.get("name", "igsm") == "igsm_real"
+    if candidate_interface == "full_catalogue" and faithful:
+        raise NotImplementedError(
+            "full_catalogue LM baseline not implemented for faithful iGSM yet"
+        )
     if faithful:
         from textjepa.data.faithful import cached_faithful_vocab
 
@@ -62,6 +71,11 @@ def main(cfg: DictConfig) -> None:
     target_kind = run_cfg.train.get("target_kind", "outcome")
     if target_kind not in {"outcome", "intent"}:
         raise ValueError(f"unknown sentence LM target_kind: {target_kind}")
+    if candidate_interface == "full_catalogue" and target_kind != "intent":
+        raise ValueError(
+            "full_catalogue candidate_interface requires target_kind=intent "
+            "(outcome-scoring needs a feasible action to render the outcome)"
+        )
 
     def tokens(texts):
         ids = [vocab.encode(t) for t in texts]
@@ -71,7 +85,7 @@ def main(cfg: DictConfig) -> None:
             out[0, c, : len(i)] = torch.tensor(i)
         return out.to(device)
 
-    solved = steps_sum = distr = 0
+    results: list[EpisodeResult] = []
     measure_flops = bool(cfg.get("measure_flops", False))
     try:
         from torch.utils.flop_counter import FlopCounterMode
@@ -95,8 +109,9 @@ def main(cfg: DictConfig) -> None:
                 prompt = prompt_sentences(problem, random.Random(cfg.seed + ep))
                 necessary = problem.query_ancestors
             history_texts: list[str] = []
-            budget = len(necessary) + cfg.slack
-            n = 0
+            n_necessary = len(necessary)
+            budget = n_necessary + cfg.slack
+            n = n_invalid = n_distr = 0
             while not env.solved and n < budget:
                 batch = {
                     "prompt_tokens": tokens(prompt),
@@ -115,7 +130,10 @@ def main(cfg: DictConfig) -> None:
                     batch["step_mask"],
                 )
                 ctx = states[:, len(history_texts) - 1] if history_texts else s0
-                feas = env.feasible_actions()
+                if candidate_interface == "full_catalogue":
+                    feas = list(range(len(problem.vars)))
+                else:
+                    feas = env.feasible_actions()
                 if target_kind == "intent":
                     cand_texts = [
                         env.action_text(a) if faithful
@@ -141,27 +159,41 @@ def main(cfg: DictConfig) -> None:
                         lengths = (cand_tok != vocab.pad_id).sum(-1).clamp_min(1)
                         s = s / lengths
                 pick = feas[int(s.argmin().item())]
-                distr += int(pick not in necessary)
+                n_distr += int(pick not in necessary)
                 if target_kind == "intent":
                     history_texts.append(
                         env.action_text(pick) if faithful
                         else action_phrase(problem, pick)
                     )
-                history_texts.append(env.step(pick))
+                if candidate_interface == "full_catalogue":
+                    n_invalid += int(pick not in env.feasible_actions())
+                    history_texts.append(env.step_or_invalid(pick))
+                else:
+                    history_texts.append(env.step(pick))
                 n += 1
-            solved += int(env.solved)
-            steps_sum += n
-    out = {
-        f"sentlm_{target_kind}_{score}": {
-            "success": solved / cfg.n_episodes,
-            "mean_steps": steps_sum / cfg.n_episodes,
-            "distractor_rate": distr / max(steps_sum, 1),
-            "length_normalized": bool(
-                cfg.get("length_normalize", True) and score == "decoder"
-            ),
-        }
-    }
+            results.append(
+                EpisodeResult(
+                    env.solved, n, n_necessary, n_distr, n_invalid,
+                    # The greedy policy stops the moment the goal is reached,
+                    # so the executed-step count IS the solved-at step.
+                    solved_at=n if env.solved else None,
+                )
+            )
+    slack_curve = bool(cfg.get("slack_curve", False))
+    metrics = aggregate_episodes(
+        results, slack_curve=slack_curve, slack=cfg.slack
+    )
+    # ``invalid_rate`` is the historical field name in the LM baseline JSONs;
+    # keep it as an alias of the shared ``invalid_action_rate``.
+    metrics["invalid_rate"] = metrics["invalid_action_rate"]
+    metrics.update({
+        "length_normalized": bool(
+            cfg.get("length_normalize", True) and score == "decoder"
+        ),
+        "candidate_interface": candidate_interface,
+    })
     key = f"sentlm_{target_kind}_{score}"
+    out = {key: metrics}
     out[key]["flop_measurement_supported"] = FlopCounterMode is not None
     if measure_flops and FlopCounterMode is not None:
         total_flops = int(flop_counter.get_total_flops())
@@ -171,9 +203,16 @@ def main(cfg: DictConfig) -> None:
         })
     print(json.dumps(out, indent=2))
     split_suffix = "" if split == "val" else f"_{split}"
+    ci_suffix = (
+        "" if candidate_interface == "feasible_menu" else f"_{candidate_interface}"
+    )
+    # A slack curve is scored from one generous-budget run, so it must not
+    # overwrite the fixed-slack run at the same nominal slack.
+    curve_suffix = "_slackcurve" if slack_curve else ""
     dest = Path(
         cfg.out or Path(cfg.ckpt).parent
-        / f"plan_slack{cfg.slack}_sentlm_{target_kind}_{score}{split_suffix}.json"
+        / f"plan_slack{cfg.slack}_sentlm_{target_kind}_{score}{ci_suffix}"
+        f"{curve_suffix}{split_suffix}.json"
     )
     dest.write_text(json.dumps(out, indent=2))
     print(f"saved to {dest}")

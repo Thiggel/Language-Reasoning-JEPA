@@ -23,6 +23,7 @@ from textjepa.data.igsm.dataset import build_vocab
 from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.render import action_phrase, prompt_sentences, step_sentence
 from textjepa.models.lm_baseline import DecoderLM
+from textjepa.planning.evaluate import aggregate_episodes
 from textjepa.planning.search import EpisodeResult
 from textjepa.utils import seed_everything
 from textjepa.utils.checkpoint import apply_eval_data_overrides, build_dataset
@@ -39,8 +40,20 @@ def main(cfg: DictConfig) -> None:
     )
     if score_kind not in {"outcome", "intent"}:
         raise ValueError(f"unknown LM score_kind: {score_kind}")
+    candidate_interface = cfg.get("candidate_interface", "feasible_menu")
+    if candidate_interface not in {"feasible_menu", "full_catalogue"}:
+        raise ValueError(f"unknown candidate_interface: {candidate_interface}")
     device = torch.device(cfg.device)
     faithful = run_cfg.data.get("name", "igsm") == "igsm_real"
+    if candidate_interface == "full_catalogue" and faithful:
+        raise NotImplementedError(
+            "full_catalogue LM baseline not implemented for faithful iGSM yet"
+        )
+    if candidate_interface == "full_catalogue" and score_kind != "intent":
+        raise ValueError(
+            "full_catalogue candidate_interface requires score_kind=intent "
+            "(outcome-scoring needs a feasible action to render the outcome)"
+        )
     if faithful:
         from textjepa.data.faithful import cached_faithful_vocab
 
@@ -85,9 +98,12 @@ def main(cfg: DictConfig) -> None:
             history = [t for s in prompt for t in vocab.encode(s)]
             n_necessary = len(necessary)
             budget = n_necessary + cfg.slack
-            steps = n_distr = 0
+            steps = n_distr = n_invalid = 0
             while not env.solved and steps < budget:
-                feas = env.feasible_actions()
+                if candidate_interface == "full_catalogue":
+                    feas = list(range(len(problem.vars)))
+                else:
+                    feas = env.feasible_actions()
                 if score_kind == "intent":
                     cands = [
                         vocab.encode(env.action_text(a)) if faithful
@@ -123,22 +139,33 @@ def main(cfg: DictConfig) -> None:
                         vocab.encode(env.action_text(pick)) if faithful
                         else vocab.encode(action_phrase(problem, pick))
                     )
-                history += vocab.encode(env.step(pick))
+                if candidate_interface == "full_catalogue":
+                    n_invalid += int(pick not in env.feasible_actions())
+                    history += vocab.encode(env.step_or_invalid(pick))
+                else:
+                    history += vocab.encode(env.step(pick))
                 steps += 1
             results.append(
-                EpisodeResult(env.solved, steps, n_necessary, n_distr)
+                EpisodeResult(
+                    env.solved, steps, n_necessary, n_distr, n_invalid,
+                    # The greedy policy stops the moment the goal is reached,
+                    # so the executed-step count IS the solved-at step.
+                    solved_at=steps if env.solved else None,
+                )
             )
     n = len(results)
-    out = {
-        f"lm_{score_kind}_policy": {
-            "success": sum(r.solved for r in results) / n,
-            "mean_steps": sum(r.steps for r in results) / n,
-            "mean_necessary": sum(r.n_necessary for r in results) / n,
-            "distractor_rate": sum(r.n_distractor for r in results)
-            / max(sum(r.steps for r in results), 1),
-            "length_normalized": bool(cfg.get("length_normalize", True)),
-        }
-    }
+    slack_curve = bool(cfg.get("slack_curve", False))
+    metrics = aggregate_episodes(
+        results, slack_curve=slack_curve, slack=cfg.slack
+    )
+    # ``invalid_rate`` is the historical field name in the LM baseline JSONs;
+    # keep it as an alias of the shared ``invalid_action_rate``.
+    metrics["invalid_rate"] = metrics["invalid_action_rate"]
+    metrics.update({
+        "length_normalized": bool(cfg.get("length_normalize", True)),
+        "candidate_interface": candidate_interface,
+    })
+    out = {f"lm_{score_kind}_policy": metrics}
     out[f"lm_{score_kind}_policy"]["flop_measurement_supported"] = (
         FlopCounterMode is not None
     )
@@ -151,9 +178,16 @@ def main(cfg: DictConfig) -> None:
     for k, v in out[f"lm_{score_kind}_policy"].items():
         print(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}")
     split_suffix = "" if split == "val" else f"_{split}"
+    ci_suffix = (
+        "" if candidate_interface == "feasible_menu" else f"_{candidate_interface}"
+    )
+    # A slack curve is scored from one generous-budget run, so it must not
+    # overwrite the fixed-slack run at the same nominal slack.
+    curve_suffix = "_slackcurve" if slack_curve else ""
     dest = Path(
         cfg.out or Path(cfg.ckpt).parent
-        / f"plan_slack{cfg.slack}_lm_{score_kind}{split_suffix}.json"
+        / f"plan_slack{cfg.slack}_lm_{score_kind}{ci_suffix}"
+        f"{curve_suffix}{split_suffix}.json"
     )
     dest.write_text(json.dumps(out, indent=2))
     print(f"saved to {dest}")

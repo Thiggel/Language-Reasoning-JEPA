@@ -1075,6 +1075,74 @@ class DiscourseJEPA(nn.Module):
             subgoal_action_positive=subgoal_action_positive,
         )
 
+    def _horizon_prefix_endpoints(
+        self,
+        *,
+        out,
+        t: torch.Tensor,
+        root: torch.Tensor,
+        action_codes: torch.Tensor,
+        action_mask: torch.Tensor,
+    ) -> list:
+        """Imagined endpoints after each horizon-GAR rollout action.
+
+        ``root``/``action_codes``/``action_mask`` are flattened over
+        ``[B*C*R]`` rows (candidates x rollouts per batch element, in that
+        order).  Masked positions are a contiguous suffix (the symbolic
+        rollout terminated) and are treated as absorbing no-ops.
+
+        The Markov MLP predictor simply consumes ``(state, action)`` pairs.
+        A causal history predictor instead reads the whole state/action
+        history, so a length-one call would reset its position embedding and
+        drop the factual prefix ``s_0..s_t`` / ``a_0..a_{t-1}`` — exactly the
+        assumption the old ``RuntimeError`` guarded.  Here the factual prefix
+        is rebuilt per anchor step and the predictor's own ``rollout`` grows
+        the history with each imagined waypoint, matching how the planner
+        rolls it out.
+        """
+        predictor = self.core.predictor
+        horizon = action_codes.shape[1]
+        if not getattr(predictor, "causal_sequence", False):
+            endpoint = root
+            prefixes = []
+            for horizon_index in range(horizon):
+                proposed = predictor(endpoint, action_codes[:, horizon_index])
+                endpoint = torch.where(
+                    action_mask[:, horizon_index].unsqueeze(-1),
+                    proposed,
+                    endpoint,
+                )
+                prefixes.append(endpoint)
+            return prefixes
+        rows = root.shape[0]
+        per_batch = rows // t.shape[0]
+        group = t.repeat_interleave(per_batch)
+        states_all = torch.cat([out.s0.unsqueeze(1), out.step_states], dim=1)
+        raw = root.new_empty(rows, horizon, root.shape[-1])
+        for anchor in t.unique().tolist():
+            sel = (group == anchor).nonzero(as_tuple=True)[0]
+            bsel = torch.div(sel, per_batch, rounding_mode="floor")
+            raw = raw.index_copy(
+                0,
+                sel,
+                predictor.rollout(
+                    root.index_select(0, sel),
+                    action_codes.index_select(0, sel),
+                    state_history=states_all[bsel, : anchor + 1],
+                    action_history=out.actions[bsel, :anchor],
+                ),
+            )
+        endpoint = root
+        prefixes = []
+        for horizon_index in range(horizon):
+            endpoint = torch.where(
+                action_mask[:, horizon_index].unsqueeze(-1),
+                raw[:, horizon_index],
+                endpoint,
+            )
+            prefixes.append(endpoint)
+        return prefixes
+
     def _geo_rank(self, batch: dict, out) -> None:
         """Geometric-advantage ranking: energies for executed + K alt
         actions at one anchor step; labels = LN-L1 distance of the TRUE
@@ -1293,10 +1361,6 @@ class DiscourseJEPA(nn.Module):
             and "ga_rollout_action_tokens" in batch
             and "ga_rollout_distance" in out.extras
         ):
-            if getattr(self.core.predictor, "causal_sequence", False):
-                raise RuntimeError(
-                    "horizon GAR currently requires the matched MLP predictor"
-                )
             action_tokens = batch["ga_rollout_action_tokens"]
             action_mask = batch["ga_rollout_action_mask"]
             B_h, C_h, R_h, H, La = action_tokens.shape
@@ -1306,19 +1370,12 @@ class DiscourseJEPA(nn.Module):
             root = s_anchor.unsqueeze(1).unsqueeze(1).expand(
                 -1, C_h, R_h, -1
             ).reshape(B_h * C_h * R_h, -1)
-            endpoint = root
-            predicted_prefixes = []
             flat_action_mask = action_mask.reshape(B_h * C_h * R_h, H)
-            for horizon_index in range(H):
-                proposed = self.core.predictor(
-                    endpoint, action_codes[:, horizon_index]
-                )
-                endpoint = torch.where(
-                    flat_action_mask[:, horizon_index].unsqueeze(-1),
-                    proposed,
-                    endpoint,
-                )
-                predicted_prefixes.append(endpoint)
+            predicted_prefixes = self._horizon_prefix_endpoints(
+                out=out, t=t, root=root, action_codes=action_codes,
+                action_mask=flat_action_mask,
+            )
+            endpoint = predicted_prefixes[-1] if predicted_prefixes else root
             initial_h = out.s0.unsqueeze(1).unsqueeze(1).expand(
                 -1, C_h, R_h, -1
             ).reshape(B_h * C_h * R_h, -1)

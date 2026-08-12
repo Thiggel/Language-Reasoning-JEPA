@@ -1032,6 +1032,149 @@ def test_horizon_gar_uses_requested_not_effective_terminal_length():
     assert torch.all(seen[0] == 4)
 
 
+def _horizon_gar_batch(seed=53, size=8, horizon=4, rollouts=3):
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(
+        vocab, size=size, seed=seed, geo_rank_k=2,
+        geo_rank_horizon=horizon, geo_rank_rollouts=rollouts,
+        geo_rank_policy="random",
+    )
+    return vocab, collate([dataset[i] for i in range(size)], vocab.pad_id)
+
+
+def test_horizon_gar_mlp_path_matches_explicit_markov_recursion():
+    """Regression guard: the default (concat MLP) horizon-GAR path must stay
+    bit-identical to the plain ``s <- F(s, a)`` recursion it always used, so
+    existing checkpoints are unaffected by causal-predictor support."""
+    torch.manual_seed(0)
+    vocab, batch = _horizon_gar_batch()
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="concat", geo_rank_score_mode="horizon",
+        geo_horizon_supervise_prefixes=True, value_detach=False,
+    )
+    model.eval()
+    with torch.no_grad():
+        out = model(batch)
+        action_mask = batch["ga_rollout_action_mask"]
+        B, C, R, H = action_mask.shape
+        flat_mask = action_mask.reshape(B * C * R, H)
+        codes = model.encode_actions(
+            batch["ga_rollout_action_tokens"].reshape(
+                B * C * R, H, batch["ga_rollout_action_tokens"].shape[-1]
+            )
+        ).reshape(B * C * R, H, -1)
+        t = batch["ga_t"].clamp(min=0)
+        bidx = torch.arange(B)
+        root = out.prev_states[bidx, t].unsqueeze(1).unsqueeze(1).expand(
+            -1, C, R, -1
+        ).reshape(B * C * R, -1)
+        endpoint, expected = root, []
+        for h in range(H):
+            proposed = model.core.predictor(endpoint, codes[:, h])
+            endpoint = torch.where(
+                flat_mask[:, h].unsqueeze(-1), proposed, endpoint
+            )
+            expected.append(endpoint)
+        states = out.extras["ga_horizon_states"].reshape(B * C * R, -1, root.shape[-1])
+        depths = out.extras["ga_horizon_depths"].tolist()
+        stacked = torch.stack([root, *expected], dim=1)
+        for column, depth in enumerate(depths):
+            assert torch.equal(states[:, column], stacked[:, depth])
+
+
+def test_horizon_gar_supports_causal_predictor_with_factual_history():
+    from textjepa.objectives import GeoHorizonRank
+
+    torch.manual_seed(0)
+    vocab, batch = _horizon_gar_batch(seed=59, size=4, rollouts=2)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="causal", predictor_heads=2,
+        geo_rank_score_mode="horizon", value_detach=False,
+    )
+    out = model(batch)
+    assert out.extras["ga_horizon_energy"].shape == (4, 3, 2)
+    loss = GeoHorizonRank(kind="logistic")(out, batch)
+    assert torch.isfinite(loss)
+    loss.backward()
+    assert any(
+        p.grad is not None for p in model.core.predictor.parameters()
+    )
+    assert any(
+        p.grad is not None
+        for p in model.core.horizon_energy_head.parameters()
+    )
+
+
+def test_horizon_gar_causal_endpoints_differ_from_history_free_recursion():
+    """The causal predictor must read the factual prefix, not restart at
+    position zero for every imagined step."""
+    torch.manual_seed(0)
+    vocab, batch = _horizon_gar_batch(seed=61, size=4, rollouts=2)
+    model = DiscourseJEPA(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=32, chunk_layers=1, chunk_heads=2,
+        state_layers=1, state_heads=2, d_action=8, d_macro=4,
+        predictor_kind="causal", predictor_heads=2,
+        geo_rank_score_mode="horizon",
+        geo_horizon_supervise_prefixes=True, value_detach=False,
+    )
+    model.eval()
+    with torch.no_grad():
+        out = model(batch)
+        action_mask = batch["ga_rollout_action_mask"]
+        B, C, R, H = action_mask.shape
+        flat_mask = action_mask.reshape(B * C * R, H)
+        codes = model.encode_actions(
+            batch["ga_rollout_action_tokens"].reshape(
+                B * C * R, H, batch["ga_rollout_action_tokens"].shape[-1]
+            )
+        ).reshape(B * C * R, H, -1)
+        t = batch["ga_t"].clamp(min=0)
+        bidx = torch.arange(B)
+        root = out.prev_states[bidx, t].unsqueeze(1).unsqueeze(1).expand(
+            -1, C, R, -1
+        ).reshape(B * C * R, -1)
+        endpoint = root
+        for h in range(H):
+            proposed = model.core.predictor(endpoint, codes[:, h])
+            endpoint = torch.where(
+                flat_mask[:, h].unsqueeze(-1), proposed, endpoint
+            )
+        history_free = endpoint
+        states = out.extras["ga_horizon_states"]
+        actual = states.reshape(B * C * R, -1, root.shape[-1])[:, -1]
+        # rows with at least one real action must disagree with the
+        # length-one (history-free) recursion
+        live = flat_mask.any(-1)
+        assert live.any()
+        assert not torch.allclose(actual[live], history_free[live])
+        # and must equal the predictor's own history-carrying rollout
+        for b in range(B):
+            anchor = int(t[b])
+            hist_states = torch.cat(
+                [out.s0[b:b + 1].unsqueeze(1),
+                 out.step_states[b:b + 1, :anchor]], dim=1
+            ).expand(C * R, -1, -1)
+            hist_actions = out.actions[b:b + 1, :anchor].expand(C * R, -1, -1)
+            rows = slice(b * C * R, (b + 1) * C * R)
+            raw = model.core.predictor.rollout(
+                root[rows], codes[rows],
+                state_history=hist_states, action_history=hist_actions,
+            )
+            reference = root[rows]
+            for h in range(H):
+                reference = torch.where(
+                    flat_mask[rows][:, h].unsqueeze(-1), raw[:, h], reference
+                )
+            assert torch.allclose(actual[rows], reference, atol=1e-6)
+
+
 def test_rollout_gar_rejects_causal_predictor_at_forward():
     vocab = build_vocab(23)
     ds = IGSMDataset(vocab, size=4, seed=43, geo_rank_k=2)
