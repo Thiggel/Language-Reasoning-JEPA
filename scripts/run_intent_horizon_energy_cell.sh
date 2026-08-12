@@ -305,7 +305,7 @@ fi
   +experiment=paper_gar_scoring_screen \
   seed="$seed" device="$device" allow_legacy_predictor=true \
   train.lr="$lr" train.epochs="$epochs" train.batch_size="$batch" \
-  train.num_workers=2 data.train_size="$train_size" data.val_size=500 \
+  train.num_workers="${NUM_WORKERS:-2}" data.train_size="$train_size" data.val_size=500 \
   data.test_size=500 train.eval_batches=40 train.warmup_steps=500 \
   data.geo_rank_horizon="$horizon" "data.geo_rank_horizons=$horizons" \
   data.geo_rank_policy=random data.geo_rank_rollouts="$rollouts" \

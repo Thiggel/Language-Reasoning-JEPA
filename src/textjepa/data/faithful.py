@@ -416,11 +416,20 @@ class FaithfulDataset(Dataset):
                     )
                 elif geo_rank_horizon > 1 or self.geo_rank_rollout_for_h1:
                     rollout_steps = []
+                    rollout_actions = []
                     for candidate in candidates:
                         candidate_rollouts = []
+                        candidate_action_rollouts = []
                         for _ in range(self.geo_rank_rollouts):
                             roll_env = env2.clone()
                             sequence = list(steps[:t_star])
+                            # Horizon-mode GAR consumes the intent phrases of
+                            # the rollout actions (ga_rollout_actions ->
+                            # ga_rollout_action_tokens); without them the
+                            # geo_horizon_rank objective silently skips.
+                            action_sequence = [
+                                self.vocab.encode(env2.action_text(candidate))
+                            ]
                             sequence.append(
                                 # ``candidates`` deliberately includes
                                 # infeasible actions when invalid
@@ -439,12 +448,20 @@ class FaithfulDataset(Dataset):
                                 if not feasible:
                                     break
                                 nxt = feasible[rng.randrange(len(feasible))]
+                                action_sequence.append(
+                                    self.vocab.encode(
+                                        roll_env.action_text(nxt)
+                                    )
+                                )
                                 sequence.append(
                                     self.vocab.encode(roll_env.step(nxt))
                                 )
                             candidate_rollouts.append(sequence)
+                            candidate_action_rollouts.append(action_sequence)
                         rollout_steps.append(candidate_rollouts)
+                        rollout_actions.append(candidate_action_rollouts)
                     ga["ga_rollout_steps"] = rollout_steps
+                    ga["ga_rollout_actions"] = rollout_actions
         # Grounding falsifier (named negative control): permute the
         # correspondence between on-trajectory action phrases and their
         # rendered transitions.  Drawn last, after all other randomness, to

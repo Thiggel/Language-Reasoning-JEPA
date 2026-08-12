@@ -114,8 +114,11 @@ class FaithfulPlanner:
             for d in range(depth):
                 texts, alive = [], []
                 for q in seqs:
-                    if d < len(q):
-                        texts.append(env.action_text(q[d]))
+                    # ``_sequences`` pads with None once a rollout absorbs
+                    # (solved / no feasible action); those slots are dead.
+                    entry = q[d] if d < len(q) else None
+                    if entry is not None:
+                        texts.append(env.action_text(entry))
                         alive.append(True)
                     else:
                         texts.append(".")
