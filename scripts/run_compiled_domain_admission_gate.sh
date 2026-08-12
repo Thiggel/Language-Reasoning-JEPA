@@ -29,6 +29,11 @@ eval_episodes=${EVAL_EPISODES:-48}
 replay_limit=${REPLAY_LIMIT:-0}
 chunk_len=${MAX_CHUNK_LEN:-96}
 chunks=${MAX_CHUNKS:-64}
+# Directory used by the tiny overfit/shuffle cells.  Defaults to the full
+# corpus; pointing it at a prepared subset keeps the tiny cells cheap without
+# changing which corpus the schema, replay, and bound checks above read.
+tiny_data_root=${TINY_DATA_ROOT:-$data_root}
+export PYTHONUNBUFFERED=1
 
 case "$domain" in
   planbench-blocksworld) data_name=planbench_blocksworld ;;
@@ -72,9 +77,9 @@ tiny_cell() {
   local model_dir=$RUN_DIR/$name/model
   "$py" "$TEXTJEPA_ROOT/scripts/train.py" \
     +experiment=paper_gar_scoring_screen "data=$data_name" \
-    "data.train_path=$data_root/train.jsonl" \
-    "data.val_path=$data_root/val.jsonl" \
-    "data.test_path=$data_root/test.jsonl" \
+    "data.train_path=$tiny_data_root/train.jsonl" \
+    "data.val_path=$tiny_data_root/val.jsonl" \
+    "data.test_path=$tiny_data_root/test.jsonl" \
     "data.shuffle_actions=$shuffled" \
     data.geo_rank_k=2 data.geo_rank_horizon=8 \
     "data.geo_rank_horizons=[1,2,4,8]" \
