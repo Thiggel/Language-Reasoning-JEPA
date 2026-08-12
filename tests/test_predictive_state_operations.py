@@ -165,3 +165,38 @@ def test_pressure_launcher_chains_cells_and_keeps_per_cell_provenance():
         assert f"lpred{weight}" in text
     for projection in ("32", "8"):
         assert f"proj{projection}" in text
+
+
+def test_state_bottleneck_leaves_the_action_channel_at_full_width():
+    # A single projection width would starve token identity along with the
+    # state: eight dimensions cannot separate a 151k-token vocabulary, so the
+    # arm would degrade for the wrong reason. The state bottleneck must be
+    # independent of the action channel.
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    from textjepa.models.action_transition import (
+        ActionConditionedTransition, TransitionConfig,
+    )
+
+    config = TransitionConfig(
+        hidden_size=896, source_layers=(18, 24), target_layer=12,
+        action_dim=896, projection_size=8, action_projection_size=448,
+        variant="full",
+    )
+    predictor = ActionConditionedTransition(config)
+    assert predictor.state_projections["18"].out_features == 8
+    assert predictor.state_projections["24"].out_features == 8
+    assert predictor.action_projection.out_features == 448
+    # Concatenated input is two narrow state channels plus a full action one.
+    assert predictor.skip.in_features == 8 + 8 + 448
+    # The emitted state is always the full residual width, whatever the input.
+    assert predictor.skip.out_features == 896
+    assert predictor.output.out_features == 896
+
+    # Omitting the override keeps the old single-knob behaviour.
+    shared = ActionConditionedTransition(TransitionConfig(
+        hidden_size=896, source_layers=(18, 24), target_layer=12,
+        action_dim=896, projection_size=8, variant="full",
+    ))
+    assert shared.action_projection.out_features == 8
+    assert shared.skip.in_features == 24

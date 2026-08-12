@@ -36,6 +36,7 @@ class TransitionConfig:
     target_layer: int
     action_dim: int | None = None
     projection_size: int | None = None
+    action_projection_size: int | None = None
     predictor_width: int | None = None
     variant: str = "full"
     eps: float = 1e-6
@@ -56,6 +57,18 @@ class TransitionConfig:
     @property
     def d_projection(self) -> int:
         return self.projection_size or self.hidden_size // 2
+
+    @property
+    def d_action_projection(self) -> int:
+        """Width of the action channel, independent of the state bottleneck.
+
+        A single projection width would starve token identity along with the
+        state: eight dimensions cannot separate a 151k-token vocabulary, so a
+        tight bottleneck would degrade prediction for the uninteresting reason
+        that the realized action became unreadable. Keeping this at full width
+        bottlenecks only what the predictor may read about the state.
+        """
+        return self.action_projection_size or self.d_projection
 
     @property
     def d_predictor(self) -> int:
@@ -108,12 +121,14 @@ class ActionConditionedTransition(nn.Module):
         self.action_projection = None
         if config.has_action_channel:
             self.action_projection = nn.Linear(
-                config.action_dim or config.hidden_size, projection, bias=False
+                config.action_dim or config.hidden_size,
+                config.d_action_projection, bias=False,
             )
-        parts = len(config.parameter_source_layers) + int(config.has_action_channel)
-        if parts < 1:
+        if not config.parameter_source_layers and not config.has_action_channel:
             raise ValueError("transition has no inputs")
-        input_size = parts * projection
+        input_size = len(config.parameter_source_layers) * projection
+        if config.has_action_channel:
+            input_size += config.d_action_projection
         self.gate = nn.Linear(input_size, config.d_predictor, bias=False)
         self.value = nn.Linear(input_size, config.d_predictor, bias=False)
         self.skip = nn.Linear(input_size, config.hidden_size, bias=False)

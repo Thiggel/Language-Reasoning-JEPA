@@ -26,6 +26,9 @@ bottleneck=()
 if [[ -n "${PREDICTIVE_STATE_PROJECTION_SIZE:-}" ]]; then
   bottleneck+=(--projection-size "$PREDICTIVE_STATE_PROJECTION_SIZE")
 fi
+if [[ -n "${PREDICTIVE_STATE_ACTION_PROJECTION_SIZE:-}" ]]; then
+  bottleneck+=(--action-projection-size "$PREDICTIVE_STATE_ACTION_PROJECTION_SIZE")
+fi
 if [[ -n "${PREDICTIVE_STATE_PREDICTOR_WIDTH:-}" ]]; then
   bottleneck+=(--predictor-width "$PREDICTIVE_STATE_PREDICTOR_WIDTH")
 fi

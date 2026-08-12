@@ -65,6 +65,7 @@ def parse_args() -> argparse.Namespace:
     # through it, so the transition cannot be solved inside the predictor
     # without the backbone making its states more predictable.
     parser.add_argument("--projection-size", type=int)
+    parser.add_argument("--action-projection-size", type=int)
     parser.add_argument("--predictor-width", type=int)
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--microbatch-size", type=int, default=2)
@@ -124,6 +125,7 @@ def sample_batch(dataset, size: int, generator: torch.Generator,
 def make_predictor(model, variant: str, target: int,
                    sources: tuple[int, ...], *,
                    projection_size: int | None = None,
+                   action_projection_size: int | None = None,
                    predictor_width: int | None = None,
                    ) -> ActionConditionedTransition:
     text_config = getattr(model.config, "text_config", model.config)
@@ -136,6 +138,7 @@ def make_predictor(model, variant: str, target: int,
         target_layer=target,
         action_dim=hidden_size,
         projection_size=projection_size,
+        action_projection_size=action_projection_size,
         predictor_width=predictor_width,
         variant=variant,
     )
@@ -300,6 +303,7 @@ def main() -> None:
         predictor = make_predictor(
             model, args.variant, target_layer, source_layers,
             projection_size=args.projection_size,
+            action_projection_size=args.action_projection_size,
             predictor_width=args.predictor_width,
         ).to(device=args.device).train()
     capture_layers = set(source_layers) | {capture_target}
