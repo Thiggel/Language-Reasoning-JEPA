@@ -138,7 +138,18 @@ class CodebookCycleProposer:
         Named ``fit_prior`` because it is the same hook the planner calls for
         every eval-time proposal distribution (see ``cem_cycle``); it uses the
         one shared embedding-collection path.
+
+        Checkpoints trained with ``model.action_codebook_k`` carry their own
+        codes (EMA k-means over observed training actions, written during
+        training); those take precedence -- the inventory then lives in the
+        weights and no eval-time fit happens at all.
         """
+        stored = getattr(self.model, "action_codebook", None)
+        ready = getattr(self.model, "action_codebook_ready", None)
+        if stored is not None and ready is not None and bool(ready):
+            self.codebook = stored.detach().to(self.device)
+            self.k = self.codebook.shape[0]
+            return self.codebook
         self.codebook = fit_codebook(
             training_action_codes(
                 self.model, self.vocab, self.device, problems

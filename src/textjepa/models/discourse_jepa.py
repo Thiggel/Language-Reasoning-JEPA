@@ -134,6 +134,7 @@ class DiscourseJEPA(nn.Module):
         ldad_decoder_layers: int = 2,
         action_generator: bool = False,
         action_generator_layers: int = 2,
+        action_codebook_k: int = 0,
         macro_encoder_kind: str = "transformer",
         macro_variational: bool = False,
         macro_concat_width: int = 8,
@@ -278,6 +279,31 @@ class DiscourseJEPA(nn.Module):
             )
             if observed_action_ldad else None
         )
+        # In-model action codebook: K codes over the action-embedding space,
+        # written during training by EMA k-means on the OBSERVED action
+        # embeddings (VQ-EMA style, but the forward pass is never quantized
+        # and no gradient flows through the codes -- a read-out, never a
+        # shaper). Lets eval-time codebook interfaces read their codes from
+        # the checkpoint ("the inventory lives in the weights") instead of
+        # fitting k-means at evaluation time. Default off; buffers absent so
+        # existing checkpoints load unchanged.
+        self.action_codebook_k = int(action_codebook_k)
+        if self.action_codebook_k > 0:
+            self.register_buffer(
+                "action_codebook",
+                torch.zeros(self.action_codebook_k, d_action),
+            )
+            self.register_buffer(
+                "action_codebook_count",
+                torch.zeros(self.action_codebook_k),
+            )
+            self.register_buffer(
+                "action_codebook_ready", torch.zeros((), dtype=torch.bool)
+            )
+        else:
+            self.action_codebook = None
+            self.action_codebook_count = None
+            self.action_codebook_ready = None
         # Open-ended proposal head: p(next intent phrase | current state).
         # Optional (default off) so existing checkpoints load unchanged.
         from textjepa.models.action_generator import (
@@ -410,6 +436,44 @@ class DiscourseJEPA(nn.Module):
         model = self.state_teacher if teacher else self.state_model
         return model(prompt_emb, prompt_mask, step_emb, step_mask)
 
+    @torch.no_grad()
+    def _update_action_codebook(self, u: torch.Tensor, decay: float = 0.99):
+        """EMA k-means step over observed action embeddings ``u`` [N, d].
+
+        First batch initializes the codes from observed embeddings; after
+        that each code is an exponential moving average of the embeddings
+        assigned to it (classic VQ-EMA bookkeeping, without quantizing any
+        forward path). Padding rows (all-zero embeddings never occur for
+        real phrases; callers pass raw encodings) are not filtered here --
+        the assignment simply absorbs them into the nearest cluster.
+        """
+        if u.shape[0] == 0:
+            return
+        if not bool(self.action_codebook_ready):
+            k = self.action_codebook_k
+            idx = torch.randint(
+                u.shape[0], (k,), device=u.device,
+                generator=torch.Generator(device=u.device).manual_seed(0),
+            )
+            self.action_codebook.copy_(u[idx])
+            self.action_codebook_count.fill_(1.0)
+            self.action_codebook_ready.fill_(True)
+            return
+        assign = torch.cdist(u, self.action_codebook).argmin(1)  # [N]
+        one_hot = torch.zeros(
+            u.shape[0], self.action_codebook_k, device=u.device
+        ).scatter_(1, assign.unsqueeze(1), 1.0)
+        counts = one_hot.sum(0)  # [K]
+        sums = one_hot.T @ u  # [K, d]
+        self.action_codebook_count.mul_(decay).add_(counts, alpha=1 - decay)
+        updated = self.action_codebook * decay + (
+            sums / counts.clamp_min(1e-6).unsqueeze(1)
+        ) * (1 - decay)
+        mask = (counts > 0).unsqueeze(1)
+        self.action_codebook.copy_(
+            torch.where(mask, updated, self.action_codebook)
+        )
+
     def encode_actions(self, action_tokens: torch.Tensor) -> torch.Tensor:
         """[B, T, L] action-phrase tokens -> [B, T, d_action]."""
         if self.action_encoder_kind == "pooled":
@@ -507,6 +571,10 @@ class DiscourseJEPA(nn.Module):
             var_extras["act_decode_tgt"] = intent_anchor
         else:
             actions = self.encode_actions(batch["action_tokens"])
+        if self.training and self.action_codebook is not None:
+            self._update_action_codebook(
+                actions.detach().reshape(-1, actions.shape[-1])
+            )
         alt_actions = self._encode_alt(batch)
         out = self.core(
             s0, step_states, step_states_tgt, actions, action_emb_tgt,

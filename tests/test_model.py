@@ -1459,3 +1459,39 @@ def test_observed_action_variational_target_modes(
     assert any(
         p.grad is not None for p in model.observed_action_decoder.parameters()
     )
+
+
+def test_action_codebook_ema_tracks_embeddings_and_never_shapes_forward():
+    """In-model codebook: codes follow observed action embeddings via EMA;
+    the forward pass with the flag on is bit-identical to the flag off."""
+    vocab = build_vocab(23)
+    ds = IGSMDataset(vocab, size=8, seed=0)
+    batch = collate([ds[i] for i in range(8)], vocab.pad_id)
+    kwargs = dict(
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        d_model=64, chunk_layers=1, chunk_heads=2, state_layers=2,
+        state_heads=2, d_action=8, d_macro=4,
+    )
+    torch.manual_seed(0)
+    plain = DiscourseJEPA(**kwargs)
+    torch.manual_seed(0)
+    coded = DiscourseJEPA(**kwargs, action_codebook_k=4)
+    coded.load_state_dict(plain.state_dict(), strict=False)
+
+    plain.train(); coded.train()
+    torch.manual_seed(1); out_a = plain(batch)
+    torch.manual_seed(1); out_b = coded(batch)
+    assert torch.equal(out_a.preds, out_b.preds)
+    assert torch.equal(out_a.step_states, out_b.step_states)
+    assert bool(coded.action_codebook_ready)
+
+    # After several updates the codes sit near the observed embeddings.
+    for _ in range(30):
+        coded(batch)
+    with torch.no_grad():
+        u = coded.encode_actions(batch["action_tokens"]).reshape(-1, 8)
+        d_code = torch.cdist(u, coded.action_codebook).min(1).values.mean()
+        d_rand = torch.cdist(u, torch.randn_like(coded.action_codebook)).min(1).values.mean()
+    assert d_code < d_rand
+    # No gradient path into the codes.
+    assert not coded.action_codebook.requires_grad
