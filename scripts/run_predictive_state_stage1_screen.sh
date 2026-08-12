@@ -32,6 +32,14 @@ fi
 if [[ -n "${PREDICTIVE_STATE_PREDICTOR_WIDTH:-}" ]]; then
   bottleneck+=(--predictor-width "$PREDICTIVE_STATE_PREDICTOR_WIDTH")
 fi
+if [[ -n "${PREDICTIVE_STATE_LINEAR_PREDICTOR:-}" ]]; then
+  bottleneck+=(--linear-predictor)
+fi
+# Restricting the source layers is how a single-state control is expressed;
+# the variant stays "full" so the action channel is untouched.
+for layer in ${PREDICTIVE_STATE_SOURCE_LAYERS:-}; do
+  bottleneck+=(--source-layer "$layer")
+done
 
 # Layers 1-12 and the embeddings stay frozen, so the layer-12 prediction target
 # is a fixed anchor. Only the source half (13-24) and the predictor adapt; the

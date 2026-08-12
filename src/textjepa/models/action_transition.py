@@ -38,6 +38,7 @@ class TransitionConfig:
     projection_size: int | None = None
     action_projection_size: int | None = None
     predictor_width: int | None = None
+    linear_only: bool = False
     variant: str = "full"
     eps: float = 1e-6
 
@@ -129,19 +130,28 @@ class ActionConditionedTransition(nn.Module):
         input_size = len(config.parameter_source_layers) * projection
         if config.has_action_channel:
             input_size += config.d_action_projection
-        self.gate = nn.Linear(input_size, config.d_predictor, bias=False)
-        self.value = nn.Linear(input_size, config.d_predictor, bias=False)
+        # A linear-only predictor drops the SwiGLU branch and keeps the skip.
+        # Composed with the input projections the whole map is then linear, so
+        # the transition can only be solved if the backbone makes the target a
+        # linear function of the source state and the action.
+        self.gate = self.value = self.output = None
+        if not config.linear_only:
+            self.gate = nn.Linear(input_size, config.d_predictor, bias=False)
+            self.value = nn.Linear(input_size, config.d_predictor, bias=False)
+            self.output = nn.Linear(
+                config.d_predictor, config.hidden_size, bias=False
+            )
         self.skip = nn.Linear(input_size, config.hidden_size, bias=False)
-        self.output = nn.Linear(
-            config.d_predictor, config.hidden_size, bias=False
-        )
         self.reset_parameters()
 
     def reset_parameters(self) -> None:
         for module in self.modules():
             if isinstance(module, nn.Linear):
                 nn.init.normal_(module.weight, mean=0.0, std=0.02)
-        nn.init.normal_(self.output.weight, mean=0.0, std=1e-3)
+        # Whichever module carries the output starts near zero, so the raw
+        # prediction begins small rather than at the projection's scale.
+        terminal = self.skip if self.output is None else self.output
+        nn.init.normal_(terminal.weight, mean=0.0, std=1e-3)
 
     def forward(
         self,
@@ -182,9 +192,11 @@ class ActionConditionedTransition(nn.Module):
                 normalized_action.to(self.action_projection.weight.dtype)
             ))
         combined = torch.cat(pieces, dim=-1)
-        update = torch.nn.functional.silu(self.gate(combined))
-        update = update * self.value(combined)
-        prediction = self.skip(combined) + self.output(update)
+        prediction = self.skip(combined)
+        if self.output is not None:
+            update = torch.nn.functional.silu(self.gate(combined))
+            update = update * self.value(combined)
+            prediction = prediction + self.output(update)
         return prediction.to(output_dtype)
 
     def metadata(self) -> dict:

@@ -200,3 +200,58 @@ def test_state_bottleneck_leaves_the_action_channel_at_full_width():
     ))
     assert shared.action_projection.out_features == 8
     assert shared.skip.in_features == 24
+
+
+def test_linear_predictor_drops_the_mlp_and_still_emits_a_full_state():
+    import sys
+    import torch
+    sys.path.insert(0, str(ROOT / "src"))
+    from textjepa.models.action_transition import (
+        ActionConditionedTransition, TransitionConfig,
+    )
+
+    linear = ActionConditionedTransition(TransitionConfig(
+        hidden_size=896, source_layers=(18, 24), target_layer=12,
+        action_dim=896, projection_size=896, linear_only=True, variant="full",
+    ))
+    assert linear.output is None and linear.gate is None and linear.value is None
+    # Projection at full width keeps the composed map full rank, so a failure
+    # cannot be blamed on the projection instead of on linearity.
+    assert linear.skip.in_features == 3 * 896
+    assert linear.skip.out_features == 896
+    # The terminal module still starts near zero.
+    assert float(linear.skip.weight.std()) < 1e-2
+    prediction = linear(
+        {18: torch.randn(2, 5, 896), 24: torch.randn(2, 5, 896)},
+        torch.randn(2, 5, 896),
+    )
+    assert prediction.shape == (2, 5, 896)
+
+
+def test_single_source_control_is_parameter_matched_to_the_two_source_predictor():
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    from textjepa.models.action_transition import (
+        ActionConditionedTransition, TransitionConfig,
+    )
+
+    def count(sources, projection):
+        predictor = ActionConditionedTransition(TransitionConfig(
+            hidden_size=896, source_layers=sources, target_layer=12,
+            action_dim=896, projection_size=projection, variant="full",
+        ))
+        return sum(p.numel() for p in predictor.parameters()), predictor
+
+    both, wide = count((18, 24), None)
+    single, narrow = count((24,), 672)
+    # Widening the surviving channel to 672 matches both the parameter count
+    # and the concatenated input width, so dropping a state is the only change.
+    assert both == single
+    assert wide.skip.in_features == narrow.skip.in_features
+
+
+def test_stage1_screen_cell_forwards_linear_and_single_source_controls():
+    text = (ROOT / "scripts/run_predictive_state_stage1_screen.sh").read_text()
+    assert "--linear-predictor" in text
+    assert "PREDICTIVE_STATE_SOURCE_LAYERS" in text
+    assert "--source-layer" in text

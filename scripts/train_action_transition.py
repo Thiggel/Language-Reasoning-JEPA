@@ -67,6 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--projection-size", type=int)
     parser.add_argument("--action-projection-size", type=int)
     parser.add_argument("--predictor-width", type=int)
+    parser.add_argument("--linear-predictor", action="store_true")
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--microbatch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation", type=int, default=4)
@@ -127,6 +128,7 @@ def make_predictor(model, variant: str, target: int,
                    projection_size: int | None = None,
                    action_projection_size: int | None = None,
                    predictor_width: int | None = None,
+                   linear_only: bool = False,
                    ) -> ActionConditionedTransition:
     text_config = getattr(model.config, "text_config", model.config)
     hidden_size = int(text_config.hidden_size)
@@ -140,6 +142,7 @@ def make_predictor(model, variant: str, target: int,
         projection_size=projection_size,
         action_projection_size=action_projection_size,
         predictor_width=predictor_width,
+        linear_only=linear_only,
         variant=variant,
     )
     return ActionConditionedTransition(config)
@@ -305,6 +308,7 @@ def main() -> None:
             projection_size=args.projection_size,
             action_projection_size=args.action_projection_size,
             predictor_width=args.predictor_width,
+            linear_only=args.linear_predictor,
         ).to(device=args.device).train()
     capture_layers = set(source_layers) | {capture_target}
     capture = ResidualCapture(model, capture_layers)

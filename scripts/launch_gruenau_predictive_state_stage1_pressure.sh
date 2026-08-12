@@ -12,6 +12,8 @@ set -euo pipefail
 #
 #   weight ladder:     0.3, 1.0, 3.0   at the protocol projection
 #   bottleneck ladder: 32, 8           at the protocol prediction weight
+#   linear predictor:  no SwiGLU, full-rank linear map only
+#   single-state:      condition on layer 18 or layer 24 alone
 #   plus projection 8 with the action channel held at full 448 width, which
 #   separates state scarcity from action legibility
 #
@@ -30,24 +32,33 @@ job_ids=(
   qwen05-lora-full-proj32-s0-v1
   qwen05-lora-full-proj8-s0-v1
   qwen05-lora-full-proj8-action448-s0-v1
+  qwen05-lora-full-linear-s0-v1
+  qwen05-lora-full-src18only-s0-v1
+  qwen05-lora-full-src24only-s0-v1
 )
-prediction_weights=(0.3 1.0 3.0 0.1 0.1 0.1)
-projection_sizes=("" "" "" 32 8 8)
+prediction_weights=(0.3 1.0 3.0 0.1 0.1 0.1 0.1 0.1 0.1)
+# 896 keeps the linear map full rank; 672 makes a single-source predictor
+# exactly parameter matched to the two-source one (8,830,976) at the same
+# 1344-wide concatenation, so dropping a state is the only change.
+projection_sizes=("" "" "" 32 8 8 896 672 672)
 # The shared projection width throttles the realized action along with the
 # state. The last cell repeats the tightest bottleneck with the action
 # channel held at full width, isolating state scarcity from action legibility.
-action_projection_sizes=("" "" "" "" "" 448)
+action_projection_sizes=("" "" "" "" "" 448 "" "" "")
+linear_predictors=("" "" "" "" "" "" 1 "" "")
+source_layer_sets=("" "" "" "" "" "" "" 18 24)
 # Cells sharing a host:gpu run sequentially in one chained job, so a round is
 # not limited to the number of simultaneously free devices. Each cell still
 # gets its own run directory, state file and exit marker, and a failed cell
 # does not stop the ones queued behind it.
-hosts=(11 11 11 9 11 11)
-gpus=(0 2 0 2 2 0)
+hosts=(11 11 11 9 11 11 11 11 9)
+gpus=(0 2 0 2 2 0 2 0 2)
 
 cd "$root"
 
 count=${#job_ids[@]}
-for array in prediction_weights projection_sizes action_projection_sizes hosts gpus; do
+for array in prediction_weights projection_sizes action_projection_sizes \
+             linear_predictors source_layer_sets hosts gpus; do
   eval "length=\${#${array}[@]}"
   [[ "$length" -eq "$count" ]] || {
     echo "cell arrays differ in length ($array)" >&2
@@ -131,6 +142,8 @@ for index in "${!job_ids[@]}"; do
   prediction_weight=${prediction_weights[$index]}
   projection_size=${projection_sizes[$index]}
   action_projection_size=${action_projection_sizes[$index]}
+  linear_predictor=${linear_predictors[$index]}
+  source_layer_set=${source_layer_sets[$index]}
   run_dir="$root/runs/autonomy/predictive_state/$round/$job_id"
   if [[ -s "$run_dir/state" ]]; then
     state=$(tr -d '[:space:]' < "$run_dir/state")
@@ -176,6 +189,12 @@ EOF
     printf 'export PREDICTIVE_STATE_ACTION_PROJECTION_SIZE=%q\n' \
       "$action_projection_size" >> "$job"
   fi
+  if [[ -n "$linear_predictor" ]]; then
+    printf 'export PREDICTIVE_STATE_LINEAR_PREDICTOR=1\n' >> "$job"
+  fi
+  if [[ -n "$source_layer_set" ]]; then
+    printf 'export PREDICTIVE_STATE_SOURCE_LAYERS=%q\n' "$source_layer_set" >> "$job"
+  fi
   cat >> "$job" <<EOF
 mkdir -p "\$TMPDIR"
 cd "\$snapshot"
@@ -194,6 +213,8 @@ projection=os.environ.get('PREDICTIVE_STATE_PROJECTION_SIZE')
   'context_length':1024, 'target_tokens':20000000,
   'prediction_weight':float('$prediction_weight'), 'scale_weight':0.1,
   'projection_size':None if projection is None else int(projection),
+  'linear_predictor':os.environ.get('PREDICTIVE_STATE_LINEAR_PREDICTOR') is not None,
+  'source_layers_override':os.environ.get('PREDICTIVE_STATE_SOURCE_LAYERS'),
   'action_projection_size':(
     None if os.environ.get('PREDICTIVE_STATE_ACTION_PROJECTION_SIZE') is None
     else int(os.environ['PREDICTIVE_STATE_ACTION_PROJECTION_SIZE'])),
