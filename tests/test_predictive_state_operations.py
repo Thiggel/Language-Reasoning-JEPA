@@ -263,3 +263,15 @@ def test_pressure_launcher_defers_a_busy_device_without_aborting_the_round():
     text = (ROOT / "scripts/launch_gruenau_predictive_state_stage1_pressure.sh").read_text()
     assert 'if ! check_gpu "$host" "$gpu"; then' in text
     assert "deferred" in text
+
+
+def test_deferred_runner_reapplies_admission_before_every_cell():
+    # The waiter exists so a congested cluster does not truncate a round, but it
+    # must not weaken the gate: each cell re-checks memory and utilization
+    # immediately before it starts.
+    text = (ROOT / "scripts/wait_and_run_predictive_state_cells.sh").read_text()
+    assert "memory.used" in text and "utilization.gpu" in text
+    assert '"$used" -lt 1024' in text and '"$util" -lt 10' in text
+    # Bounded, so a permanently busy device fails visibly instead of hanging.
+    assert "PREDICTIVE_STATE_WAIT_CHECKS" in text
+    assert "never became free" in text
