@@ -12,6 +12,8 @@ set -euo pipefail
 #
 #   weight ladder:     0.3, 1.0, 3.0   at the protocol projection
 #   bottleneck ladder: 32, 8           at the protocol prediction weight
+#   plus projection 8 with the action channel held at full 448 width, which
+#   separates state scarcity from action legibility
 #
 # Everything else matches the screen exactly: same shared token blocks, same
 # batch order, same 20M tokens, same seed.
@@ -27,20 +29,25 @@ job_ids=(
   qwen05-lora-full-lpred3.0-s0-v1
   qwen05-lora-full-proj32-s0-v1
   qwen05-lora-full-proj8-s0-v1
+  qwen05-lora-full-proj8-action448-s0-v1
 )
-prediction_weights=(0.3 1.0 3.0 0.1 0.1)
-projection_sizes=("" "" "" 32 8)
+prediction_weights=(0.3 1.0 3.0 0.1 0.1 0.1)
+projection_sizes=("" "" "" 32 8 8)
+# The shared projection width throttles the realized action along with the
+# state. The last cell repeats the tightest bottleneck with the action
+# channel held at full width, isolating state scarcity from action legibility.
+action_projection_sizes=("" "" "" "" "" 448)
 # Cells sharing a host:gpu run sequentially in one chained job, so a round is
 # not limited to the number of simultaneously free devices. Each cell still
 # gets its own run directory, state file and exit marker, and a failed cell
 # does not stop the ones queued behind it.
-hosts=(11 11 11 9 11)
-gpus=(0 2 0 2 2)
+hosts=(11 11 11 9 11 11)
+gpus=(0 2 0 2 2 0)
 
 cd "$root"
 
 count=${#job_ids[@]}
-for array in prediction_weights projection_sizes hosts gpus; do
+for array in prediction_weights projection_sizes action_projection_sizes hosts gpus; do
   eval "length=\${#${array}[@]}"
   [[ "$length" -eq "$count" ]] || {
     echo "cell arrays differ in length ($array)" >&2
@@ -123,6 +130,7 @@ for index in "${!job_ids[@]}"; do
   job_id=${job_ids[$index]}
   prediction_weight=${prediction_weights[$index]}
   projection_size=${projection_sizes[$index]}
+  action_projection_size=${action_projection_sizes[$index]}
   run_dir="$root/runs/autonomy/predictive_state/$round/$job_id"
   if [[ -s "$run_dir/state" ]]; then
     state=$(tr -d '[:space:]' < "$run_dir/state")
@@ -164,6 +172,10 @@ EOF
   if [[ -n "$projection_size" ]]; then
     printf 'export PREDICTIVE_STATE_PROJECTION_SIZE=%q\n' "$projection_size" >> "$job"
   fi
+  if [[ -n "$action_projection_size" ]]; then
+    printf 'export PREDICTIVE_STATE_ACTION_PROJECTION_SIZE=%q\n' \
+      "$action_projection_size" >> "$job"
+  fi
   cat >> "$job" <<EOF
 mkdir -p "\$TMPDIR"
 cd "\$snapshot"
@@ -182,6 +194,9 @@ projection=os.environ.get('PREDICTIVE_STATE_PROJECTION_SIZE')
   'context_length':1024, 'target_tokens':20000000,
   'prediction_weight':float('$prediction_weight'), 'scale_weight':0.1,
   'projection_size':None if projection is None else int(projection),
+  'action_projection_size':(
+    None if os.environ.get('PREDICTIVE_STATE_ACTION_PROJECTION_SIZE') is None
+    else int(os.environ['PREDICTIVE_STATE_ACTION_PROJECTION_SIZE'])),
   'predictor_learning_rate':3e-4, 'lora_learning_rate':1e-4,
   'seed':0, 'dtype':'bfloat16',
   'token_blocks':os.environ['PREDICTIVE_STATE_TOKEN_BLOCKS'],
