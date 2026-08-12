@@ -401,3 +401,62 @@ strict .126/.450/.837/.879/.884 at depths 1/2/4/8/16
   feasible_k/invalid_k/invalid_action_mode accepted at defaults, raise
   NotImplementedError otherwise (no more silent drops). CPU dry-run of the
   full override set trains. Chain relaunched from snapshot 42fd571.
+
+## 2026-08-11 (cont. 5): standup-figure baselines — LM under all three menu conditions
+
+Owner wants the depth-scaling figure's baseline to be a real sentence/token
+LM (not TD-JEPA/GoalHead) across all three interface conditions (feasible
+menu, full-catalogue non-oracle, no-menu free generation), plus our current
+LDAD headline checkpoint re-evaluated non-oracle for a fair 3-way comparison
+figure per condition. Stylized igsm only (LM checkpoints `runs/lm_intent`,
+`runs/sentlm_intent` are stylized; faithful full-catalogue LM path is out of
+scope here, raises NotImplementedError).
+
+Already on record before this round: token-LM/sentlm-LM feasible-menu
+(slack0 strict): token .830, sentence .635 (`runs/lm_intent/
+plan_slack0_lm_intent.json`, `runs/sentlm_intent/
+plan_slack0_sentlm_intent_decoder.json`). No prior full-catalogue or
+free-generation strict-success numbers existed for either LM baseline
+despite the code paths existing (`plan_lm.py`/`plan_sentlm.py` always used
+`env.feasible_actions()`; `eval_generative_lm_baseline.py` never had output
+saved for these checkpoints).
+
+Added `candidate_interface=full_catalogue` to `plan_lm.py`/`plan_sentlm.py`
+(previously feasible-menu only): candidates become
+`range(len(problem.vars))`, invalid picks go through
+`env.step_or_invalid` (invalid=noop), `invalid_rate` added to output,
+output filename gets a `_full_catalogue` suffix so it doesn't clobber the
+existing feasible-menu json. Scoped to stylized igsm + score/target_kind
+`intent` only (faithful + outcome-scoring raise). 703-suite-adjacent tests
+(`test_fixed_budget_runner.py`, `test_oracle_cem_contract.py`) still pass;
+smoke-tested both scripts at n_episodes=8 on both interfaces before the
+real run.
+
+Launched (round `2026-08-11-standup-baselines-v1`, from the working tree,
+not a snapshot — eval-only, no training):
+- `ours-fullcat-s0-v1` (gruenau, cuda:2): `stab-ldad-ema-s0-v1/model/
+  best.pt` (the 5-seed headline checkpoint's seed 0), candidate_interface=
+  full_catalogue, EVAL_DEPTHS="1 2 4 8 16", 300 episodes, beam width 8,
+  via `run_intent_terminal_energy_eval.sh` (same script/protocol as the
+  headline depth curve, so directly comparable).
+- `lm-baselines/` (gruenau, cuda:0), sequential: token-LM and sentence-LM
+  full_catalogue (slack0, 300 episodes) + token-LM and sentence-LM no-menu
+  free generation (`eval_generative_lm_baseline.py`, 300 examples,
+  width=8, `problem_solve_rate` is the strict-success field to read).
+
+Note for whoever reads this next: the LM baselines have NO planning-depth
+axis (greedy one-step-at-a-time policy, no imagined lookahead), so the
+"3 figures" (one per menu condition) should show our depth curve plus a
+FLAT reference line per LM baseline, not 3 comparable curves — don't force
+a depth axis onto the LM numbers.
+- Screen attempt #2 surfaced three more faithful-port defects (all fixed,
+  deb1e5f): (1) CRITICAL - horizon-mode GAR requires ga_rollout_actions,
+  which faithful rollouts never emitted, so geo_horizon_rank (the recipe's
+  key ranking loss) silently skipped on igsm_real; the timed-out lr3e4
+  cell trained with the loss at 0.0 throughout. Now emitted + alignment-
+  tested; dry run shows the loss active. (2) FaithfulPlanner lookahead>1
+  crashed on _sequences' absorbing None padding (action_text(None));
+  lr1e3 trained fine and died in eval. (3) 5h/epoch at num_workers=2
+  (faithful generation is CPU-bound): cell script now takes NUM_WORKERS;
+  chain relaunched with 16 workers, all cells reset (earlier partial
+  checkpoints trained WITHOUT the ranking loss - discarded).
