@@ -1,5 +1,10 @@
 # Question backlog
 
+0. Does any auxiliary pressure reach the backbone while an 8.8M-parameter
+   predictor can solve the transition alone? Measured effect on the layer-24
+   representation is 250x smaller than that of the co-trained next-token loss.
+   Bottlenecking the predictor and raising `λ_pred` are the two direct tests,
+   and both are cheaper than adding adaptation capacity.
 1. How much of the conditional gain survives matched-action sampling?
 2. Is the user's proposed Qwen 18/24 -> 12 split better than 6/12/18/24 depth
    fractions after parameter and learning-rate matching?

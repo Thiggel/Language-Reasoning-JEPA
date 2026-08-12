@@ -80,3 +80,39 @@ def test_slurm_wrapper_validates_command_and_records_failure_provenance():
     assert "resolved_config.json" in text
     assert "environment.json" in text
     assert "run_summary.json" in text
+
+
+def test_object_labels_track_first_and_repeat_mentions(tmp_path):
+    # The discourse labels drive every probe, so a silent error here would look
+    # like a representation finding. First mention is new, later ones given,
+    # and recency counts tokens back to the previous mention of that object.
+    import importlib.util
+    import torch
+
+    spec = importlib.util.spec_from_file_location(
+        "probe_entity_state",
+        ROOT / "scripts/probe_predictive_state_entity_state.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class Tokenizer:
+        def decode(self, ids):
+            return {5: "planet", 6: "the", 7: "orbit"}.get(ids[0], "xx")
+
+    class Args:
+        minimum_mentions = 3
+        entities_per_block = 4
+
+    #                 0  1  2  3  4  5  6  7
+    blocks = torch.tensor([[5, 6, 7, 5, 6, 7, 5, 7]])
+    labels = module.object_labels(Tokenizer(), blocks, Args())
+
+    # "the" is a stopword; "planet" and "orbit" each occur three times, and the
+    # count tie is broken by token id, so "orbit" (7) takes rank 0.
+    assert labels["entity"][0].tolist() == [1, -1, 0, 1, -1, 0, 1, 0]
+    assert labels["given_new"][0].tolist() == [0, -1, 0, 1, -1, 1, 1, 1]
+    assert labels["recency"][0].tolist() == [-1, -1, -1, 3, -1, 3, 3, 2]
+    # The prefix set is what the state could know before the current token.
+    assert labels["prefix_set"][0, 0].tolist() == [0, 0, 0, 0]
+    assert labels["prefix_set"][0, 3].tolist() == [1, 1, 0, 0]

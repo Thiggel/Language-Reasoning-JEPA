@@ -110,3 +110,47 @@ measured against a high floor, and a persistence baseline is still owed.
 This is not yet a Stage 1 pass, and the improvement over the frozen diagnostic
 confounds backbone adaptation with 200x more optimization; a frozen-backbone
 arm at the same 20M tokens is required to separate them.
+
+### What the two checkpoints actually represent
+
+`_probe/entity_state_probe.json`, from
+`scripts/probe_predictive_state_entity_state.py` over 49,152 held-out positions
+and 2,993 labelled object mentions. The original unmodified checkpoint is
+included as the reference against which both trained arms are read.
+
+| Layer | CKA original/NTP-only | CKA original/full | CKA NTP-only/full |
+|---|---:|---:|---:|
+| 12 | 1.00000 | 1.00000 | 1.00000 |
+| 18 | 0.99997 | 0.99997 | 1.00000 |
+| 24 | 0.94651 | 0.94679 | 0.99979 |
+
+Layer 12 is frozen in every cell, so its identity is a sanity check rather than
+a result. The informative comparison is at layer 24: LoRA training moved the
+representation away from the original checkpoint by about 5% of CKA, and the
+predictive objective then added 0.02% on top of that. The objective's effect on
+the representation is roughly 250 times smaller than the effect of the ordinary
+next-token training it rides along with.
+
+Linear probes on the same positions agree, with a label-shuffled control fixing
+the floor. At layer 24, given-versus-new mention AUC is 0.7353 for original,
+0.7148 for NTP-only and 0.7151 for full (shuffled control 0.49-0.52);
+prefix-object-set AUC is 0.8968, 0.8631 and 0.8632; k-nearest-neighbour object
+purity is 0.5124, 0.5092 and 0.5094; effective rank is 184.4, 174.8 and 174.9.
+In every case the full-minus-NTP-only difference sits in the third or fourth
+decimal while the trained-minus-original difference is one to two orders of
+magnitude larger, and it is consistently a small *loss* of object-tracking
+structure attributable to WikiText-103 adaptation in both arms equally.
+
+Two incidental observations. Object tracking is strongest at the frozen middle
+of the network and decays upward — given/new AUC 0.909 at layer 12 against
+0.735 at layer 24, prefix-object-set 0.914 against 0.897 — which is mild
+independent support for choosing layer 12 as the prediction target. And the
+predictor solves the transition task well (cosine 0.106) with 8,830,976 of its
+own parameters, so the auxiliary loss can be satisfied without asking the
+backbone for anything; that is the most likely reason no representational
+pressure reaches the LoRA.
+
+A t-SNE comparison was not produced. At CKA 0.99979 the two embeddings are the
+same picture, and a figure showing that would be decoration rather than
+evidence. The sampled states are kept in `_probe/states.pt` if an illustration
+is wanted later.
