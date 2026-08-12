@@ -20,6 +20,16 @@ esac
 python_bin=${TEXTJEPA_PYTHON:-/vol/home-vol2/ml/laitenbf/TextJEPA/.venv/bin/python}
 mkdir -p "$RUN_DIR/model"
 
+# An optional predictor bottleneck. Left unset, the predictor keeps its
+# protocol width and can satisfy the auxiliary loss without the backbone.
+bottleneck=()
+if [[ -n "${PREDICTIVE_STATE_PROJECTION_SIZE:-}" ]]; then
+  bottleneck+=(--projection-size "$PREDICTIVE_STATE_PROJECTION_SIZE")
+fi
+if [[ -n "${PREDICTIVE_STATE_PREDICTOR_WIDTH:-}" ]]; then
+  bottleneck+=(--predictor-width "$PREDICTIVE_STATE_PREDICTOR_WIDTH")
+fi
+
 # Layers 1-12 and the embeddings stay frozen, so the layer-12 prediction target
 # is a fixed anchor. Only the source half (13-24) and the predictor adapt; the
 # target cannot drift to meet the predictor.
@@ -37,6 +47,7 @@ mkdir -p "$RUN_DIR/model"
   --lora-learning-rate "${PREDICTIVE_STATE_LORA_LR:-1e-4}" \
   --prediction-weight "${PREDICTIVE_STATE_PREDICTION_WEIGHT:-0.1}" \
   --scale-weight "${PREDICTIVE_STATE_SCALE_WEIGHT:-0.01}" \
+  "${bottleneck[@]+"${bottleneck[@]}"}" \
   --dtype "${PREDICTIVE_STATE_DTYPE:-bfloat16}" --device cuda --seed "$seed"
 
 "$python_bin" scripts/summarize_predictive_state_stage1.py \

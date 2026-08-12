@@ -60,6 +60,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backbone-mode", choices=("frozen", "lora"), default="lora")
     parser.add_argument("--target-layer", type=int)
     parser.add_argument("--source-layer", type=int, action="append")
+    # Narrowing the projection is an information bottleneck, not merely a
+    # smaller predictor: every input, including the skip path, is routed
+    # through it, so the transition cannot be solved inside the predictor
+    # without the backbone making its states more predictable.
+    parser.add_argument("--projection-size", type=int)
+    parser.add_argument("--predictor-width", type=int)
     parser.add_argument("--steps", type=int, default=1000)
     parser.add_argument("--microbatch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation", type=int, default=4)
@@ -116,7 +122,10 @@ def sample_batch(dataset, size: int, generator: torch.Generator,
 
 
 def make_predictor(model, variant: str, target: int,
-                   sources: tuple[int, ...]) -> ActionConditionedTransition:
+                   sources: tuple[int, ...], *,
+                   projection_size: int | None = None,
+                   predictor_width: int | None = None,
+                   ) -> ActionConditionedTransition:
     text_config = getattr(model.config, "text_config", model.config)
     hidden_size = int(text_config.hidden_size)
     if variant == "same_layer":
@@ -126,6 +135,8 @@ def make_predictor(model, variant: str, target: int,
         source_layers=sources,
         target_layer=target,
         action_dim=hidden_size,
+        projection_size=projection_size,
+        predictor_width=predictor_width,
         variant=variant,
     )
     return ActionConditionedTransition(config)
@@ -287,7 +298,9 @@ def main() -> None:
     predictor = None
     if args.variant != "ntp_only":
         predictor = make_predictor(
-            model, args.variant, target_layer, source_layers
+            model, args.variant, target_layer, source_layers,
+            projection_size=args.projection_size,
+            predictor_width=args.predictor_width,
         ).to(device=args.device).train()
     capture_layers = set(source_layers) | {capture_target}
     capture = ResidualCapture(model, capture_layers)
