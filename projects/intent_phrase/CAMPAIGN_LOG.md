@@ -826,3 +826,8 @@ use a cheap subset while replay/bounds still read the full corpus; and
   echoes the compiled-domain finding (selection below random at tiny
   scale). tok-lm-long local COMPLETED: strict .000/slack4 .010 (matches
   Alex).
+- Local jepa-ldad-long-s0 COMPLETED, agrees with Alex twin (slack4 .073
+  @d16, strict 0; mean necessary 16.9). Launched eval-bands-jepa-s0-v1 on
+  freed gruenau1 GPU2: all 6 bands (ID 15-25 through 45-50) at slack 16
+  with full curves (subsumes any smaller budget); 200 eps/band. Wide-slack
+  ID eval still running on gruenau2.
