@@ -570,3 +570,22 @@ PREPARED (not launched):
   BEAM_WIDTH=8 EVAL_DEPTHS="1 2 4 8 16" MAX_SLACK=4, CUDA_VISIBLE_DEVICES=0,
   to be run on gruenau2 from an immutable snapshot under
   `runs/autonomy/_code/`.
+
+## 2026-08-12 (cont.): LM state-readout probes — feasibility signal NOT JEPA-specific
+
+- Report: research/reports/intent_phrase/2026-08-12-lm-state-readout/
+  (mirrored). Token LM .971 / sentence LM .961 / sentLM+latent .947 vs JEPA
+  .935 feasibility AUC (own action embeddings; matched 16-d candidate:
+  sentence LMs land AT JEPA, token LM above). Resolvedness tied everywhere.
+  Conjunctive parent-lookup collapse replicates on all families. LMs decay
+  LESS with depth than the JEPA pooled state. CONSEQUENCE: drop any
+  "JEPA states carry structure LMs lack" phrasing; representation story is
+  about USE (cycle-consistency converts signal into planning; LMs have no
+  analogous mechanism), presence is universal. Also honest JEPA weakness:
+  deep-prerequisite feasibility decays in pooled state. Caveats: single
+  seed, training-campaign confound, not the matched-width protocol.
+- Also this session: codebook_ground interface committed (9f9f1b7), 300-ep
+  eval running; predictor variants fixed+tested (fa63cc9: causal predictor
+  was silently Markov inside horizon GAR — real bug), cells queued on
+  gruenau2 waiter; LM LR screen (8 cells) + width scaling {128,512} chains
+  launched on gruenau2 (metric-parity fixes d52bae5).
