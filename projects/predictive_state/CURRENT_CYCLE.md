@@ -41,6 +41,24 @@ within 7e-4 nats. Activation scale is solved: the RMS ratio is 1.009 at the
 protocol coefficient and 1.0006 at `λ_scale = 0.1`, which costs nothing in
 direction and should become the default.
 
+`2026-08-12-qwen-stage1-pressure-v1` launched from revision `b9307bf`. The
+screen plus the representation probe localized the problem: the objective is
+satisfied inside an 8.8M-parameter predictor, so no pressure reaches the
+backbone. Two ladders raise it, both anchored on `qwen05-lora-full-scale0.1-s0-v1`
+as their shared corner (prediction weight 0.1, scale weight 0.1, projection 448):
+
+- prediction weight 0.3, 1.0, 3.0 at the protocol projection;
+- predictor projection 32 and 8 at the protocol prediction weight, which is an
+  information bottleneck rather than merely a smaller predictor because the
+  skip path is routed through the projection too.
+
+Everything else matches the screen: same shared token blocks, same batch order,
+20M tokens, seed 0, BF16. Scale weight is 0.1 throughout on the screen's result
+that it calibrates activation scale for free. Read the round as a dose-response
+curve on both axes: if predictor-removed NLL and the representation probes stay
+flat across a 30x weight range and a 56x projection reduction, the objective
+does not shape this backbone and the paper's emphasis should move to Stage 2.
+
 Next, in order:
 
 1. Frozen-backbone `full` at the same 20M tokens. The jump from cosine 0.2133

@@ -19,6 +19,10 @@
   layers 13–24 with layers 1–12 and the target frozen; five token-matched cells
   (full, ntp_only, no_action, action_only, full at `λ_scale = 0.1`) sharing one
   token-block file so the NTP-only arm isolates the auxiliary objective.
+- `2026-08-12-qwen-stage1-pressure-v1`: prediction-weight ladder (0.3,
+  1.0, 3.0) and predictor-projection bottleneck ladder (32, 8) at 20M
+  tokens each, anchored on the screen's `full-scale0.1` corner; tests
+  whether any auxiliary pressure reaches the backbone.
 - `qwen-stage1-screen-*`: further 20M-token upper-half rank-16 LoRA controls
   (same_layer, nitp, frozen-LM-plus-predictor, equal-FLOP NTP).
 - `olmo1b-stage1-main-*`: 100M-token three-seed main comparison.
