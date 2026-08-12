@@ -460,3 +460,17 @@ a depth axis onto the LM numbers.
   (faithful generation is CPU-bound): cell script now takes NUM_WORKERS;
   chain relaunched with 16 workers, all cells reset (earlier partial
   checkpoints trained WITHOUT the ranking loss - discarded).
+
+## 2026-08-12: codebook deep diagnosis (owner question) — impossible in principle
+
+- Report: research/reports/intent_phrase/2026-08-12-codebook-diagnosis/
+  (mirrored). Phrase space is combinatorial: leaf lookups saturate (100%
+  verbatim coverage), compute phrases NEVER repeat (0/1367 across 300 val
+  problems; 0 problems with necessary actions covered) — so no codebook
+  size can supply them. Twist: the LATENTS are nearly reusable (NN dist
+  0.77 vs within-problem separation 10.7) — owner's intuition right at the
+  vector level — but the environment executes sentences, and the retrieved
+  vector's phrase names the wrong problem's variables. Action embeddings
+  are coarse role/op codes; names live in the state, not the action code.
+  Menu-free via prompt-derived catalogue + cycle feasibility stands as the
+  right claim; retrieval memories are ruled out in principle.
