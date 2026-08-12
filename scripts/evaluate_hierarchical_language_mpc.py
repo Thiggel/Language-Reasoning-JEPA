@@ -10,7 +10,11 @@ from time import perf_counter
 
 import torch
 
-from textjepa.data.igsm_step_verifier import final_answer_matches
+from textjepa.data.igsm_step_verifier import (
+    final_answer_matches,
+    operation_matches_expected,
+    parse_rendered_operation,
+)
 from textjepa.data.language_planning import (
     MODEL_ID,
     MODEL_REVISION,
@@ -112,6 +116,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dtype", default="bfloat16")
     return parser.parse_args()
+
+
+def _grounded_regrets(rows: list[dict]) -> list[float]:
+    """Optimizer-curse regrets from CEM iterations that actually grounded."""
+
+    return [
+        value
+        for row in rows
+        for diagnostic in row["manager_diagnostics"]
+        # NaN marks an iteration with no grounded candidates.
+        if (value := diagnostic["optimizer_curse_regret"]) == value
+    ]
+
+
+def _mean_or_none(rows: list[dict], key: str) -> float | None:
+    values = [row[key] for row in rows if row[key] is not None]
+    return sum(values) / len(values) if values else None
 
 
 def _examples(path: Path) -> list[dict]:
@@ -229,6 +250,8 @@ def main() -> None:
         worker_search_diagnostics = []
         worker_exact_gaps = []
         worker_model_cost_errors = []
+        step_parsed: list[bool] = []
+        step_valid: list[bool] = []
         pending_waypoints: list[torch.Tensor] = []
         manager_replans = 0
         worker_replans = 0
@@ -656,6 +679,20 @@ def main() -> None:
             decoded_step = tokenizer.decode(
                 selected_tokens.tolist(), skip_special_tokens=True
             )
+            # Final-answer accuracy only fires when an episode terminates with
+            # a \boxed value, so on its own it cannot separate "reasoned badly"
+            # from "never finished". Record per-boundary parse/validity too.
+            executed_index = len(boundaries) - 2
+            step_parsed.append(
+                parse_rendered_operation(decoded_step) is not None
+            )
+            # Symbolic step supervision is optional: only verified canonical
+            # iGSM records carry reasoning_operations.
+            expected_operations = record.get("reasoning_operations") or []
+            if executed_index < len(expected_operations):
+                step_valid.append(operation_matches_expected(
+                    decoded_step, expected_operations[executed_index],
+                ))
             if selected_terminal or "\\boxed" in decoded_step:
                 break
         generated_text = tokenizer.decode(
@@ -683,6 +720,13 @@ def main() -> None:
             "manager_prefix_policy": args.manager_prefix_policy,
             "cem_iterations": args.cem_iterations,
             "correct": bool(correct),
+            "reached_final_answer": "\\boxed" in generated_text,
+            "step_parse_rate": (
+                sum(step_parsed) / len(step_parsed) if step_parsed else None
+            ),
+            "step_validity_rate": (
+                sum(step_valid) / len(step_valid) if step_valid else None
+            ),
             "generated_steps": len(boundaries) - 1,
             "generated_tokens": len(generated_tokens),
             "mpc_replans": len(boundaries) - 1,
@@ -801,21 +845,20 @@ def main() -> None:
         "mean_full_prefix_reencode_tokens": sum(
             row["full_prefix_reencode_tokens"] for row in rows
         ) / len(rows),
+        # Regret is only defined where elites were grounded through the worker
+        # (``--manager-grounding shared_bank``). With grounding off every entry
+        # is NaN; report null rather than 0.0, which reads as "no curse
+        # measured" instead of "no curse present".
         "mean_optimizer_curse_regret": (
-            sum(
-                diagnostic["optimizer_curse_regret"]
-                for row in rows
-                for diagnostic in row["manager_diagnostics"]
-                if diagnostic["optimizer_curse_regret"]
-                == diagnostic["optimizer_curse_regret"]
-            )
-            / max(1, sum(
-                diagnostic["optimizer_curse_regret"]
-                == diagnostic["optimizer_curse_regret"]
-                for row in rows
-                for diagnostic in row["manager_diagnostics"]
-            ))
+            sum(_grounded_regrets(rows)) / len(_grounded_regrets(rows))
+            if _grounded_regrets(rows) else None
         ),
+        "optimizer_curse_regret_samples": len(_grounded_regrets(rows)),
+        "final_answer_rate": sum(
+            row["reached_final_answer"] for row in rows
+        ) / len(rows),
+        "mean_step_parse_rate": _mean_or_none(rows, "step_parse_rate"),
+        "mean_step_validity_rate": _mean_or_none(rows, "step_validity_rate"),
         "backend": backend_metadata(),
         "checkpoint_metadata": {
             "method": args.method_label,

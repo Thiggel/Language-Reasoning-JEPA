@@ -95,6 +95,50 @@ def prompt_token_ids(tokenizer: Any, problem_text: str) -> list[int]:
     return list(ids)
 
 
+CANONICAL_SYSTEM_PROMPT = (
+    "Solve the problem one step at a time. Write exactly one step per line, "
+    "in this form and no other:\n"
+    "so the number of <item> is <a> plus <b> = <c> .\n"
+    "Use the words plus, minus or times, never the symbols + - *. "
+    "All arithmetic is modulo 23, so reduce every result to 0..22. "
+    "Write no headings, no bullet points and no blank lines. "
+    "When the queried quantity is known, write a final line "
+    "Final answer: \\boxed{<value>}"
+)
+
+
+def canonical_prompt_token_ids(tokenizer: Any, problem_text: str) -> list[int]:
+    """Prompt that elicits the canonical iGSM step form.
+
+    The world model's states were built by teacher-forcing canonical
+    ``reasoning_operations`` lines, and both ``parse_rendered_operation`` and
+    ``operation_matches_expected`` only accept that form. Zero-shot generation
+    produces markdown/LaTeX prose that is unparseable and off-manifold, so this
+    prompt is what makes step-level verification measurable at all. It changes
+    only the system turn; the chat template, thinking mode and BOS handling are
+    identical to :func:`prompt_token_ids`.
+    """
+
+    ids = tokenizer.apply_chat_template(
+        [
+            {"role": "system", "content": CANONICAL_SYSTEM_PROMPT},
+            {"role": "user", "content": problem_text},
+        ],
+        tokenize=True,
+        add_generation_prompt=True,
+        enable_thinking=THINKING_MODE,
+    )
+    if isinstance(ids, Mapping):
+        ids = ids["input_ids"]
+    return list(ids)
+
+
+PROMPT_BUILDERS = {
+    "zero_shot": prompt_token_ids,
+    "canonical": canonical_prompt_token_ids,
+}
+
+
 def render_igsm_solution(
     reasoning_operations: Sequence[str], answer: str
 ) -> list[str]:

@@ -53,3 +53,40 @@ def test_geometry_problem_id_join_rejects_ambiguous_or_missing_rows(
 ):
     with pytest.raises(ValueError, match=message):
         _align_examples_to_features(examples, feature_ids)
+
+
+@pytest.mark.parametrize("normalized", [True, False])
+def test_both_metrics_expose_the_whiten_interface_the_geometry_export_uses(
+    normalized,
+):
+    """A euclidean run previously crashed in the geometry export with
+    ``'SquaredEuclideanMetric' object has no attribute 'whiten'``."""
+    from textjepa.objectives.hierarchical_language import (
+        EMAShrunkMahalanobis,
+        SquaredEuclideanMetric,
+    )
+
+    torch.manual_seed(0)
+    z = torch.randn(5, 6)
+    for metric in (
+        SquaredEuclideanMetric(6, normalized=normalized),
+        EMAShrunkMahalanobis(6, normalized=normalized),
+    ):
+        whitened = metric.whiten(z - metric.mean)
+        assert whitened.shape == z.shape
+        assert torch.isfinite(whitened).all()
+
+
+def test_euclidean_whitening_preserves_pairwise_distance_ratios():
+    from textjepa.objectives.hierarchical_language import (
+        SquaredEuclideanMetric,
+    )
+
+    torch.manual_seed(0)
+    metric = SquaredEuclideanMetric(6)
+    z = torch.randn(5, 6)
+    whitened = metric.whiten(z - metric.mean)
+    before = torch.cdist(z, z)
+    after = torch.cdist(whitened, whitened)
+    scale = after[before > 0] / before[before > 0]
+    assert torch.allclose(scale, scale[0].expand_as(scale), atol=1e-5)

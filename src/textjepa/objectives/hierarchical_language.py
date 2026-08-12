@@ -105,6 +105,10 @@ class SquaredEuclideanMetric(nn.Module):
         self.dimension = int(dimension)
         self.normalized = bool(normalized)
         self.register_buffer("identity", torch.eye(self.dimension))
+        # Non-persistent so existing checkpoints keep loading with strict=True.
+        self.register_buffer(
+            "mean", torch.zeros(self.dimension), persistent=False
+        )
 
     def update(
         self, states: torch.Tensor, mask: torch.Tensor | None = None
@@ -114,6 +118,17 @@ class SquaredEuclideanMetric(nn.Module):
     def matrix(self) -> torch.Tensor:
         scale = 1.0 / self.dimension if self.normalized else 1.0
         return self.identity * scale
+
+    def whiten(self, value: torch.Tensor) -> torch.Tensor:
+        """Map into the metric's isotropic coordinates.
+
+        Mirrors ``MahalanobisMetric.whiten`` so geometry exports can whiten
+        under whichever metric a run used. Euclidean coordinates are already
+        isotropic, so this is the identity: it preserves every pairwise
+        distance ratio, which is all the t-SNE/UMAP export needs.
+        """
+
+        return value
 
     def forward(self, left: torch.Tensor, right: torch.Tensor) -> torch.Tensor:
         distance = (left - right).square().sum(-1)

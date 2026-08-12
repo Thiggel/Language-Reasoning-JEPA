@@ -50,6 +50,12 @@ def parse_args() -> argparse.Namespace:
         "--execution", nargs="+", choices=("open_loop", "closed_loop"),
         default=["closed_loop"],
     )
+    parser.add_argument(
+        "--manager-grounding", choices=("none", "shared_bank"),
+        default="shared_bank",
+        help="grounded elite selection; 'none' leaves optimizer-curse regret "
+             "unmeasurable and violates the nested-hierarchy contract",
+    )
     parser.add_argument("--k0", nargs="+", type=int, default=[16, 32, 64])
     parser.add_argument("--k1", nargs="+", type=int, default=[1, 4])
     parser.add_argument("--max-examples", type=int, default=16)
@@ -217,7 +223,7 @@ def main() -> None:
             "--worker-search", cell["worker_search"],
             "--worker-objective", cell["worker_objective"],
             "--manager-action-support", cell["manager_support"],
-            "--manager-grounding", "none",
+            "--manager-grounding", args.manager_grounding,
             "--hierarchy-execution", cell["execution"],
             "--worker-population", str(args.worker_population),
             "--worker-iterations", str(args.worker_iterations),
