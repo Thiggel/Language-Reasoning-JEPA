@@ -664,3 +664,61 @@ REVISED PLAN (stylized iGSM long-trace = primary mechanism environment):
   full_catalogue, ldad_cycle, codebook_ground, autonomous} where applicable.
 - Causal predictor: on-par result (.970 vs .975 strict@16) -> ablation
   table entry (recipe not predictor-specific), no headline treatment.
+
+## 2026-08-12 (cont. 4): S2 mains + ProofWriter screen SUBMITTED to Alex
+
+Local Gruenau GPUs are saturated, so the paper-ready training campaigns were
+packaged for Slurm. Alex only: every Lise job pends with
+`AccountOutOfComputeTime` (account bem00089 budget exhausted, confirmed live),
+so Lise is unusable for overflow until compute time is restored.
+
+Alex deployment (own filesystem): immutable snapshots under
+`/home/atuin/c107fa/c107fa12/TextJEPA-autonomy/_code/<sha>` pushed with
+`scripts/cluster/sync_snapshot_to_alex.sh`; runs under
+`.../TextJEPA-autonomy/runs/autonomy/intent_phrase/<round>/<cell>/` with the
+same `job.sh`/`state`/`exit_code`/`stdout.log`/`stderr.log`/`environment.json`
+layout as Gruenau, so `scripts/cluster/sync_back_round.sh <round>` drops
+results straight into the local tree. Shared env
+`/home/atuin/c107fa/c107fa12/.venv` (torch 2.9+cu128) verified by running the
+LDAD cell AND both untested recurrent LM rows end to end on CPU there first.
+Cells queue with `--partition=a40,a100,rtxpro6k --gres=gpu:1`: a single-a40
+submission was estimated to start six days out, across three partitions the
+first six cells started within minutes. Alex caps single-node jobs at 24 h
+(`--time=23:55:00`, inner watchdog 84600 s) — the 48 h wish for the recurrent
+rows is not grantable there; if a rec cell TIMEOUTs it needs a resume path.
+
+- A. `2026-08-12-intent-long-mains-v1` LAUNCHED, 45 cells, jobs 3989961-3990010
+  (snapshot 5213602). Long-trace stylized iGSM (steps 15-25, nvars 30-60,
+  leaf_prob 0.1, strict, max_chunks 256 / token LM max_len 4096), EPOCHS=10
+  TRAIN_SIZE=30000 BATCH_SIZE=16 N_EPISODES=300 MAX_SLACK=4, JEPA depths
+  {1,2,4,8,16}. Rows x seeds 0-4: LDAD recipe (lr 3e-4, one knob `LDAD_LR`
+  pending the local 3e-4 vs 1e-3 cross-check), TD-JEPA and GoalHead baselines
+  (lr 3e-4, as in the 2026-08-07 baseline round), token LM 3e-3, sentence LM
+  3e-4, sentence+latent 3e-4, and the three RECURRENT LM rows (loop axis) with
+  seed 0 as smoke and seeds 1-4 held on `--dependency=afterok`. No ablations.
+- B. `2026-08-12-intent-proofwriter-lr-screen-v1` LAUNCHED, 12 cells, jobs
+  3990030-3990041 (snapshot a2f035e); compiled ProofWriter data rsynced to
+  Alex. LDAD + token LM + sentence LM at lr {1e-4,3e-4,1e-3,3e-3}, seed 0,
+  EPOCHS=30. ENTRY-POINT FINDING (checked on CPU first, as ordered): the
+  stylized-iGSM cell `run_intent_horizon_energy_cell.sh` CANNOT run
+  ProofWriter — it hard-codes on-the-fly iGSM sampling keys absent from
+  `configs/data/proofwriter.yaml` (`Key 'geo_rank_rollouts' is not in struct`,
+  aborts before step 1) and its evaluator samples iGSM problems. Fixed by
+  using the compiled observed-action path: added a `proofwriter` case to
+  `run_compiled_domain_ldad_cell.sh` and wrote `run_compiled_domain_lm_cell.sh`
+  (train_lm/train_sentlm with `data=proofwriter train.target_kind=intent`, then
+  `eval_observed_action.py`, same information-matched interface as the JEPA
+  row). All three cells smoke-tested end to end; 31 related tests pass.
+  CAVEAT: compiled-domain evals report `metrics_by_excess_actions`, not the
+  iGSM `slack_curves` shape; recurrent / sentence+latent LM rows are not wired
+  for compiled domains.
+- C. `2026-08-12-intent-faithful-mains-v1` PREPARED ONLY on Alex (5 seeds,
+  `state=PREPARED`, lr placeholder `PENDING_LOCAL_SCREEN`); launch with
+  `FAITHFUL_LR=<lr> SUBMIT=1 bash .../alex_submit_intent_faithful_mains.sh`
+  once the local faithful LR screen decides.
+
+New helpers (committed): `scripts/cluster/{alex_env.sh,sync_snapshot_to_alex.sh,
+alex_submit_intent_long_mains.sh,alex_submit_proofwriter_lr_screen.sh,
+alex_submit_intent_faithful_mains.sh,sync_back_round.sh,
+write_cell_environment.sh}`. Per-round READMEs with the exact rsync-back
+command live in each local round directory.
