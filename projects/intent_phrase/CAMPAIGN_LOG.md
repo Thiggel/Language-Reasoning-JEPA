@@ -527,3 +527,46 @@ no screen cells yet (the runner supports them via `token_lm_rec` /
 been trained, so their loop axis is untested); full_catalogue LM baselines
 still raise on faithful iGSM; the LM rows have no matched-FLOPs axis
 (they have no lookahead to trade compute against).
+
+## 2026-08-12: predictor-variant falsifiers (code fix + PREPARED cells)
+
+The paper's causal-falsifier list needs two predictor variants of the LDAD
+headline recipe on stylized iGSM: a causal-sequence predictor (transformer
+world model over the whole state/action history) and a non-residual MLP
+predictor (predicts the next latent directly instead of a delta).
+
+Fix: horizon-mode GAR (the recipe's ranking loss, which imagines a rollout
+by stepping the predictor over encoded action tokens) used to raise
+"horizon GAR currently requires the matched MLP predictor". Root cause: it
+called the predictor once per horizon step with a single (state, action)
+pair. For the causal predictor that call is a length-one sequence — it
+resets the position embedding and throws away the factual prefix
+s_0..s_t / a_0..a_{t-1}, i.e. silently degrades it to a Markov MLP.
+`DiscourseJEPA._horizon_prefix_endpoints` now rebuilds the factual prefix
+per anchor step (grouping rollout rows by their anchor t) and uses the
+predictor's own history-carrying `rollout`; masked post-terminal suffix
+actions stay absorbing exactly as before. The MLP path keeps the literal
+old recursion, pinned by
+`test_horizon_gar_mlp_path_matches_explicit_markov_recursion` (compares
+model output against the explicit `s <- F(s,a)` loop, so existing
+checkpoints are unaffected). Two new causal tests check gradients flow and
+that the endpoints equal the history-carrying rollout and differ from the
+old history-free recursion. tests/test_model.py: 67 passed.
+Rollout-exposed GAR (`geo_rank_rollout_depths`) still raises for the causal
+predictor — untouched, unused by this recipe.
+
+Smoke-tested both variants for 1 epoch on CPU (tiny sizes) through
+`scripts/run_intent_horizon_energy_cell.sh mix4_aux025_nohorizon` with
+observed_action_ldad: non-residual (`model.predictor_residual=false`) trains
+and evaluates end to end; causal (`model.predictor_kind=causal`) trains with
+`train/geo_horizon_rank` active (nonzero), i.e. the loss is no longer
+skipped or blocked.
+
+PREPARED (not launched):
+- `runs/autonomy/intent_phrase/2026-08-12-intent-predictor-variants-v1/`
+  `pred-causal-s0-v1` (model.predictor_kind=causal) and `pred-nonres-s0-v1`
+  (model.predictor_residual=false), seed 0, lr 3e-4, EPOCHS=10
+  TRAIN_SIZE=30000 BATCH_SIZE=32, stylized iGSM, N_EPISODES=300
+  BEAM_WIDTH=8 EVAL_DEPTHS="1 2 4 8 16" MAX_SLACK=4, CUDA_VISIBLE_DEVICES=0,
+  to be run on gruenau2 from an immutable snapshot under
+  `runs/autonomy/_code/`.
