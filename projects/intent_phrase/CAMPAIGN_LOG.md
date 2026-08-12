@@ -792,3 +792,18 @@ Gate-tooling fixes committed this round: `TINY_DATA_ROOT` so the tiny cells can
 use a cheap subset while replay/bounds still read the full corpus; and
 `check_compiled_domain_horizon_loss.py` no longer hardcodes iGSM's
 `max_chunk_len=96`, which had made the ALFWorld gate impossible to run at all.
+
+## 2026-08-12 (cont. 4): monitoring sweep advances
+
+- Predictor variants COMPLETE (report 2026-08-12-predictor-variants/,
+  mirrored): non-residual strict@16 .980, causal .970 vs headline .975 —
+  recipe is predictor-agnostic; ablation-table entry. Task #7 closed.
+- Faithful screen interim: 3e-4 strict@16 .243/slack4 .707 beats 1e-3
+  (.210/.563). NOTE: depth curve is FLAT on faithful (d1 .263 -> d16 .243)
+  — planning depth buys nothing on faithful iGSM so far; hold
+  interpretation until screen + 5 seeds. Shuffle arm running; 1e-4, 3e-3
+  queued.
+- sent-lm-long-s0 (15-25 steps) COMPLETED early (ran in first chain):
+  loops1-decoder success recorded in its metrics.json; note current chain
+  may rerun it after tok-lm — harmless overwrite, same config.
+- Alex: 12 running / 49 pending (mains + ProofWriter screen).
