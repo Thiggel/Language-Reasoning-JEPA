@@ -37,6 +37,12 @@ def main() -> None:
     parser.add_argument("--geo-rank-k", type=int, default=2)
     parser.add_argument("--geo-rank-horizon", type=int, default=8)
     parser.add_argument("--geo-rank-horizons", default="1,2,4,8")
+    # Chunk geometry must be able to hold the domain's longest rendered
+    # observation.  ALFWorld room descriptions run past the iGSM-sized default
+    # and the encoder then fails on the position-embedding slice, so these are
+    # arguments rather than constants.
+    parser.add_argument("--max-chunk-len", type=int, default=96)
+    parser.add_argument("--max-chunks", type=int, default=64)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -63,7 +69,8 @@ def main() -> None:
                 "model.chunk_heads=4", "model.state_layers=2",
                 "model.state_heads=4", "model.predictor_layers=2",
                 "model.predictor_heads=4", "model.d_action=16",
-                "model.max_chunk_len=96", "model.max_chunks=64",
+                f"model.max_chunk_len={args.max_chunk_len}",
+                f"model.max_chunks={args.max_chunks}",
                 "model.geo_horizon_input=false",
                 "model.geo_rank_score_mode=horizon",
                 "model.dense_rollout_depth=0",

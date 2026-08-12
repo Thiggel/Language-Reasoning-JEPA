@@ -60,6 +60,7 @@ export TMPDIR="$tmp" TMP="$tmp" TEMP="$tmp"
 # 2. the recipe's horizon Energy is live on this domain
 "$py" "$TEXTJEPA_ROOT/scripts/check_compiled_domain_horizon_loss.py" \
   --data-config "$RUN_DIR/data.yaml" --episodes 16 \
+  --max-chunk-len "$chunk_len" --max-chunks "$chunks" \
   --out "$RUN_DIR/horizon_loss.json"
 
 # 3. reference bounds
