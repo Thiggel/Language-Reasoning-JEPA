@@ -644,3 +644,23 @@ REVISED PLAN (stylized iGSM long-trace = primary mechanism environment):
 - Domains (faithful screen running; ProofWriter/PlanBench/ALFWorld agent
   finishing gates) and probe battery on final five-seed checkpoints
   unchanged from before.
+
+## 2026-08-12 (cont. 3): plan corrections (owner)
+
+- S5 CORRECTED: detached decoder is NOT a per-checkpoint reporting layer —
+  it is the execution engine of the fully autonomous no-menu mode: propose
+  (cycle/codebook) -> decoder EMITS next-step text -> model re-encodes its
+  own text -> repeat until claimed done -> check FINAL ANSWER only. No
+  oracle executor inside the episode. One decoder per main checkpoint
+  (JEPA-pure, frozen states). NEW BUILD ITEM: autonomous self-rollout eval
+  mode (planner loop over own generated text + answer check). Preregistered
+  expectation from decoder controls: structure survives, arithmetic is the
+  weak link -> honest end-to-end number whatever it is. Completes the
+  interface ladder: feasible menu -> no-oracle menu -> menu-free w/ oracle
+  executor -> fully autonomous text generation.
+- Interface axis clarified: ONE training run per seed serves all
+  interfaces; codebook/prior are eval-time fits on the frozen checkpoint
+  (never trained in). S3 stands as 6 bands x {feasible_menu,
+  full_catalogue, ldad_cycle, codebook_ground, autonomous} where applicable.
+- Causal predictor: on-par result (.970 vs .975 strict@16) -> ablation
+  table entry (recipe not predictor-specific), no headline treatment.
