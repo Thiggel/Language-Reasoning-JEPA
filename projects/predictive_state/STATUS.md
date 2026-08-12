@@ -37,5 +37,22 @@ top covariance eigenvalue of 2072.9 against 8.96 for the second, so unrelated
 target pairs already sit at cosine 0.268; a cosine of 0.787 is measured against
 that floor, not against zero.
 
-`2026-08-12-qwen-stage1-lora-screen-v1` is the first round in which any part of
-the language model adapts. See `CURRENT_CYCLE.md`.
+`2026-08-12-qwen-stage1-lora-screen-v1` was the first round in which part of
+the language model adapts: rank-16 LoRA in layers 13–24, five token-matched
+cells at 20M tokens each, WikiText-103 at context 1024 in BF16. All completed.
+
+The transition objective is healthy and the scale question is closed. Full
+reaches held-out cosine loss 0.1061 against 0.2078 for action-only and 0.2527
+for no-action, with a +0.357 action-permutation gap; predicted/target RMS is
+1.009 at `λ_scale = 0.01` and 1.0006 at 0.1, confirming that the frozen
+diagnostic's 1.33 ratio was undertraining rather than an objective conflict.
+
+Stage 1 does not pass. Predictor-removed NLL is identical across all five arms
+to within 7e-4 nats, so the auxiliary objective neither helps nor harms the
+ordinary path at `λ_pred = 0.1`. The LoRA weights do diverge between the full
+and NTP-only arms, so this is a real null and not a broken gradient path.
+
+Open before any adaptation claim: a frozen-backbone cell at the same 20M tokens
+(the cosine improvement over the frozen diagnostic confounds adaptation with
+200x more optimization), a persistence baseline against the 0.258 unrelated-pair
+cosine floor, and a `λ_pred` sweep. See `CURRENT_CYCLE.md`.

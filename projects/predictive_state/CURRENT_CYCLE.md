@@ -31,7 +31,27 @@ WikiText-2 would have been roughly nine epochs, which would have confounded any
 held-out NLL movement with memorization; 20M tokens is now under half an epoch.
 Precision is BF16 on H100, removing the V100 FP16 caveat.
 
-Direction-changing outcomes:
+All five cells completed on 2026-08-12 at revision `51a799b`; numbers are in
+`EVIDENCE.md`. The observed outcome is the third one below crossed with the
+second: the transition objective works well and costs nothing, but it also buys
+nothing on the ordinary path. Full reaches held-out cosine loss 0.1061 against
+0.2078 for action-only and 0.2527 for no-action, with an action-permutation gap
+of +0.357, while predictor-removed NLL is identical to the NTP-only control to
+within 7e-4 nats. Activation scale is solved: the RMS ratio is 1.009 at the
+protocol coefficient and 1.0006 at `λ_scale = 0.1`, which costs nothing in
+direction and should become the default.
+
+Next, in order:
+
+1. Frozen-backbone `full` at the same 20M tokens. The jump from cosine 0.2133
+   to 0.1061 confounds backbone adaptation with 200x more optimization, and
+   this one cell separates them. Until it runs, no adaptation claim is safe.
+2. Persistence baseline on these checkpoints, per item 1 below.
+3. `λ_pred` sweep at 0.03 and 0.3. The NLL null was measured at one coefficient
+   only; 0.3 is the setting that could plausibly move the ordinary path, and
+   0.03 bounds the tax if 0.3 hurts.
+
+Direction-changing outcomes as pre-registered:
 
 - Full improves predictor-removed held-out NLL over the NTP-only arm at equal
   tokens, without rank collapse: first genuine Stage 1 representation signal;
