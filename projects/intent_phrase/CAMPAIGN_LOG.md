@@ -843,3 +843,13 @@ use a cheap subset while replay/bounds still read the full corpus; and
 - ProofWriter LM screens (Alex, synced): all 8 LM cells strict .61-.65,
   slack4 .94-.97 — LMs are STRONG on ProofWriter; PW LDAD cells still
   running. The JEPA-vs-LM comparison on PW will be the interesting one.
+- WIDE-SLACK VERDICT (eval-wideslack-jepa-s0): the long-trace regime is
+  HEALTHY — jepa-ldad-long-s0 rises smoothly to .72 success at slack 16
+  (~17 necessary steps) vs first-feasible .26 and random .13. Slack 4 was
+  simply the wrong reading point for 20-step plans; headline metric
+  becomes the full success-vs-budget curve + AUC (as the contract already
+  specifies). No training-budget escalation needed. Band evals (slack-16
+  curves per band) mid-run; ID band agrees (.69@16, 200 eps). LM
+  wide-slack ID evals launched on CPU (tok/sent long checkpoints).
+- Rec-row LM smokes passed on Alex; all rec seeds COMPLETED (sync+record
+  next sweep).
