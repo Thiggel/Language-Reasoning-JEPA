@@ -264,8 +264,13 @@ done
   chmod +x "$chain"
   # Admission is checked once per device, immediately before the chain starts.
   # Later cells in a chain inherit the device from the cell ahead of them, so
-  # they cannot race a third party for it.
-  check_gpu "$host" "$gpu"
+  # they cannot race a third party for it. A busy device defers its own chain
+  # only; it must not abort placement onto the remaining devices.
+  if ! check_gpu "$host" "$gpu"; then
+    printf 'deferred\thost=gruenau%s\tgpu=%s\tcells=%s\n' \
+      "$host" "$gpu" "$(IFS=,; echo "${chain_members[*]}")"
+    continue
+  fi
   printf -v remote '%q ' env CUDA_VISIBLE_DEVICES="$gpu" bash "$chain"
   launcher_log="$chain_dir/gruenau${host}-gpu${gpu}.log"
   command="nohup $remote > $(printf %q "$launcher_log") 2>&1 < /dev/null & echo \$!"

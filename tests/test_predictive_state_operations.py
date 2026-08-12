@@ -255,3 +255,11 @@ def test_stage1_screen_cell_forwards_linear_and_single_source_controls():
     assert "--linear-predictor" in text
     assert "PREDICTIVE_STATE_SOURCE_LAYERS" in text
     assert "--source-layer" in text
+
+
+def test_pressure_launcher_defers_a_busy_device_without_aborting_the_round():
+    # A single occupied GPU must not prevent placement onto the others; the
+    # round is otherwise silently truncated at the first busy device.
+    text = (ROOT / "scripts/launch_gruenau_predictive_state_stage1_pressure.sh").read_text()
+    assert 'if ! check_gpu "$host" "$gpu"; then' in text
+    assert "deferred" in text
