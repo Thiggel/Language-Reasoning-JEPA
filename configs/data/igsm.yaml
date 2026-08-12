@@ -31,3 +31,4 @@ all_action_supervision: false
 problem_max_tries: 50
 strict_steps_range: false
 fresh_per_epoch: true
+sample_max_tries: 50
