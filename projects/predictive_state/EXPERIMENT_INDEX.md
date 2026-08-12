@@ -14,7 +14,13 @@
   scale weighting, packed document attention, full versus equal-capacity
   action-only; both completed, positive direction evidence and unresolved
   full-state scale mismatch.
-- `qwen-stage1-screen-*`: 20M-token upper-half rank-16 LoRA controls.
+- `2026-08-12-qwen-stage1-lora-screen-v1`: first adapted-backbone round.
+  20M tokens at context 1024 on WikiText-103 articles, BF16, rank-16 LoRA in
+  layers 13–24 with layers 1–12 and the target frozen; five token-matched cells
+  (full, ntp_only, no_action, action_only, full at `λ_scale = 0.1`) sharing one
+  token-block file so the NTP-only arm isolates the auxiliary objective.
+- `qwen-stage1-screen-*`: further 20M-token upper-half rank-16 LoRA controls
+  (same_layer, nitp, frozen-LM-plus-predictor, equal-FLOP NTP).
 - `olmo1b-stage1-main-*`: 100M-token three-seed main comparison.
 - `olmo1b-stage2-h{1,4,8,16,32}-*`: recurrent rollout curriculum.
 - `olmo1b-stage3-oracle-*`: explicitly oracle terminal-state probes.

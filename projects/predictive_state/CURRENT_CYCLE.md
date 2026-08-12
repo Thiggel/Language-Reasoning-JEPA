@@ -1,38 +1,59 @@
 # Current cycle
 
-`2026-08-10-qwen-frozen-transition-diagnostic-v5`
+`2026-08-12-qwen-stage1-lora-screen-v1`
 
-Observed decision: full beat the equal-capacity no-action control on held-out
-direction error and depended strongly on correct action identity. The remaining
-decision before joint training is whether action-only can explain the gain and
-whether raw activation scale can be calibrated without harming direction.
+The frozen diagnostic answered what it could. Because layers 1–24 were all
+frozen there, nothing in the language model could change, so the predictor
+could only chase a stationary target and predictor-removed NLL was a constant.
+This cycle is the first in which any part of the model adapts.
+
+Five token-matched cells share one pre-built token-block file
+(`_data/wikitext103_qwen_ctx1024.pt`, 37,106 train and 778 validation blocks at
+context 1024, tensor digest `1365dc54…`) and an identical batch order, so they
+differ only in the auxiliary objective:
+
+| Cell | Variant | `λ_scale` | Role |
+|---|---|---:|---|
+| `qwen05-lora-full-s0-v1` | full | 0.01 | treatment |
+| `qwen05-lora-ntp-only-s0-v1` | ntp_only | — | identical LoRA capacity and tokens, no predictive loss |
+| `qwen05-lora-no-action-s0-v1` | no_action | 0.01 | state only |
+| `qwen05-lora-action-only-s0-v1` | action_only | 0.01 | action only |
+| `qwen05-lora-full-scale0.1-s0-v1` | full | 0.1 | scale-coefficient probe |
+
+Embeddings and layers 1–12 stay frozen, so the layer-12 prediction target is a
+fixed anchor: only the source half (13–24, rank-16 LoRA, 4,399,104 trainable
+weights) and the 8,830,976-parameter predictor adapt. Unfreezing the target
+stack would let the target drift to meet the predictor, which is the collusion
+failure already observed in the sibling subprojects.
+
+Corpus changed from WikiText-2 to WikiText-103 articles. At 20M tokens
+WikiText-2 would have been roughly nine epochs, which would have confounded any
+held-out NLL movement with memorization; 20M tokens is now under half an epoch.
+Precision is BF16 on H100, removing the V100 FP16 caveat.
 
 Direction-changing outcomes:
 
-- Full beats action-only as well as no-action and action permutation, with
-  acceptable scale: proceed to the matched Qwen upper-half LoRA screen.
-- Full matches no-action: audit action use and token/position alignment before
-  training the backbone.
-- Action-only matches full: the target is dominated by token identity; change
-  target depth or add matched-action sampling before scaling.
-- Non-finite loss, wrong layer shapes, or implausible target norms: treat as an
-  implementation failure, not a negative scientific result.
+- Full improves predictor-removed held-out NLL over the NTP-only arm at equal
+  tokens, without rank collapse: first genuine Stage 1 representation signal;
+  proceed to the seed replication and then the OLMo main comparison.
+- Full matches NTP-only on NLL but keeps its transition advantage: the
+  objective shapes the transition without paying for it in language modeling.
+  That is a weaker, still-publishable claim; it moves the emphasis to Stage 2.
+- Full is worse than NTP-only on NLL: the auxiliary loss taxes the normal path
+  at `λ_pred = 0.1`; sweep `λ_pred` down before anything else.
+- The full-versus-action-only advantage seen under a frozen backbone shrinks
+  once the sources adapt: the earlier gain depended on a fixed interface, and
+  the target depth or the source split must be revisited.
 
-The v1 runs failed before model loading because whitespace-only WikiText lines
-were parsed incorrectly. The v2 runs failed at the first optimizer update due
-to FP16 trainable weights. Both are operational failures. In v3, the full cell
-completed but the no-action predictor was smaller; only the full result and its
-same-capacity action-permutation audit are retained. The v4 no-action cell is
-the admissible equal-parameter control.
+Open items this cycle does not settle, in priority order:
 
-The subsequent implementation audit found a nested scale-weight bug in all
-v1–v4 code snapshots. V3/v4 remain interpretable for transition direction but
-not scale calibration. V5 is the first protocol-faithful scale run and adds the
-missing equal-capacity action-only control.
-
-V5 completed. Full beat action-only by 26.7% in held-out cosine loss and was
-strongly harmed by action permutation, satisfying the frozen-interface
-direction test. Full activation RMS remains 33% above target. The next
-falsifiable decision is a narrow scale-coefficient/LR cross-check; proceed to
-upper-LoRA representation shaping only if calibration improves RMS without
-erasing the direction advantage.
+1. Persistence baseline. Effective rank of the target is ~2.1–2.9 out of 896
+   and unrelated target pairs already sit at cosine 0.26, so a cosine of 0.79
+   is measured against a high floor. How well a trivial copy predicts
+   `h_(t+1)^12` is the first control a reviewer will ask for. It needs no
+   training and runs on the resulting checkpoints.
+2. Outlier-robust scale reporting. `predicted_rms`/`target_rms` are linear
+   means over a heavy-tailed distribution (norm mean 17.5, max 1679) while the
+   objective is a log-space Huber, so the headline ratio and the optimized
+   quantity are not the same number.
+3. One seed only, as the screen protocol specifies.

@@ -33,6 +33,24 @@ def main() -> None:
             - final["transition_cosine_loss"]
         )
     geometry = final.get("target_geometry", {})
+    frozen = metrics["backbone_mode"] == "frozen"
+    if not finite:
+        validity, claim = "invalid_nonfinite", "Non-finite held-out metrics."
+    elif frozen:
+        validity = "diagnostic_only"
+        claim = (
+            "Operational frozen-backbone diagnostic only; no representation "
+            "or recurrent-decoding claim."
+        )
+    else:
+        # A single adapted cell cannot establish Stage 1 on its own: the gate
+        # is a cross-cell contrast against the token- and capacity-matched
+        # NTP-only, no-action, and action-only arms.
+        validity = "not_admitted_pending_controls"
+        claim = (
+            "Single upper-half LoRA cell; no representation claim until the "
+            "matched NTP-only, no-action, and action-only arms are compared."
+        )
     summary = {
         "schema_version": 1,
         "status": "completed",
@@ -48,13 +66,8 @@ def main() -> None:
         "action_permutation_loss_gap": action_gap,
         "finite_metrics": finite,
         "effective_rank": geometry.get("effective_rank"),
-        "scientific_validity": (
-            "diagnostic_only" if finite else "invalid_nonfinite"
-        ),
-        "claim": (
-            "Operational frozen-backbone diagnostic only; no representation "
-            "or recurrent-decoding claim."
-        ),
+        "scientific_validity": validity,
+        "claim": claim,
         "oracle_information": False,
         "candidate_privileged_information": False,
         "cross_project_information": False,
