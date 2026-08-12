@@ -807,3 +807,22 @@ use a cheap subset while replay/bounds still read the full corpus; and
   loops1-decoder success recorded in its metrics.json; note current chain
   may rerun it after tok-lm — harmless overwrite, same config.
 - Alex: 12 running / 49 pending (mains + ProofWriter screen).
+
+## 2026-08-12 (cont. 5): long-trace first mains + faithful shuffle verdict
+
+- Alex long-trace mains landing (synced back): at slack 4 EVERYTHING is
+  near floor on 15-25-step problems — jepa-ldad-long s0 .067 slack-4 @d16
+  (monotone in depth, ~10x baselines), other seeds .013-.03; tok-lm .010,
+  sent-lm .007 (local screens agree); TD-JEPA and GoalHead .000-.007
+  everywhere. Slack 4 on ~20 necessary steps is likely the wrong budget
+  (contract metric is the full success-vs-budget curve); LAUNCHED
+  wide-slack (16) eval of jepa-ldad-long-s0 on gruenau2 GPU1
+  (eval-wideslack-jepa-s0-v1) to find where curves separate before
+  touching training budgets.
+- FAITHFUL HOLD: shuffle falsifier at real scale does NOT hurt strict
+  (.247 shuffled vs .243 aligned; slack-4 .610 vs .707; depth curve flat
+  both). Faithful 5-seed mains NOT triggered. Needs diagnosis: the ~.24
+  faithful strict may be interface+heuristics, not grounded planning —
+  echoes the compiled-domain finding (selection below random at tiny
+  scale). tok-lm-long local COMPLETED: strict .000/slack4 .010 (matches
+  Alex).
