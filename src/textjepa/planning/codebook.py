@@ -214,3 +214,96 @@ class CodebookCycleProposer:
             "parse_rate": n_parseable / max(len(phrases), 1),
         }
         return actions, parsed, diagnostics
+
+
+class CodebookGroundProposer(CodebookCycleProposer):
+    """Codebook latents grounded environment-side by nearest neighbour.
+
+    Same fitted codebook as ``codebook_cycle``, different grounding contract:
+    instead of decoding each code to text and demanding an exactly parseable
+    phrase (which fails because compute phrases are problem-specific
+    compositions -- see the 2026-08-12 codebook diagnosis), the ENVIRONMENT
+    matches each proposed latent against the embeddings of its own action
+    inventory and executes the nearest action.  This mirrors how text-game
+    environments (e.g. ALFWorld) fuzzy-match generated commands against their
+    admissible-command inventory: the grounding is an environment-interface
+    property.  The model side still never sees a menu, receives no
+    feasibility information, and must place its proposal vectors well --
+    candidates are then ranked by the usual LDAD cycle score of the grounded
+    action's own phrase.  Evidence label: environment-side action grounding
+    (weaker than feasible_menu -- no feasibility bit, no explicit list to
+    score -- stronger than the exact-parse contract of *_cycle).
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._catalogue_cache: dict[tuple[str, ...], Tensor] = {}
+
+    @torch.no_grad()
+    def _catalogue_embeddings(
+        self, phrases: list[str]
+    ) -> Tensor:
+        from textjepa.planning.ldad_decode import encode_phrases
+
+        key = tuple(phrases)
+        hit = self._catalogue_cache.get(key)
+        if hit is None:
+            if len(self._catalogue_cache) > 8:
+                self._catalogue_cache.clear()
+            hit = encode_phrases(self.model, self.vocab, self.device, phrases)
+            self._catalogue_cache[key] = hit
+        return hit
+
+    @torch.no_grad()
+    def propose(
+        self,
+        state: Tensor,
+        problem: Problem,
+        executed: frozenset[int],
+        top_k: int = 0,
+        generator: torch.Generator | None = None,
+    ) -> tuple[list[int], list[int], dict[str, float]]:
+        from textjepa.data.igsm.render import catalogue_phrases
+        from textjepa.planning.ldad_decode import delta_logits, phrase_log_probs
+
+        codes = self._require_codebook()
+        phrases = catalogue_phrases(problem)
+        u_cat = self._catalogue_embeddings(phrases)
+        grounded_rows = torch.cdist(codes, u_cat).argmin(1).tolist()
+        # Environment-side grounding: each catalogue row denotes one action.
+        parsed: list[int] = []
+        for row in grounded_rows:
+            action = parse_action_phrase(problem, phrases[row])
+            if action is not None and action not in parsed:
+                parsed.append(action)
+        # Rank the grounded (unique) candidates by the standard cycle score
+        # of their own phrase at this state -- identical scoring rule to
+        # ldad_cycle, applied to the codebook-grounded subset only.
+        if parsed:
+            token_ids = [
+                self.vocab.encode(phrases[a]) for a in parsed
+            ]
+            scores = phrase_log_probs(
+                delta_logits(
+                    self.model, state,
+                    u_cat[torch.tensor(parsed, device=u_cat.device)],
+                    context="candidate_interface=codebook_ground",
+                ),
+                token_ids,
+            )
+            order = torch.argsort(scores, descending=True, stable=True)
+            ranked = [parsed[i] for i in order.tolist()]
+        else:
+            ranked = []
+        actions = [a for a in ranked if a not in executed]
+        if top_k > 0:
+            actions = actions[:top_k]
+        diagnostics = {
+            "n_proposed": float(len(codes)),
+            "n_parseable": float(len(grounded_rows)),
+            "n_unparseable": 0.0,
+            "n_unique": float(len(parsed)),
+            "n_kept": float(len(actions)),
+            "parse_rate": 1.0 if len(codes) else 0.0,
+        }
+        return actions, parsed, diagnostics

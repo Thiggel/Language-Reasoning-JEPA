@@ -230,6 +230,7 @@ class LatentPlanner:
         if candidate_interface not in {
             "feasible_menu", "full_catalogue", "learned_catalogue",
             "ldad_cycle", "generator_cycle", "cem_cycle", "codebook_cycle",
+            "codebook_ground",
         }:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface}"
@@ -312,6 +313,12 @@ class LatentPlanner:
             from textjepa.planning.codebook import CodebookCycleProposer
 
             self.proposer = CodebookCycleProposer(
+                model, vocab, device, k=codebook_k, seed=codebook_seed,
+            )
+        if candidate_interface == "codebook_ground":
+            from textjepa.planning.codebook import CodebookGroundProposer
+
+            self.proposer = CodebookGroundProposer(
                 model, vocab, device, k=codebook_k, seed=codebook_seed,
             )
         if self.hybrid_local_pruning and getattr(
@@ -401,7 +408,8 @@ class LatentPlanner:
                 )
             root_candidates = None
             if self.candidate_interface in {
-                "generator_cycle", "cem_cycle", "codebook_cycle"
+                "generator_cycle", "cem_cycle", "codebook_cycle",
+                "codebook_ground",
             }:
                 # Produce and parse the open-ended proposals once per step:
                 # the diagnostics below and the search must see the same set.
@@ -449,7 +457,7 @@ class LatentPlanner:
                 self.candidate_interface
                 in {
                     "learned_catalogue", "generator_cycle", "cem_cycle",
-                    "codebook_cycle",
+                    "codebook_cycle", "codebook_ground",
                 }
                 or self.search_algorithm in {"beam", "root_balanced_beam"}
             ):
@@ -489,6 +497,7 @@ class LatentPlanner:
                 in {
                     "full_catalogue", "learned_catalogue", "ldad_cycle",
                     "generator_cycle", "cem_cycle", "codebook_cycle",
+                    "codebook_ground",
                 }
                 else env.step(chosen)
             )
@@ -1075,7 +1084,9 @@ class LatentPlanner:
             roots = self._cycle_candidates(problem, s, executed=resolved)
         elif self.candidate_interface == "generator_cycle":
             roots = self._generator_candidates(problem, s, executed=resolved)
-        elif self.candidate_interface in {"cem_cycle", "codebook_cycle"}:
+        elif self.candidate_interface in {
+            "cem_cycle", "codebook_cycle", "codebook_ground"
+        }:
             roots = self._proposer_candidates(problem, s, executed=resolved)
         else:
             roots = _feasible(problem, resolved)
@@ -1114,7 +1125,7 @@ class LatentPlanner:
                         continue
                     if self.candidate_interface in {
                         "ldad_cycle", "generator_cycle", "cem_cycle",
-                        "codebook_cycle",
+                        "codebook_cycle", "codebook_ground",
                     }:
                         if sequence[-1] is None:
                             expanded.append(sequence)
@@ -1124,6 +1135,7 @@ class LatentPlanner:
                             "generator_cycle": self._generator_candidates,
                             "cem_cycle": self._proposer_candidates,
                             "codebook_cycle": self._proposer_candidates,
+                            "codebook_ground": self._proposer_candidates,
                         }[self.candidate_interface]
                         # Every cycle interface masks the planner's OWN
                         # executed and beam-imagined actions here (no oracle).
