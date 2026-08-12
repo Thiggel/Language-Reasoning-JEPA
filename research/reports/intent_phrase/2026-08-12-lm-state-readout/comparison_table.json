@@ -1,0 +1,377 @@
+{
+  "note": "CONTROL-1 state-readout probes, oracle labels (candidate-privileged diagnostic). All sources: 2000 train / 800 val problems, seed 0, 81302/33122 probe rows, features frozen at the same causal boundary before the next intent.",
+  "majority_acc": {
+    "resolved": 0.781,
+    "feasible": 0.613
+  },
+  "rows": {
+    "jepa_stab_ldad_ema_s0": {
+      "d_state": 256,
+      "d_action": 16,
+      "u_own/resolved": {
+        "logreg": {
+          "auc": 0.9051,
+          "acc": 0.8488
+        },
+        "mlp128": {
+          "auc": 0.9824,
+          "acc": 0.9388
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7221,
+          "acc": 0.7804
+        }
+      },
+      "u_own/feasible": {
+        "logreg": {
+          "auc": 0.7896,
+          "acc": 0.7546
+        },
+        "mlp128": {
+          "auc": 0.9346,
+          "acc": 0.8675
+        },
+        "bilinear": {
+          "auc": 0.9254,
+          "acc": 0.854
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7426,
+          "acc": 0.7308
+        }
+      },
+      "onehot_var/resolved": {
+        "logreg": {
+          "auc": 0.8999,
+          "acc": 0.8717
+        },
+        "mlp128": {
+          "auc": 0.9101,
+          "acc": 0.8799
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7599,
+          "acc": 0.7887
+        }
+      },
+      "onehot_var/feasible": {
+        "logreg": {
+          "auc": 0.6503,
+          "acc": 0.6568
+        },
+        "mlp128": {
+          "auc": 0.7545,
+          "acc": 0.7043
+        },
+        "bilinear": {
+          "auc": 0.737,
+          "acc": 0.6901
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.5381,
+          "acc": 0.6114
+        }
+      }
+    },
+    "token_lm": {
+      "d_state": 288,
+      "d_action": 288,
+      "u_own/resolved": {
+        "logreg": {
+          "auc": 0.9058,
+          "acc": 0.8455
+        },
+        "mlp128": {
+          "auc": 0.9806,
+          "acc": 0.9336
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.723,
+          "acc": 0.7805
+        }
+      },
+      "u_own/feasible": {
+        "logreg": {
+          "auc": 0.7951,
+          "acc": 0.7675
+        },
+        "mlp128": {
+          "auc": 0.9706,
+          "acc": 0.9026
+        },
+        "bilinear": {
+          "auc": 0.9348,
+          "acc": 0.862
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7436,
+          "acc": 0.7332
+        }
+      },
+      "onehot_var/resolved": {
+        "logreg": {
+          "auc": 0.8986,
+          "acc": 0.8716
+        },
+        "mlp128": {
+          "auc": 0.9199,
+          "acc": 0.8846
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7634,
+          "acc": 0.7912
+        }
+      },
+      "onehot_var/feasible": {
+        "logreg": {
+          "auc": 0.6648,
+          "acc": 0.6535
+        },
+        "mlp128": {
+          "auc": 0.7806,
+          "acc": 0.7157
+        },
+        "bilinear": {
+          "auc": 0.7566,
+          "acc": 0.7039
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.5349,
+          "acc": 0.6114
+        }
+      },
+      "u_jepa_ref/resolved": {
+        "logreg": {
+          "auc": 0.9047,
+          "acc": 0.8477
+        },
+        "mlp128": {
+          "auc": 0.9813,
+          "acc": 0.9358
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7221,
+          "acc": 0.7805
+        }
+      },
+      "u_jepa_ref/feasible": {
+        "logreg": {
+          "auc": 0.7954,
+          "acc": 0.7667
+        },
+        "mlp128": {
+          "auc": 0.9612,
+          "acc": 0.889
+        },
+        "bilinear": {
+          "auc": 0.9289,
+          "acc": 0.8522
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7432,
+          "acc": 0.7331
+        }
+      }
+    },
+    "sentence_lm": {
+      "d_state": 256,
+      "d_action": 256,
+      "u_own/resolved": {
+        "logreg": {
+          "auc": 0.9032,
+          "acc": 0.8483
+        },
+        "mlp128": {
+          "auc": 0.9751,
+          "acc": 0.9232
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7274,
+          "acc": 0.7805
+        }
+      },
+      "u_own/feasible": {
+        "logreg": {
+          "auc": 0.7903,
+          "acc": 0.7698
+        },
+        "mlp128": {
+          "auc": 0.9609,
+          "acc": 0.8881
+        },
+        "bilinear": {
+          "auc": 0.9284,
+          "acc": 0.8552
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7449,
+          "acc": 0.7332
+        }
+      },
+      "onehot_var/resolved": {
+        "logreg": {
+          "auc": 0.8968,
+          "acc": 0.8706
+        },
+        "mlp128": {
+          "auc": 0.9145,
+          "acc": 0.8791
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7605,
+          "acc": 0.7877
+        }
+      },
+      "onehot_var/feasible": {
+        "logreg": {
+          "auc": 0.6487,
+          "acc": 0.6512
+        },
+        "mlp128": {
+          "auc": 0.763,
+          "acc": 0.7042
+        },
+        "bilinear": {
+          "auc": 0.7287,
+          "acc": 0.6846
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.54,
+          "acc": 0.6113
+        }
+      },
+      "u_jepa_ref/resolved": {
+        "logreg": {
+          "auc": 0.9042,
+          "acc": 0.8474
+        },
+        "mlp128": {
+          "auc": 0.9713,
+          "acc": 0.9186
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7258,
+          "acc": 0.7804
+        }
+      },
+      "u_jepa_ref/feasible": {
+        "logreg": {
+          "auc": 0.7902,
+          "acc": 0.7681
+        },
+        "mlp128": {
+          "auc": 0.934,
+          "acc": 0.854
+        },
+        "bilinear": {
+          "auc": 0.9266,
+          "acc": 0.8452
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7433,
+          "acc": 0.733
+        }
+      }
+    },
+    "sentence_lm_latent": {
+      "d_state": 256,
+      "d_action": 256,
+      "u_own/resolved": {
+        "logreg": {
+          "auc": 0.9047,
+          "acc": 0.8501
+        },
+        "mlp128": {
+          "auc": 0.968,
+          "acc": 0.9152
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7246,
+          "acc": 0.7805
+        }
+      },
+      "u_own/feasible": {
+        "logreg": {
+          "auc": 0.7933,
+          "acc": 0.7693
+        },
+        "mlp128": {
+          "auc": 0.9467,
+          "acc": 0.8654
+        },
+        "bilinear": {
+          "auc": 0.9177,
+          "acc": 0.8451
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7437,
+          "acc": 0.733
+        }
+      },
+      "onehot_var/resolved": {
+        "logreg": {
+          "auc": 0.8965,
+          "acc": 0.8716
+        },
+        "mlp128": {
+          "auc": 0.916,
+          "acc": 0.8802
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7607,
+          "acc": 0.7891
+        }
+      },
+      "onehot_var/feasible": {
+        "logreg": {
+          "auc": 0.6569,
+          "acc": 0.6536
+        },
+        "mlp128": {
+          "auc": 0.7686,
+          "acc": 0.7082
+        },
+        "bilinear": {
+          "auc": 0.7404,
+          "acc": 0.6887
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.5393,
+          "acc": 0.6106
+        }
+      },
+      "u_jepa_ref/resolved": {
+        "logreg": {
+          "auc": 0.9052,
+          "acc": 0.8505
+        },
+        "mlp128": {
+          "auc": 0.9664,
+          "acc": 0.911
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7235,
+          "acc": 0.7805
+        }
+      },
+      "u_jepa_ref/feasible": {
+        "logreg": {
+          "auc": 0.7934,
+          "acc": 0.7713
+        },
+        "mlp128": {
+          "auc": 0.9249,
+          "acc": 0.8437
+        },
+        "bilinear": {
+          "auc": 0.9222,
+          "acc": 0.843
+        },
+        "mlp128_shuffled_state": {
+          "auc": 0.7429,
+          "acc": 0.7312
+        }
+      }
+    }
+  }
+}
