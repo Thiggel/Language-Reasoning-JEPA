@@ -608,3 +608,39 @@ PREPARED (not launched):
   (GPU2, LDAD recipe lr 3e-4), tok-lm-long-s0 (lr 3e-3) -> sent-lm-long-s0
   (lr 3e-4) chained on GPU1. Band evals to follow after training.
 - codebook_ground 300-ep eval COMPLETED — results to be read/reported.
+
+## 2026-08-12 (cont. 2): results batch + REVISED OVERALL PLAN (owner-confirmed)
+
+Results landed:
+- pred-causal-s0 (causal-sequence predictor, guard fixed): strict by depth
+  1/2/4/8/16 = .327/.670/.850/.963/.970 — comparable to the MLP headline
+  (five-seed .202/.729/.885/.965/.975), single seed. Causal predictor is
+  NOT a failure mode; report as architecture variant. pred-nonres running.
+- Width scaling (stylized 3-9, lr 3e-4 s0): w128 .933 / w256 .975 (headline)
+  / w512 .990 strict at depth 16 — monotone width scaling.
+- LM LR selection RESOLVED (2 seeds): token LM -> 3e-3, sentence LM -> 3e-4
+  (mean success tie-breaks per contract). Long-trace cells already use these.
+- codebook_ground 300-ep: slack-4 .26-.28, proposal recall 1.0 — matches
+  ldad_cycle (.29); owner idea works, added to matrix below.
+
+REVISED PLAN (stylized iGSM long-trace = primary mechanism environment):
+- S1 screens (RUNNING): jepa-ldad-long / tok-lm-long / sent-lm-long at
+  steps 15-25, leaf_prob 0.1, nvars 30-60; + JEPA LR cross-check when free.
+- S2 mains: 5 seeds LDAD; TD-JEPA + GoalHead baselines; token/sentence/
+  sentence+latent LMs AND looped (recurrent) counterparts (loops axis
+  {1,2,4,8,16}, never depth curves). Slurm (Lise/Alex) packaging.
+- S3 eval matrix: {ID 15-25, 25-30, 30-35, 35-40, 40-45, 45-50} x
+  {feasible_menu, full_catalogue (no-oracle stress), ldad_cycle,
+  codebook_ground} x depth/loops {1,2,4,8,16}. codebook_ground carried as a
+  co-equal menu-free interface (evidence label: environment-side grounding).
+- S4 ablations (contract list) incl. predictor variants (causal, non-res)
+  on long traces; width {128,512} rerun at long traces for the main table.
+- S5 DETACHED DECODER on everything: frozen-state sentence decoder
+  (JEPA-pure readout, zero-grad, as 2026-08-11) trained per final main
+  checkpoint (and per domain), so every reported system renders executed
+  plans to text; report decode accuracy alongside planning numbers. LM
+  rows already produce text natively — matched decoder capacity per the
+  contract's frozen-feature decoder protocol.
+- Domains (faithful screen running; ProofWriter/PlanBench/ALFWorld agent
+  finishing gates) and probe battery on final five-seed checkpoints
+  unchanged from before.
