@@ -38,6 +38,18 @@ def main(cfg: DictConfig) -> None:
     apply_eval_data_overrides(run_cfg, cfg)
     if cfg.get("candidate_interface", "feasible_menu") == "learned_catalogue":
         validate_learned_catalogue_checkpoint(run_cfg)
+    if (
+        cfg.get("candidate_interface", "feasible_menu") == "autonomous"
+        and run_cfg.data.get("name", "igsm") != "igsm"
+    ):
+        # The self-rollout renders steps with the frozen-state sentence
+        # decoder, which is trained on stylized iGSM step sentences; faithful
+        # iGSM (igsm_real) needs its own decoder and step parser first.
+        raise NotImplementedError(
+            "candidate_interface=autonomous is implemented for the stylized "
+            "iGSM domain only; data.name="
+            f"{run_cfg.data.get('name', 'igsm')!r} is not supported yet"
+        )
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
     device = torch.device(cfg.device)
@@ -127,6 +139,42 @@ def main(cfg: DictConfig) -> None:
             planner = EditPlanner(model, vocab, device, energy=cfg.energy)
             results = evaluate_edit_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack, seed=cfg.seed
+            )
+        elif cfg.get("candidate_interface", "feasible_menu") == "autonomous":
+            # Fully menu-free, oracle-free self-rollout: codebook proposals +
+            # endpoint-Energy planning + the detached frozen-state decoder
+            # emitting each step's text, scored on the FINAL ANSWER only.
+            from textjepa.planning.autonomous import (
+                AutonomousRollout, evaluate_autonomous, load_state_decoder,
+            )
+
+            if not cfg.get("state_decoder"):
+                raise ValueError(
+                    "candidate_interface=autonomous needs state_decoder=<path "
+                    "to a decoder.pt from scripts/train_state_decoder.py>"
+                )
+            planner = AutonomousRollout(
+                model, vocab, device,
+                load_state_decoder(cfg.state_decoder, vocab, device),
+                lookahead=cfg.lookahead,
+                max_expand=cfg.max_expand,
+                energy=cfg.energy,
+                prior_top_k=int(cfg.get("prior_top_k", 0)),
+                codebook_k=int(cfg.get("codebook_k", 64)),
+                codebook_seed=int(cfg.get("codebook_seed", 0)),
+                stop_on_claim=bool(cfg.get("autonomous_stop_on_claim", True)),
+            )
+            n_prior = int(cfg.get("cem_prior_problems", 64))
+            prior_dataset = build_dataset(
+                train_cfg, vocab, split="train", size=n_prior
+            )
+            planner.fit_action_prior([
+                prior_dataset.problem(i)[0]
+                for i in range(min(n_prior, len(prior_dataset)))
+            ])
+            results = evaluate_autonomous(
+                planner, dataset, cfg.n_episodes, slack=cfg.slack,
+                seed=cfg.seed, slack_curve=cfg.get("slack_curve", False),
             )
         else:
             planner = LatentPlanner(

@@ -16,6 +16,13 @@ from textjepa.planning.catalogue import (
     environment_from_episode,
     environment_from_faithful_problem,
 )
+from textjepa.planning.autonomous import (
+    AutonomousEpisode,
+    AutonomousRollout,
+    aggregate_autonomous,
+    evaluate_autonomous,
+    parse_step_sentence,
+)
 from textjepa.planning.cem_cycle import (
     ActionPrior,
     CEMCycleProposer,
@@ -43,6 +50,11 @@ __all__ = [
     "environment_from_faithful_problem",
     "evaluate_planning",
     "ActionPrior",
+    "AutonomousEpisode",
+    "AutonomousRollout",
+    "aggregate_autonomous",
+    "evaluate_autonomous",
+    "parse_step_sentence",
     "CEMCycleProposer",
     "cem_gaussian",
     "diagonal_prior",

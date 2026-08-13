@@ -1015,3 +1015,18 @@ use a cheap subset while replay/bounds still read the full corpus; and
   interfaces (feasible_menu, full_catalogue, ldad_cycle, codebook_ground,
   autonomous) on EVERY checkpoint and band; choose main-text presentation
   at write-up. Marginal cost is eval only — one training run serves all.
+- AUTONOMOUS interface implemented (master-plan task #27,
+  `candidate_interface=autonomous`, needs `state_decoder=<decoder.pt>`):
+  codebook proposals + environment-side NN grounding + endpoint-Energy
+  beam search, and the DETACHED frozen-state decoder writes each step's
+  text, which is appended to the model's own context and re-encoded. No
+  menu, no oracle executor; ground truth scores the final answer only.
+  `src/textjepa/planning/autonomous.py`, tests/test_autonomous_rollout.py.
+  SMOKE (stab-ldad-ema-s0-v1 + decoder-s0-v1, 25 val problems, CPU,
+  slack 2, k=256, top-k 8): answer_accuracy .04 (= 1/23 chance),
+  well-formed .89, action-match .89, value-correct .08, first divergence
+  at step 1, completion-claim .96 after 1.5 steps. Matches the
+  preregistered expectation: structure survives, arithmetic does not, and
+  the rollout jumps straight to the queried variable because nothing
+  enforces prerequisite order once the executor is gone. Faithful iGSM is
+  NOT supported yet (needs its own step decoder/parser) — plan.py raises.
