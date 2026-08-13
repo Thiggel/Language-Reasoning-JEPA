@@ -403,3 +403,38 @@ def test_checkpoint_loader_rebuilds_full_upper_topology(tmp_path):
     frozen = Model()
     _restore_adaptation(frozen, None)
     assert not any(p.requires_grad for p in frozen.parameters())
+
+
+def test_jsonl_corpus_reader_keeps_one_document_per_record(tmp_path):
+    # Web corpora hold blank lines inside documents, so a separator-based
+    # splitter would silently shred them. One record per line avoids that, and
+    # the reader must stop at the limit rather than load the whole file.
+    import importlib.util
+    import json as json_module
+
+    spec = importlib.util.spec_from_file_location(
+        "prepare_corpus", ROOT / "scripts/prepare_predictive_state_corpus.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    path = tmp_path / "docs.jsonl"
+    path.write_text("\n".join(json_module.dumps(row) for row in [
+        {"text": "first paragraph\n\nsecond paragraph of the same document"},
+        {"text": "   "},
+        {"text": "another document"},
+        {"text": "a third one"},
+    ]) + "\n", encoding="utf-8")
+
+    documents = module.read_documents(
+        path, input_format="jsonl", text_field="text", limit=None
+    )
+    # The blank record is dropped; internal blank lines are preserved.
+    assert len(documents) == 3
+    assert "\n\n" in documents[0]
+    assert documents[1] == "another document"
+
+    limited = module.read_documents(
+        path, input_format="jsonl", text_field="text", limit=2
+    )
+    assert len(limited) == 2

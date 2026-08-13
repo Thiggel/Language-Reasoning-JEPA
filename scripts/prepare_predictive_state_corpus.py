@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import random
 import urllib.request
@@ -39,16 +40,38 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-revision", default=QWEN_REVISION)
     parser.add_argument("--context-length", type=int, default=1024)
     parser.add_argument("--validation-fraction", type=float, default=0.02)
+    parser.add_argument(
+        "--input-format", choices=("wikitext", "jsonl"), default="wikitext",
+        help="wikitext groups paragraphs by `= Article =` headings; jsonl\n             treats each line's text field as one document.",
+    )
+    parser.add_argument("--text-field", default="text")
     parser.add_argument("--max-documents", type=int)
     parser.add_argument("--seed", type=int, default=0)
     return parser.parse_args()
 
 
-def read_documents(path: Path) -> list[str]:
+def read_documents(path: Path, *, input_format: str, text_field: str,
+                   limit: int | None) -> list[str]:
     # WikiText uses whitespace-only lines between paragraphs (often a single
     # space, not a literal empty line). Keeping headings as their own documents
     # makes boundary handling explicit and reproducible.
-    return split_wikitext_articles(path.read_text(encoding="utf-8"))
+    if input_format == "wikitext":
+        return split_wikitext_articles(path.read_text(encoding="utf-8"))
+    # One record per line, so documents never need a separator that could also
+    # occur inside a document. Read lazily: web corpora do not fit in memory.
+    documents = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            text = json.loads(line).get(text_field)
+            if not text or not text.strip():
+                continue
+            documents.append(text.strip())
+            if limit is not None and len(documents) >= limit:
+                break
+    return documents
 
 
 def main() -> None:
@@ -64,7 +87,10 @@ def main() -> None:
             urllib.request.urlretrieve(args.url, source)
     if not source.is_file():
         raise FileNotFoundError(source)
-    documents = read_documents(source)
+    documents = read_documents(
+        source, input_format=args.input_format, text_field=args.text_field,
+        limit=args.max_documents,
+    )
     if args.max_documents is not None:
         documents = documents[:args.max_documents]
     if len(documents) < 2:
@@ -121,7 +147,10 @@ def main() -> None:
         "token_tensor_sha256": token_tensor_fingerprint(train, validation),
         "boundary_safe_target_mask": True,
         "packed_attention_isolates_documents": True,
-        "document_unit": "wikitext_top_level_article",
+        "document_unit": (
+            "wikitext_top_level_article" if args.input_format == "wikitext"
+            else "jsonl_record"
+        ),
         "ordinary_language_only": True,
         "oracle_information": False,
         "candidate_privileged_information": False,
