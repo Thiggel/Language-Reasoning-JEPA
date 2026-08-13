@@ -861,3 +861,24 @@ use a cheap subset while replay/bounds still read the full corpus; and
 - Wide-slack LM comparison landing: sentence LM reaches .26 at slack 16 on
   the ID band vs JEPA .72 (first-feasible .26, random .13) — the headline
   separation, on the curve metric.
+
+## 2026-08-13: capacity ladder + domains unblocked (owner decisions)
+
+- Owner: "screw the gate" — PlanBench + ALFWorld admitted despite the
+  tiny-overfit-on-strict-success failure (bar is structurally unpassable
+  for 7-15-step plans; non-floored metrics pass clearly, incl. shuffle
+  falsifier .702 vs .013). LAUNCHED planbench-ldad-lr3e4-s0-v1 (gruenau1
+  GPU0) and alfworld-ldad-lr3e4-s0-v1 (GPU1). Report the strict-success
+  gate failure honestly in the paper.
+- CAPACITY LADDER on long traces (Alex, 2026-08-13-intent-long-width-v1),
+  all seed 0, same long-trace data:
+  * width: d_model 512 (job 3998549), 768 (3998550)
+  * depth: state_layers 8 (3998593), 12 (3998594), predictor_layers 4
+  * GPT2-small-shaped: d_model 768 x 12 layers, batch 8 (3998595)
+  Headline reference is d_model 256 / state_layers 4 / 8.6M params;
+  LM baselines 7.2-7.4M (matched). Repo's own igsm-124m run used
+  d_model 768 / 11 layers, i.e. GPT2-small shape = the iGSM-paper scale.
+  Rationale: the 45-50-step band has 150-220 prompt sentences compressed
+  into one 256-d state, so state width AND depth (multi-hop within the
+  layer stack) are both plausible binding constraints; the ladder
+  separates them.
