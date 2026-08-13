@@ -123,13 +123,26 @@ def main(cfg: DictConfig) -> None:
             )
         elif run_cfg.data.get("name", "igsm") == "igsm_real":
             from textjepa.planning.faithful_search import (
-                FaithfulPlanner, evaluate_faithful_planning,
+                CANDIDATE_INTERFACES, FaithfulPlanner,
+                evaluate_faithful_planning,
             )
 
+            interface = cfg.get("candidate_interface", "feasible_menu")
+            if interface not in CANDIDATE_INTERFACES:
+                # Never silently fall back to the feasible menu: that is
+                # exactly how every faithful "full_catalogue" row before
+                # 2026-08-13 became a mislabelled feasible-menu row.
+                raise ValueError(
+                    f"candidate_interface={interface!r} is not implemented "
+                    "for faithful iGSM (igsm_real); supported interfaces: "
+                    + ", ".join(sorted(CANDIDATE_INTERFACES))
+                )
             planner = FaithfulPlanner(
                 model, vocab, device, lookahead=cfg.lookahead,
                 max_expand=cfg.max_expand,
                 allow_oracle_future_actions=cfg.allow_oracle_future_actions,
+                candidate_interface=interface,
+                invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
             )
             results = evaluate_faithful_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,

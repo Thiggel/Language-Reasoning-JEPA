@@ -19,11 +19,43 @@ from textjepa.planning.evaluate import aggregate_episodes
 from textjepa.planning.search import EpisodeResult
 
 
+#: Candidate interfaces this planner actually implements.  Anything else
+#: must RAISE: silently falling back to the feasible menu is the defect this
+#: module was fixed for (see CAMPAIGN_LOG 2026-08-13).
+CANDIDATE_INTERFACES = ("feasible_menu", "full_catalogue")
+
+
+def faithful_catalogue(env: FaithfulEnv) -> list:
+    """Every action of the problem, with no feasibility filtering.
+
+    Mirrors ``range(len(problem.vars))`` in the stylized planner: the whole
+    variable catalogue, including already-resolved variables, in the
+    problem's stable shuffled order (``FaithfulProblem.action_order``).
+    """
+    return list(env.fp.action_order)
+
+
 class FaithfulPlanner:
     def __init__(self, model, vocab: Vocab, device: torch.device,
                  lookahead: int = 1, max_expand: int = 64,
-                 allow_oracle_future_actions: bool = False):
-        if lookahead > 1 and not allow_oracle_future_actions:
+                 allow_oracle_future_actions: bool = False,
+                 candidate_interface: str = "feasible_menu",
+                 invalid_action_mode: str = "noop"):
+        if candidate_interface not in CANDIDATE_INTERFACES:
+            raise ValueError(
+                f"unknown candidate interface: {candidate_interface!r}; "
+                "faithful iGSM planning supports "
+                + ", ".join(sorted(CANDIDATE_INTERFACES))
+            )
+        if invalid_action_mode not in {"noop", "failure"}:
+            raise ValueError(
+                f"unknown invalid action mode: {invalid_action_mode!r}"
+            )
+        if (
+            lookahead > 1
+            and candidate_interface == "feasible_menu"
+            and not allow_oracle_future_actions
+        ):
             raise ValueError(
                 "lookahead > 1 enumerates future actions with the reference "
                 "environment; set allow_oracle_future_actions=true only for "
@@ -35,6 +67,8 @@ class FaithfulPlanner:
         self.lookahead = lookahead
         self.max_expand = max_expand
         self.allow_oracle_future_actions = allow_oracle_future_actions
+        self.candidate_interface = candidate_interface
+        self.invalid_action_mode = invalid_action_mode
 
     def _tokens(self, texts: list[str]) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -60,6 +94,8 @@ class FaithfulPlanner:
         self, env: FaithfulEnv, rng: random.Random
     ) -> list[list]:
         """Balanced fixed-depth rollouts with absorbing terminal padding."""
+        if self.candidate_interface == "full_catalogue":
+            return self._catalogue_sequences(env, rng)
         roots = list(env.feasible_actions())
         rng.shuffle(roots)
         if not roots:
@@ -89,6 +125,33 @@ class FaithfulPlanner:
         rng.shuffle(sequences)
         return sequences
 
+    def _catalogue_sequences(
+        self, env: FaithfulEnv, rng: random.Random
+    ) -> list[list]:
+        """Oracle-free rollouts over the problem's whole action catalogue.
+
+        No feasibility information is consulted anywhere: roots are every
+        action of the problem and deeper slots are sampled from the same
+        catalogue, so lookahead > 1 needs no reference environment.
+        """
+        roots = faithful_catalogue(env)
+        rng.shuffle(roots)
+        if not roots:
+            return [[None] * self.lookahead]
+        if self.lookahead == 1:
+            return [[root] for root in roots]
+        total = max(self.max_expand, len(roots))
+        quotient, remainder = divmod(total, len(roots))
+        sequences = []
+        for root_index, root in enumerate(roots):
+            for _ in range(quotient + int(root_index < remainder)):
+                sequences.append(
+                    [root]
+                    + [rng.choice(roots) for _ in range(self.lookahead - 1)]
+                )
+        rng.shuffle(sequences)
+        return sequences
+
     @torch.no_grad()
     def plan_episode(self, fp, slack: int = 0, seed: int = 0) -> EpisodeResult:
         env = FaithfulEnv(fp)
@@ -97,6 +160,7 @@ class FaithfulPlanner:
         step_texts: list[str] = []
         budget = len(fp.necessary) + slack
         n_distr = 0
+        n_invalid = 0
         s0 = self._state(pt, pm, [])
         while not env.solved and len(step_texts) < budget:
             s = self._state(pt, pm, step_texts) if step_texts else s0
@@ -133,9 +197,20 @@ class FaithfulPlanner:
             best = seqs[int(total.argmin().item())]
             q = best[0]
             n_distr += int(q not in fp.necessary)
-            step_texts.append(env.step(q))
+            if self.candidate_interface == "full_catalogue":
+                # invalid = noop: the executor returns the invalid-outcome
+                # sentence, the symbolic state is unchanged, and the attempt
+                # is counted in invalid_action_rate.
+                invalid = q not in env.feasible_actions()
+                n_invalid += int(invalid)
+                step_texts.append(env.step_or_invalid(q))
+                if invalid and self.invalid_action_mode == "failure":
+                    break
+            else:
+                step_texts.append(env.step(q))
         return EpisodeResult(
             env.solved, len(step_texts), len(fp.necessary), n_distr,
+            n_invalid,
             solved_at=len(step_texts) if env.solved else None,
         )
 
@@ -152,25 +227,60 @@ def evaluate_faithful_planning(
     the largest slack. The scalar metrics therefore describe the generous run,
     and ``success_by_slack[str(slack)]`` equals ``success``.
     """
+    interface = getattr(planner, "candidate_interface", "feasible_menu")
     rng = random.Random(seed)
-    planned, rand_ = [], []
+    planned, rand_, first_ = [], [], []
     for i in range(n_episodes):
         fp, _ = dataset.problem(i)
         planned.append(planner.plan_episode(fp, slack=slack, seed=seed + i))
-        env = FaithfulEnv(fp)
-        steps = n_d = 0
         budget = len(fp.necessary) + slack
+
+        # Reference policies see exactly the same candidate interface.
+        env = FaithfulEnv(fp)
+        steps = n_d = n_inv = 0
         while not env.solved and steps < budget:
-            q = rng.choice(env.feasible_actions())
+            if interface == "full_catalogue":
+                candidates = faithful_catalogue(env)
+                q = rng.choice(candidates)
+                n_inv += int(q not in env.feasible_actions())
+                env.step_or_invalid(q)
+            else:
+                q = rng.choice(env.feasible_actions())
+                env.step(q)
             n_d += int(q not in fp.necessary)
-            env.step(q)
             steps += 1
         rand_.append(EpisodeResult(
-            env.solved, steps, len(fp.necessary), n_d,
+            env.solved, steps, len(fp.necessary), n_d, n_inv,
+            solved_at=steps if env.solved else None,
+        ))
+
+        env = FaithfulEnv(fp)
+        steps = n_d = n_inv = 0
+        while not env.solved and steps < budget:
+            candidates = (
+                faithful_catalogue(env) if interface == "full_catalogue"
+                else env.feasible_actions()
+            )
+            if not candidates:
+                break
+            q = candidates[0]
+            n_d += int(q not in fp.necessary)
+            if interface == "full_catalogue":
+                n_inv += int(q not in env.feasible_actions())
+                env.step_or_invalid(q)
+            else:
+                env.step(q)
+            steps += 1
+        first_.append(EpisodeResult(
+            env.solved, steps, len(fp.necessary), n_d, n_inv,
             solved_at=steps if env.solved else None,
         ))
 
     def agg(rs):
         return aggregate_episodes(rs, slack_curve=slack_curve, slack=slack)
 
-    return {"latent_planner": agg(planned), "random_policy": agg(rand_)}
+    return {
+        "latent_planner": agg(planned),
+        "random_policy": agg(rand_),
+        "first_feasible_policy": agg(first_),
+    }
