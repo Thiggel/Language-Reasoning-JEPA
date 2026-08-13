@@ -10,6 +10,11 @@ eval_n_vars_range: null
 eval_leaf_prob: null
 eval_sample_max_tries: null
 eval_strict_steps_range: null
+# Faithful (official-iGSM) OOD knobs: their design shifts the OPERATION
+# count, e.g. iGSM-hard trains at op<=21 and tests at op 28-32.
+eval_op_range: null
+eval_max_op: null
+eval_max_edge: null
 slack: 0
 # Score ONE generous-budget run (necessary + slack) at every smaller slack and
 # emit success_by_slack plus per-episode excess_steps. The policy never reads

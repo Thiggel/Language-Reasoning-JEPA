@@ -22,6 +22,11 @@ def apply_eval_data_overrides(run_cfg, eval_cfg) -> None:
         "eval_leaf_prob": "leaf_prob",
         "eval_sample_max_tries": "sample_max_tries",
         "eval_strict_steps_range": "strict_steps_range",
+        # Faithful (official-iGSM) generator knobs: the paper's OOD design
+        # shifts the operation count, not our stylized step/variable counts.
+        "eval_op_range": "op_range",
+        "eval_max_op": "max_op",
+        "eval_max_edge": "max_edge",
     }
     for source, destination in mappings.items():
         value = eval_cfg.get(source)
