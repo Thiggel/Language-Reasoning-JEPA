@@ -1,34 +1,50 @@
 #!/usr/bin/env bash
 # Opportunistic Grünau GPU dispatcher.
 #
-# Polls every Grünau host for genuinely idle GPUs and starts the next PENDING
-# cell of a round on each one.  "Idle" means BOTH low allocated memory and low
-# utilisation: a GPU with a large allocation at 0% utilisation is somebody
-# else's job between steps, not a free GPU (see CLAUDE.md).
+# Grünau GPUs are shared, so "free" is not "empty": what matters is whether
+# enough VRAM is left for one of our cells and whether the card is not already
+# pinned at full utilisation by someone else.  A card holding another user's
+# job at low utilisation with 40 GB spare is perfectly usable; a card with a
+# small allocation at 100% utilisation is not.
 #
-# Cells are plain run directories with a `job.sh` and a `state` file.  The
-# dispatcher claims a cell by writing CLAIMED before launching, so two
-# dispatcher instances cannot start the same cell.  The cell's own job.sh
-# writes RUNNING/COMPLETED/FAILED as usual; CUDA_VISIBLE_DEVICES is injected
-# at launch time, overriding whatever the file says.
+# Placement rule: launch when
+#     free_vram >= NEED_MB + MARGIN_MB   and   utilisation <= UTIL_MAX
+# The free-VRAM test also stops us stacking two of our own cells on one card:
+# once ours is resident its ~NEED_MB shows up as used, so the card no longer
+# qualifies.  After each launch we re-query the host rather than trusting the
+# pre-launch snapshot, and wait long enough for the new process to allocate.
 #
-# Usage: ROUND=<abs path to round dir> [HOSTS=...] [POLL=300] \
-#          bash scripts/gruenau_dispatcher.sh
+# Cells are run directories with a `job.sh` and a `state` file.  A cell is
+# claimed with an atomic mkdir before launch, so parallel dispatchers (or a
+# human filling GPUs by hand with the same protocol) cannot double-start one.
+#
+# Usage: ROUND=<abs path> [HOSTS=...] [NEED_MB=32000] [UTIL_MAX=85] \
+#          [POLL=180] bash scripts/gruenau_dispatcher.sh
 set -uo pipefail
 
 ROUND=${ROUND:?set ROUND to the round directory}
 HOSTS=${HOSTS:-"gruenau1 gruenau2 gruenau7 gruenau8"}
-POLL=${POLL:-300}
-MEM_FREE_MB=${MEM_FREE_MB:-4000}
-UTIL_FREE=${UTIL_FREE:-10}
+POLL=${POLL:-180}
+NEED_MB=${NEED_MB:-32000}      # measured footprint of a 157M-param cell
+MARGIN_MB=${MARGIN_MB:-2000}   # never fill a card to the brim
+UTIL_MAX=${UTIL_MAX:-85}       # co-schedule politely, don't fight for SMs
+SETTLE=${SETTLE:-120}          # seconds for a launched job to allocate
 LOG=$ROUND/dispatcher.log
 
+log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >> "$LOG"; }
+
+usable_gpus() {  # host -> indices with room for us
+  ssh -o BatchMode=yes -o ConnectTimeout=10 "$1" \
+    "nvidia-smi --query-gpu=index,memory.total,memory.used,utilization.gpu \
+       --format=csv,noheader,nounits 2>/dev/null" 2>/dev/null |
+  awk -F', ' -v need="$((NEED_MB + MARGIN_MB))" -v umax="$UTIL_MAX" \
+    '($2 - $3) >= need && $4 <= umax {print $1}'
+}
+
 claim_next() {
-  # Prints the path of the next cell it successfully claimed, or nothing.
   for d in "$ROUND"/*/; do
     [ -f "$d/job.sh" ] || continue
     [ "$(cat "$d/state" 2>/dev/null)" = PENDING ] || continue
-    # mkdir is atomic: it is the lock.
     if mkdir "$d/.claim" 2>/dev/null; then
       printf 'CLAIMED\n' > "$d/state"
       printf '%s' "$d"
@@ -38,29 +54,31 @@ claim_next() {
   return 1
 }
 
-launch() {
-  local host=$1 gpu=$2 cell=$3
-  ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-    "cd / && CUDA_VISIBLE_DEVICES=$gpu DEVICE=cuda:0 nohup bash '$cell/job.sh' \
-       >/dev/null 2>&1 & echo started" >/dev/null 2>&1
-}
-
-echo "dispatcher start $(date -u +%FT%TZ) round=$ROUND" >> "$LOG"
+log "dispatcher start round=$ROUND need=${NEED_MB}MB util<=${UTIL_MAX}%"
 while :; do
-  pending=$(grep -l PENDING "$ROUND"/*/state 2>/dev/null | wc -l)
-  [ "$pending" -eq 0 ] && { echo "no PENDING cells left $(date -u +%FT%TZ)" >> "$LOG"; break; }
+  if ! grep -lq PENDING "$ROUND"/*/state 2>/dev/null; then
+    log "no PENDING cells left"; break
+  fi
+  launched_this_round=0
   for host in $HOSTS; do
-    free_gpus=$(ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-      "nvidia-smi --query-gpu=index,memory.used,utilization.gpu \
-         --format=csv,noheader,nounits 2>/dev/null" 2>/dev/null |
-      awk -F', ' -v m="$MEM_FREE_MB" -v u="$UTIL_FREE" '$2<m && $3<u {print $1}')
-    for gpu in $free_gpus; do
+    for gpu in $(usable_gpus "$host"); do
+      grep -lq PENDING "$ROUND"/*/state 2>/dev/null || break 2
       cell=$(claim_next) || break 2
       [ -n "$cell" ] || break 2
-      launch "$host" "$gpu" "$cell"
-      echo "$(date -u +%FT%TZ) launched $(basename "$cell") on $host:gpu$gpu" >> "$LOG"
-      sleep 60   # let the job allocate before re-reading this host
+      if ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
+           "cd / && CUDA_VISIBLE_DEVICES=$gpu DEVICE=cuda:0 \
+            nohup bash '$cell/job.sh' >/dev/null 2>&1 & echo ok" >/dev/null 2>&1
+      then
+        log "launched $(basename "$cell") on $host:gpu$gpu"
+        launched_this_round=$((launched_this_round + 1))
+        sleep "$SETTLE"
+        break   # re-query this host from scratch on the next pass
+      else
+        log "launch FAILED $(basename "$cell") on $host:gpu$gpu — releasing"
+        rmdir "$cell/.claim" 2>/dev/null
+        printf 'PENDING\n' > "$cell/state"
+      fi
     done
   done
-  sleep "$POLL"
+  [ "$launched_this_round" -eq 0 ] && sleep "$POLL"
 done
