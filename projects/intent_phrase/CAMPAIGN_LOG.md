@@ -1072,3 +1072,15 @@ use a cheap subset while replay/bounds still read the full corpus; and
   isolates a second requirement for executor-free reasoning (feasibility/
   termination discipline). Smoke only — paper rows come from the 5-seed
   budget checkpoints. Faithful iGSM autonomous needs its own decoder+parser.
+- ID BAND SATURATES AT BUDGET (157M, faithful iGSM-hard, op<=21): token LM
+  strict .310 / s16 1.000; sentence LM .230 / .993; GoalHead .217-.247 /
+  .977-.993 AND FLAT IN DEPTH (d1 .217 -> d16 .220). The in-distribution
+  band cannot separate methods at this size — the paper's comparison must
+  live in the OOD band, which is exactly why their train/test split was
+  adopted.
+- Eval-override gap found and fixed (e023f21): apply_eval_data_overrides
+  exposed only stylized knobs, so the faithful OOD band (op 28-32) was NOT
+  EXPRESSIBLE. Added eval_op_range/eval_max_op/eval_max_edge + plan.yaml
+  keys; verified. Round 2026-08-13-igsm-hard-ood-v1 created (ID op 3-21 vs
+  OOD op 28-32, 200 episodes, slack curve to 16) for every completed
+  checkpoint, on its own dispatcher.
