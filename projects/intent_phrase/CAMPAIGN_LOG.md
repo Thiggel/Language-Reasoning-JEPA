@@ -1128,3 +1128,13 @@ headline would have been an artifact.
   Rewritten to measure BOTH per band: lookahead=1 with the flag OFF
   (fully oracle-free) and lookahead=16 with it ON (labeled
   candidate-privileged), so the paper can report the honest pair.
+- OUR METHOD on the ID band with feasible_menu (hard-ldad, seed 0):
+  lr 3e-4 s4 .620-.673 across depths, lr 1e-4 s4 .543-.653 — against
+  RANDOM at .587. So LDAD is at or barely above random here, and the
+  DEPTH AXIS IS FLAT (3e-4: d1 .660, d4 .673, d16 .620). This is the
+  degeneracy again, now measured on our own method: with a ~3-action menu
+  where 54-79% of variables are necessary, there is nothing for planning
+  to add. Contrast stylized iGSM, where the same recipe scales .202 ->
+  .975 across depth. The difference is a DOMAIN/PROTOCOL property, not a
+  model regression — but it means faithful-iGSM feasible_menu must not be
+  a headline table. full_catalogue cell for hard-ldad-lr3e4 queued.
