@@ -1005,3 +1005,13 @@ use a cheap subset while replay/bounds still read the full corpus; and
   claims PENDING cells onto genuinely idle GPUs (low mem AND low util).
   Sentence-LM cells needed model.max_chunk_len=96 (faithful sentences
   exceed the 48 default) — fixed and requeued.
+- FSA side-facts variant built: data/intent_phrase/fsa_deduction_menu
+  (side_facts_per_step=3, same 6 bands/counts, 1.2 GB) +
+  configs/data/fsa_deduction_menu.yaml. Measured via the executor:
+  feasible menu goes from mean 1.00 (min 1, max 1 — degenerate) to mean
+  3.17 (range 1-7); full catalogue 159 -> 103. The feasible-menu protocol
+  is now comparable across domains. Faithful 0-side-fact corpus retained.
+- Owner measurement policy recorded in IGSM_MASTER_PLAN.md: run ALL
+  interfaces (feasible_menu, full_catalogue, ldad_cycle, codebook_ground,
+  autonomous) on EVERY checkpoint and band; choose main-text presentation
+  at write-up. Marginal cost is eval only — one training run serves all.
