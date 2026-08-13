@@ -882,3 +882,30 @@ use a cheap subset while replay/bounds still read the full corpus; and
   into one 256-d state, so state width AND depth (multi-hop within the
   layer stack) are both plausible binding constraints; the ladder
   separates them.
+
+## 2026-08-13 (cont.): BASE SIZE FIXED from the iGSM paper + faithful cleared
+
+- Read Physics of LMs 2.1 (arXiv 2407.20311): their model is GPT2-small
+  shape — 12 layers x 12 heads x 768 dim, 124M params (RoPE). KEY
+  ARCHITECTURE FINDING: **depth matters more than width** — "a 4-layer
+  transformer, even with 1920 hidden dims, underperforms", while
+  "20-layer 576-dim performs very well"; layer-by-layer recursive
+  dependency resolution (shallow layers -> near params, deep -> distant).
+  OUR HEADLINE WAS 4 STATE LAYERS = exactly their failing config.
+  Their OOD design: iGSM-med train <=15 ops -> test 20/21/23/24;
+  iGSM-hard train <=21 -> test 28-32, i.e. OOD ~1.5x train max. OUR bands
+  went to 2-3.3x train max — more aggressive than anything reported.
+- DECISION (owner): adopt GPT2-small shape as BASE for everything
+  (JEPA state_layers=12/d_model=768/heads=12/predictor_layers=4; token LM
+  n_layers=12/d_model=768; sentence LM state_layers=12/d_model=768),
+  batch 8. New round 2026-08-13-intent-base-mains-v1 (45 cells generated);
+  seed-0 cells of all families submitted first as smoke, rest to follow.
+  PlanBench/ALFWorld will use the same base size for their mains.
+  Capacity ladder (width 512/768 vs depth 8/12) kept running as the
+  width-vs-depth ABLATION replicating the paper's claim in our setting.
+- FAITHFUL CLEARED: at the correct LR (1e-4) the shuffle falsifier DOES
+  hurt — aligned .337 strict / .837 slack4 @d16 vs shuffled .277 / .690,
+  and only the aligned model gains with depth (.247->.337 vs .233->.277).
+  The earlier "shuffle doesn't hurt" verdict was an artifact of the wrong
+  LR (3e-4). Faithful LR = 1e-4; mains unblocked (to be submitted at base
+  size). 3e-3 also completed (.283 @d16) — 1e-4 is the winner.
