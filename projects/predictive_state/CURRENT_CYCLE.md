@@ -1,97 +1,56 @@
 # Current cycle
 
-`2026-08-12-qwen-stage1-lora-screen-v1`
+`2026-08-12-qwen-stage1-pressure-v1` (complete)
 
-The frozen diagnostic answered what it could. Because layers 1–24 were all
-frozen there, nothing in the language model could change, so the predictor
-could only chase a stationary target and predictor-removed NLL was a constant.
-This cycle is the first in which any part of the model adapts.
+Stage 1's representation claim is closed as a negative, and the evidence for
+Stage 2 is better than it was. Full numbers in `EVIDENCE.md`.
 
-Five token-matched cells share one pre-built token-block file
-(`_data/wikitext103_qwen_ctx1024.pt`, 37,106 train and 778 validation blocks at
-context 1024, tensor digest `1365dc54…`) and an identical batch order, so they
-differ only in the auxiliary objective:
+Across the screen and the pressure round, fifteen token-matched 20M-token cells
+now agree that the auxiliary objective does not shape this backbone. Every one
+lands within 0.0021 nats of the NTP-only control, across a 30x range of
+prediction weight, a 56x narrowing of the state channel, a linear-only
+predictor, and single-state conditioning. The cross-model probe says the same
+independently: at layer 24 ordinary training moves the representation about 5%
+of CKA away from the original checkpoint and the objective adds 0.02% on top.
 
-| Cell | Variant | `λ_scale` | Role |
-|---|---|---:|---|
-| `qwen05-lora-full-s0-v1` | full | 0.01 | treatment |
-| `qwen05-lora-ntp-only-s0-v1` | ntp_only | — | identical LoRA capacity and tokens, no predictive loss |
-| `qwen05-lora-no-action-s0-v1` | no_action | 0.01 | state only |
-| `qwen05-lora-action-only-s0-v1` | action_only | 0.01 | action only |
-| `qwen05-lora-full-scale0.1-s0-v1` | full | 0.1 | scale-coefficient probe |
+The decisive cell is `proj8`. It genuinely crippled the predictor, more than
+doubling direction error, and the backbone did not compensate. The mechanism we
+hoped for, that a predictor unable to solve the transition would force the
+states to become more predictable, does not operate here.
 
-Embeddings and layers 1–12 stay frozen, so the layer-12 prediction target is a
-fixed anchor: only the source half (13–24, rank-16 LoRA, 4,399,104 trainable
-weights) and the 8,830,976-parameter predictor adapt. Unfreezing the target
-stack would let the target drift to meet the predictor, which is the collusion
-failure already observed in the sibling subprojects.
+Three findings do carry forward to recurrent execution:
 
-Corpus changed from WikiText-2 to WikiText-103 articles. At 20M tokens
-WikiText-2 would have been roughly nine epochs, which would have confounded any
-held-out NLL movement with memorization; 20M tokens is now under half an epoch.
-Precision is BF16 on H100, removing the V100 FP16 caveat.
+- the transition is close to linear, cosine 0.1335 for a full-rank linear map
+  against 0.1067 for the SwiGLU;
+- eight dimensions of state, with the action channel intact, reach 0.1508
+  against 0.2078 for action-only, so the state's contribution is low
+  dimensional;
+- layer 24 is redundant. Layer 18 alone reaches 0.1050, marginally better than
+  both sources, while layer 24 alone reaches 0.1252.
 
-All five cells completed on 2026-08-12 at revision `51a799b`; numbers are in
-`EVIDENCE.md`. The observed outcome is the third one below crossed with the
-second: the transition objective works well and costs nothing, but it also buys
-nothing on the ordinary path. Full reaches held-out cosine loss 0.1061 against
-0.2078 for action-only and 0.2527 for no-action, with an action-permutation gap
-of +0.357, while predictor-removed NLL is identical to the NTP-only control to
-within 7e-4 nats. Activation scale is solved: the RMS ratio is 1.009 at the
-protocol coefficient and 1.0006 at `λ_scale = 0.1`, which costs nothing in
-direction and should become the default.
-
-`2026-08-12-qwen-stage1-pressure-v1` launched from revision `b9307bf`. The
-screen plus the representation probe localized the problem: the objective is
-satisfied inside an 8.8M-parameter predictor, so no pressure reaches the
-backbone. Two ladders raise it, both anchored on `qwen05-lora-full-scale0.1-s0-v1`
-as their shared corner (prediction weight 0.1, scale weight 0.1, projection 448):
-
-- prediction weight 0.3, 1.0, 3.0 at the protocol projection;
-- predictor projection 32 and 8 at the protocol prediction weight, which is an
-  information bottleneck rather than merely a smaller predictor because the
-  skip path is routed through the projection too.
-
-Everything else matches the screen: same shared token blocks, same batch order,
-20M tokens, seed 0, BF16. Scale weight is 0.1 throughout on the screen's result
-that it calibrates activation scale for free. Read the round as a dose-response
-curve on both axes: if predictor-removed NLL and the representation probes stay
-flat across a 30x weight range and a 56x projection reduction, the objective
-does not shape this backbone and the paper's emphasis should move to Stage 2.
+Together with the screen's calibrated activation scale (RMS ratio 1.0006) these
+say the predicted state is cheap, accurate and injectable, which is exactly what
+Stage 2 needs and what Stage 1 failed to deliver on its own terms.
 
 Next, in order:
 
-1. Frozen-backbone `full` at the same 20M tokens. The jump from cosine 0.2133
-   to 0.1061 confounds backbone adaptation with 200x more optimization, and
-   this one cell separates them. Until it runs, no adaptation claim is safe.
-2. Persistence baseline on these checkpoints, per item 1 below.
-3. `λ_pred` sweep at 0.03 and 0.3. The NLL null was measured at one coefficient
-   only; 0.3 is the setting that could plausibly move the ordinary path, and
-   0.03 bounds the tax if 0.3 hurts.
+1. Recommend to the project owner that the paper's weight moves to Stage 2.
+   Stage 1 becomes a reported negative with the pressure round as its evidence,
+   which is a stronger and more honest section than a marginal positive.
+2. Frozen-backbone `full` at 20M tokens. Still owed: the cosine improvement over
+   the frozen diagnostic confounds adaptation with 200x more optimization, and
+   this single cell separates them. Cheap and it closes an obvious hole.
+3. Persistence baseline on these checkpoints, against the 0.258 unrelated-pair
+   cosine floor.
+4. Before any Stage 2 run, revisit the source split. `src18only` and
+   `proj8-action448` together suggest the recurrent path may only need a
+   narrow slice of one layer.
 
-Direction-changing outcomes as pre-registered:
+Open items this cycle does not settle:
 
-- Full improves predictor-removed held-out NLL over the NTP-only arm at equal
-  tokens, without rank collapse: first genuine Stage 1 representation signal;
-  proceed to the seed replication and then the OLMo main comparison.
-- Full matches NTP-only on NLL but keeps its transition advantage: the
-  objective shapes the transition without paying for it in language modeling.
-  That is a weaker, still-publishable claim; it moves the emphasis to Stage 2.
-- Full is worse than NTP-only on NLL: the auxiliary loss taxes the normal path
-  at `λ_pred = 0.1`; sweep `λ_pred` down before anything else.
-- The full-versus-action-only advantage seen under a frozen backbone shrinks
-  once the sources adapt: the earlier gain depended on a fixed interface, and
-  the target depth or the source split must be revisited.
-
-Open items this cycle does not settle, in priority order:
-
-1. Persistence baseline. Effective rank of the target is ~2.1–2.9 out of 896
-   and unrelated target pairs already sit at cosine 0.26, so a cosine of 0.79
-   is measured against a high floor. How well a trivial copy predicts
-   `h_(t+1)^12` is the first control a reviewer will ask for. It needs no
-   training and runs on the resulting checkpoints.
-2. Outlier-robust scale reporting. `predicted_rms`/`target_rms` are linear
-   means over a heavy-tailed distribution (norm mean 17.5, max 1679) while the
-   objective is a log-space Huber, so the headline ratio and the optimized
-   quantity are not the same number.
-3. One seed only, as the screen protocol specifies.
+1. One seed throughout, as the screen protocol specifies.
+2. Qwen2.5-0.5B only. The negative is established at 0.5B; whether it holds at
+   OLMo 1B is untested, though nothing in the pattern suggests scale is the
+   binding constraint.
+3. Outlier-robust scale reporting: `predicted_rms`/`target_rms` are linear means
+   over a heavy-tailed distribution while the objective is a log-space Huber.

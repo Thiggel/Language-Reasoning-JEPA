@@ -154,3 +154,63 @@ A t-SNE comparison was not produced. At CKA 0.99979 the two embeddings are the
 same picture, and a figure showing that would be decoration rather than
 evidence. The sampled states are kept in `_probe/states.pt` if an illustration
 is wanted later.
+
+## Stage 1 pressure round
+
+`2026-08-12-qwen-stage1-pressure-v1`. Nine cells, each 20M tokens on the same
+shared token blocks with the same batch order and seed as the screen, differing
+only in how hard the auxiliary objective presses on the backbone. Scale weight
+0.1 throughout. `ntp-only` and `full-scale0.1` are the screen's cells, repeated
+here as the reference and the shared corner.
+
+| Cell | `λ_pred` | Projection | Sources | Predictor | NLL | ΔNLL | Cosine | Permutation gap |
+|---|---:|---:|---|---:|---:|---:|---:|---:|
+| ntp-only | — | — | — | 0 | 2.5499 | — | — | — |
+| full-scale0.1 | 0.1 | 448 | 18, 24 | 8,830,976 | 2.5505 | +0.0006 | 0.1067 | 0.3564 |
+| lpred0.3 | 0.3 | 448 | 18, 24 | 8,830,976 | 2.5499 | +0.0000 | 0.1056 | 0.3576 |
+| lpred1.0 | 1.0 | 448 | 18, 24 | 8,830,976 | 2.5503 | +0.0003 | 0.1048 | 0.3577 |
+| lpred3.0 | 3.0 | 448 | 18, 24 | 8,830,976 | 2.5520 | +0.0021 | 0.1029 | 0.3577 |
+| proj32 | 0.1 | 32 | 18, 24 | 2,121,728 | 2.5500 | +0.0000 | 0.1751 | 0.2789 |
+| proj8 | 0.1 | 8 | 18, 24 | 1,734,656 | 2.5501 | +0.0002 | 0.2401 | 0.2247 |
+| proj8-action448 | 0.1 | 8 state | 18, 24 | 4,100,096 | 2.5500 | +0.0001 | 0.1508 | 0.3448 |
+| linear | 0.1 | 896 | 18, 24 | 4,816,896 | 2.5499 | −0.0001 | 0.1335 | 0.3220 |
+| src18only | 0.1 | 672 | 18 | 8,830,976 | 2.5498 | −0.0001 | 0.1050 | 0.3584 |
+| src24only | 0.1 | 672 | 24 | 8,830,976 | 2.5506 | +0.0006 | 0.1252 | 0.3578 |
+
+### The representation-shaping claim does not survive
+
+Every cell sits within 0.0021 nats of the NTP-only control, and the largest
+deviation is the wrong sign: at `λ_pred = 3.0` language modeling is slightly
+worse, not better. This holds across a 30x range of prediction weight, a 56x
+narrowing of the state channel, a purely linear predictor, and single-state
+conditioning. Nine ways of pressing on the backbone produce no movement on the
+ordinary path.
+
+The bottleneck cells rule out the most likely mechanism. `proj8` genuinely
+crippled the predictor, more than doubling its direction error from 0.1067 to
+0.2401, and the backbone still did not compensate: it simply accepted the worse
+transition loss. H2's representation half should be reported as a negative
+result at this scale rather than pursued further.
+
+### Three architectural findings that do matter for Stage 2
+
+The transition is close to linear. A full-rank linear map reaches cosine 0.1335
+against 0.1067 for the SwiGLU predictor, and against 0.2527 for predicting
+without any state at all, so the nonlinearity buys only a fifth of the distance
+the state itself buys. Its permutation gap of 0.3220 confirms it still uses the
+action.
+
+The state's contribution is low dimensional. Against the screen's references of
+0.2078 for action-only and 0.2527 for no-action, eight dimensions of state with
+the action channel intact reach 0.1508, recovering most of the distance from
+action-only to the full 0.1067. The shared-width `proj8` cell reached only
+0.2401 with its permutation gap down at 0.2247, confirming that the earlier
+single-knob bottleneck was starving the action rather than the state.
+
+Layer 24 is redundant. Conditioning on layer 18 alone reaches 0.1050, marginally
+better than both sources together, while layer 24 alone reaches only 0.1252.
+The single-source cells are parameter matched at 8,830,976 but give the
+surviving stream a 672-wide channel against 448 in the two-source cell; that
+width difference is unlikely to explain the result, since eight dimensions
+already suffice for most of the effect. Dropping layer 24 from the source set
+would halve what recurrent execution must carry.

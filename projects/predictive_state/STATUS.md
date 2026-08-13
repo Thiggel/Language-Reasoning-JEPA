@@ -52,7 +52,26 @@ to within 7e-4 nats, so the auxiliary objective neither helps nor harms the
 ordinary path at `λ_pred = 0.1`. The LoRA weights do diverge between the full
 and NTP-only arms, so this is a real null and not a broken gradient path.
 
-Open before any adaptation claim: a frozen-backbone cell at the same 20M tokens
-(the cosine improvement over the frozen diagnostic confounds adaptation with
-200x more optimization), a persistence baseline against the 0.258 unrelated-pair
-cosine floor, and a `λ_pred` sweep. See `CURRENT_CYCLE.md`.
+`2026-08-12-qwen-stage1-pressure-v1` then closed the question. Nine further
+cells raised the pressure by every available means: prediction weight 0.3, 1.0
+and 3.0; a state channel narrowed 56x; a purely linear predictor; and
+conditioning on one source layer instead of two. All nine land within 0.0021
+nats of the NTP-only control, and the largest deviation is the wrong sign. The
+`proj8` cell crippled the predictor, more than doubling its direction error,
+and the backbone still did not compensate.
+
+Stage 1's representation half is therefore a negative result at this scale, on
+fifteen token-matched cells and an independent cross-model probe. It should be
+written up as such rather than pursued further.
+
+Three findings carry forward to Stage 2: the transition is close to linear
+(0.1335 for a full-rank linear map against 0.1067 for the SwiGLU); the state's
+contribution is low dimensional (eight state dimensions reach 0.1508 against
+0.2078 for action-only); and layer 24 is redundant (layer 18 alone reaches
+0.1050). With activation scale already calibrated, the predicted state is cheap,
+accurate and injectable.
+
+Still owed: a frozen-backbone cell at the same 20M tokens, since the cosine
+improvement over the frozen diagnostic confounds adaptation with 200x more
+optimization, and a persistence baseline against the 0.258 unrelated-pair cosine
+floor. Everything is single seed on Qwen2.5-0.5B. See `CURRENT_CYCLE.md`.
