@@ -1084,3 +1084,36 @@ use a cheap subset while replay/bounds still read the full corpus; and
   keys; verified. Round 2026-08-13-igsm-hard-ood-v1 created (ID op 3-21 vs
   OOD op 28-32, 200 episodes, slack curve to 16) for every completed
   checkpoint, on its own dispatcher.
+
+## 2026-08-13 (cont. 5): CRITICAL — feasible_menu is near-degenerate on faithful iGSM
+
+First ID-vs-OOD rows looked BACKWARDS (GoalHead strict .265 ID vs .555
+OOD). Checking baselines exposed the cause — it is a protocol artifact,
+not a model result:
+
+| band | planner | random | distractor rate | mean necessary |
+|---|---|---|---|---|
+| ID op3-21   | .265 strict / .995 s16 | **.245 / .985** | .351 | 7.1 |
+| OOD op28-32 | .555 strict / 1.000 s16 | **.560 / 1.000** | .120 | 15.4 |
+
+RANDOM MATCHES THE PLANNER ON BOTH BANDS, and beats it on OOD. Diagnosis
+(measured on the generator): the faithful feasible menu is TINY — mean
+3.41 actions (median 3) on ID, 3.01 (median 2) on OOD — while the fraction
+of variables that are NECESSARY rises from 54% (ID) to 79% (OOD). So on
+longer problems a random feasible pick is usually on the necessary path,
+and "strict success" gets EASIER as problems get harder. Two consequences:
+
+1. **Strict success is not comparable across bands.** Any ID-vs-OOD table
+   using it is misleading; the whole slack curve plus the random/
+   first-feasible reference lines must be reported per band.
+2. **feasible_menu cannot discriminate methods on faithful iGSM at this
+   budget** — same failure mode as FSA-deduction's degenerate menu, for
+   the same structural reason (a small menu with a high necessary
+   fraction). The discriminative interfaces here are full_catalogue
+   (no-oracle) and the menu-free ones.
+
+ACTION: the OOD round must be re-scoped to the full_catalogue and
+menu-free interfaces, with random/first-feasible reference lines on every
+band; feasible_menu is kept only as a saturated reference column. This
+vindicates the "measure all interfaces" policy — a feasible-menu-only
+headline would have been an artifact.
