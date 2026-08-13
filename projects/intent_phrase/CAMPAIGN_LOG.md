@@ -909,3 +909,30 @@ use a cheap subset while replay/bounds still read the full corpus; and
   The earlier "shuffle doesn't hurt" verdict was an artifact of the wrong
   LR (3e-4). Faithful LR = 1e-4; mains unblocked (to be submitted at base
   size). 3e-3 also completed (.283 @d16) — 1e-4 is the winner.
+
+## 2026-08-13 (cont. 2): moved off Alex; paper-exact bands; ProofWriter hardened
+
+- ALEX FREED (owner needs it): all intent_phrase jobs cancelled (base
+  mains, capacity ladder, PW screen); completed cells synced back with
+  checkpoints. Compute moves to Grünau — gruenau7 has 4 free A6000 (49 GB)
+  plus gruenau2 mostly free.
+- PAPER-EXACT BANDS: probing showed our STYLIZED generator cannot express
+  their spec — capped at their instance-parameter budget (n_vars<=28) it
+  yields median 4-5 necessary steps, max ~14, and op 28-32 needs n_vars
+  30-60. Their "op" counts solution operations, not resolved variables.
+  The FAITHFUL adapter takes their actual knobs, and verified working:
+  iGSM-hard train (max_op=21,max_edge=28,op_range[3,21]) and OOD
+  op_range[28,32] both sample fine (3.4 s/problem at OOD, acceptable).
+  DECISION: the paper-matched generalization experiment runs on FAITHFUL
+  iGSM-hard; stylized stays the mechanism/dev environment with its own
+  band design as a secondary axis.
+- LAUNCHED 2026-08-13-igsm-hard-base-v1 on gruenau7: hard-ldad-lr1e4-s0
+  and hard-ldad-lr3e4-s0 (GPT2-small shape: d768/12 layers/12 heads,
+  predictor 4, batch 8, MAX_SLACK=16 so the curve metric is native).
+- PROOFWRITER HARDENED (owner: saturation tells us nothing): built
+  data/intent_phrase/proofwriter_depth_ood/ — train/val source_depth<=3
+  (16711/1500), test = depth-5 ONLY (500), plus test_id depth<=3 (1500)
+  for the in-distribution contrast; config
+  configs/data/proofwriter_depth_ood.yaml. Depth generalization replaces
+  the saturated mixed-depth benchmark as the headline PW setting.
+- Non-residual predictor -> ablation table (with causal), per owner.
