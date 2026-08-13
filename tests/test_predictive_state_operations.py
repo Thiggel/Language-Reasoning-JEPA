@@ -362,3 +362,44 @@ def test_objective_balance_round_actually_reaches_auxiliary_dominance():
     # The gate and the deferral path must both survive.
     assert "refusing busy GPU" in text
     assert "wait_and_run_predictive_state_cells.sh" in text
+
+
+def test_checkpoint_loader_rebuilds_full_upper_topology(tmp_path):
+    # A full_upper cell records a null rank; the loader must not try to install
+    # LoRA for it, or every downstream probe fails on those checkpoints.
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    from torch import nn
+    from textjepa.training.predictive_state import _restore_adaptation
+    from textjepa.models.action_transition import LoRALinear
+
+    class Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_proj = nn.Linear(4, 4)
+
+    class Decoder(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = nn.ModuleList(Block() for _ in range(4))
+
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = Decoder()
+
+    full = Model()
+    _restore_adaptation(full, {"first_trainable_layer": 3, "rank": None,
+                               "alpha": None})
+    assert not any(isinstance(m, LoRALinear) for m in full.modules())
+    assert all(name.startswith(("model.layers.2", "model.layers.3"))
+               for name, p in full.named_parameters() if p.requires_grad)
+
+    adapted = Model()
+    _restore_adaptation(adapted, {"first_trainable_layer": 3, "rank": 2,
+                                  "alpha": 4})
+    assert any(isinstance(m, LoRALinear) for m in adapted.modules())
+
+    frozen = Model()
+    _restore_adaptation(frozen, None)
+    assert not any(p.requires_grad for p in frozen.parameters())

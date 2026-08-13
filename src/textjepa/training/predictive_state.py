@@ -16,6 +16,7 @@ from textjepa.models.action_transition import (
     decoder_layers,
     install_upper_lora,
     load_trainable_state_dict,
+    unfreeze_upper_layers,
 )
 from textjepa.objectives.predictive_state import (
     normalized_discount_weights,
@@ -53,6 +54,26 @@ def architecture_defaults(model_id: str, layer_count: int) -> dict:
     }
 
 
+def _restore_adaptation(model, accounting) -> None:
+    """Rebuild the topology a checkpoint's trainable tensors expect.
+
+    A full_upper cell records a null rank because it adapts the decoder blocks
+    themselves; installing LoRA for it would both fail and produce the wrong
+    parameter names.
+    """
+    if accounting is None:
+        model.requires_grad_(False)
+        return
+    first = int(accounting["first_trainable_layer"])
+    if accounting.get("rank") is None:
+        unfreeze_upper_layers(model, first_trainable_layer=first)
+        return
+    install_upper_lora(
+        model, first_trainable_layer=first,
+        rank=int(accounting["rank"]), alpha=float(accounting["alpha"]),
+    )
+
+
 def load_stage1_checkpoint(
     path,
     *,
@@ -70,15 +91,7 @@ def load_stage1_checkpoint(
         payload["model_id"], revision=payload["model_revision"],
         dtype=dtype, low_cpu_mem_usage=True,
     ).to(device)
-    lora = payload.get("lora")
-    if lora is not None:
-        install_upper_lora(
-            model,
-            first_trainable_layer=int(lora["first_trainable_layer"]),
-            rank=int(lora["rank"]), alpha=float(lora["alpha"]),
-        )
-    else:
-        model.requires_grad_(False)
+    _restore_adaptation(model, payload.get("lora"))
     predictor = None
     config_dict = payload.get("transition_config")
     if config_dict is not None:
@@ -110,15 +123,7 @@ def load_stage2_checkpoint(
         stage1["model_id"], revision=stage1["model_revision"],
         dtype=dtype, low_cpu_mem_usage=True,
     ).to(device)
-    lora = stage1.get("lora")
-    if lora is not None:
-        install_upper_lora(
-            model,
-            first_trainable_layer=int(lora["first_trainable_layer"]),
-            rank=int(lora["rank"]), alpha=float(lora["alpha"]),
-        )
-    else:
-        model.requires_grad_(False)
+    _restore_adaptation(model, stage1.get("lora"))
     config_dict = dict(stage1["transition_config"])
     config_dict["source_layers"] = tuple(config_dict["source_layers"])
     predictor = ActionConditionedTransition(
