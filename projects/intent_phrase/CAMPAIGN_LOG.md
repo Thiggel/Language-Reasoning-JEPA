@@ -1138,3 +1138,28 @@ headline would have been an artifact.
   .975 across depth. The difference is a DOMAIN/PROTOCOL property, not a
   model regression — but it means faithful-iGSM feasible_menu must not be
   a headline table. full_catalogue cell for hard-ldad-lr3e4 queued.
+
+## 2026-08-13 (cont. 6): full_catalogue is SILENTLY IGNORED on faithful iGSM
+
+The "no-oracle full_catalogue" rows are NOT no-oracle. Evidence: they are
+numerically identical to the feasible_menu rows and invalid_action_rate is
+exactly 0.000 everywhere — impossible if a full catalogue were being
+scored. Cause: scripts/plan.py dispatches data.name=igsm_real to
+FaithfulPlanner, whose constructor takes only (lookahead, max_expand,
+allow_oracle_future_actions) and whose _sequences() always calls
+env.feasible_actions(). `candidate_interface` is never passed and never
+read on this path, so every faithful eval — including all of today's —
+has been a FEASIBLE-MENU eval regardless of the flag.
+
+Same defect family as the earlier faithful silent drops (shuffle_actions,
+the zeroed horizon-ranking loss, missing eval op_range): the faithful path
+accepts a flag and ignores it. Consequences:
+- Every faithful "full_catalogue" number recorded today must be relabelled
+  feasible_menu and re-measured once the interface exists.
+- The no-oracle interface DOES NOT EXIST for faithful iGSM; it must be
+  implemented in FaithfulPlanner (candidate enumeration over the problem's
+  whole variable catalogue + invalid-action handling), mirroring what
+  ObservedActionPlanner/LatentPlanner already do.
+- The load-bearing measurement for this domain is therefore still MISSING.
+  Priority: implement it, since feasible_menu is degenerate here (LDAD
+  .635-.640 vs random .605; OOD .820 vs .810).
