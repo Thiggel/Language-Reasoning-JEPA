@@ -1,0 +1,25 @@
+name: observed_action
+domain: fsa-deduction
+train_path: data/intent_phrase/fsa_deduction_menu/train.jsonl
+val_path: data/intent_phrase/fsa_deduction_menu/val.jsonl
+test_path: data/intent_phrase/fsa_deduction_menu/test.jsonl
+train_seed: 11
+val_seed: 12
+test_seed: 13
+geo_rank_k: 4
+geo_rank_horizon: 2
+fresh_per_epoch: false
+# Multi-horizon endpoint-Energy sampling; null keeps the single
+# geo_rank_horizon.  Kept in the config so overrides are never silently
+# dropped by struct mode.
+geo_rank_horizons: null
+# 'compiled' ranks every recorded alternative; 'feasible_menu' and
+# 'full_catalogue' filter the recorded set by its compile-time feasibility
+# label (training-data selection only, never a deployment input).
+geo_rank_candidate_interface: compiled
+dense_geo_anchors: false
+shuffle_actions: false
+# Episode caps for tiny admission cells; null uses the whole compiled file.
+train_size: null
+val_size: null
+test_size: null
