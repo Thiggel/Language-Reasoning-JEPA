@@ -1044,3 +1044,31 @@ use a cheap subset while replay/bounds still read the full corpus; and
   stall instead of faking an answer) but does not fix ordering — the
   query action still often passes the gate — and the arithmetic stays
   broken exactly as predicted. Ungated stays available as the ablation.
+
+## 2026-08-13 (cont. 4): autonomous mode built + measured (task #27 closed)
+
+- Report: research/reports/intent_phrase/2026-08-13-autonomous-mode/
+  (mirrored). candidate_interface=autonomous (1f5e644 + gate ca310d7),
+  24 tests. Final-answer accuracy at CHANCE (.067 on 15, .040 on 25;
+  chance .043) — preregistration confirmed: ~90% of self-generated
+  sentences well-formed and about the right variable, only 8-18% carry
+  the right number, first divergence at step 1. Numbers get STUCK across
+  steps ("is 9 times 8 = 9", "is 9 plus 0 = 9", "is 9").
+- SECOND FINDING (new): with no executor, nothing enforces prerequisite
+  order — endpoint Energy rewards reaching the goal and nothing refuses an
+  infeasible action, so the planner writes the queried variable's sentence
+  after ~1.6 of 4.3 needed steps. The environment had been silently
+  supplying the feasibility gate.
+- FIX APPLIED, partial: LDAD cycle-consistency feasibility GATE (our own
+  AUC-.94 mechanism) thresholded before the Energy search, at roots and
+  expansions; threshold calibrated on TRAINING problems only (midpoint of
+  feasible/infeasible score means = -4.22; a 10th-percentile variant was
+  nearly vacuous at 82% pass). Rejects ~37% of proposals: steps 1.6->2.2,
+  immediate claims .93->.73, 27% of episodes now stall instead of
+  fabricating an answer. Outcome UNCHANGED (.067) — the gate fixes the
+  process, not the arithmetic. One scalar threshold on a .94-AUC score
+  cannot enforce a dependency order.
+- Paper reading: supports "better plans, rendering is the bottleneck", and
+  isolates a second requirement for executor-free reasoning (feasibility/
+  termination discipline). Smoke only — paper rows come from the 5-seed
+  budget checkpoints. Faithful iGSM autonomous needs its own decoder+parser.
