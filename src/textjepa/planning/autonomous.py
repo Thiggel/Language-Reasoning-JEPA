@@ -8,13 +8,19 @@ system does everything itself:
    (in-model ``action_codebook`` buffer when the checkpoint carries one, else
    the eval-time k-means codebook), grounded environment-side by nearest
    neighbour -- exactly the ``codebook_ground`` contract;
-3. plan with the existing endpoint-Energy beam search over imagined states
+3. drop the proposals the model itself judges infeasible from here, with the
+   LDAD cycle-consistency gate (the mechanism the master plan designates for
+   finding feasible actions without a menu: feasible actions reconstruct their
+   own phrase from the imagined displacement at mean token log-prob -0.28,
+   infeasible ones at -4.5, AUC .94).  The threshold is calibrated on TRAINING
+   problems only;
+4. plan with the existing endpoint-Energy beam search over imagined states
    (:class:`~textjepa.planning.search.LatentPlanner`);
-4. execute the chosen first action WITHOUT the oracle executor: the detached
+5. execute the chosen first action WITHOUT the oracle executor: the detached
    frozen-state sentence decoder
    (:class:`~textjepa.models.state_decoder.FrozenStateSentenceDecoder`) renders
    the next step's text from the IMAGINED state ``predictor(s, u)``;
-5. append that self-generated text to the model's own context, re-encode, and
+6. append that self-generated text to the model's own context, re-encode, and
    repeat until the model claims completion (it writes a step sentence about
    the queried variable) or the step budget is exhausted.
 
@@ -37,8 +43,10 @@ import random
 
 import torch
 
+from textjepa.data.igsm.env import SymbolicEnv
 from textjepa.data.igsm.graph import Problem
-from textjepa.data.igsm.render import prompt_sentences
+from textjepa.data.igsm.render import action_phrase, prompt_sentences
+from textjepa.planning.ldad_decode import delta_logits, phrase_log_probs
 from textjepa.planning.evaluate import slack_curve_metrics
 from textjepa.planning.search import EpisodeResult, LatentPlanner
 
@@ -115,6 +123,10 @@ class AutonomousEpisode:
     first_divergence: int | None
     stalled: bool
     answer_head_correct: bool | None = None
+    # Candidates the proposer offered vs candidates the cycle-consistency
+    # feasibility gate let through (equal when the gate is off).
+    n_proposed: int = 0
+    n_passed_gate: int = 0
     texts: list[str] = field(default_factory=list)
     actions: list[int] = field(default_factory=list)
 
@@ -130,9 +142,23 @@ class AutonomousRollout(LatentPlanner):
 
     def __init__(
         self, model, vocab, device, decoder, stop_on_claim: bool = True,
+        feasibility_gate: bool = True,
+        gate_calibration: str = "midpoint",  # midpoint | quantile
+        gate_quantile: float = 0.1,
+        gate_threshold: float | None = None,
         **kwargs,
     ):
         self.stop_on_claim = bool(stop_on_claim)
+        self.feasibility_gate = bool(feasibility_gate)
+        if gate_calibration not in {"midpoint", "quantile"}:
+            raise ValueError(f"unknown gate calibration: {gate_calibration}")
+        self.gate_calibration = gate_calibration
+        if not 0.0 <= float(gate_quantile) < 1.0:
+            raise ValueError("gate_quantile must lie in [0, 1)")
+        self.gate_quantile = float(gate_quantile)
+        self.gate_threshold = (
+            None if gate_threshold is None else float(gate_threshold)
+        )
         kwargs.setdefault("candidate_interface", "codebook_ground")
         if kwargs["candidate_interface"] != "codebook_ground":
             raise ValueError(
@@ -160,6 +186,123 @@ class AutonomousRollout(LatentPlanner):
             "the state decoder is a detached read-out and must be frozen"
         )
         self.model.eval()
+
+    # ------------------------------------------------- feasibility gate
+    @torch.no_grad()
+    def cycle_scores(
+        self, problem: Problem, state: Tensor, actions: list[int]
+    ) -> Tensor:
+        """LDAD cycle-consistency score of each action's own phrase at ``state``.
+
+        The score is the mean token log-probability with which the observed-
+        action decoder reconstructs the action's intent phrase from the
+        predictor's imagined displacement ``predictor(s, u) - s`` -- the same
+        quantity ``ldad_cycle`` ranks with.  Feasible actions score around
+        -0.28 and infeasible ones around -4.5 on the LDAD recipe (AUC .94),
+        which is what makes a threshold meaningful.  Nothing here reads the
+        environment.
+        """
+        if not actions:
+            return torch.empty(0, device=self.device)
+        catalogue = self._catalogue_codes(problem)
+        index = torch.tensor(actions, device=catalogue.device)
+        return phrase_log_probs(
+            delta_logits(
+                self.model, state, catalogue[index],
+                context="candidate_interface=autonomous (feasibility gate)",
+            ),
+            [self.vocab.encode(action_phrase(problem, a)) for a in actions],
+        )
+
+    @torch.no_grad()
+    def calibrate_feasibility_gate(
+        self, problems: list[Problem], seed: int = 0, max_states: int = 8
+    ) -> float:
+        """Set the gate threshold from TRAINING problems only.
+
+        Walks each training problem along a random *feasible* trajectory and
+        collects the cycle score of every action that is genuinely feasible at
+        the visited states.  The threshold is the ``gate_quantile`` quantile of
+        that feasible-score distribution, i.e. "keep candidates that look at
+        least as action-identifiable as the weakest 10% of genuinely feasible
+        training actions".
+
+        Feasibility labels are used HERE, on training problems, exactly as a
+        calibration set -- never at plan time, and never on evaluation
+        problems.  The result is a single scalar.
+        """
+        rng = random.Random(seed)
+        scores: list[float] = []
+        infeasible_scores: list[float] = []
+        for problem in problems:
+            env = SymbolicEnv(problem)
+            texts: list[str] = []
+            prompt = prompt_sentences(problem, random.Random(seed))
+            prompt_tokens = self._tokens(prompt)
+            prompt_mask = torch.ones(
+                1, len(prompt), dtype=torch.bool, device=self.device
+            )
+            for _ in range(max_states):
+                feasible = env.feasible_actions()
+                if not feasible:
+                    break
+                state = self._current_state(prompt_tokens, prompt_mask, texts)
+                scores.extend(
+                    self.cycle_scores(problem, state, feasible).tolist()
+                )
+                blocked = [
+                    v.idx for v in problem.vars
+                    if v.idx not in feasible and v.idx not in env.resolved_set
+                ]
+                infeasible_scores.extend(
+                    self.cycle_scores(problem, state, blocked).tolist()
+                )
+                texts.append(env.step(rng.choice(feasible)))
+        if not scores:
+            raise ValueError("gate calibration needs at least one feasible action")
+        if self.gate_calibration == "midpoint":
+            if not infeasible_scores:
+                raise ValueError(
+                    "midpoint calibration needs both feasible and infeasible "
+                    "training actions; use gate_calibration=quantile"
+                )
+            # Midpoint between the two modes of the separation this gate
+            # rests on (feasible ~ -0.28, infeasible ~ -4.5 on the LDAD
+            # recipe).  Robust to the long low tail of feasible scores that
+            # makes a low quantile nearly vacuous.
+            self.gate_threshold = 0.5 * (
+                sum(scores) / len(scores)
+                + sum(infeasible_scores) / len(infeasible_scores)
+            )
+        else:
+            self.gate_threshold = float(
+                torch.quantile(torch.tensor(sorted(scores)), self.gate_quantile)
+            )
+        return self.gate_threshold
+
+    def _gate(
+        self, problem: Problem, state: Tensor, actions: list[int]
+    ) -> list[int]:
+        """Drop candidates the model itself judges infeasible (order kept)."""
+        if not self.feasibility_gate or not actions:
+            return actions
+        if self.gate_threshold is None:
+            raise RuntimeError(
+                "calibrate_feasibility_gate must be called on TRAINING "
+                "problems before planning with the feasibility gate"
+            )
+        scores = self.cycle_scores(problem, state, actions).tolist()
+        return [
+            action for action, score in zip(actions, scores)
+            if score >= self.gate_threshold
+        ]
+
+    def _proposer_candidates(self, problem, state, executed=frozenset()):
+        """Gate the beam expansions too, with the same threshold."""
+        return self._gate(
+            problem, state,
+            super()._proposer_candidates(problem, state, executed),
+        )
 
     # ------------------------------------------------------------------ #
     @torch.no_grad()
@@ -189,6 +332,7 @@ class AutonomousRollout(LatentPlanner):
         step_texts: list[str] = []
         actions: list[int] = []
         n_well_formed = n_action_match = n_value_correct = 0
+        n_proposed = n_passed_gate = 0
         first_divergence: int | None = None
         claimed = stalled = False
         answer: int | None = None
@@ -204,6 +348,15 @@ class AutonomousRollout(LatentPlanner):
                 s, problem, executed, top_k=self.prior_top_k,
                 generator=self._proposal_generator(seed, len(step_texts)),
             )
+            # Cycle-consistency feasibility gate: the model's OWN judgement of
+            # which proposals it can actually carry out from here, applied
+            # before the Energy beam search sees them.
+            n_proposed += len(root_candidates)
+            root_candidates = self._gate(problem, s, root_candidates)
+            n_passed_gate += len(root_candidates)
+            if not root_candidates:
+                stalled = True
+                break
             best = self._beam_search(
                 s, s0, problem, executed, None, state_history, action_codes,
                 score_seed=f"{seed}:{len(step_texts)}:scores",
@@ -258,6 +411,8 @@ class AutonomousRollout(LatentPlanner):
             first_divergence=first_divergence,
             stalled=stalled,
             answer_head_correct=answer_head_correct,
+            n_proposed=n_proposed,
+            n_passed_gate=n_passed_gate,
             texts=step_texts,
             actions=actions,
         )
@@ -295,6 +450,12 @@ def aggregate_autonomous(
             sum(divergences) / len(divergences) + 1.0 if divergences else None
         ),
         "never_diverged_rate": (n - len(divergences)) / n,
+        # How much of what the codebook proposed the model's own
+        # cycle-consistency judgement kept (1.0 when the gate is off).
+        "gate_pass_rate": (
+            sum(e.n_passed_gate for e in episodes)
+            / max(sum(e.n_proposed for e in episodes), 1)
+        ),
     }
     if heads:
         # Cheap upper-bound reference: the linear answer head read off the

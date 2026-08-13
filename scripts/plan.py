@@ -163,6 +163,13 @@ def main(cfg: DictConfig) -> None:
                 codebook_k=int(cfg.get("codebook_k", 64)),
                 codebook_seed=int(cfg.get("codebook_seed", 0)),
                 stop_on_claim=bool(cfg.get("autonomous_stop_on_claim", True)),
+                feasibility_gate=bool(
+                    cfg.get("autonomous_feasibility_gate", True)
+                ),
+                gate_calibration=str(
+                    cfg.get("autonomous_gate_calibration", "midpoint")
+                ),
+                gate_quantile=float(cfg.get("autonomous_gate_quantile", 0.1)),
             )
             n_prior = int(cfg.get("cem_prior_problems", 64))
             prior_dataset = build_dataset(
@@ -172,6 +179,22 @@ def main(cfg: DictConfig) -> None:
                 prior_dataset.problem(i)[0]
                 for i in range(min(n_prior, len(prior_dataset)))
             ])
+            if planner.feasibility_gate:
+                # Calibrated on TRAINING problems only (same pinned pre-
+                # override distribution as the codebook): the quantile of the
+                # cycle scores of genuinely feasible training actions.
+                n_gate = int(cfg.get("autonomous_gate_problems", 32))
+                gate_dataset = build_dataset(
+                    train_cfg, vocab, split="train", size=n_gate
+                )
+                threshold = planner.calibrate_feasibility_gate(
+                    [
+                        gate_dataset.problem(i)[0]
+                        for i in range(min(n_gate, len(gate_dataset)))
+                    ],
+                    seed=cfg.seed,
+                )
+                print(f"feasibility gate threshold: {threshold:.3f}")
             results = evaluate_autonomous(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,
                 seed=cfg.seed, slack_curve=cfg.get("slack_curve", False),

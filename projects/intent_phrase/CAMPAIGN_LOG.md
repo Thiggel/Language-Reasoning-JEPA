@@ -1030,3 +1030,17 @@ use a cheap subset while replay/bounds still read the full corpus; and
   the rollout jumps straight to the queried variable because nothing
   enforces prerequisite order once the executor is gone. Faithful iGSM is
   NOT supported yet (needs its own step decoder/parser) — plan.py raises.
+- Autonomous interface now carries the LDAD cycle-consistency FEASIBILITY
+  GATE (`autonomous_feasibility_gate=true` by default; calibration
+  `midpoint` = halfway between the mean cycle score of feasible and of
+  infeasible actions on 32 TRAINING problems walked along random feasible
+  trajectories; labels used at calibration only, threshold -4.22 here).
+  Matched smoke (same ckpt/decoder, 15 val problems, CPU, slack 2, k=256,
+  top-k 8), gated vs ungated: answer accuracy .067 vs .067 (chance),
+  value-correct .18 vs .13, mean steps 2.2 vs 1.6 (necessary 4.3),
+  completion-claim .73 vs .93, stall .27 vs .00, gate pass rate .63.
+  Reading: the gate does stop some of the "jump straight to the query"
+  shortcut (claims drop, more prerequisite steps get written, the rest
+  stall instead of faking an answer) but does not fix ordering — the
+  query action still often passes the gate — and the arithmetic stays
+  broken exactly as predicted. Ungated stays available as the ablation.

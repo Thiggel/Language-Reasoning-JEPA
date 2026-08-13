@@ -38,7 +38,7 @@ def _planner(vocab, dataset, decoder=None, **kwargs):
     planner = AutonomousRollout(
         model, vocab, torch.device("cpu"),
         decoder if decoder is not None else _tiny_decoder(vocab),
-        codebook_k=6, prior_top_k=4, **kwargs,
+        codebook_k=6, prior_top_k=4, feasibility_gate=False, **kwargs,
     )
     planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
     return planner
@@ -91,7 +91,8 @@ def test_perfect_renderer_solves_and_claims_completion():
     problem, _ = dataset.problem(0)
     planner = _ScriptedRollout(
         _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
-        codebook_k=6, prior_top_k=4, render=step_sentence,
+        codebook_k=6, prior_top_k=4, feasibility_gate=False,
+        render=step_sentence,
     )
     planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
     episode = planner.rollout_episode(problem, slack=len(problem.vars), seed=0)
@@ -117,7 +118,7 @@ def test_broken_renderer_is_localized_by_the_diagnostics():
     problem, _ = dataset.problem(0)
     planner = _ScriptedRollout(
         _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
-        codebook_k=6, prior_top_k=4,
+        codebook_k=6, prior_top_k=4, feasibility_gate=False,
         render=lambda p, a: "so the number of unknown things is .",
     )
     planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
@@ -152,11 +153,15 @@ def test_value_error_renderer_diverges_at_the_first_wrong_number():
 
     planner = _ScriptedRollout(
         _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
-        codebook_k=6, prior_top_k=4, render=wrong_after_first,
+        codebook_k=6, prior_top_k=4, feasibility_gate=False,
+        stop_on_claim=False, render=wrong_after_first,
     )
     planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
     episode = planner.rollout_episode(problem, slack=2, seed=0)
+    assert episode.n_steps > 1
     assert episode.n_well_formed == episode.n_steps
+    # The shape stays right throughout; only the numbers go wrong, from the
+    # second step on, which is where the diagnostic must point.
     assert episode.first_divergence == 1
     assert episode.n_value_correct == 1
 
@@ -169,6 +174,7 @@ def test_stop_on_claim_false_runs_to_the_budget():
     planner = _ScriptedRollout(
         _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
         codebook_k=256, prior_top_k=8, stop_on_claim=False,
+        feasibility_gate=False,
         render=step_sentence,
     )
     planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
@@ -220,7 +226,8 @@ def test_backbone_and_decoder_are_frozen():
         parameter.requires_grad_(True)
     decoder = _tiny_decoder(vocab)
     planner = AutonomousRollout(
-        model, vocab, torch.device("cpu"), decoder, codebook_k=4
+        model, vocab, torch.device("cpu"), decoder, codebook_k=4,
+        feasibility_gate=False,
     )
     assert not any(p.requires_grad for p in planner.model.parameters())
     assert not any(p.requires_grad for p in planner.decoder.parameters())
@@ -236,12 +243,97 @@ def test_oracle_energies_are_rejected():
         AutonomousRollout(
             _tiny_model(vocab), vocab, torch.device("cpu"),
             _tiny_decoder(vocab), energy="oracle_goal",
+            feasibility_gate=False,
         )
     with pytest.raises(ValueError):
         AutonomousRollout(
             _tiny_model(vocab), vocab, torch.device("cpu"),
             _tiny_decoder(vocab), candidate_interface="feasible_menu",
+            feasibility_gate=False,
         )
+
+
+# -------------------------------------------------------- feasibility gate
+def test_gate_requires_calibration_before_planning():
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(vocab, size=4, seed=37)
+    planner = AutonomousRollout(
+        _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
+        codebook_k=6,
+    )
+    planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
+    assert planner.feasibility_gate  # on by default
+    with pytest.raises(RuntimeError):
+        planner.rollout_episode(dataset.problem(0)[0], slack=1, seed=0)
+
+
+def test_calibration_uses_only_the_given_training_problems():
+    """The threshold is a quantile of feasible TRAINING cycle scores."""
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(vocab, size=4, seed=37)
+    train = [dataset.problem(i)[0] for i in (1, 2, 3)]
+    planner = AutonomousRollout(
+        _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
+        codebook_k=6, gate_quantile=0.0,
+    )
+    planner.fit_action_prior(train)
+    seen = []
+    original = planner.cycle_scores
+
+    def spy(problem, state, actions):
+        seen.append(problem)
+        return original(problem, state, actions)
+
+    planner.cycle_scores = spy
+    threshold = planner.calibrate_feasibility_gate(train, seed=0)
+    assert all(problem in train for problem in seen)
+    # quantile 0 = the weakest feasible training score, so nothing feasible
+    # in the calibration set would be gated out.
+    assert threshold == pytest.approx(planner.gate_threshold)
+    assert threshold <= 0.0  # scores are mean token log-probabilities
+
+
+def test_gate_drops_candidates_below_the_threshold():
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(vocab, size=4, seed=37)
+    problem, _ = dataset.problem(0)
+    planner = AutonomousRollout(
+        _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
+        codebook_k=6,
+    )
+    planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
+    actions = [v.idx for v in problem.vars]
+    state = planner._s0(
+        planner._tokens(["how many dark beads are there ?"]),
+        torch.ones(1, 1, dtype=torch.bool),
+    )
+    scores = planner.cycle_scores(problem, state, actions)
+    planner.gate_threshold = float(scores.median())
+    kept = planner._gate(problem, state, actions)
+    assert kept == [
+        a for a, s in zip(actions, scores.tolist())
+        if s >= planner.gate_threshold
+    ]
+    assert 0 < len(kept) < len(actions)
+    # An impossible threshold drops everything; the disabled gate keeps all.
+    planner.gate_threshold = 1e9
+    assert planner._gate(problem, state, actions) == []
+    planner.feasibility_gate = False
+    assert planner._gate(problem, state, actions) == actions
+
+
+def test_gated_episode_stalls_instead_of_falling_back_to_a_menu():
+    vocab = build_vocab(23)
+    dataset = IGSMDataset(vocab, size=4, seed=37)
+    planner = AutonomousRollout(
+        _tiny_model(vocab), vocab, torch.device("cpu"), _tiny_decoder(vocab),
+        codebook_k=6, gate_threshold=1e9,  # nothing can pass
+    )
+    planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
+    episode = planner.rollout_episode(dataset.problem(0)[0], slack=1, seed=0)
+    assert episode.stalled and episode.n_steps == 0
+    assert episode.n_proposed > 0 and episode.n_passed_gate == 0
+    assert aggregate_autonomous([episode])["gate_pass_rate"] == 0.0
 
 
 # ------------------------------------------------------------ determinism
@@ -258,6 +350,7 @@ def test_rollout_is_deterministic_given_the_seed():
         torch.manual_seed(12345)  # ambient RNG must not matter
         planner = AutonomousRollout(
             model, vocab, torch.device("cpu"), decoder, codebook_k=6,
+            feasibility_gate=False,
         )
         planner.fit_action_prior([dataset.problem(i)[0] for i in (1, 2, 3)])
         return planner.rollout_episode(problem, slack=1, seed=7)

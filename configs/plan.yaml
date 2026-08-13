@@ -79,6 +79,19 @@ state_decoder: null
 # variable (its own completion claim). False keeps writing to the budget and
 # scores the LAST such sentence, so a premature claim can still be revised.
 autonomous_stop_on_claim: true
+# LDAD cycle-consistency feasibility gate: drop proposals whose own intent
+# phrase the displacement decoder cannot reconstruct at the current state,
+# before the Energy search sees them. The threshold is the given quantile of
+# the cycle scores of genuinely feasible actions on TRAINING problems (labels
+# used at calibration time only, never at plan time, never on eval data).
+# Set false for the ungated ablation.
+autonomous_feasibility_gate: true
+# midpoint: halfway between the mean cycle score of feasible and of
+# infeasible TRAINING actions. quantile: the given quantile of the feasible
+# training scores (their low tail makes this a much looser cut).
+autonomous_gate_calibration: midpoint
+autonomous_gate_quantile: 0.1
+autonomous_gate_problems: 32
 # learned_catalogue only: filter catalogue candidates by the learned action
 # prior (top-p nucleus over the catalogue-normalized prior, then top-k).
 prior_top_k: 0   # 0 = keep all
