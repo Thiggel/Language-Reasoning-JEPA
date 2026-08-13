@@ -22,11 +22,13 @@ from textjepa.analysis.predictive_state import (
 from textjepa.data.predictive_state import load_token_blocks, sha256_path
 from textjepa.models.action_transition import (
     ActionConditionedTransition,
+    backbone_parameters,
     ResidualCapture,
     TransitionConfig,
     decoder_layers,
     install_upper_lora,
     lora_parameters,
+    unfreeze_upper_layers,
     parameter_free_rms_norm,
     trainable_state_dict,
 )
@@ -57,7 +59,9 @@ def parse_args() -> argparse.Namespace:
         choices=("full", "no_action", "action_only", "same_layer", "nitp", "ntp_only"),
         default="full",
     )
-    parser.add_argument("--backbone-mode", choices=("frozen", "lora"), default="lora")
+    parser.add_argument(
+        "--backbone-mode", choices=("frozen", "lora", "full_upper"), default="lora"
+    )
     parser.add_argument("--target-layer", type=int)
     parser.add_argument("--source-layer", type=int, action="append")
     # Narrowing the projection is an information bottleneck, not merely a
@@ -74,6 +78,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sequence-length", type=int)
     parser.add_argument("--predictor-learning-rate", type=float, default=3e-4)
     parser.add_argument("--lora-learning-rate", type=float, default=1e-4)
+    # Full finetuning of pretrained blocks needs a smaller step than an
+    # adapter; left unset it falls back to the adapter rate.
+    parser.add_argument("--backbone-learning-rate", type=float)
+    parser.add_argument("--ntp-weight", type=float, default=1.0)
     parser.add_argument("--prediction-weight", type=float, default=0.1)
     parser.add_argument("--scale-weight", type=float, default=0.01)
     parser.add_argument("--warmup-fraction", type=float, default=0.02)
@@ -180,6 +188,7 @@ def evaluate(model, predictor, dataset, capture, args, generator) -> dict:
             target_state=target,
             prediction_weight=args.prediction_weight,
             scale_weight=args.scale_weight,
+            ntp_weight=args.ntp_weight,
         )
         rows = {"predictor_removed_nll": float(losses.ntp)}
         if losses.transition is not None:
@@ -228,7 +237,7 @@ def evaluate(model, predictor, dataset, capture, args, generator) -> dict:
             torch.cat(source_for_geometry), torch.cat(future_for_geometry),
             torch.cat(actions_for_geometry),
         )
-    model.train(args.backbone_mode == "lora")
+    model.train(args.backbone_mode != "frozen")
     if predictor is not None:
         predictor.train()
     return result
@@ -298,6 +307,11 @@ def main() -> None:
             rank=args.lora_rank, alpha=args.lora_alpha,
         )
         model.train()
+    elif args.backbone_mode == "full_upper":
+        lora_accounting = unfreeze_upper_layers(
+            model, first_trainable_layer=target_layer + 1
+        )
+        model.train()
     else:
         model.requires_grad_(False)
         model.eval()
@@ -319,10 +333,14 @@ def main() -> None:
             "lr": args.predictor_learning_rate,
             "weight_decay": args.predictor_weight_decay,
         })
-    lora = list(lora_parameters(model))
-    if lora:
+    adapted = (
+        list(lora_parameters(model)) if args.backbone_mode == "lora"
+        else list(backbone_parameters(model))
+    )
+    if adapted:
         groups.append({
-            "params": lora, "lr": args.lora_learning_rate,
+            "params": adapted,
+            "lr": args.backbone_learning_rate or args.lora_learning_rate,
             "weight_decay": 0.0,
         })
     optimizer = torch.optim.AdamW(groups, betas=(0.9, 0.95))
@@ -367,6 +385,7 @@ def main() -> None:
                     target_state=target,
                     prediction_weight=args.prediction_weight,
                     scale_weight=args.scale_weight,
+                    ntp_weight=args.ntp_weight,
                 )
             scaler.scale(losses.total / args.gradient_accumulation).backward()
             rows = {"total": float(losses.total.detach()),

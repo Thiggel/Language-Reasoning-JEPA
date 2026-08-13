@@ -370,6 +370,38 @@ def install_upper_lora(
     }
 
 
+def unfreeze_upper_layers(model: nn.Module, *, first_trainable_layer: int) -> dict:
+    """Train the upper decoder blocks directly, with no adapter.
+
+    The stack below `first_trainable_layer` stays frozen, so the prediction
+    target remains a fixed anchor and cannot drift to meet the predictor. This
+    is the maximum-freedom setting that is still collusion-safe.
+    """
+    model.requires_grad_(False)
+    layers = decoder_layers(model)
+    if not 1 <= first_trainable_layer <= len(layers):
+        raise ValueError("first_trainable_layer is outside the decoder")
+    for zero_index in range(first_trainable_layer - 1, len(layers)):
+        layers[zero_index].requires_grad_(True)
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    if trainable == 0:
+        raise ValueError("no upper-layer parameters became trainable")
+    return {
+        "first_trainable_layer": first_trainable_layer,
+        "rank": None,
+        "alpha": None,
+        "replaced_modules": [],
+        "trainable_parameters": trainable,
+    }
+
+
+def backbone_parameters(model: nn.Module) -> Iterable[nn.Parameter]:
+    """Every trainable backbone parameter, whatever the adaptation mode."""
+    for parameter in model.parameters():
+        if parameter.requires_grad:
+            yield parameter
+
+
 def lora_parameters(model: nn.Module) -> Iterable[nn.Parameter]:
     for module in model.modules():
         if isinstance(module, LoRALinear):

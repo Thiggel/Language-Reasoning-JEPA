@@ -49,7 +49,8 @@ def test_stage1_screen_cell_shares_one_token_block_file_and_freezes_the_target()
     # Every arm must read the same pre-built tensors rather than rebuild them.
     assert "PREDICTIVE_STATE_TOKEN_BLOCKS:?" in text
     assert "prepare_predictive_state_corpus.py" not in text
-    assert "--backbone-mode lora" in text
+    # The mode is parameterized now, but lora stays the default.
+    assert '--backbone-mode "${PREDICTIVE_STATE_BACKBONE_MODE:-lora}"' in text
 
 
 def test_stage1_screen_launcher_matches_tokens_and_isolates_the_objective():
@@ -275,3 +276,89 @@ def test_deferred_runner_reapplies_admission_before_every_cell():
     # Bounded, so a permanently busy device fails visibly instead of hanging.
     assert "PREDICTIVE_STATE_WAIT_CHECKS" in text
     assert "never became free" in text
+
+
+def test_ntp_weight_scales_only_the_optimized_total():
+    # The reported ntp must stay unweighted so held-out language modeling is
+    # comparable across cells that optimize it at different strengths.
+    import sys
+    import torch
+    sys.path.insert(0, str(ROOT / "src"))
+    from textjepa.objectives.predictive_state import stage1_loss
+
+    torch.manual_seed(0)
+    logits = torch.randn(2, 6, 32)
+    input_ids = torch.randint(32, (2, 6))
+    mask = torch.ones(2, 5, dtype=torch.bool)
+    prediction, target = torch.randn(2, 5, 8), torch.randn(2, 5, 8)
+
+    kwargs = dict(logits=logits, input_ids=input_ids, target_mask=mask,
+                  prediction=prediction, target_state=target,
+                  prediction_weight=1.0, scale_weight=0.0)
+    full = stage1_loss(**kwargs, ntp_weight=1.0)
+    small = stage1_loss(**kwargs, ntp_weight=0.01)
+    assert torch.allclose(full.ntp, small.ntp)
+    assert float(small.total) < float(full.total)
+    assert torch.allclose(small.total - 0.01 * small.ntp,
+                          full.total - full.ntp, atol=1e-5)
+
+    # The predictor-free branch must honour the weight too.
+    bare = stage1_loss(logits=logits, input_ids=input_ids, target_mask=mask,
+                       prediction=None, target_state=None,
+                       prediction_weight=1.0, scale_weight=0.0, ntp_weight=0.5)
+    assert torch.allclose(bare.total, 0.5 * bare.ntp)
+
+
+def test_full_upper_finetuning_keeps_the_target_stack_frozen():
+    # Maximum adaptation freedom must still leave the prediction target fixed,
+    # or the target can drift to meet the predictor.
+    import sys
+    sys.path.insert(0, str(ROOT / "src"))
+    from torch import nn
+    from textjepa.models.action_transition import (
+        backbone_parameters, unfreeze_upper_layers,
+    )
+
+    class Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(4, 4)
+
+    class Decoder(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.layers = nn.ModuleList(Block() for _ in range(6))
+            self.embed = nn.Embedding(8, 4)
+
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.model = Decoder()
+
+    model = Model()
+    accounting = unfreeze_upper_layers(model, first_trainable_layer=4)
+    trainable = {name for name, p in model.named_parameters() if p.requires_grad}
+    assert all(name.startswith(("model.layers.3", "model.layers.4",
+                               "model.layers.5")) for name in trainable)
+    assert not any(name.startswith(("model.layers.0", "model.layers.1",
+                                    "model.layers.2", "model.embed"))
+                   for name in trainable)
+    assert accounting["trainable_parameters"] == sum(
+        p.numel() for p in backbone_parameters(model)
+    )
+    # Unlike LoRA it adapts the blocks themselves, so no adapter is recorded.
+    assert accounting["rank"] is None and accounting["replaced_modules"] == []
+
+
+def test_objective_balance_round_actually_reaches_auxiliary_dominance():
+    # The pressure round never left next-token dominance because that term has
+    # a fixed weight of one. This round must downweight it directly.
+    text = (ROOT / "scripts/launch_gruenau_predictive_state_objective_balance.sh").read_text()
+    assert "PREDICTIVE_STATE_NTP_WEIGHT" in text
+    assert "ntp_weights=(0.01 0.0 1.0 0.01 0.01 0.01)" in text
+    # Full finetuning of the upper stack, and a longer cell.
+    assert "full_upper" in text
+    assert "4880" in text
+    # The gate and the deferral path must both survive.
+    assert "refusing busy GPU" in text
+    assert "wait_and_run_predictive_state_cells.sh" in text

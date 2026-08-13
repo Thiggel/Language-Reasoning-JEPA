@@ -41,12 +41,15 @@ for layer in ${PREDICTIVE_STATE_SOURCE_LAYERS:-}; do
   bottleneck+=(--source-layer "$layer")
 done
 
-# Layers 1-12 and the embeddings stay frozen, so the layer-12 prediction target
-# is a fixed anchor. Only the source half (13-24) and the predictor adapt; the
-# target cannot drift to meet the predictor.
+# Layers 1-12 and the embeddings stay frozen in every mode, including
+# full_upper, so the layer-12 prediction target is a fixed anchor. Only the
+# source half (13-24) and the predictor adapt; the target cannot drift to
+# meet the predictor.
 "$python_bin" scripts/train_action_transition.py \
   --token-blocks "$PREDICTIVE_STATE_TOKEN_BLOCKS" \
-  --output "$RUN_DIR/model" --variant "$variant" --backbone-mode lora \
+  --output "$RUN_DIR/model" --variant "$variant" \
+  --backbone-mode "${PREDICTIVE_STATE_BACKBONE_MODE:-lora}" \
+  --ntp-weight "${PREDICTIVE_STATE_NTP_WEIGHT:-1.0}" \
   --steps "${PREDICTIVE_STATE_STEPS:-1220}" \
   --microbatch-size "${PREDICTIVE_STATE_MICROBATCH:-8}" \
   --gradient-accumulation "${PREDICTIVE_STATE_ACCUMULATION:-2}" \
@@ -56,6 +59,7 @@ done
   --lora-rank 16 --lora-alpha 32 \
   --predictor-learning-rate "${PREDICTIVE_STATE_PREDICTOR_LR:-3e-4}" \
   --lora-learning-rate "${PREDICTIVE_STATE_LORA_LR:-1e-4}" \
+  ${PREDICTIVE_STATE_BACKBONE_LR:+--backbone-learning-rate "$PREDICTIVE_STATE_BACKBONE_LR"} \
   --prediction-weight "${PREDICTIVE_STATE_PREDICTION_WEIGHT:-0.1}" \
   --scale-weight "${PREDICTIVE_STATE_SCALE_WEIGHT:-0.01}" \
   "${bottleneck[@]+"${bottleneck[@]}"}" \

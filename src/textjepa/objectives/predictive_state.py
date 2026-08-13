@@ -100,10 +100,13 @@ def stage1_loss(
     target_state: torch.Tensor | None,
     prediction_weight: float,
     scale_weight: float,
+    ntp_weight: float = 1.0,
 ) -> Stage1Loss:
+    # `ntp` stays the unweighted held-out quantity so it remains comparable
+    # across cells; only the optimized total carries the weight.
     ntp = masked_next_token_loss(logits, input_ids, target_mask)
     if prediction is None:
-        return Stage1Loss(total=ntp, ntp=ntp, transition=None)
+        return Stage1Loss(total=ntp_weight * ntp, ntp=ntp, transition=None)
     if target_state is None:
         raise ValueError("a transition prediction needs a target")
     auxiliary = transition_loss(
@@ -111,7 +114,7 @@ def stage1_loss(
     )
     return Stage1Loss(
         total=(
-            ntp
+            ntp_weight * ntp
             + prediction_weight * auxiliary.cosine
             + scale_weight * auxiliary.scale
         ),
