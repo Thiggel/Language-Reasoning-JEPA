@@ -1,0 +1,190 @@
+{
+  "builder": "scripts/prepare_fsa_deduction_corpus.py",
+  "design": {
+    "branching_factor": 4,
+    "catalogue_cap": 12,
+    "counterfactual_k": 3,
+    "id_band": [
+      15,
+      26
+    ],
+    "length_knob": "depth = number of FSA layers; gold derivation has 2*depth - 1 inference steps",
+    "ood_bands": [
+      [
+        27,
+        32
+      ],
+      [
+        33,
+        40
+      ],
+      [
+        41,
+        50
+      ]
+    ],
+    "side_facts_per_step": 0,
+    "teacher_horizon": 4,
+    "test_jsonl": "copy of test_id.jsonl so the standard train/val/test triple is in-distribution; the OOD bands are evaluated as separate test files."
+  },
+  "domain": "fsa-deduction",
+  "generator": "src/textjepa/data/fsa_deduction.py",
+  "git_sha": "182f09730bd561b9ee44a6cf82fd304a7eb330d3",
+  "identity_check": "sha256 over initial facts, ground rules and target; all splits disjoint by construction and verified",
+  "name": "fsa_deduction",
+  "provenance": {
+    "band_convention": "synthetic-RLVL synthrlvl/eval_loop.py: band_train = step <= train_max, band_ood = step > train_max, band_hard_tail = longest slice.",
+    "licence": "owner's own unpublished research repository; no third-party licence applies. This is a re-implementation of the sampling recipe, not a code copy.",
+    "rendering": "natural-language rendering (their premises_nl/proof_nl form, selected in the source by task.template=natural); the source also emits a paired FOL rendering that is not used here.",
+    "source_docs": "docs/hfsa_depth_scaling_plan_2026-05-19.md",
+    "source_file": "synthetic_dataset.py",
+    "source_generator": "LogicDatasetGenerator._generate_hard_fsa_core (difficulty hard_fsa)",
+    "source_repository": "alex:/home/hpc/c107fa/c107fa12/synthetic-RLVL"
+  },
+  "splits": {
+    "test_id": {
+      "depth_band": [
+        15,
+        26
+      ],
+      "depth_histogram": {
+        "15": 14,
+        "16": 18,
+        "17": 12,
+        "18": 11,
+        "19": 22,
+        "20": 11,
+        "21": 18,
+        "22": 11,
+        "23": 21,
+        "24": 22,
+        "25": 25,
+        "26": 15
+      },
+      "episodes": 200,
+      "mean_prompt_sentences": 169.36,
+      "mean_transitions": 40.84,
+      "sampling_seed": 300000,
+      "schema_split": "test",
+      "transitions": 8168
+    },
+    "test_ood_27_32": {
+      "depth_band": [
+        27,
+        32
+      ],
+      "depth_histogram": {
+        "27": 34,
+        "28": 38,
+        "29": 28,
+        "30": 37,
+        "31": 39,
+        "32": 24
+      },
+      "episodes": 200,
+      "mean_prompt_sentences": 237.24,
+      "mean_transitions": 57.81,
+      "sampling_seed": 400000,
+      "schema_split": "test",
+      "transitions": 11562
+    },
+    "test_ood_33_40": {
+      "depth_band": [
+        33,
+        40
+      ],
+      "depth_histogram": {
+        "33": 22,
+        "34": 24,
+        "35": 19,
+        "36": 25,
+        "37": 26,
+        "38": 23,
+        "39": 26,
+        "40": 35
+      },
+      "episodes": 200,
+      "mean_prompt_sentences": 296.28,
+      "mean_transitions": 72.57,
+      "sampling_seed": 500000,
+      "schema_split": "test",
+      "transitions": 14514
+    },
+    "test_ood_41_50": {
+      "depth_band": [
+        41,
+        50
+      ],
+      "depth_histogram": {
+        "41": 19,
+        "42": 27,
+        "43": 18,
+        "44": 17,
+        "45": 21,
+        "46": 19,
+        "47": 25,
+        "48": 14,
+        "49": 17,
+        "50": 23
+      },
+      "episodes": 200,
+      "mean_prompt_sentences": 365.36,
+      "mean_transitions": 89.84,
+      "sampling_seed": 600000,
+      "schema_split": "test",
+      "transitions": 17968
+    },
+    "train": {
+      "depth_band": [
+        15,
+        26
+      ],
+      "depth_histogram": {
+        "15": 171,
+        "16": 156,
+        "17": 161,
+        "18": 180,
+        "19": 167,
+        "20": 158,
+        "21": 175,
+        "22": 176,
+        "23": 165,
+        "24": 159,
+        "25": 169,
+        "26": 163
+      },
+      "episodes": 2000,
+      "mean_prompt_sentences": 165.97,
+      "mean_transitions": 39.99,
+      "sampling_seed": 100000,
+      "schema_split": "train",
+      "transitions": 79984
+    },
+    "val": {
+      "depth_band": [
+        15,
+        26
+      ],
+      "depth_histogram": {
+        "15": 26,
+        "16": 23,
+        "17": 23,
+        "18": 17,
+        "19": 26,
+        "20": 21,
+        "21": 23,
+        "22": 18,
+        "23": 32,
+        "24": 33,
+        "25": 27,
+        "26": 31
+      },
+      "episodes": 300,
+      "mean_prompt_sentences": 168.85,
+      "mean_transitions": 40.71,
+      "sampling_seed": 200000,
+      "schema_split": "val",
+      "transitions": 12214
+    }
+  }
+}

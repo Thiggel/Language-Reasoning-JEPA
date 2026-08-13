@@ -13,7 +13,7 @@ set -euo pipefail
   echo "RUN_DIR and TEXTJEPA_ROOT are required" >&2; exit 2;
 }
 py=${1:?python executable}
-domain=${2:?planbench-blocksworld, alfworld-textworld or proofwriter}
+domain=${2:?planbench-blocksworld, alfworld-textworld, proofwriter or fsa-deduction}
 data_root=${3:?directory holding train/val/test.jsonl}
 lr=${4:-3e-4}
 
@@ -29,6 +29,7 @@ case "$domain" in
   planbench-blocksworld) data_name=planbench_blocksworld ;;
   alfworld-textworld) data_name=alfworld ;;
   proofwriter) data_name=proofwriter ;;
+  fsa-deduction) data_name=fsa_deduction ;;
   *) echo "unsupported compiled domain: $domain" >&2; exit 2 ;;
 esac
 

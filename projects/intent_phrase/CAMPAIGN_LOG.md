@@ -936,3 +936,38 @@ use a cheap subset while replay/bounds still read the full corpus; and
   configs/data/proofwriter_depth_ood.yaml. Depth generalization replaces
   the saturated mixed-depth benchmark as the headline PW setting.
 - Non-residual predictor -> ablation table (with causal), per owner.
+
+## 2026-08-13 (cont. 3): new length-controlled logic domain ported from synthetic-RLVL
+
+- NEW DOMAIN `fsa-deduction` (data/intent_phrase/fsa_deduction/), ported
+  from the owner's own `alex:~/synthetic-RLVL` generator
+  (`synthetic_dataset.py`, `_generate_hard_fsa_core`, difficulty
+  `hard_fsa`; plan doc `docs/hfsa_depth_scaling_plan_2026-05-19.md`).
+  Each problem unrolls a finite-state automaton over `depth` layers: c0
+  gets a state word and a marker word, every layer offers K=4 textually
+  plausible branch rules but only one is derivable, and the gold
+  derivation is 2*depth-1 forward-chaining steps. `depth` is the single
+  length knob and is effectively unbounded. Replaces ProofWriter as the
+  logic domain that can be pushed to 50 reasoning steps.
+- Bands follow their convention (band_train = step <= train_max, band_ood
+  = step > train_max): train/val/test_id at 15-26 layers (29-51 steps),
+  OOD test bands 27-32, 33-40, 41-50 (up to 99 steps).
+  Counts: train 2000 / val 300 / 200 per test band; 579 MB.
+- Compiles to the existing observed-action schema and reuses the
+  ProofWriter Datalog executor, so training/eval run unchanged. Unlike
+  ProofWriter it DOES record `teacher_rollout_actions`, so the horizon
+  ranking loss is live (checked: `horizon_ranking_active: true`,
+  12 rollout action steps) — this is the loss the log flagged as
+  silently zero on the older compiled domains.
+- Data gate all green: schema OK, expert-in-catalogue 1.0, exact replay
+  1.0, goal success 1.0, splits disjoint by content hash, deterministic
+  regeneration verified. Reusable script
+  `scripts/validate_fsa_deduction_corpus.sh`.
+- CAVEAT to report honestly: by construction exactly one rule is
+  applicable at each point, so the `feasible_menu` eval interface is
+  degenerate on this domain; the meaningful interface is the full
+  non-oracle catalogue (115-206 actions ID, 323-398 in the 41-50 band).
+  `--side-facts-per-step` exists if a non-degenerate feasible menu is
+  wanted, but the shipped corpus is faithful to the source recipe.
+- Prompts are long: ~182 sentences mean ID, ~360 in the 41-50 band, so
+  cells need MAX_CHUNKS >= 224 (ID) / >= 416 (longest band).

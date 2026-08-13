@@ -324,7 +324,10 @@ def environment_from_episode(
 ) -> TextActionEnvironment:
     if episode.domain == "planbench-blocksworld":
         return BlocksworldEnvironment(episode)
-    if episode.domain == "proofwriter":
+    if episode.domain in {"proofwriter", "fsa-deduction"}:
+        # ``fsa-deduction`` compiles to the same ground Datalog environment
+        # spec (initial facts, ground rules, target fact), so the ProofWriter
+        # forward-chaining executor replays it unchanged.
         return ProofWriterEnvironment(episode)
     if episode.domain == "alfworld-textworld":
         return AlfworldEnvironment(episode)

@@ -51,6 +51,7 @@ case "$domain" in
   planbench-blocksworld) data_name=planbench_blocksworld ;;
   alfworld-textworld) data_name=alfworld ;;
   proofwriter) data_name=proofwriter ;;
+  fsa-deduction) data_name=fsa_deduction ;;
   *) echo "unsupported compiled domain: $domain" >&2; exit 2 ;;
 esac
 
