@@ -971,3 +971,37 @@ use a cheap subset while replay/bounds still read the full corpus; and
   wanted, but the shipped corpus is faithful to the source recipe.
 - Prompts are long: ~182 sentences mean ID, ~360 in the 41-50 band, so
   cells need MAX_CHUNKS >= 224 (ID) / >= 416 (longest band).
+
+## 2026-08-13 (cont. 3): FSA-deduction domain ported (replaces ProofWriter as logic domain)
+
+- Source located: alex:/home/hpc/c107fa/c107fa12/synthetic-RLVL (NOT ~/RLVL,
+  which is an LLM-distillation pipeline). Generator: synthetic_dataset.py
+  LogicDatasetGenerator, family hard_fsa_schema; single length knob `depth`
+  (deduction layers); their bands are defined RELATIVE to the training max
+  (band_train step<=train_max, band_ood >, band_hard_tail >=15) — reused.
+  Paired natural-language and FOL renderings exist; we ported the NL form.
+  Read-only w.r.t. the source repo; re-implemented rather than copied.
+- Port (commit 5e3be12): src/textjepa/data/fsa_deduction.py emits a ground
+  Datalog theory reusing ProofWriter's Fact/ProofRule types, so action
+  phrasing, outcomes and the EXECUTOR are shared — no new evaluator.
+  Counterfactuals carry teacher_rollout_actions (verified
+  horizon_ranking_active=true), the field ProofWriter omits.
+  configs/data/fsa_deduction.yaml + cell-script cases + 7 tests.
+- Corpus data/intent_phrase/fsa_deduction (579 MB, MANIFEST): train 2000 /
+  val 300 / test_id 200 at depth 15-26 (mean 40 inference steps), OOD
+  bands 27-32 (57.8 steps), 33-40 (72.6), 41-50 (89.8), 200 each.
+  108k transitions, 325k counterfactuals, disjoint seed spaces + content
+  dedupe. Validation: expert-in-non-oracle-catalogue 1.0, exact replay
+  1.0, goal success 1.0, deterministic regeneration byte-identical.
+- TWO HONEST CAVEATS: (1) the feasible menu is DEGENERATE by construction
+  (exactly one rule applicable per step, from the source recipe), so
+  feasible_menu is trivially 100% here and the meaningful interface is the
+  full non-oracle catalogue; a --side-facts-per-step knob can widen it if
+  we want menu comparability with iGSM. (2) prompts are long (166
+  sentences ID, 365 at depth 41-50) -> MAX_CHUNKS 224 (ID) to 416 (tail),
+  i.e. expensive.
+- NOT LAUNCHED: iGSM finishes first per the master plan.
+- Grünau dispatcher live on the iGSM-hard round (scripts/gruenau_dispatcher.sh):
+  claims PENDING cells onto genuinely idle GPUs (low mem AND low util).
+  Sentence-LM cells needed model.max_chunk_len=96 (faithful sentences
+  exceed the 48 default) — fixed and requeued.
