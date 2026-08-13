@@ -1117,3 +1117,14 @@ menu-free interfaces, with random/first-feasible reference lines on every
 band; feasible_menu is kept only as a saturated reference column. This
 vindicates the "measure all interfaces" policy — a feasible-menu-only
 headline would have been an artifact.
+- OOD round v1 rows (feasible_menu, for the record only — see the
+  degeneracy note above): sentence LM s4 .695 ID -> .835 OOD; token LM
+  .735 ID; GoalHead .655 ID -> .800 OOD with random at .605/.810. The
+  apparent "OOD is easier" holds for every row, confirming it is the
+  protocol, not a model property.
+- full_catalogue cells FAILED first attempt: the planner guard refuses
+  lookahead>1 without allow_oracle_future_actions (correct — symbolic
+  future menus at D>1 are candidate-privileged per the contract).
+  Rewritten to measure BOTH per band: lookahead=1 with the flag OFF
+  (fully oracle-free) and lookahead=16 with it ON (labeled
+  candidate-privileged), so the paper can report the honest pair.
