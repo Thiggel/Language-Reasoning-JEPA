@@ -1163,3 +1163,31 @@ accepts a flag and ignores it. Consequences:
 - The load-bearing measurement for this domain is therefore still MISSING.
   Priority: implement it, since feasible_menu is degenerate here (LDAD
   .635-.640 vs random .605; OOD .820 vs .810).
+
+## 2026-08-13 (cont. 7): full_catalogue IMPLEMENTED for faithful iGSM (5e7a5b7)
+
+- FaithfulPlanner now takes `candidate_interface` + `invalid_action_mode`.
+  `full_catalogue` scores the problem's WHOLE action catalogue (all of
+  `FaithfulProblem.action_order`, no feasibility filter, resolved variables
+  included — same shape as `range(len(problem.vars))` in the stylized
+  planner); infeasible picks execute as no-ops via `step_or_invalid` and are
+  counted in `invalid_action_rate`. Deeper lookahead is allowed WITHOUT the
+  oracle flag on this interface (catalogue expansions consult no reference
+  env); the oracle guard now applies to `feasible_menu` only. Unknown
+  interfaces RAISE in both plan.py and the planner.
+  `evaluate_faithful_planning` also emits `first_feasible_policy`, and both
+  reference policies now run on the SAME interface as the planner.
+  `feasible_menu` is bit-identical to the pre-fix code (verified against
+  commit 3ddac49 and pinned as golden values in
+  tests/test_faithful_candidate_interface.py, 8 tests).
+- SMOKE (hard-ldad-lr3e4-s0-v1/best.pt, 30 val episodes, depth 1, slack 4):
+  | interface | planner | random | first-cand | planner invalid |
+  |---|---|---|---|---|
+  | feasible_menu  | .567 | .467 | .533 | .000 |
+  | full_catalogue | **.000** | .067 | .000 | **.936** |
+  So the interface is now real and highly discriminative — and our
+  feasible-menu-trained checkpoint FAILS it: it proposes an infeasible
+  action 94% of the time, worse than uniform random over the same catalogue
+  (71%), and never solves an episode. Menu-trained Energy has learned no
+  feasibility signal on faithful iGSM. Every earlier faithful
+  "full_catalogue" row must be relabelled feasible_menu.

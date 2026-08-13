@@ -29,7 +29,7 @@
   },
   "domain": "fsa-deduction",
   "generator": "src/textjepa/data/fsa_deduction.py",
-  "git_sha": "182f09730bd561b9ee44a6cf82fd304a7eb330d3",
+  "git_sha": "6ca530ae2d2c59aeda160a98aa40a71d959801a6",
   "identity_check": "sha256 over initial facts, ground rules and target; all splits disjoint by construction and verified",
   "name": "fsa_deduction",
   "provenance": {
