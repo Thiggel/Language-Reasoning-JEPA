@@ -438,3 +438,16 @@ def test_jsonl_corpus_reader_keeps_one_document_per_record(tmp_path):
         path, input_format="jsonl", text_field="text", limit=2
     )
     assert len(limited) == 2
+
+
+def test_fineweb_scale_round_reruns_its_own_control_and_scales_the_batch():
+    text = (ROOT / "scripts/launch_gruenau_predictive_state_fineweb_scale.sh").read_text()
+    # Changing corpus invalidates every earlier number, so the control must be
+    # re-measured here rather than borrowed from the WikiText rounds.
+    assert "qwen05-fwe-ntp-only-s0-v1" in text
+    assert "variants=(ntp_only full full)" in text
+    assert 'run_predictive_state_stage1_screen.sh $(printf %q "$variant")' in text
+    # Global batch 65,536 tokens: microbatch 8 x accumulation 8 x 1024.
+    assert "PREDICTIVE_STATE_ACCUMULATION=8" in text
+    assert "fineweb_edu_qwen_ctx1024.pt" in text
+    assert "refusing busy GPU" in text
