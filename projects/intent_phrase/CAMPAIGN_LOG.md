@@ -1191,3 +1191,24 @@ accepts a flag and ignores it. Consequences:
   (71%), and never solves an episode. Menu-trained Energy has learned no
   feasibility signal on faithful iGSM. Every earlier faithful
   "full_catalogue" row must be relabelled feasible_menu.
+- FOLLOW-UP: attempted-action MASKING added (`mask_attempted`, default true).
+  Under invalid=noop an invalid pick leaves the state unchanged, so a
+  deterministic argmin re-proposes it forever; masking the policy's OWN
+  attempted actions (self-knowledge, same as `executed` in search.py /
+  codebook.py) removes that artifact. Applied identically to the planner and
+  to both reference policies. Unmasked stays measurable as an ablation.
+  Re-run (same 30 episodes, depth 1, slack 4, seed 321):
+
+  | interface | planner succ / inval | random | first-cand |
+  |---|---|---|---|
+  | feasible_menu           | .567 / .000 | .467 / .000 | .533 / .000 |
+  | full_catalogue unmasked | .000 / .936 | .067 / .710 | .000 / .966 |
+  | full_catalogue masked   | .033 / .674 | .033 / .626 | .033 / .642 |
+
+  So the lock-in explained most of the .936 invalid rate, but the CONCLUSION
+  HOLDS: with masking our planner is at random on both success (.033 = .033)
+  and slightly WORSE on invalid rate (.674 vs .626), i.e. menu-trained Energy
+  carries no usable feasibility signal on faithful iGSM. Caveat for the
+  report: the budget (necessary+4 ~ 9.8 steps) is smaller than the catalogue
+  (~15 actions), so even a perfect-recall random walk cannot finish; the
+  honest comparison is planner-vs-random within band, not absolute success.

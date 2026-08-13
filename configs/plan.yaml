@@ -103,6 +103,12 @@ prior_top_k: 0   # 0 = keep all
 prior_top_p: 1.0
 prior_feasibility_gate: false
 invalid_action_mode: noop  # noop | failure
+# Menu-free interfaces only (faithful iGSM full_catalogue): exclude the
+# policy's OWN already-attempted actions from later candidate sets. This is
+# self-knowledge, not an oracle, and it is what prevents the invalid=noop
+# lock-in loop (an unchanged state re-selects the same infeasible action).
+# Set false for the labeled unmasked ablation.
+mask_attempted: true
 # oracle_goal encodes the solved trajectory and scores representation distance.
 # symbolic_distance reads exact remaining steps from the environment and also
 # requires simulator=symbolic. Both are explicitly oracle diagnostics.

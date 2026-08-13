@@ -144,6 +144,84 @@ def test_full_catalogue_allows_deep_lookahead_without_oracle(model, vocab):
         _planner(model, vocab, lookahead=3)
 
 
+def test_catalogue_masks_attempted_actions(dataset):
+    fp, _ = dataset.problem(0)
+    env = FaithfulEnv(fp)
+    full = faithful_catalogue(env)
+    tried = {full[0], full[1]}
+    masked = faithful_catalogue(env, frozenset(tried))
+    assert set(masked) == set(full) - tried
+    assert len(masked) == len(full) - 2
+
+
+def test_planner_never_repeats_an_attempted_action(model, vocab, dataset):
+    """Masked full_catalogue must not re-propose a known-dead action."""
+    fp, _ = dataset.problem(0)
+    planner = _planner(
+        model, vocab, candidate_interface="full_catalogue",
+        mask_attempted=True,
+    )
+    seen = []
+    original = planner._sequences
+
+    def spy(env, rng, attempted=frozenset(), _o=original):
+        seqs = _o(env, rng, attempted)
+        roots = {s[0] for s in seqs if s[0] is not None}
+        seen.append((set(attempted), roots))
+        return seqs
+
+    planner._sequences = spy
+    try:
+        result = planner.plan_episode(fp, slack=6, seed=2)
+    finally:
+        planner._sequences = original
+    assert len(seen) >= 2
+    for step, (attempted, roots) in enumerate(seen):
+        # the mask grows by exactly one per executed step, and never leaks
+        # back into the offered candidates
+        assert len(attempted) == step
+        assert not (attempted & roots)
+    # every step consumed one call; a final extra call happens only when the
+    # mask exhausted the catalogue and the episode stalled
+    assert result.steps in (len(seen), len(seen) - 1)
+    if result.steps == len(seen) - 1:
+        assert not seen[-1][1]
+
+
+def test_unmasked_locks_in_and_masked_does_not(model, vocab, dataset):
+    """The lock-in ablation is real and masking removes it."""
+    unmasked = evaluate_faithful_planning(
+        _planner(model, vocab, candidate_interface="full_catalogue",
+                 mask_attempted=False),
+        dataset, 4, slack=4, seed=0,
+    )
+    masked = evaluate_faithful_planning(
+        _planner(model, vocab, candidate_interface="full_catalogue",
+                 mask_attempted=True),
+        dataset, 4, slack=4, seed=0,
+    )
+    assert masked != unmasked
+    # the deterministic first-candidate control is the cleanest signal:
+    # unmasked it re-picks catalogue[0] forever, masked it walks the list.
+    assert (
+        masked["first_feasible_policy"]["invalid_action_rate"]
+        < unmasked["first_feasible_policy"]["invalid_action_rate"]
+    )
+
+
+def test_masking_is_inert_under_feasible_menu(model, vocab, dataset):
+    """The environment already filters resolved actions from the menu."""
+    on = evaluate_faithful_planning(
+        _planner(model, vocab, mask_attempted=True), dataset, 4,
+        slack=2, seed=1,
+    )
+    off = evaluate_faithful_planning(
+        _planner(model, vocab, mask_attempted=False), dataset, 4,
+        slack=2, seed=1,
+    )
+    assert on == off
+
+
 def test_catalogue_sequences_are_oracle_free(model, vocab, dataset):
     planner = _planner(
         model, vocab, candidate_interface="full_catalogue", lookahead=2,

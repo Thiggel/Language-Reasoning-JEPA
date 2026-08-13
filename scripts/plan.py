@@ -143,6 +143,7 @@ def main(cfg: DictConfig) -> None:
                 allow_oracle_future_actions=cfg.allow_oracle_future_actions,
                 candidate_interface=interface,
                 invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
+                mask_attempted=cfg.get("mask_attempted", True),
             )
             results = evaluate_faithful_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,

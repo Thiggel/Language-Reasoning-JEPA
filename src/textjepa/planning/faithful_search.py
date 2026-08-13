@@ -25,14 +25,16 @@ from textjepa.planning.search import EpisodeResult
 CANDIDATE_INTERFACES = ("feasible_menu", "full_catalogue")
 
 
-def faithful_catalogue(env: FaithfulEnv) -> list:
+def faithful_catalogue(env: FaithfulEnv, attempted=frozenset()) -> list:
     """Every action of the problem, with no feasibility filtering.
 
     Mirrors ``range(len(problem.vars))`` in the stylized planner: the whole
     variable catalogue, including already-resolved variables, in the
-    problem's stable shuffled order (``FaithfulProblem.action_order``).
+    problem's stable shuffled order (``FaithfulProblem.action_order``),
+    minus ``attempted`` -- the policy's OWN already-tried actions, which is
+    self-knowledge rather than an oracle signal.
     """
-    return list(env.fp.action_order)
+    return [q for q in env.fp.action_order if q not in attempted]
 
 
 class FaithfulPlanner:
@@ -40,7 +42,8 @@ class FaithfulPlanner:
                  lookahead: int = 1, max_expand: int = 64,
                  allow_oracle_future_actions: bool = False,
                  candidate_interface: str = "feasible_menu",
-                 invalid_action_mode: str = "noop"):
+                 invalid_action_mode: str = "noop",
+                 mask_attempted: bool = True):
         if candidate_interface not in CANDIDATE_INTERFACES:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface!r}; "
@@ -69,6 +72,16 @@ class FaithfulPlanner:
         self.allow_oracle_future_actions = allow_oracle_future_actions
         self.candidate_interface = candidate_interface
         self.invalid_action_mode = invalid_action_mode
+        # Self-knowledge, not an oracle: the planner remembers which actions
+        # it already ATTEMPTED (executed or echoed back invalid) and stops
+        # re-proposing them.  Without this, invalid=noop leaves the state
+        # unchanged and a deterministic argmin re-selects the same infeasible
+        # action forever -- the "no-op proposal loop" the stylized menu-free
+        # interfaces already mask against (search.py / codebook.py
+        # ``executed``).  Kept as a flag so the unmasked lock-in stays
+        # measurable as an ablation.  No effect under feasible_menu, where the
+        # environment already removes resolved actions from the menu.
+        self.mask_attempted = bool(mask_attempted)
 
     def _tokens(self, texts: list[str]) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -91,11 +104,12 @@ class FaithfulPlanner:
         return self.model.encode_states(pt, pm, st, sm)[1][:, -1]
 
     def _sequences(
-        self, env: FaithfulEnv, rng: random.Random
+        self, env: FaithfulEnv, rng: random.Random,
+        attempted: frozenset = frozenset(),
     ) -> list[list]:
         """Balanced fixed-depth rollouts with absorbing terminal padding."""
         if self.candidate_interface == "full_catalogue":
-            return self._catalogue_sequences(env, rng)
+            return self._catalogue_sequences(env, rng, attempted)
         roots = list(env.feasible_actions())
         rng.shuffle(roots)
         if not roots:
@@ -126,15 +140,18 @@ class FaithfulPlanner:
         return sequences
 
     def _catalogue_sequences(
-        self, env: FaithfulEnv, rng: random.Random
+        self, env: FaithfulEnv, rng: random.Random,
+        attempted: frozenset = frozenset(),
     ) -> list[list]:
         """Oracle-free rollouts over the problem's whole action catalogue.
 
         No feasibility information is consulted anywhere: roots are every
-        action of the problem and deeper slots are sampled from the same
-        catalogue, so lookahead > 1 needs no reference environment.
+        action of the problem the planner has not already ATTEMPTED (its own
+        history, when ``mask_attempted``), and deeper slots are sampled from
+        the same pool, so lookahead > 1 needs no reference environment.
         """
-        roots = faithful_catalogue(env)
+        roots = faithful_catalogue(env, attempted if self.mask_attempted
+                                   else frozenset())
         rng.shuffle(roots)
         if not roots:
             return [[None] * self.lookahead]
@@ -145,10 +162,14 @@ class FaithfulPlanner:
         sequences = []
         for root_index, root in enumerate(roots):
             for _ in range(quotient + int(root_index < remainder)):
-                sequences.append(
-                    [root]
-                    + [rng.choice(roots) for _ in range(self.lookahead - 1)]
-                )
+                sequence = [root]
+                for _step in range(1, self.lookahead):
+                    # Never repeat an action inside one imagined rollout
+                    # either: under noop semantics a repeat is a guaranteed
+                    # dead slot.
+                    pool = [a for a in roots if a not in sequence]
+                    sequence.append(rng.choice(pool) if pool else None)
+                sequences.append(sequence)
         rng.shuffle(sequences)
         return sequences
 
@@ -161,12 +182,18 @@ class FaithfulPlanner:
         budget = len(fp.necessary) + slack
         n_distr = 0
         n_invalid = 0
+        attempted: set = set()
         s0 = self._state(pt, pm, [])
         while not env.solved and len(step_texts) < budget:
             s = self._state(pt, pm, step_texts) if step_texts else s0
             seqs = self._sequences(
-                env, random.Random(f"{seed}:{len(step_texts)}:candidates")
+                env, random.Random(f"{seed}:{len(step_texts)}:candidates"),
+                frozenset(attempted),
             )
+            if seqs and seqs[0][0] is None:
+                # Masking exhausted the catalogue: the episode stalls (counted
+                # unsolved) rather than re-proposing a known-dead action.
+                break
             n = len(seqs)
             depth = max(len(q) for q in seqs)
             cur = s.expand(n, -1).clone()
@@ -197,6 +224,7 @@ class FaithfulPlanner:
             best = seqs[int(total.argmin().item())]
             q = best[0]
             n_distr += int(q not in fp.necessary)
+            attempted.add(q)
             if self.candidate_interface == "full_catalogue":
                 # invalid = noop: the executor returns the invalid-outcome
                 # sentence, the symbolic state is unchanged, and the attempt
@@ -228,6 +256,9 @@ def evaluate_faithful_planning(
     and ``success_by_slack[str(slack)]`` equals ``success``.
     """
     interface = getattr(planner, "candidate_interface", "feasible_menu")
+    # Reference lines must run under EXACTLY the planner's rules, including
+    # the attempted-action mask; otherwise the comparison flatters us.
+    mask = bool(getattr(planner, "mask_attempted", True))
     rng = random.Random(seed)
     planned, rand_, first_ = [], [], []
     for i in range(n_episodes):
@@ -238,10 +269,16 @@ def evaluate_faithful_planning(
         # Reference policies see exactly the same candidate interface.
         env = FaithfulEnv(fp)
         steps = n_d = n_inv = 0
+        attempted: set = set()
         while not env.solved and steps < budget:
             if interface == "full_catalogue":
-                candidates = faithful_catalogue(env)
+                candidates = faithful_catalogue(
+                    env, frozenset(attempted) if mask else frozenset()
+                )
+                if not candidates:
+                    break
                 q = rng.choice(candidates)
+                attempted.add(q)
                 n_inv += int(q not in env.feasible_actions())
                 env.step_or_invalid(q)
             else:
@@ -256,14 +293,19 @@ def evaluate_faithful_planning(
 
         env = FaithfulEnv(fp)
         steps = n_d = n_inv = 0
+        attempted = set()
         while not env.solved and steps < budget:
             candidates = (
-                faithful_catalogue(env) if interface == "full_catalogue"
+                faithful_catalogue(
+                    env, frozenset(attempted) if mask else frozenset()
+                )
+                if interface == "full_catalogue"
                 else env.feasible_actions()
             )
             if not candidates:
                 break
             q = candidates[0]
+            attempted.add(q)
             n_d += int(q not in fp.necessary)
             if interface == "full_catalogue":
                 n_inv += int(q not in env.feasible_actions())
