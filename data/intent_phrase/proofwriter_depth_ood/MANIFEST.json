@@ -1,0 +1,12 @@
+{
+ "name": "proofwriter_depth_ood",
+ "derived_from": "data/intent_phrase/proofwriter (ProofWriter OWA, own splits)",
+ "design": "train/val restricted to source_depth<=3; test = source_depth==5 only (depth generalization). test_id = depth<=3 held-out for the in-distribution contrast.",
+ "rationale": "the full mixed-depth benchmark saturates (LM baselines .61-.65 strict, .94-.97 at slack 4), so it cannot separate methods; depth-5 generalization is the harder, discriminative setting.",
+ "counts": {
+  "train": 16711,
+  "val": 1500,
+  "test": 500,
+  "test_id": 1500
+ }
+}
