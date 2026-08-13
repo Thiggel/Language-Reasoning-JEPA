@@ -853,3 +853,11 @@ use a cheap subset while replay/bounds still read the full corpus; and
   wide-slack ID evals launched on CPU (tok/sent long checkpoints).
 - Rec-row LM smokes passed on Alex; all rec seeds COMPLETED (sync+record
   next sweep).
+- Long-trace WIDTH ladder submitted to Alex (2026-08-13-intent-long-width-v1):
+  jepa-ldad-long at d_model 512 and 768, seed 0, same long-trace data —
+  direct test of whether length extrapolation is capacity-bound (current
+  mains are 8.6M params / width 256; LM baselines 7.2-7.4M, matched).
+  Jobs 3998549/3998550.
+- Wide-slack LM comparison landing: sentence LM reaches .26 at slack 16 on
+  the ID band vs JEPA .72 (first-feasible .26, random .13) — the headline
+  separation, on the curve metric.
