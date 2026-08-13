@@ -15,6 +15,7 @@ import torch
 from textjepa.data.predictive_state import load_token_blocks, sha256_path
 from textjepa.models.action_transition import (
     ResidualCapture,
+    backbone_parameters,
     lora_parameters,
     trainable_state_dict,
 )
@@ -161,7 +162,9 @@ def main() -> None:
         "lr": args.predictor_learning_rate,
         "weight_decay": 0.1,
     }]
-    lora = list(lora_parameters(model))
+    # A full_upper Stage 1 checkpoint has no LoRA modules, so a LoRA-only
+    # lookup would silently freeze the backbone for the whole curriculum.
+    lora = list(lora_parameters(model)) or list(backbone_parameters(model))
     if lora:
         groups.append({
             "params": lora, "lr": args.lora_learning_rate,

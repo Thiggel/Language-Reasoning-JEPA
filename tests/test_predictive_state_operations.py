@@ -451,3 +451,30 @@ def test_fineweb_scale_round_reruns_its_own_control_and_scales_the_batch():
     assert "PREDICTIVE_STATE_ACCUMULATION=8" in text
     assert "fineweb_edu_qwen_ctx1024.pt" in text
     assert "refusing busy GPU" in text
+
+
+def test_rollout_trainer_adapts_a_full_upper_backbone():
+    # Stage 2 must not silently freeze the backbone when Stage 1 used direct
+    # finetuning instead of an adapter.
+    text = (ROOT / "scripts/train_action_transition_rollout.py").read_text()
+    assert "backbone_parameters" in text
+    assert "lora_parameters(model)) or list(backbone_parameters(model))" in text
+
+
+def test_stage2_curriculum_chains_checkpoints_and_gates_replay():
+    text = (ROOT / "scripts/run_predictive_state_stage2_curriculum.sh").read_text()
+    # Each horizon must resume from the previous one, or it is five restarts.
+    assert 'checkpoint="$stage_dir/last.pt"' in text
+    assert "--on-policy-fraction" in text
+    # Replay only from horizon 16, matching the trainer's own guard.
+    assert 'PREDICTIVE_STATE_REPLAY_FRACTIONS:-0.0 0.0 0.0 0.25 0.25' in text
+    # The gate is measured past the longest trained horizon.
+    assert "--horizon 128 --horizon 256" in text
+
+
+def test_stage2_launcher_carries_a_stage1_checkpoint_and_the_gpu_gate():
+    text = (ROOT / "scripts/launch_gruenau_predictive_state_stage2.sh").read_text()
+    assert "PREDICTIVE_STATE_STAGE1_CHECKPOINT" in text
+    assert "missing Stage 1 checkpoint" in text
+    assert "refusing busy GPU" in text
+    assert "wait_and_run_predictive_state_cells.sh" in text
