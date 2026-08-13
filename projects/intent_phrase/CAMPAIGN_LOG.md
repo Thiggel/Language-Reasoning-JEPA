@@ -1212,3 +1212,29 @@ accepts a flag and ignores it. Consequences:
   report: the budget (necessary+4 ~ 9.8 steps) is smaller than the catalogue
   (~15 actions), so even a perfect-recall random walk cannot finish; the
   honest comparison is planner-vs-random within band, not absolute success.
+- MASKING FIX (adb19cd) + 3-way smoke on hard-ldad-lr3e4-s0 (30 eps, d1,
+  slack 4). Attempted-action masking applied to planner AND both reference
+  policies identically:
+
+  | interface | planner succ/inv | random succ/inv | first-cand succ/inv |
+  |---|---|---|---|
+  | feasible_menu       | .567/.000 | .467/.000 | .533/.000 |
+  | full_catalogue raw  | .000/.936 | .067/.710 | .000/.966 |
+  | full_catalogue mask | .033/.674 | .033/.626 | .033/.642 |
+
+  Lock-in was real and masking removes it (deterministic control .966 ->
+  .642 invalid — the cleanest evidence, since it can ONLY lock in). But
+  the conclusion survives: masked, the planner equals random on success
+  (.033) and is slightly WORSE on invalid rate (.674 vs .626). Menu-trained
+  Energy carries no usable feasibility signal on faithful iGSM. This is a
+  model finding, not a harness artifact.
+- BUDGET CAVEAT for any full_catalogue row: budget (necessary + 4 ~ 9.8)
+  is smaller than the catalogue (~15), so even perfect-recall random cannot
+  finish; absolute success is budget-limited. Honest comparison is
+  planner-vs-random within band; for a non-degenerate absolute number the
+  full_catalogue rows need slack extended past catalogue size.
+- CONSEQUENCE: on faithful iGSM the model has feasibility knowledge only
+  where the menu supplies it. The stylized answer to this was ldad_cycle
+  (recover feasibility from the trained dynamics, AUC .94). ldad_cycle is
+  NOT implemented on the faithful path either — that is the next build
+  item, and it is the real test of whether the mechanism transfers.
