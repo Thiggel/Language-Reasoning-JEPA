@@ -1354,3 +1354,16 @@ remain the menu-free interfaces (#28, #29).
 - REPORTING DECISION (with owner, this session): main results = menu-free
   (full_catalogue budget curves + codebook_ground/ldad_cycle/autonomous vs
   free LM generation); feasible_menu demoted to labeled appendix control.
+
+## 2026-08-14 (cont. 3): budget-curve instrument VERIFIED on full_catalogue
+
+At budget 5x necessary (slack_frac 4.0, 100 eps, hard-ldad-lr3e4 ckpt):
+ID nec8-15: planner .530 (inv .793), random .700 (inv .700), first-cand .510.
+OOD nec20-28: planner .140 (inv .882), random .480 (inv .796), first-cand .100.
+Correct ordering restored (OOD harder for everyone), success mid-range,
+policies separated. Instrument for the paper: success vs attempt budget in
+multiples of necessary. Planner sits BELOW random on both bands — the
+menu-trained Energy prefers infeasible actions it never had to reject; this
+is precisely the headroom the ldad_cycle port (#28) must fill (stylized
+feasibility AUC .94). Narrative: menu-trained energy fails menu-free ->
+cycle-consistency recovers feasibility -> autonomous operation.
