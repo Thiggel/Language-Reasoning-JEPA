@@ -233,7 +233,6 @@ class FaithfulPlanner:
             best = seqs[int(total.argmin().item())]
             q = best[0]
             n_distr += int(q not in fp.necessary)
-            attempted.add(q)
             if self.candidate_interface == "full_catalogue":
                 # invalid = noop: the executor returns the invalid-outcome
                 # sentence, the symbolic state is unchanged, and the attempt
@@ -241,10 +240,20 @@ class FaithfulPlanner:
                 invalid = q not in env.feasible_actions()
                 n_invalid += int(invalid)
                 step_texts.append(env.step_or_invalid(q))
-                if invalid and self.invalid_action_mode == "failure":
-                    break
+                if invalid:
+                    # Mask only WHILE the state is unchanged: an action that
+                    # is infeasible now may become feasible after progress
+                    # (its dependencies resolve).  A permanent mask made any
+                    # necessary action tried too early unrecoverable and
+                    # drove full_catalogue success to 0 for EVERY policy.
+                    attempted.add(q)
+                    if self.invalid_action_mode == "failure":
+                        break
+                else:
+                    attempted = {a for a in env.resolved}
             else:
                 step_texts.append(env.step(q))
+                attempted = {a for a in env.resolved}
         return EpisodeResult(
             env.solved, len(step_texts), len(fp.necessary), n_distr,
             n_invalid,
@@ -289,9 +298,10 @@ def evaluate_faithful_planning(
                 if not candidates:
                     break
                 q = rng.choice(candidates)
-                attempted.add(q)
-                n_inv += int(q not in env.feasible_actions())
+                invalid = q not in env.feasible_actions()
+                n_inv += int(invalid)
                 env.step_or_invalid(q)
+                attempted = attempted | {q} if invalid else set(env.resolved)
             else:
                 q = rng.choice(env.feasible_actions())
                 env.step(q)
@@ -316,11 +326,13 @@ def evaluate_faithful_planning(
             if not candidates:
                 break
             q = candidates[0]
-            attempted.add(q)
             n_d += int(q not in fp.necessary)
             if interface == "full_catalogue":
-                n_inv += int(q not in env.feasible_actions())
+                invalid = q not in env.feasible_actions()
+                n_inv += int(invalid)
                 env.step_or_invalid(q)
+                attempted = (attempted | {q} if invalid
+                             else set(env.resolved))
             else:
                 env.step(q)
             steps += 1

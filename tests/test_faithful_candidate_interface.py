@@ -177,9 +177,10 @@ def test_planner_never_repeats_an_attempted_action(model, vocab, dataset):
         planner._sequences = original
     assert len(seen) >= 2
     for step, (attempted, roots) in enumerate(seen):
-        # the mask grows by exactly one per executed step, and never leaks
-        # back into the offered candidates
-        assert len(attempted) == step
+        # the mask never leaks back into the offered candidates; it holds
+        # only actions dead in the CURRENT state (resolved, or invalid since
+        # the last progress), so it can shrink after a feasible step
+        assert len(attempted) <= step
         assert not (attempted & roots)
     # every step consumed one call; a final extra call happens only when the
     # mask exhausted the catalogue and the episode stalled
@@ -207,6 +208,22 @@ def test_unmasked_locks_in_and_masked_does_not(model, vocab, dataset):
         masked["first_feasible_policy"]["invalid_action_rate"]
         < unmasked["first_feasible_policy"]["invalid_action_rate"]
     )
+
+
+def test_masked_catalogue_episodes_stay_solvable(model, vocab, dataset):
+    """An action invalid when tried must be re-proposable after progress.
+
+    The first masking implementation removed attempted actions permanently,
+    so any necessary action tried before its dependencies resolved became
+    unrecoverable and full_catalogue success was 0 for EVERY policy.  With
+    the mask scoped to the current state, a random walk with a generous
+    budget must solve some episodes again."""
+    res = evaluate_faithful_planning(
+        _planner(model, vocab, candidate_interface="full_catalogue",
+                 mask_attempted=True),
+        dataset, 4, slack=60, seed=0,
+    )
+    assert res["random_policy"]["success"] > 0
 
 
 def test_masking_is_inert_under_feasible_menu(model, vocab, dataset):
