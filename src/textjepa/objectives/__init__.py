@@ -24,6 +24,8 @@ from textjepa.objectives.delta_action import (
     ActionGeneration,
     DeltaAction,
     ObservedActionLDAD,
+    ObservedActionLDADCFContrast,
+    ObservedActionLDADPredictorCycle,
 )
 from textjepa.objectives.value import (
     ActionDecode, ActionKL, GoalAdvantageDistill, ValueDistill, ValueRegression,

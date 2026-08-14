@@ -57,6 +57,13 @@ action_token_dim: 8          # per-token width before fixed-order concatenation
 variational_actions: false
 observed_action_ldad: false
 observed_action_ldad_horizon: 1
+# Train the LDAD decoder on the predictor's IMAGINED displacement
+# predictor(s_t, u_t) - s_t (the eval-time ldad_cycle input); gradients flow
+# into the predictor. Requires observed_action_ldad.
+observed_action_ldad_predictor_cycle: false
+# Rank the observed action's LDAD cycle score above each counterfactual
+# ranking candidate's (logistic pairwise). Requires observed_action_ldad.
+observed_action_ldad_cf_contrast: false
 ldad_decoder_layers: 2
 action_generator: false     # state-conditioned intent-phrase generator head
 action_generator_layers: 2  # autoregressive decoder depth for that head

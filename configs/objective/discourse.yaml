@@ -71,6 +71,17 @@ delta_action:
 observed_action_ldad:
   _target_: textjepa.objectives.ObservedActionLDAD
   weight: 0.0
+observed_action_ldad_pred_cycle:
+  # Decode the observed phrase from the predictor's imagined displacement.
+  # Inert unless model.observed_action_ldad_predictor_cycle=true.
+  _target_: textjepa.objectives.ObservedActionLDADPredictorCycle
+  weight: 0.0
+observed_action_ldad_cf_contrast:
+  # Observed cycle score beats each counterfactual candidate's (logistic).
+  # Inert unless model.observed_action_ldad_cf_contrast=true and the batch
+  # carries ranking counterfactuals.
+  _target_: textjepa.objectives.ObservedActionLDADCFContrast
+  weight: 0.0
 action_generator:
   # Open-ended intent-phrase proposal head. Inert unless the model is built
   # with model.action_generator=true (the loss is then exactly zero), so the

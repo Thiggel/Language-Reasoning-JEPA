@@ -131,6 +131,8 @@ class DiscourseJEPA(nn.Module):
         variational_actions: bool = False,
         observed_action_ldad: bool = False,
         observed_action_ldad_horizon: int = 1,
+        observed_action_ldad_predictor_cycle: bool = False,
+        observed_action_ldad_cf_contrast: bool = False,
         ldad_decoder_layers: int = 2,
         action_generator: bool = False,
         action_generator_layers: int = 2,
@@ -271,6 +273,26 @@ class DiscourseJEPA(nn.Module):
             if self.observed_action_ldad_horizon == 1
             else {"horizon": self.observed_action_ldad_horizon}
         )
+        self.observed_action_ldad_predictor_cycle = bool(
+            observed_action_ldad_predictor_cycle
+        )
+        self.observed_action_ldad_cf_contrast = bool(
+            observed_action_ldad_cf_contrast
+        )
+        if (
+            self.observed_action_ldad_predictor_cycle
+            or self.observed_action_ldad_cf_contrast
+        ):
+            if not observed_action_ldad:
+                raise ValueError(
+                    "LDAD predictor-cycle/counterfactual-contrast terms "
+                    "require model.observed_action_ldad=true"
+                )
+            if self.observed_action_ldad_horizon != 1:
+                raise ValueError(
+                    "LDAD predictor-cycle/counterfactual-contrast terms "
+                    "require a one-step LDAD decoder"
+                )
         self.observed_action_decoder = (
             decoder_cls(
                 d_model, vocab_size, max_chunk_len,
@@ -645,6 +667,25 @@ class DiscourseJEPA(nn.Module):
                 out.extras["observed_action_multistep_logits"] = (
                     self.observed_action_decoder(displacement)
                 )
+            if self.observed_action_ldad_predictor_cycle:
+                # Predictor-cycle LDAD: decode the observed action's phrase
+                # from the predictor's IMAGINED displacement.  Same decoder,
+                # same targets as observed_action_ldad, but the input is the
+                # exact quantity the ldad_cycle planner scores at eval time
+                # (predictor(s_t, u_t) - s_t), and gradients deliberately
+                # flow into the predictor so imagined displacements are
+                # pulled onto the decodable manifold.
+                out.extras["observed_action_pred_cycle_logits"] = (
+                    self.observed_action_decoder(out.preds - out.prev_states)
+                )
+            if (
+                self.observed_action_ldad_cf_contrast
+                and "ga_t" in batch
+                and (batch["ga_t"] >= 0).any()
+                and "ga_alt_action_tokens" in batch
+                and batch["ga_alt_action_tokens"].shape[1] > 0
+            ):
+                self._ldad_cf_contrast(batch, out)
         if self.action_generator is not None:
             self._action_generator_supervision(batch, out)
         if "alt_preds" in out.extras and "alt_step_tokens" in batch:
@@ -1210,6 +1251,51 @@ class DiscourseJEPA(nn.Module):
             )
             prefixes.append(endpoint)
         return prefixes
+
+    def _ldad_cf_contrast(self, batch: dict, out) -> None:
+        """Emit cycle-score contrast supervision at the ranking anchor.
+
+        A candidate's cycle score is the mean token log-prob of its OWN
+        phrase under the LDAD decoder applied to the predictor's imagined
+        displacement predictor(s, u) - s (the exact eval-time ldad_cycle
+        quantity, ``planning/ldad_decode.py``).  The objective ranks the
+        observed action's score above each counterfactual candidate's —
+        self-supervised: which continuation occurred is in the data, no
+        symbolic labels.  Unlike the value-head GAR path this deliberately
+        does NOT detach: gradients flow into predictor, decoder, and
+        encoders, exactly like observed_action_ldad plus the predictor.
+        """
+        B = out.s0.shape[0]
+        device = out.s0.device
+        t = batch["ga_t"].clamp(min=0)
+        bidx = torch.arange(B, device=device)
+        valid_b = batch["ga_t"] >= 0
+        K = batch["ga_alt_action_tokens"].shape[1]
+        a_alt = self.encode_actions(batch["ga_alt_action_tokens"])
+        s_anchor = out.prev_states[bidx, t]
+        if getattr(self.core.predictor, "causal_sequence", False):
+            T = out.prev_states.shape[1]
+            preds_alt = self.core._predict_counterfactuals(
+                out.prev_states,
+                out.actions,
+                a_alt.unsqueeze(1).expand(-1, T, -1, -1),
+                out.step_mask,
+            )[bidx, t]
+        else:
+            preds_alt = self.core.predictor(
+                s_anchor.unsqueeze(1).expand(-1, K, -1).reshape(B * K, -1),
+                a_alt.reshape(B * K, -1),
+            ).reshape(B, K, -1)
+        decoder = self.observed_action_decoder
+        out.extras["ldad_cf_exec_logits"] = decoder(
+            out.preds[bidx, t] - s_anchor
+        )
+        out.extras["ldad_cf_alt_logits"] = decoder(
+            preds_alt - s_anchor.unsqueeze(1)
+        )
+        out.extras["ldad_cf_exec_targets"] = batch["action_tokens"][bidx, t]
+        out.extras["ldad_cf_alt_targets"] = batch["ga_alt_action_tokens"]
+        out.extras["ldad_cf_valid"] = batch["ga_valid"] & valid_b.unsqueeze(1)
 
     def _geo_rank(self, batch: dict, out) -> None:
         """Geometric-advantage ranking: energies for executed + K alt

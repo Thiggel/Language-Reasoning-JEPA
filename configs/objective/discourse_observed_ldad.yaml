@@ -24,3 +24,9 @@ sigreg:
 observed_action_ldad:
   _target_: textjepa.objectives.ObservedActionLDAD
   weight: 0.0
+observed_action_ldad_pred_cycle:
+  _target_: textjepa.objectives.ObservedActionLDADPredictorCycle
+  weight: 0.0
+observed_action_ldad_cf_contrast:
+  _target_: textjepa.objectives.ObservedActionLDADCFContrast
+  weight: 0.0
