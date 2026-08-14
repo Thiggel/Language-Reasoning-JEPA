@@ -18,6 +18,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 import hydra
+import math
 import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, OmegaConf
@@ -43,10 +44,6 @@ def main(cfg: DictConfig) -> None:
         raise ValueError(f"unknown candidate_interface: {candidate_interface}")
     device = torch.device(cfg.device)
     faithful = run_cfg.data.get("name", "igsm") == "igsm_real"
-    if candidate_interface == "full_catalogue" and faithful:
-        raise NotImplementedError(
-            "full_catalogue LM baseline not implemented for faithful iGSM yet"
-        )
     if faithful:
         from textjepa.data.faithful import cached_faithful_vocab
 
@@ -110,8 +107,19 @@ def main(cfg: DictConfig) -> None:
                 necessary = problem.query_ancestors
             history_texts: list[str] = []
             n_necessary = len(necessary)
-            budget = n_necessary + cfg.slack
+            # Proportional slack: same budget rule as FaithfulPlanner
+            # (budget = necessary + slack + ceil(slack_frac * necessary)).
+            # slack_frac defaults to 0, leaving historical runs unchanged.
+            budget = n_necessary + cfg.slack + math.ceil(
+                float(cfg.get("slack_frac", 0.0)) * n_necessary
+            )
             n = n_invalid = n_distr = 0
+            # Faithful full_catalogue only: the policy's OWN attempted-invalid
+            # actions, masked until progress (same state-scoped semantics as
+            # FaithfulPlanner; without it a deterministic argmin loops on a
+            # no-op forever).
+            mask_attempted = bool(cfg.get("mask_attempted", True))
+            attempted: set = set()
             while not env.solved and n < budget:
                 batch = {
                     "prompt_tokens": tokens(prompt),
@@ -131,7 +139,22 @@ def main(cfg: DictConfig) -> None:
                 )
                 ctx = states[:, len(history_texts) - 1] if history_texts else s0
                 if candidate_interface == "full_catalogue":
-                    feas = list(range(len(problem.vars)))
+                    if faithful:
+                        from textjepa.planning.faithful_search import (
+                            faithful_catalogue,
+                        )
+
+                        feas = faithful_catalogue(
+                            env,
+                            frozenset(attempted) if mask_attempted
+                            else frozenset(),
+                        )
+                        if not feas:
+                            # Mask exhausted the catalogue: stall (unsolved)
+                            # rather than re-propose a known-dead action.
+                            break
+                    else:
+                        feas = list(range(len(problem.vars)))
                 else:
                     feas = env.feasible_actions()
                 if target_kind == "intent":
@@ -166,8 +189,17 @@ def main(cfg: DictConfig) -> None:
                         else action_phrase(problem, pick)
                     )
                 if candidate_interface == "full_catalogue":
-                    n_invalid += int(pick not in env.feasible_actions())
+                    invalid = pick not in env.feasible_actions()
+                    n_invalid += int(invalid)
                     history_texts.append(env.step_or_invalid(pick))
+                    if faithful:
+                        # Mask only WHILE the state is unchanged; reset to the
+                        # resolved set on progress (an action infeasible now
+                        # may become feasible after its dependencies resolve).
+                        if invalid:
+                            attempted.add(pick)
+                        else:
+                            attempted = set(env.resolved)
                 else:
                     history_texts.append(env.step(pick))
                 n += 1

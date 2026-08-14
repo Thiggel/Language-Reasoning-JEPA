@@ -32,6 +32,22 @@ _Keep short. Compress completed stages into a few lines; details live in
   `state` file; never pkill by pattern on gruenau1 — kill by PID).
   Cells' built-in slackcurve evals are OLD feasible-menu = sanity only
   (random .98); do not pick winners from them.
+- **2026-08-14 afternoon actions (this session)**: #31 RESOLVED — wiring is
+  correct: "nohorizon" = `horizon_input=false` (horizon-BLIND Energy head);
+  `geo_horizon_rank` is the intended active ranking loss. High-LR cells'
+  early-zero ghr = degenerate ranking labels under early EMA collapse
+  (lr3e3 state_effrank 17.6->5.0), self-explanatory, not a bug. LAUNCHED:
+  (a) `2026-08-14-igsm-hard-matched-caps-v1` — LDAD retrains with TRAINING
+  caps matched to the frozen ID eval band (data.max_op=32 max_edge=40
+  op_range=[3,32]), lr {3e-4,1e-4}, GPT2-small shape, gruenau10 GPU0/2;
+  (b) `2026-08-14-fullcat-fixedbands-v1` — #29+#30 re-measured: fixed bands
+  (ID nec8-15 caps 32/40/[3,32]; OOD nec20-28 caps 48/64/[3,48]) x
+  slack_frac {0,.5,1,2,4} (= budgets {1,1.5,2,3,5}x necessary), 200 eps,
+  full_catalogue masked, for hard-{ldad,tdjepa,goalhead}-lr3e4 on
+  gruenau1 GPU0/1 + gruenau2 GPU1, snapshot f054fcc. Two code agents
+  running: #28 port (ldad_cycle+codebook_ground -> FaithfulPlanner) and
+  LM full_catalogue-on-faithful port (plan_lm/plan_sentlm). Evals for both
+  to launch on the fixed bands as soon as the ports land.
 - **Next (critical path)**: #28 port `ldad_cycle`+`codebook_ground` to
   `FaithfulPlanner` and eval on the fixed bands vs the .700/.480 random
   reference; #29 re-run 12 void fullcat OOD rows from post-8acd62c snapshot;
@@ -1403,3 +1419,23 @@ menu-trained Energy prefers infeasible actions it never had to reject; this
 is precisely the headroom the ldad_cycle port (#28) must fill (stylized
 feasibility AUC .94). Narrative: menu-trained energy fails menu-free ->
 cycle-consistency recovers feasibility -> autonomous operation.
+
+## 2026-08-14: menu-free LM baseline rows unlocked on faithful iGSM
+
+`scripts/plan_lm.py` and `scripts/plan_sentlm.py` now support
+`candidate_interface=full_catalogue` on faithful iGSM (previously
+NotImplementedError): candidates = the problem's whole action catalogue
+(`faithful_catalogue`), greedy one-step LM policy, invalid picks executed via
+`step_or_invalid` and counted in `invalid_action_rate`, with the SAME
+state-scoped attempted mask as FaithfulPlanner (mask attempted-invalid
+actions until progress, reset on progress; `mask_attempted=false` = labeled
+unmasked ablation). Both scripts also honor the frozen-protocol knobs
+(`eval_necessary_range`, `eval_max_op`, `eval_max_edge`, `eval_op_range`,
+`slack_frac`; budget = necessary + slack + ceil(slack_frac x necessary)).
+Metrics aggregate through `aggregate_episodes` (same JSON shape as
+scripts/plan.py). Tests: `tests/test_lm_full_catalogue_faithful.py`
+(end-to-end tiny checkpoints, mask ablation differs, stylized path
+unchanged). CPU smoke @ n_episodes=4, ID band, slack_frac=0.5 against the
+hard-v1 LR-screen checkpoints: tok-lm success .25 / invalid .73, sent-lm
+success .00 / invalid .87 — consistent with the "no feasibility signal
+menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
