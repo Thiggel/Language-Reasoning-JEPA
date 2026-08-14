@@ -9,9 +9,10 @@ and not listed here has not been handed off.
 
 | Started | Round / cell | Where | What it decides |
 |---|---|---|---|
-| 2026-08-14 | `2026-08-14-qwen-stage3a-oracle-geometry-v1` state collection + oracle geometry probe | gruenau11:2 | whether terminal-state distance is monotone along correct GSM8K solutions, against four controls |
+| — | nothing running | — | — |
 
-Nothing else is running. Completed rounds move to `EXPERIMENT_INDEX.md` and
+Nothing is running. `2026-08-14-qwen-stage3a-oracle-geometry-v1` completed on
+2026-08-14; its result is in `STATUS.md` and the dated report. Completed rounds move to `EXPERIMENT_INDEX.md` and
 their numbers to `STATUS.md` or a dated report.
 
 ## Where the project stands
@@ -24,27 +25,30 @@ against the protocol's 60M. Stage 3A has 4,800 verified GSM8K trajectories and
 is being measured now. Numbers are in `STATUS.md`; the full account is in
 `research/reports/predictive_state/2026-08-14-stage1-closed-stage2-started/`.
 
-## Direction-changing outcomes for 3A
+## 3A outcome: the second pre-registered branch
 
-- Distance to an oracle terminal falls monotonically along correct solutions and
-  separates correct from incorrect at matched prefixes, and the four controls
-  (another correct trajectory for the same problem, a different problem with the
-  same answer, a random terminal, the same relative position elsewhere) do not:
-  the geometry exists and a learned energy head is worth building.
-- Monotonicity holds but the controls also score well: the signal is position or
-  length, not goal direction. Report as a negative and do not build on it.
-- Monotonicity fails on a model that solves only 29.6% of problems: rerun on a
-  stronger checkpoint before concluding anything about the geometry itself.
+Monotonicity held and the controls scored almost as well, which was the
+pre-registered "report as a negative and do not build on it" branch. A random
+terminal from another problem reaches Spearman 0.7257 against the true goal's
+0.7663, and matched-prefix correct-versus-incorrect ranking is at or below
+chance for every metric.
+
+Before treating this as settled about the geometry rather than about this
+model, the open question is whether it survives a checkpoint that solves more
+than 29.6% of problems. That is the one branch not yet excluded.
 
 ## Next, in priority order
 
-1. Stage 2 at the protocol's full 60M-token budget, so the current negative is
+1. Repeat 3A on a stronger reasoning checkpoint. The geometry negative is
+   currently confounded with a model that solves 29.6% of problems and yields
+   only 40 matched-depth candidate pairs.
+2. Stage 2 at the protocol's full 60M-token budget, so the current negative is
    not attributable to my sizing.
-2. Speculative-verification evaluation. Top-20 agreement near 0.90 with top-1
+3. Speculative-verification evaluation. Top-20 agreement near 0.90 with top-1
    near 0.52 is exactly the drafting profile, verification makes it lossless,
    and it needs no training. Probably the strongest available Stage 2 claim.
-3. Rewrite Stage 3B before implementing it. See the normative conflict below.
-4. Owed controls: frozen backbone at matched tokens, persistence baseline, and
+4. Rewrite Stage 3B before implementing it. See the normative conflict below.
+5. Owed controls: frozen backbone at matched tokens, persistence baseline, and
    a long `ntp_weight = 0` cell.
 
 ## Normative conflict blocking Stage 3B

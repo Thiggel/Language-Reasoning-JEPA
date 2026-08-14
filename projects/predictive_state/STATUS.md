@@ -37,11 +37,22 @@ does not settle the question.
 Jump drafting with exact speculative verification is the untested operating
 point that the top-20 figure points at, and is lossless by construction.
 
-## Stage 3 — 3A in progress
+## Stage 3A — complete, negative
 
 4,800 verified GSM8K trajectories from stock Qwen2.5-0.5B-Instruct, 29.6%
-accuracy. 70% of problems yield at least one correct and one incorrect
-trajectory; 28% yield no correct one and admit no oracle goal.
+accuracy, 251 trajectories with an oracle terminal.
+
+The oracle goal geometry is generic progress, not goal direction. A learned
+Mahalanobis metric reaches progress Spearman 0.7663 toward the true goal but
+0.7257 toward a *random* terminal from another problem, so goal specificity is
+0.041. Raw cosine is the same shape smaller: 0.2571 against 0.1929. A
+mid-trajectory state at the same relative position scores only 0.2759, so it is
+terminal-ness the metric tracks rather than position.
+
+It cannot rank correct above incorrect. Matched-prefix accuracy is 0.375, 0.375,
+0.450, 0.425 and 0.300 against 0.5 chance, worst for the learned metric. That is
+the quantity planning needs. Reported as a negative and not built on, with the
+caveat of a 0.5B model at 29.6% accuracy and only 40 matched-depth pairs.
 
 ## Architectural facts that outlived Stage 1
 

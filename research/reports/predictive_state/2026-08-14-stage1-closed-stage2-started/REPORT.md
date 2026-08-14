@@ -124,15 +124,50 @@ lossless by construction, so the excess-NLL gate does not apply at all, and a
 probably the defensible form of the Stage 2 claim and it needs no further
 training to evaluate.
 
-## Stage 3A: started
+## Stage 3A: the oracle geometry is generic progress, not goal direction
 
-4,800 GSM8K trajectories from stock Qwen2.5-0.5B-Instruct (revision `7ae5576`),
-16 samples over 300 problems, 29.6% verified accuracy. 70% of problems yield at
-least one correct and one incorrect trajectory; 31% reach the design's target of
-four and four; 28% have no correct trajectory and so admit no oracle goal.
-Correctness comes from exact numeric agreement with the dataset gold answer and
-is recorded as candidate-privileged. State collection and the oracle geometry
-probe are running.
+`2026-08-14-qwen-stage3a-oracle-geometry-v1`. 4,800 verified GSM8K trajectories
+from stock Qwen2.5-0.5B-Instruct, 29.6% accuracy, 251 trajectories with an
+oracle terminal. Distance from each boundary state to the state immediately
+after a correct final answer, against the four mandated controls.
+
+| metric | true goal | another correct, same problem | random terminal | same position, other trajectory | correct-vs-incorrect |
+|---|---:|---:|---:|---:|---:|
+| cosine | 0.2571 | 0.2291 | 0.1929 | 0.0308 | 0.375 |
+| euclidean | 0.2573 | 0.2294 | 0.1929 | 0.0308 | 0.375 |
+| whitened euclidean | 0.1214 | 0.0787 | 0.0156 | −0.1149 | 0.450 |
+| 128-dim PCA | 0.2725 | 0.2527 | 0.2117 | 0.0454 | 0.425 |
+| learned Mahalanobis | 0.7663 | 0.7494 | 0.7257 | 0.2759 | 0.300 |
+
+Two findings, both negative for the planning story.
+
+Goal specificity is almost absent. The learned metric reaches progress Spearman
+0.7663 toward the true goal, which looks strong until the control: a *random*
+terminal state from another problem reaches 0.7257. The goal-specific part is
+0.041. Raw metrics are the same shape at smaller scale, 0.2571 against 0.1929.
+What the metric has learned is a direction toward the terminal region of state
+space in general, confirmed by the fourth control: a mid-trajectory state at the
+same relative position scores only 0.2759, so it is terminal-ness that matters,
+not position alone and not the problem's own answer.
+
+The metric cannot rank correct above incorrect. Matched-prefix
+correct-versus-incorrect accuracy is 0.375, 0.375, 0.450, 0.425 and 0.300
+against a 0.5 chance level. Every metric is at or below chance, and the learned
+one is worst. Remaining-chunk R² tells the same story: 0.32 for the learned
+metric, 0.08-0.10 for the raw ones, which is the generic progress signal again.
+
+This is the pre-registered outcome in which monotonicity holds but the controls
+also score well, so it is reported as a negative and not built on. A distance
+that says "I am nearing an ending" but cannot tell a correct ending from a
+confidently wrong one is not a planning signal.
+
+Caveats: a 0.5B model at 29.6% accuracy, and only 40 matched-depth candidate
+pairs, so the ranking figures are noisy. Nothing in them points positive.
+
+Yield, for the record: 4,800 trajectories over 300 problems at 16 samples each.
+70% of problems give at least one correct and one incorrect trajectory, 31%
+reach the design's four-and-four target, and 28% give no correct trajectory and
+so admit no oracle goal at all.
 
 ## Normative conflict to resolve before Stage 3B
 
