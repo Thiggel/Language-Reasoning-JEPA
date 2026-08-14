@@ -1321,3 +1321,36 @@ protocol + their band placement makes the environment a near-oracle. The
 menu setting needs max_op/max_edge well above the op band (more distractors)
 plus proportional slack (#30) to discriminate at all; the load-bearing rows
 remain the menu-free interfaces (#28, #29).
+
+## 2026-08-14 (cont. 2): waterproofed protocol built end-to-end; instrument understood
+
+- PROTOCOL FIXES (e2ca466): `necessary_range` banding (solution length, not
+  n_op) + `slack_frac` proportional ruler; bands must also widen
+  eval_op_range to their caps. Fixed bands: ID nec 8-15 @ caps 32/40,
+  OOD nec 20-28 @ caps 48/64.
+- MASK FIX (8acd62c): the permanent attempted-mask made any necessary action
+  tried too early unrecoverable — full_catalogue success was 0.000 for EVERY
+  policy. Mask now scoped to the current state (resolved + invalid attempts
+  since last progress, reset on progress). 13 tests incl. new recoverability
+  regression.
+- SMOKE (hard-ldad-lr3e4 ckpt, 100 eps/cell, gruenau2):
+  * feasible_menu, slack_frac 0.5: planner .71/.87 (ID/OOD), random .62/.86,
+    first-cand .70/.87; frac 0.25: .56/.67 vs random .55/.64. OOD inverts
+    AGAIN and provably unfixably: menu waste is bounded by the distractor
+    count (unrepeatable picks), which the proportional cushion exceeds on
+    long problems. Feasible menu = appendix-only near-oracle control.
+  * full_catalogue, corrected mask, slack_frac 0.5: SUCCESS 0.000 for all
+    three policies (planner invalid .820/.891, random .761/.834, first-cand
+    .813/.893). Understood: every attempt consumes budget, and blind search
+    needs ~ necessary x (catalogue/menu) ~ 5x necessary attempts; budget 1.5x
+    cannot suffice. The instrument is therefore success-vs-ATTEMPT-BUDGET
+    (multiples of necessary); a policy with feasibility knowledge approaches
+    1x, blind search needs ~5x. Generous-budget variant (frac 4.0) launched
+    to verify random>0.
+  * MODEL FINDING confirmed on the fixed protocol: planner invalid rate is
+    WORSE than random (.82 vs .76 ID; .89 vs .83 OOD) — menu-trained Energy
+    still carries no feasibility signal; ldad_cycle port (#28) is the
+    critical path.
+- REPORTING DECISION (with owner, this session): main results = menu-free
+  (full_catalogue budget curves + codebook_ground/ldad_cycle/autonomous vs
+  free LM generation); feasible_menu demoted to labeled appendix control.
