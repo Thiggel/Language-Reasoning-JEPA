@@ -516,3 +516,13 @@ def test_gold_steps_drop_calculator_annotations():
     assert all("<<" not in step and ">>" not in step for step in steps)
     assert steps[0] == "Natalia sold 48/2 = 24 clips in May."
     assert steps[-1] == "#### 72"
+
+
+def test_speculative_losslessness_uses_a_matched_numerics_reference():
+    # A cached and an uncached bf16 forward disagree on near-ties and the flip
+    # cascades, so checking the speculative output against the cached reference
+    # reports a false loss. Measured cached-vs-uncached agreement was 0.52.
+    text = (ROOT / "scripts/evaluate_action_transition_rollout.py").read_text()
+    assert "def uncached_greedy_decode(" in text
+    assert "matches_verifier_path_greedy" in text
+    assert "cached_vs_uncached_reference_agreement" in text

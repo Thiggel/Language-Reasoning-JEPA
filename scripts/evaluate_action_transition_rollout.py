@@ -165,6 +165,19 @@ def jump_greedy_decode(
 
 
 @torch.no_grad()
+def uncached_greedy_decode(model, prompt: torch.Tensor, actions: int) -> torch.Tensor:
+    """Greedy decoding without a cache, matching the verifier's numerics."""
+    sequence, generated = prompt, []
+    for _ in range(actions):
+        token = model(
+            sequence, use_cache=False, return_dict=True
+        ).logits[:, -1].argmax(-1)
+        generated.append(token)
+        sequence = torch.cat([sequence, token[:, None]], dim=1)
+    return torch.stack(generated, dim=1)
+
+
+@torch.no_grad()
 def speculative_greedy_decode(
     model, predictor, capture, prompt: torch.Tensor, actions: int,
     *, draft_length: int = 8,
@@ -260,9 +273,20 @@ def autonomous_evaluation(
         model, predictor, capture, prompts[0], actions,
         draft_length=draft_length,
     )
-    exact = exact_by_prompt[0]
+    # The verifier runs without a cache, and in bf16 a cached and an uncached
+    # forward disagree on near-ties; one flip then cascades autoregressively.
+    # Losslessness must therefore be checked against a reference computed the
+    # same way as the verifier, not against the cached reference.
+    exact = uncached_greedy_decode(model, prompts[0], actions)
+    cached_reference = exact_by_prompt[0]
     accepted = statistics.get("acceptance_rate", 0.0)
-    entry = {**statistics, "matches_full_greedy": bool((speculative == exact).all())}
+    entry = {
+        **statistics,
+        "matches_verifier_path_greedy": bool((speculative == exact).all()),
+        "cached_vs_uncached_reference_agreement": float(
+            (cached_reference == exact).float().mean()
+        ),
+    }
     # Speculation is lossless, so the only question is whether it pays. One
     # round drafts `draft_length` tokens and verifies them in a single parallel
     # pass; expected accepted tokens is the truncated geometric mean.
