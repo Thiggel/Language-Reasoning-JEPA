@@ -1304,3 +1304,20 @@ the LM baselines. The load-bearing rows are the menu-free ones, and the two
 blockers are now (a) re-run full_catalogue from a post-fix snapshot,
 (b) implement `ldad_cycle` on the faithful planner (task #28), plus
 (c) a proportional slack ruler and (d) a longer ID band.
+
+## 2026-08-14 (cont.): random-at-.81 mechanism PINNED (fresh generator probe + sim)
+
+Band structure (official generator, 20 problems/band): ID op3-21 —
+catalogue 14.1, necessary 6.8 (49%), menu 3.75 (41% necessary). OOD op28-32 —
+catalogue 21.6, necessary 16.1 (75%), menu 3.71 (64% necessary). A distractor
+pick wastes exactly one step and never repeats (defined params leave the
+menu), so random-menu failure = P(> slack wasted picks). Independent sim of
+random-on-menu at slack 4 (60 problems/band): ID .633 (mean wasted 3.20),
+OOD .800 (wasted 2.18) — reproduces the recorded .605/.81 within noise.
+So OOD > ID for EVERYONE because op_range=[28,32] butts against max_op=32:
+near the cap almost every parameter is an ancestor of the query, leaving ~5
+distractors total against a fixed slack of 4. Not a code bug; the menu
+protocol + their band placement makes the environment a near-oracle. The
+menu setting needs max_op/max_edge well above the op band (more distractors)
+plus proportional slack (#30) to discriminate at all; the load-bearing rows
+remain the menu-free interfaces (#28, #29).
