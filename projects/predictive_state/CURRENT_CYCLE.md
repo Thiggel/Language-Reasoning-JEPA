@@ -12,8 +12,8 @@ and not listed here has not been handed off.
 | — | nothing running | — | — |
 
 Nothing is running. `2026-08-14-qwen-stage3a-oracle-geometry-v1` completed on
-2026-08-14; its result is in `STATUS.md` and the dated report. Completed rounds move to `EXPERIMENT_INDEX.md` and
-their numbers to `STATUS.md` or a dated report.
+2026-08-14. Completed rounds move to `EXPERIMENT_INDEX.md`, and their numbers
+to `STATUS.md` or a dated report.
 
 ## Where the project stands
 
@@ -21,8 +21,9 @@ Stage 1 is closed as a small, nearly free, real effect that does not meet its
 gate, on fifteen token-matched cells. Stage 2's efficiency half passes
 untrained (1.86x throughput, cache growth halved) while its fidelity half fails
 by roughly 4x, and the first curriculum was under-budgeted at about 7M tokens
-against the protocol's 60M. Stage 3A has 4,800 verified GSM8K trajectories and
-is being measured now. Numbers are in `STATUS.md`; the full account is in
+against the protocol's 60M. Stage 3A is complete and negative: the oracle goal
+geometry is generic progress rather than goal direction, and it cannot rank
+correct above incorrect. Numbers are in `STATUS.md`; the full account is in
 `research/reports/predictive_state/2026-08-14-stage1-closed-stage2-started/`.
 
 ## 3A outcome: the second pre-registered branch
