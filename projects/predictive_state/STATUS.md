@@ -54,6 +54,58 @@ It cannot rank correct above incorrect. Matched-prefix accuracy is 0.375, 0.375,
 the quantity planning needs. Reported as a negative and not built on, with the
 caveat of a 0.5B model at 29.6% accuracy and only 40 matched-depth pairs.
 
+## Continuous generation: refresh is flat in N
+
+`2026-08-14-qwen-stage2-refresh-sweep-v1`, 256 actions over 8 prompts, block
+refresh materializing only the new block. Agreement with full greedy, and
+modelled speedup from measured per-step costs, on the Stage 2 checkpoint:
+
+| setting | agreement | first divergence | speedup |
+|---|---:|---:|---:|
+| jump only | 0.153 | 7.9 | 1.86x |
+| refresh 128 | 0.153 | 7.9 | 1.85x |
+| refresh 32 | 0.151 | 7.9 | 1.81x |
+| refresh 8 | 0.156 | 9.1 | 1.68x |
+| refresh 4 | 0.164 | 9.5 | 1.53x |
+| refresh 2 | 0.219 | 20.2 | 1.30x |
+
+Refreshing more often barely helps until N reaches 2, where the speedup has
+already fallen to 1.30x. This is the predicted signature of a per-step fidelity
+limit rather than accumulated drift: state error was already flat to horizon
+256, so there was little drift for a refresh to correct. The Stage 2 curriculum
+did help autonomous generation, doubling agreement from 0.062 to 0.153 and
+first divergence from 5.2 to 7.9 tokens.
+
+Speculative decoding at draft length 2 reaches acceptance 0.957 and a modelled
+1.38x, which is lossless. Its equality check needed fixing: a cached and an
+uncached bf16 forward of the same model agree only 0.52 with each other, so the
+verifier's uncached path must be compared against an uncached reference.
+
+## Energy head: transfers to correctness, does not beat likelihood
+
+`2026-08-14-qwen-energy-head-v1`. Trained only to rank the continuation the
+dataset records above sampled alternatives, with no verifier and no step
+counter: held-out ranking accuracy 0.815 against a likelihood baseline of 0.395,
+so it is not re-deriving likelihood on its own task.
+
+Transferred to 3,200 externally verified trajectories, with the verifier used
+for evaluation only:
+
+| | correctness AUC | matched-problem accuracy |
+|---|---:|---:|
+| energy head | 0.673 | 0.613 |
+| LM likelihood | **0.726** | **0.635** |
+
+An energy trained with no correctness signal does predict correctness well above
+chance, which is the encouraging half. It does not clear the charter's gate,
+which requires adding information beyond LM likelihood, and likelihood beats it
+on both measures. The likely cause is provenance leakage: the negatives are
+model samples and the positives are dataset gold, so the head can separate them
+on style, and gold style correlates with correctness only indirectly. The fix
+that keeps the objective self-supervised is to draw negatives from the same
+distribution as the positives, for example gold steps from other problems, so
+only contextual relevance differs.
+
 ## Architectural facts that outlived Stage 1
 
 - The transition is close to linear: 0.1335 for a full-rank linear predictor
