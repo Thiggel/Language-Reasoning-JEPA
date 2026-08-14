@@ -478,3 +478,23 @@ def test_stage2_launcher_carries_a_stage1_checkpoint_and_the_gpu_gate():
     assert "missing Stage 1 checkpoint" in text
     assert "refusing busy GPU" in text
     assert "wait_and_run_predictive_state_cells.sh" in text
+
+
+def test_block_refresh_materializes_only_the_new_block():
+    # Re-prefilling the whole prefix on every refresh is O(prefix) and would
+    # erase the speedup the operating point exists to provide.
+    text = (ROOT / "scripts/evaluate_action_transition_rollout.py").read_text()
+    assert "crop_cache(cache, start)" in text
+    assert "full_tokens[:, -block:]" in text
+    assert "past_key_values=cache" in text
+    # Positions must continue from the cache, not restart at zero.
+    assert "torch.arange(\n                start, full_tokens.shape[1]" in text
+
+
+def test_autonomous_sweep_is_not_capped_by_the_benchmark_length():
+    # refresh_32 and refresh_64 never fired while the sweep was capped at 32
+    # actions, so every interval reported the jump-only number.
+    text = (ROOT / "scripts/evaluate_action_transition_rollout.py").read_text()
+    assert "--autonomous-actions" in text and "--refresh-interval" in text
+    assert "args.autonomous_actions" in text
+    assert "modelled_speedup_vs_full" in text

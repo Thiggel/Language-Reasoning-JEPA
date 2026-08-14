@@ -164,14 +164,23 @@ def teacher_forward(
     attention_mask: torch.Tensor | None = None,
     position_ids: torch.Tensor | None = None,
     use_cache: bool = False,
+    past_key_values: Any | None = None,
 ) -> TeacherOutput:
+    """Run the full stack, optionally continuing an existing cache.
+
+    Passing a cache lets a caller materialize one block of tokens at O(block)
+    instead of re-prefilling the whole prefix. The caller is responsible for
+    cropping the cache to the block's start first.
+    """
     capture.clear()
+    extra = {} if past_key_values is None else {"past_key_values": past_key_values}
     output = model(
         input_ids=input_ids,
         attention_mask=attention_mask,
         position_ids=position_ids,
         use_cache=use_cache,
         return_dict=True,
+        **extra,
     )
     if not capture.values:
         raise RuntimeError("decoder hooks did not capture residual states")

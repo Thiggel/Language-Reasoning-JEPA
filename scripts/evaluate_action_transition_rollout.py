@@ -15,6 +15,7 @@ from textjepa.data.predictive_state import load_token_blocks
 from textjepa.models.action_transition import ResidualCapture
 from textjepa.training.predictive_state import (
     UpperStackRunner,
+    crop_cache,
     load_stage1_checkpoint,
     load_stage2_checkpoint,
     recurrent_rollout_loss,
@@ -32,6 +33,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batches", type=int, default=8)
     parser.add_argument("--microbatch-size", type=int, default=1)
     parser.add_argument("--benchmark-actions", type=int, default=32)
+    parser.add_argument("--autonomous-actions", type=int, default=256)
+    parser.add_argument("--autonomous-batches", type=int, default=8)
+    parser.add_argument("--refresh-interval", type=int, action="append")
+    parser.add_argument("--draft-length", type=int, default=8)
     parser.add_argument("--perturbation-scale", type=float, default=1e-3)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
@@ -113,6 +118,7 @@ def jump_greedy_decode(
     logits = exact.logits[:, -1]
     generated = []
     full_tokens = prompt
+    refreshed_blocks = [0]
     for offset in range(actions):
         token = logits.argmax(-1)
         generated.append(token)
@@ -122,9 +128,22 @@ def jump_greedy_decode(
             and (offset + 1) % refresh_interval == 0
             and offset + 1 < actions
         ):
+            # Materialize only the block generated since the last refresh. The
+            # lower stack never ran for those tokens, so its cache has no
+            # entries for them, and the upper cache holds entries built from
+            # predicted states. Cropping both back by the block length and
+            # running the full model over just that block in one parallel pass
+            # replaces them, at O(block) rather than O(prefix).
+            block = min(refresh_interval, full_tokens.shape[1] - 1)
+            start = full_tokens.shape[1] - block
+            crop_cache(cache, start)
+            positions = torch.arange(
+                start, full_tokens.shape[1], device=full_tokens.device
+            )[None].expand(full_tokens.shape[0], -1)
             exact = teacher_forward(
-                model, full_tokens, capture=capture,
-                attention_mask=None, use_cache=True,
+                model, full_tokens[:, -block:], capture=capture,
+                attention_mask=None, position_ids=positions, use_cache=True,
+                past_key_values=cache,
             )
             cache = exact.past_key_values
             sources = {
@@ -132,6 +151,7 @@ def jump_greedy_decode(
                 for layer in predictor.config.used_source_layers
             }
             logits = exact.logits[:, -1]
+            refreshed_blocks[0] += 1
             continue
         predicted = transition_prediction(
             predictor, model, sources, token[:, None]
@@ -141,7 +161,7 @@ def jump_greedy_decode(
             position_index=full_tokens.shape[1] - 1,
         )
         logits = next_logits[:, -1]
-    return torch.stack(generated, dim=1)
+    return torch.stack(generated, dim=1), refreshed_blocks[0]
 
 
 @torch.no_grad()
@@ -155,7 +175,7 @@ def speculative_greedy_decode(
     while committed.shape[1] - prompt.shape[1] < actions:
         remaining = actions - (committed.shape[1] - prompt.shape[1])
         length = min(draft_length, remaining)
-        draft = jump_greedy_decode(
+        draft, _ = jump_greedy_decode(
             model, predictor, capture, committed, length
         )
         drafted += length
@@ -189,29 +209,76 @@ def speculative_greedy_decode(
 
 @torch.no_grad()
 def autonomous_evaluation(
-    model, predictor, capture, prompt: torch.Tensor, actions: int
+    model, predictor, capture, prompts, actions: int,
+    *, refresh_intervals, draft_length: int, step_costs: dict,
 ) -> dict:
-    exact = full_greedy_decode(model, prompt, actions)
-    result = {}
-    for label, refresh in [
-        ("jump_only", None), ("refresh_16", 16),
-        ("refresh_32", 32), ("refresh_64", 64),
-    ]:
-        generated = jump_greedy_decode(
-            model, predictor, capture, prompt, actions,
-            refresh_interval=refresh,
-        )
-        result[label] = {
-            "token_agreement_with_full_greedy": float((generated == exact).float().mean()),
-            "sequence_agreement_with_full_greedy": bool((generated == exact).all()),
+    """Sweep how far the jump path may run before the block is materialized.
+
+    Each interval N generates N tokens through the upper stack alone, then
+    materializes that block in one parallel full-stack pass. N = 1 is ordinary
+    decoding and N = None never materializes. Agreement is measured against
+    full greedy decoding on the same prompt, averaged over prompts.
+    """
+    full_cost = step_costs.get("full_seconds_per_token")
+    jump_cost = step_costs.get("jump_seconds_per_token")
+    result = {"actions": actions, "prompts": len(prompts)}
+    labels = [("jump_only", None)] + [(f"refresh_{n}", n) for n in refresh_intervals]
+
+    exact_by_prompt = [full_greedy_decode(model, prompt, actions) for prompt in prompts]
+    for label, refresh in labels:
+        agreements, first_divergence, blocks = [], [], []
+        for prompt, exact in zip(prompts, exact_by_prompt):
+            generated, refreshed = jump_greedy_decode(
+                model, predictor, capture, prompt, actions,
+                refresh_interval=refresh,
+            )
+            match = (generated == exact)
+            agreements.append(float(match.float().mean()))
+            mismatch = (~match[0]).nonzero()
+            first_divergence.append(
+                int(mismatch[0]) if len(mismatch) else actions
+            )
+            blocks.append(refreshed)
+        entry = {
+            "token_agreement_with_full_greedy": sum(agreements) / len(agreements),
+            "mean_first_divergence": sum(first_divergence) / len(first_divergence),
+            "materializations": sum(blocks) / len(blocks),
         }
+        # Cost per generated token: N-1 jump steps plus one materialized block
+        # per N tokens. The block is one parallel pass, so it is charged as a
+        # single full step rather than N of them.
+        if full_cost and jump_cost:
+            if refresh is None:
+                per_token = jump_cost
+            else:
+                per_token = ((refresh - 1) * jump_cost + full_cost) / refresh
+            entry["modelled_seconds_per_token"] = per_token
+            entry["modelled_speedup_vs_full"] = full_cost / per_token
+        result[label] = entry
+
     speculative, statistics = speculative_greedy_decode(
-        model, predictor, capture, prompt, actions
+        model, predictor, capture, prompts[0], actions,
+        draft_length=draft_length,
     )
-    result["speculative_exact_verification"] = {
-        **statistics,
-        "matches_full_greedy": bool((speculative == exact).all()),
-    }
+    exact = exact_by_prompt[0]
+    accepted = statistics.get("acceptance_rate", 0.0)
+    entry = {**statistics, "matches_full_greedy": bool((speculative == exact).all())}
+    # Speculation is lossless, so the only question is whether it pays. One
+    # round drafts `draft_length` tokens and verifies them in a single parallel
+    # pass; expected accepted tokens is the truncated geometric mean.
+    if full_cost and jump_cost and 0.0 <= accepted < 1.0:
+        expected = (1.0 - accepted ** (draft_length + 1)) / (1.0 - accepted)
+        round_cost = draft_length * jump_cost + full_cost
+        entry["expected_tokens_per_round"] = expected
+        entry["modelled_seconds_per_token"] = round_cost / max(expected, 1e-9)
+        entry["modelled_speedup_vs_full"] = (
+            full_cost / (round_cost / max(expected, 1e-9))
+        )
+        entry["breakeven_acceptance_note"] = (
+            "pays only when expected_tokens_per_round exceeds "
+            "draft_length * jump/full + 1"
+        )
+    result["speculative_exact_verification"] = entry
     return result
 
 
@@ -365,17 +432,26 @@ def main() -> None:
                   args.benchmark_actions, args.device)
         if first_tokens is not None else {"skipped": "no_valid_batch"}
     )
-    segment = longest_document_segment(dataset[0]).to(args.device)[None]
-    autonomous_actions = min(
-        args.benchmark_actions, max(0, segment.shape[1] - 2)
-    )
+    refresh_intervals = sorted(set(args.refresh_interval or [2, 4, 8, 16, 32, 64, 128]))
+    prompts, autonomous_actions = [], 0
+    for row in range(min(args.autonomous_batches, len(dataset))):
+        segment = longest_document_segment(dataset[row]).to(args.device)[None]
+        usable = min(args.autonomous_actions, max(0, segment.shape[1] - 2))
+        if usable < max(refresh_intervals, default=1):
+            continue
+        autonomous_actions = usable if not prompts else min(autonomous_actions, usable)
+        prompts.append(segment[:, :segment.shape[1] - usable])
+    step_costs = {
+        "full_seconds_per_token": timing.get("full_seconds", 0.0) / max(args.benchmark_actions, 1),
+        "jump_seconds_per_token": timing.get("jump_seconds", 0.0) / max(args.benchmark_actions, 1),
+    } if isinstance(timing, dict) else {}
     autonomous = (
         autonomous_evaluation(
-            model, predictor, capture,
-            segment[:, :segment.shape[1] - autonomous_actions],
-            autonomous_actions,
+            model, predictor, capture, prompts, autonomous_actions,
+            refresh_intervals=refresh_intervals,
+            draft_length=args.draft_length, step_costs=step_costs,
         )
-        if autonomous_actions else {"skipped": "document_segment_too_short"}
+        if prompts else {"skipped": "no_segment_long_enough"}
     )
     report = {
         "schema_version": 1,
