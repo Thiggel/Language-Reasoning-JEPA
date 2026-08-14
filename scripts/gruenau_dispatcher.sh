@@ -65,10 +65,27 @@ while :; do
       grep -lq PENDING "$ROUND"/*/state 2>/dev/null || break 2
       cell=$(claim_next) || break 2
       [ -n "$cell" ] || break 2
-      if ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-           "cd / && CUDA_VISIBLE_DEVICES=$gpu DEVICE=cuda:0 \
-            nohup bash '$cell/job.sh' >/dev/null 2>&1 & echo ok" >/dev/null 2>&1
-      then
+      # -n plus redirecting EVERY remote fd is required: if the backgrounded
+      # job keeps the channel's stdout/stderr open, ssh never exits and the
+      # dispatcher blocks here forever (observed 2026-08-14: one wedged ssh
+      # starved nine PENDING cells while four cards sat free).  `timeout` is
+      # the belt for the case a remote fd still leaks.
+      # ssh's exit code is NOT a reliable launch signal here: the remote
+      # backgrounded job can hold the channel open so ssh is killed by
+      # `timeout` (exit 124) even though the job started fine.  Acting on that
+      # exit code released a claim on a RUNNING cell and risked a double
+      # launch.  So: fire and forget, then ask the cell itself — job.sh writes
+      # RUNNING as its first action, which is ground truth.
+      timeout 60 ssh -n -o BatchMode=yes -o ConnectTimeout=10 "$host" \
+        "cd / && CUDA_VISIBLE_DEVICES=$gpu DEVICE=cuda:0 \
+         setsid nohup bash '$cell/job.sh' </dev/null >/dev/null 2>&1 &
+         echo ok" </dev/null >/dev/null 2>&1
+      started=0
+      for _ in $(seq 18); do
+        [ "$(cat "$cell/state" 2>/dev/null)" = RUNNING ] && { started=1; break; }
+        sleep 5
+      done
+      if [ "$started" -eq 1 ]; then
         log "launched $(basename "$cell") on $host:gpu$gpu"
         launched_this_round=$((launched_this_round + 1))
         sleep "$SETTLE"
