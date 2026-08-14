@@ -2,7 +2,43 @@
 
 _Keep short. Compress completed stages into a few lines; details live in
 `research/reports/intent_phrase/<date>-*/REPORT.md` and are mirrored to
-`/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-12._
+`/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-14._
+
+## CURRENT STATE (2026-08-14) — read this first
+
+- **Recipe (frozen)**: `mix4_aux025_nohorizon` + LDAD
+  (`model.observed_action_ldad=true objective.observed_action_ldad.weight=1.0`),
+  EMA+stopgrad+VICReg, endpoint-Energy ranking, GPT2-small budget 157M, bs 8.
+- **Eval protocol (frozen 2026-08-14, snapshot 8acd62c)**: band problems on
+  SOLUTION LENGTH via `necessary_range` (ID nec 8-15 @ caps
+  max_op=32/max_edge=40/op_range=[3,32]; OOD nec 20-28 @ caps 48/64/[3,48]);
+  proportional attempt budget `slack_frac` (budget = necessary + ceil(frac ×
+  necessary)); attempted-mask scoped to current state, resets on progress.
+  Paper instrument = success vs attempt budget in multiples of necessary.
+  Details: `research/reports/intent_phrase/2026-08-14-protocol-fix/REPORT.md`.
+- **Interface decision (owner, 2026-08-14)**: `feasible_menu` DEMOTED to
+  appendix control — structurally unsalvageable (menus intrinsically ~2-3
+  wide, 41-78% necessary, wasted picks unrepeatable → random ~.7-.98).
+  MAIN results = menu-free interfaces: `full_catalogue`, `codebook_ground`
+  (nearest training-catalogue action), `ldad_cycle`, `autonomous`.
+- **Headline finding so far**: menu-trained Energy has NO feasibility signal
+  menu-free — below random on full_catalogue (planner .530/.140 vs random
+  .700/.480 ID/OOD at 5× budget, invalid-proposal rate .79-.88). Narrative:
+  menu-trained energy fails menu-free → cycle-consistency (ldad_cycle,
+  stylized AUC .94) recovers feasibility → autonomous operation.
+- **Running now**: `2026-08-13-igsm-hard-base-v1` LR screen 12/18 COMPLETED,
+  6 RUNNING (tok-lm 1e3/1e4/3e3, ldad-3e3, sent-lat-1e4, tdjepa-1e4) on
+  gruenau via `scripts/gruenau_dispatcher.sh` (launch detection reads cell
+  `state` file; never pkill by pattern on gruenau1 — kill by PID).
+  Cells' built-in slackcurve evals are OLD feasible-menu = sanity only
+  (random .98); do not pick winners from them.
+- **Next (critical path)**: #28 port `ldad_cycle`+`codebook_ground` to
+  `FaithfulPlanner` and eval on the fixed bands vs the .700/.480 random
+  reference; #29 re-run 12 void fullcat OOD rows from post-8acd62c snapshot;
+  #30 pick budget multiples {1,1.5,2,3,5}×; #31 verify recipe wiring
+  (geo_rank=0 but geo_horizon_rank .554 active despite "nohorizon" name).
+  Open question: checkpoints trained on op_range [3,21] while eval bands
+  widened — retraining may be needed for mains.
 
 ## RECIPE UPDATE (2026-08-08): LDAD added to the recipe (new headline)
 
