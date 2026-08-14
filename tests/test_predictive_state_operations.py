@@ -498,3 +498,21 @@ def test_autonomous_sweep_is_not_capped_by_the_benchmark_length():
     assert "--autonomous-actions" in text and "--refresh-interval" in text
     assert "args.autonomous_actions" in text
     assert "modelled_speedup_vs_full" in text
+
+
+def test_gold_steps_drop_calculator_annotations():
+    # Gold GSM8K steps contain <<...>> annotations that model samples never
+    # produce; leaving them in lets an energy head separate observed from
+    # sampled continuations on formatting alone.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "cf_gen", ROOT / "scripts/generate_counterfactual_continuations.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    steps = module.gold_steps(
+        "Natalia sold 48/2 = <<48/2=24>>24 clips in May.\n"
+        "She sold 48+24 = <<48+24=72>>72 clips altogether.\n#### 72"
+    )
+    assert all("<<" not in step and ">>" not in step for step in steps)
+    assert steps[0] == "Natalia sold 48/2 = 24 clips in May."
+    assert steps[-1] == "#### 72"
