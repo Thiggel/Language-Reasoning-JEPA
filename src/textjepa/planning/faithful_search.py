@@ -17,13 +17,29 @@ import torch
 from textjepa.data.faithful import FaithfulDataset, FaithfulEnv
 from textjepa.data.vocab import Vocab
 from textjepa.planning.evaluate import aggregate_episodes
+from textjepa.planning.ldad_decode import (
+    delta_logits,
+    encode_phrases,
+    phrase_log_probs,
+    require_ldad_decoder,
+)
 from textjepa.planning.search import EpisodeResult
 
 
 #: Candidate interfaces this planner actually implements.  Anything else
 #: must RAISE: silently falling back to the feasible menu is the defect this
 #: module was fixed for (see CAMPAIGN_LOG 2026-08-13).
-CANDIDATE_INTERFACES = ("feasible_menu", "full_catalogue")
+CANDIDATE_INTERFACES = (
+    "feasible_menu", "full_catalogue", "ldad_cycle", "codebook_ground",
+)
+
+#: Interfaces that never see the environment's feasible menu: execution goes
+#: through ``step_or_invalid`` with invalid counting, and reference policies
+#: run over the full catalogue under the same attempted-mask.
+MENU_FREE_INTERFACES = ("full_catalogue", "ldad_cycle", "codebook_ground")
+
+#: Interfaces whose candidates are ranked by the LDAD cycle score.
+CYCLE_INTERFACES = ("ldad_cycle", "codebook_ground")
 
 
 def faithful_catalogue(env: FaithfulEnv, attempted=frozenset()) -> list:
@@ -45,7 +61,10 @@ class FaithfulPlanner:
                  candidate_interface: str = "feasible_menu",
                  invalid_action_mode: str = "noop",
                  mask_attempted: bool = True,
-                 slack_frac: float = 0.0):
+                 slack_frac: float = 0.0,
+                 prior_top_k: int = 0,
+                 codebook_k: int = 64,
+                 codebook_seed: int = 0):
         if candidate_interface not in CANDIDATE_INTERFACES:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface!r}; "
@@ -66,6 +85,15 @@ class FaithfulPlanner:
                 "environment; set allow_oracle_future_actions=true only for "
                 "a labeled oracle-action diagnostic"
             )
+        if candidate_interface in CYCLE_INTERFACES:
+            # RuntimeError (via require_ldad_decoder) if the checkpoint was
+            # not trained with model.observed_action_ldad=true: the knob is
+            # valid, the checkpoint is the wrong one.
+            require_ldad_decoder(
+                model, f"candidate_interface={candidate_interface}"
+            )
+        if int(codebook_k) < 1:
+            raise ValueError("codebook_k must be positive")
         self.model = model
         self.vocab = vocab
         self.device = device
@@ -90,6 +118,14 @@ class FaithfulPlanner:
         # every policy).  budget = necessary + slack + ceil(slack_frac *
         # necessary) keeps the cushion a constant fraction of the solution.
         self.slack_frac = float(slack_frac)
+        # Cycle interfaces: keep the prior_top_k best-scoring candidates
+        # (0 = all), mirroring the stylized planner's knob of the same name.
+        self.prior_top_k = int(prior_top_k)
+        self.codebook_k = int(codebook_k)
+        self.codebook_seed = int(codebook_seed)
+        # k-means codebook over TRAINING action embeddings; fitted once via
+        # fit_action_prior (codebook_ground only).
+        self.codebook: torch.Tensor | None = None
 
     def _tokens(self, texts: list[str]) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -116,7 +152,7 @@ class FaithfulPlanner:
         attempted: frozenset = frozenset(),
     ) -> list[list]:
         """Balanced fixed-depth rollouts with absorbing terminal padding."""
-        if self.candidate_interface == "full_catalogue":
+        if self.candidate_interface in MENU_FREE_INTERFACES:
             return self._catalogue_sequences(env, rng, attempted)
         roots = list(env.feasible_actions())
         rng.shuffle(roots)
@@ -182,6 +218,148 @@ class FaithfulPlanner:
         return sequences
 
     @torch.no_grad()
+    def fit_action_prior(self, problems: list) -> torch.Tensor:
+        """Fit the codebook on TRAINING-problem action phrases only.
+
+        Same hook name and contract as the stylized proposers
+        (``codebook.CodebookCycleProposer.fit_prior`` via
+        ``LatentPlanner.fit_action_prior``): callers must pass TRAINING
+        problems -- evaluation problems would leak their action catalogue
+        into the proposal distribution.  Checkpoints trained with
+        ``model.action_codebook_k`` carry their own codes; those take
+        precedence, exactly as in the stylized path.
+        """
+        from textjepa.planning.codebook import fit_codebook
+
+        stored = getattr(self.model, "action_codebook", None)
+        ready = getattr(self.model, "action_codebook_ready", None)
+        if stored is not None and ready is not None and bool(ready):
+            self.codebook = stored.detach().to(self.device)
+            self.codebook_k = self.codebook.shape[0]
+            return self.codebook
+        phrases = [
+            FaithfulEnv(fp).action_text(q)
+            for fp in problems for q in fp.action_order
+        ]
+        if not phrases:
+            raise ValueError("no training action phrases to fit on")
+        self.codebook = fit_codebook(
+            encode_phrases(self.model, self.vocab, self.device, phrases),
+            k=self.codebook_k, seed=self.codebook_seed,
+        )
+        return self.codebook
+
+    @torch.no_grad()
+    def _episode_catalogue(self, env: FaithfulEnv) -> tuple[list, torch.Tensor, list]:
+        """Per-episode candidate pool for the cycle interfaces.
+
+        Returns (actions, their action codes, their phrase token ids).  For
+        ``ldad_cycle`` the pool is the problem's whole catalogue
+        (``fp.action_order``); for ``codebook_ground`` each fitted code is
+        grounded to the NEAREST current-problem catalogue embedding
+        (environment-side grounding, mirroring the stylized
+        ``CodebookGroundProposer``) and the pool is the deduplicated grounded
+        subset.  No feasibility information is consulted anywhere.
+        """
+        actions = list(env.fp.action_order)
+        phrases = [env.action_text(q) for q in actions]
+        codes = encode_phrases(self.model, self.vocab, self.device, phrases)
+        if self.candidate_interface == "codebook_ground":
+            if self.codebook is None:
+                raise RuntimeError(
+                    "fit_action_prior must be called with training problems "
+                    "before codebook_ground planning (the evaluation "
+                    "problems' phrases must not be used to fit the codebook)"
+                )
+            grounded_rows = torch.cdist(self.codebook, codes).argmin(1).tolist()
+            keep: list[int] = []
+            for row in grounded_rows:
+                if row not in keep:
+                    keep.append(row)
+            actions = [actions[row] for row in keep]
+            phrases = [phrases[row] for row in keep]
+            codes = codes[torch.tensor(keep, device=codes.device)]
+        token_ids = [self.vocab.encode(text) for text in phrases]
+        return actions, codes, token_ids
+
+    @torch.no_grad()
+    def _cycle_ranked(
+        self, state: torch.Tensor, pool: list[int],
+        actions: list, codes: torch.Tensor, token_ids: list,
+    ) -> list[int]:
+        """Pool positions ranked by the shared LDAD cycle score at ``state``.
+
+        Score(a) = mean token log-prob of a's OWN phrase under the LDAD
+        displacement decoder applied to ``predictor(s, a) - s`` -- the exact
+        scoring rule of the stylized ``_cycle_candidates``
+        (``ldad_decode.delta_logits`` + ``phrase_log_probs``).  Keeps the
+        prior_top_k best (0 = all).  No oracle is consulted.
+        """
+        index = torch.tensor(pool, device=codes.device)
+        scores = phrase_log_probs(
+            delta_logits(
+                self.model, state, codes[index],
+                context=f"candidate_interface={self.candidate_interface}",
+            ),
+            [token_ids[i] for i in pool],
+        )
+        order = [
+            pool[i] for i in
+            torch.argsort(scores, descending=True, stable=True).tolist()
+        ]
+        keep = self.prior_top_k if self.prior_top_k > 0 else len(order)
+        return order[:keep]
+
+    @torch.no_grad()
+    def _cycle_sequences(
+        self, state: torch.Tensor, attempted: frozenset,
+        actions: list, codes: torch.Tensor, token_ids: list,
+    ) -> list[list]:
+        """Cycle-ranked rollouts; deeper slots never consult the environment.
+
+        Roots are the cycle-ranked (top prior_top_k) candidates at the
+        current state.  For lookahead > 1 each root is extended GREEDILY: the
+        remaining candidates are re-scored with the same cycle rule at the
+        JEPA-imagined state (predictor applied to the sequence so far), the
+        best is appended, and so on -- one sequence per root.  This is a
+        simplification of the stylized beam expansion (which re-ranks
+        cycle candidates at every beam node); it keeps the FaithfulPlanner's
+        balanced fixed-depth ``_sequences`` structure while remaining fully
+        oracle-free.  Actions already in the sequence are masked, exactly as
+        in ``_catalogue_sequences``.
+        """
+        mask = attempted if self.mask_attempted else frozenset()
+        pool = [i for i, a in enumerate(actions) if a not in mask]
+        if not pool:
+            return [[None] * self.lookahead]
+        roots = self._cycle_ranked(state, pool, actions, codes, token_ids)
+        if self.lookahead == 1:
+            return [[actions[r]] for r in roots]
+        sequences = []
+        for root in roots:
+            sequence_rows = [root]
+            imagined = self.model.predictor(
+                state.reshape(1, -1), codes[root].unsqueeze(0)
+            )
+            for _step in range(1, self.lookahead):
+                rest = [i for i in pool if i not in sequence_rows]
+                if not rest:
+                    sequence_rows.append(None)
+                    continue
+                nxt = self._cycle_ranked(
+                    imagined, rest, actions, codes, token_ids
+                )[0]
+                sequence_rows.append(nxt)
+                imagined = self.model.predictor(
+                    imagined, codes[nxt].unsqueeze(0)
+                )
+            sequences.append([
+                actions[row] if row is not None else None
+                for row in sequence_rows
+            ])
+        return sequences
+
+    @torch.no_grad()
     def plan_episode(self, fp, slack: int = 0, seed: int = 0) -> EpisodeResult:
         env = FaithfulEnv(fp)
         pt = self._tokens(fp.prompt_sentences)
@@ -193,12 +371,24 @@ class FaithfulPlanner:
         n_invalid = 0
         attempted: set = set()
         s0 = self._state(pt, pm, [])
+        cycle = self.candidate_interface in CYCLE_INTERFACES
+        if cycle:
+            # Fixed per problem: the (possibly codebook-grounded) candidate
+            # pool, its action codes and phrase tokens, computed once.
+            cat_actions, cat_codes, cat_tokens = self._episode_catalogue(env)
         while not env.solved and len(step_texts) < budget:
             s = self._state(pt, pm, step_texts) if step_texts else s0
-            seqs = self._sequences(
-                env, random.Random(f"{seed}:{len(step_texts)}:candidates"),
-                frozenset(attempted),
-            )
+            if cycle:
+                seqs = self._cycle_sequences(
+                    s, frozenset(attempted),
+                    cat_actions, cat_codes, cat_tokens,
+                )
+            else:
+                seqs = self._sequences(
+                    env,
+                    random.Random(f"{seed}:{len(step_texts)}:candidates"),
+                    frozenset(attempted),
+                )
             if seqs and seqs[0][0] is None:
                 # Masking exhausted the catalogue: the episode stalls (counted
                 # unsolved) rather than re-proposing a known-dead action.
@@ -233,7 +423,7 @@ class FaithfulPlanner:
             best = seqs[int(total.argmin().item())]
             q = best[0]
             n_distr += int(q not in fp.necessary)
-            if self.candidate_interface == "full_catalogue":
+            if self.candidate_interface in MENU_FREE_INTERFACES:
                 # invalid = noop: the executor returns the invalid-outcome
                 # sentence, the symbolic state is unchanged, and the attempt
                 # is counted in invalid_action_rate.
@@ -291,7 +481,7 @@ def evaluate_faithful_planning(
         steps = n_d = n_inv = 0
         attempted: set = set()
         while not env.solved and steps < budget:
-            if interface == "full_catalogue":
+            if interface in MENU_FREE_INTERFACES:
                 candidates = faithful_catalogue(
                     env, frozenset(attempted) if mask else frozenset()
                 )
@@ -320,14 +510,14 @@ def evaluate_faithful_planning(
                 faithful_catalogue(
                     env, frozenset(attempted) if mask else frozenset()
                 )
-                if interface == "full_catalogue"
+                if interface in MENU_FREE_INTERFACES
                 else env.feasible_actions()
             )
             if not candidates:
                 break
             q = candidates[0]
             n_d += int(q not in fp.necessary)
-            if interface == "full_catalogue":
+            if interface in MENU_FREE_INTERFACES:
                 invalid = q not in env.feasible_actions()
                 n_inv += int(invalid)
                 env.step_or_invalid(q)

@@ -145,7 +145,21 @@ def main(cfg: DictConfig) -> None:
                 invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
                 mask_attempted=cfg.get("mask_attempted", True),
                 slack_frac=cfg.get("slack_frac", 0.0),
+                prior_top_k=int(cfg.get("prior_top_k", 0)),
+                codebook_k=int(cfg.get("codebook_k", 64)),
+                codebook_seed=int(cfg.get("codebook_seed", 0)),
             )
+            if interface == "codebook_ground":
+                # The codebook is fitted on TRAINING problems only, from the
+                # pinned pre-override distribution (never the eval split).
+                n_prior = int(cfg.get("cem_prior_problems", 64))
+                prior_dataset = build_dataset(
+                    train_cfg, vocab, split="train", size=n_prior
+                )
+                planner.fit_action_prior([
+                    prior_dataset.problem(i)[0]
+                    for i in range(min(n_prior, len(prior_dataset)))
+                ])
             results = evaluate_faithful_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,
                 seed=cfg.seed, slack_curve=cfg.get("slack_curve", False),
