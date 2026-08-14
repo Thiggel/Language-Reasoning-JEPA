@@ -43,13 +43,30 @@ def _fix_seed(key: str) -> None:
     fix_seed(h % (2**31 - 1))
 
 
+def _necessary_count(g) -> int:
+    """Solution length of the query: ancestors of the queried parameter in
+    the official dependency graph, plus the query itself (RNG node excluded).
+    This is the quantity a planning band should select on — ``n_op`` counts
+    ALL operations in the problem, so banding on it near ``max_op`` silently
+    removes distractors (op_range=[28,32] with max_op=32 left only ~25% of
+    the catalogue unnecessary, making random near-optimal)."""
+    import networkx as nx
+
+    p = g.problem
+    return len(
+        {q for q in nx.ancestors(p.template, p.ques_idx) if q[0] != -1}
+        | {p.ques_idx}
+    )
+
+
 def gen_problem(key: str, max_op: int, max_edge: int, op_range=(None, None),
-                hash_bins=None):
-    """Deterministic official-generator call; optional rejection on n_op."""
+                hash_bins=None, necessary_range=(None, None)):
+    """Deterministic official-generator call; optional rejection on n_op
+    and/or on the necessary-step count of the query."""
     from data_gen.pretrain.id_gen import IdGen
 
     _fix_seed(key)
-    for attempt in range(50):
+    for attempt in range(200):
         g = IdGen(max_op=max_op, max_edge=max_edge, perm_level=5,
                   detail_level=0)
         g.gen_prob(
@@ -58,9 +75,18 @@ def gen_problem(key: str, max_op: int, max_edge: int, op_range=(None, None),
         )
         lo, hi = op_range
         n = g.problem.n_op
-        if (lo is None or n >= lo) and (hi is None or n <= hi):
-            return g
-    return g
+        if not ((lo is None or n >= lo) and (hi is None or n <= hi)):
+            continue
+        nlo, nhi = necessary_range
+        if nlo is not None or nhi is not None:
+            k = _necessary_count(g)
+            if not ((nlo is None or k >= nlo) and (nhi is None or k <= nhi)):
+                continue
+        return g
+    raise RuntimeError(
+        f"gen_problem: no problem in op_range={op_range} "
+        f"necessary_range={necessary_range} after 200 attempts (key={key})"
+    )
 
 
 class FaithfulProblem:
@@ -233,6 +259,7 @@ class FaithfulDataset(Dataset):
         all_action_supervision: bool = False,
         shuffle_actions: bool = False,
         hash_bins=None,
+        necessary_range=(None, None),
         **_,
     ):
         self.shuffle_actions = bool(shuffle_actions)
@@ -286,6 +313,7 @@ class FaithfulDataset(Dataset):
         self.distractor_prob = distractor_prob
         self.max_distractors = max_distractors
         self.hash_bins = None if hash_bins is None else tuple(hash_bins)
+        self.necessary_range = tuple(necessary_range)
 
     def __len__(self) -> int:
         return self.size
@@ -293,7 +321,7 @@ class FaithfulDataset(Dataset):
     def problem(self, index: int):
         gen = gen_problem(
             f"{self.seed}:{index}", self.max_op, self.max_edge, self.op_range,
-            self.hash_bins,
+            self.hash_bins, self.necessary_range,
         )
         return FaithfulProblem(gen), random.Random(f"{self.seed}:{index}:t")
 

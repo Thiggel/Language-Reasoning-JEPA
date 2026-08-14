@@ -27,6 +27,7 @@ def apply_eval_data_overrides(run_cfg, eval_cfg) -> None:
         "eval_op_range": "op_range",
         "eval_max_op": "max_op",
         "eval_max_edge": "max_edge",
+        "eval_necessary_range": "necessary_range",
     }
     for source, destination in mappings.items():
         value = eval_cfg.get(source)
@@ -269,6 +270,8 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             vocab, size=size, seed=seed,
             max_op=d.max_op, max_edge=d.max_edge,
             op_range=tuple(d.op_range),
+            necessary_range=tuple(d.get("necessary_range", (None, None))
+                                  or (None, None)),
             distractor_prob=d.distractor_prob,
             max_distractors=d.max_distractors,
             n_alt=d.get("n_alt", 0),

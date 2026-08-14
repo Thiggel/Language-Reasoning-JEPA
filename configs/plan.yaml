@@ -15,7 +15,12 @@ eval_strict_steps_range: null
 eval_op_range: null
 eval_max_op: null
 eval_max_edge: null
+eval_necessary_range: null  # band on SOLUTION length, not total op count
 slack: 0
+# Proportional cushion: budget = necessary + slack + ceil(slack_frac*necessary).
+# The fixed-slack ruler is not length-invariant (it made long-OOD look easier
+# than ID for every policy); paper planning rows use slack_frac.
+slack_frac: 0.0
 # Score ONE generous-budget run (necessary + slack) at every smaller slack and
 # emit success_by_slack plus per-episode excess_steps. The policy never reads
 # its budget, so the smaller-slack runs are prefixes of the generous one.

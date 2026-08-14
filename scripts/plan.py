@@ -144,6 +144,7 @@ def main(cfg: DictConfig) -> None:
                 candidate_interface=interface,
                 invalid_action_mode=cfg.get("invalid_action_mode", "noop"),
                 mask_attempted=cfg.get("mask_attempted", True),
+                slack_frac=cfg.get("slack_frac", 0.0),
             )
             results = evaluate_faithful_planning(
                 planner, dataset, cfg.n_episodes, slack=cfg.slack,

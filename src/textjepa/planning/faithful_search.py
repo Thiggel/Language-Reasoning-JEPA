@@ -9,6 +9,7 @@ feasible sequences and is therefore an explicitly opt-in diagnostic.
 
 from __future__ import annotations
 
+import math
 import random
 
 import torch
@@ -43,7 +44,8 @@ class FaithfulPlanner:
                  allow_oracle_future_actions: bool = False,
                  candidate_interface: str = "feasible_menu",
                  invalid_action_mode: str = "noop",
-                 mask_attempted: bool = True):
+                 mask_attempted: bool = True,
+                 slack_frac: float = 0.0):
         if candidate_interface not in CANDIDATE_INTERFACES:
             raise ValueError(
                 f"unknown candidate interface: {candidate_interface!r}; "
@@ -82,6 +84,12 @@ class FaithfulPlanner:
         # measurable as an ablation.  No effect under feasible_menu, where the
         # environment already removes resolved actions from the menu.
         self.mask_attempted = bool(mask_attempted)
+        # Proportional slack: the fixed-slack ruler is NOT length-invariant
+        # (slack 4 is 59% extra budget on a 7-step problem but 26% on a
+        # 15-step one, which made the long-OOD band score HIGHER than ID for
+        # every policy).  budget = necessary + slack + ceil(slack_frac *
+        # necessary) keeps the cushion a constant fraction of the solution.
+        self.slack_frac = float(slack_frac)
 
     def _tokens(self, texts: list[str]) -> torch.Tensor:
         ids = [self.vocab.encode(t) for t in texts]
@@ -179,7 +187,8 @@ class FaithfulPlanner:
         pt = self._tokens(fp.prompt_sentences)
         pm = torch.ones(1, pt.shape[1], dtype=torch.bool, device=self.device)
         step_texts: list[str] = []
-        budget = len(fp.necessary) + slack
+        budget = (len(fp.necessary) + slack
+                  + math.ceil(self.slack_frac * len(fp.necessary)))
         n_distr = 0
         n_invalid = 0
         attempted: set = set()
@@ -264,7 +273,9 @@ def evaluate_faithful_planning(
     for i in range(n_episodes):
         fp, _ = dataset.problem(i)
         planned.append(planner.plan_episode(fp, slack=slack, seed=seed + i))
-        budget = len(fp.necessary) + slack
+        budget = (len(fp.necessary) + slack
+                  + math.ceil(getattr(planner, "slack_frac", 0.0)
+                              * len(fp.necessary)))
 
         # Reference policies see exactly the same candidate interface.
         env = FaithfulEnv(fp)
