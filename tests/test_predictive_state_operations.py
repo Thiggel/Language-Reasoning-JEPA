@@ -526,3 +526,12 @@ def test_speculative_losslessness_uses_a_matched_numerics_reference():
     assert "def uncached_greedy_decode(" in text
     assert "matches_verifier_path_greedy" in text
     assert "cached_vs_uncached_reference_agreement" in text
+
+
+def test_harness_refresh_rematerializes_the_block_not_one_token():
+    # Refreshing a single token leaves the jumped block's upper cache entries
+    # in place, which is the thing a refresh exists to replace.
+    text = (ROOT / "scripts/evaluate_lm_harness_jump.py").read_text()
+    assert "start = max(0, index - self._refresh + 1)" in text
+    assert "crop_cache(cache, start)" in text
+    assert "tokens[:, start:index + 1]" in text
