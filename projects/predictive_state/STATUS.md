@@ -69,12 +69,33 @@ modelled speedup from measured per-step costs, on the Stage 2 checkpoint:
 | refresh 4 | 0.164 | 9.5 | 1.53x |
 | refresh 2 | 0.219 | 20.2 | 1.30x |
 
-Refreshing more often barely helps until N reaches 2, where the speedup has
-already fallen to 1.30x. This is the predicted signature of a per-step fidelity
-limit rather than accumulated drift: state error was already flat to horizon
-256, so there was little drift for a refresh to correct. The Stage 2 curriculum
-did help autonomous generation, doubling agreement from 0.062 to 0.153 and
-first divergence from 5.2 to 7.9 tokens.
+Token agreement is flat in N, but that is the wrong metric: one flipped token
+cascades, so agreement is compatible with fluent output. Scoring the generated
+text itself under the original unmodified checkpoint, over 32 prompts and 128
+generated tokens each, tells a different story:
+
+| mode | judge NLL | excess | distinct-3 | distinct-5 |
+|---|---:|---:|---:|---:|
+| full | 0.5534 | — | 0.4534 | 0.5030 |
+| refresh 4 | 0.7063 | +0.153 | 0.4328 | 0.4803 |
+| refresh 16 | 0.7442 | +0.191 | 0.3648 | 0.4297 |
+| refresh 64 | 0.7282 | +0.175 | 0.3185 | 0.3715 |
+| jump only | 0.7362 | +0.183 | 0.3165 | 0.3682 |
+
+Jump-generated text costs only about 0.18 nats under an independent judge, far
+less than the 1.01 excess NLL the teacher-forced measurement suggests, because
+the jump path generates text it finds likely rather than being scored against
+tokens it did not choose. The real degradation is repetition, and there
+refreshing helps monotonically: distinct-3 rises 0.3165, 0.3185, 0.3648, 0.4328
+as the interval tightens from never to 4, against 0.4534 for full decoding.
+Refresh 4 recovers most of the quality at 1.53x.
+
+The Stage 2 curriculum also helped autonomous generation, doubling token
+agreement from 0.062 to 0.153 and first divergence from 5.2 to 7.9 tokens.
+
+Not yet measured: accuracy on any actual task. Task retention is a Stage 2 gate
+and the checkpoints are base models continually pretrained on FineWeb, so a
+generative benchmark needs a checkpoint that can perform one.
 
 Speculative decoding at draft length 2 reaches acceptance 0.957 and a modelled
 1.38x, which is lossless. Its equality check needed fixing: a cached and an
