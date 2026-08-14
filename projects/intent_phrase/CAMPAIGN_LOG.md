@@ -1238,3 +1238,69 @@ accepts a flag and ignores it. Consequences:
   (recover feasibility from the trained dynamics, AUC .94). ldad_cycle is
   NOT implemented on the faithful path either — that is the next build
   item, and it is the real test of whether the mechanism transfers.
+
+## 2026-08-14: overnight audit — queue starvation, void fullcat rows, saturated ruler
+
+**Ops (fixed).** `scripts/gruenau_dispatcher.sh` had wedged on a hung `ssh`
+child at 05:05: the backgrounded remote job held the channel open, so ssh
+never returned and the dispatcher blocked inside the launch. Effect: for
+~14 h only 1 of 4 free cards was used while 9 cells sat PENDING. Worse, the
+`timeout`-based patch made ssh exit 124 *after a successful launch*, so the
+cell was "released" back to PENDING and re-launched — **5 concurrent copies of
+`hard-sent-lat-lr1e4-s0-v1` were writing into one run directory**. Fix: fire
+the ssh and then ask the CELL (job.sh writes RUNNING first) instead of
+trusting ssh's exit code; `-n` + all remote fds redirected + `setsid`.
+Duplicates killed, that cell reset to PENDING and relaunched clean; now 3
+cells running, one per card. NEED_MB lowered 32000 -> 30800 (margin 800) so
+gruenau1's 32 GB cards qualify at all (measured footprint ~30.6 GB).
+NOTE: never `pkill -f` on gruenau1 *or over ssh to gruenau1* — this session
+runs there; it kills our own shell (exit 144), hit twice again today.
+
+**The 12 `fullcat_*` JSONs in 2026-08-13-igsm-hard-ood-v1 are VOID.** They ran
+from snapshot `e023f21`, which predates the interface fix `5e7a5b7`, so
+`candidate_interface` was still ignored. Proof: `invalid_action_rate` exactly
+0.000 and no `first_feasible_policy` key. They must be relabelled
+feasible_menu and re-measured from a post-fix snapshot.
+
+**LR screen at the frozen 157M budget (8/18 cells), feasible menu, 300 eps,
+slack-4 / slack-16 success:**
+
+| row | d1 | d4 | d16 | slack16 |
+|---|---|---|---|---|
+| token LM (loops 1) | .740 | — | — | 1.000 |
+| sentence LM (decoder) | .677 | — | — | .993 |
+| goal-head 3e-4 | .680 | .620 | .650 | .990 |
+| LDAD 3e-4 | .660 | .673 | .620 | .983 |
+| TD-JEPA 3e-4 | .670 | .623 | .627 | .973 |
+| LDAD 1e-4 | .653 | .543 | .557 | .960 |
+| LDAD 1e-3 | .637 | .527 | .523 | .947 |
+| goal-head 1e-4 | .617 | .600 | .613 | .983 |
+| **random** | **.587** | .587 | .587 | **.980** |
+
+Readings, all uncomfortable and all about the PROTOCOL, not the models:
+1. **The ID band is short.** `mean_necessary = 7.1`, not the 15-25 we designed
+   for — `op_range=[3,21]` yields ~7 necessary steps. So slack 16 is more than
+   twice the whole solution length and random hits .980. Slack 4 is the only
+   informative column, and there the spread over random is 5-15 points.
+2. **LMs currently WIN.** Token LM .740 and sentence LM .677 sit at or above
+   every JEPA row. On feasible-menu faithful iGSM we have no advantage to show.
+3. **Depth does not help** (LDAD .660/.673/.620 across depth 1/4/16) — the
+   near-degenerate ~3-action menu leaves nothing for lookahead to do.
+4. **"OOD" is easier than ID**: op 28-32 (necessary 15.4) scores .81 vs .605
+   ID at slack 4, for planner AND random alike. A fixed slack of 4 is
+   proportionally far more generous on a 15-step problem than a 7-step one, so
+   as designed this contrast measures the slack-to-length ratio, not length
+   generalization. The ruler must be proportional (or ratio-matched) before any
+   OOD claim.
+5. Sanity check on the objective: the energy IS trained
+   (`geo_horizon_rank=0.554` at epoch 9, `goal_dist_corr` -0.12 -> 0.63,
+   `observed_action_sequence_exact=0.995`). Flag to verify: the recipe is named
+   `mix4_aux025_nohorizon` yet the active ranking term is the HORIZON one
+   (`geo_rank=0`). Naming or wiring needs a check before it goes in a paper.
+
+**Consequence for the plan.** Faithful iGSM under a feasible menu is not a
+measurement instrument at this length: saturated, flat in depth, and won by
+the LM baselines. The load-bearing rows are the menu-free ones, and the two
+blockers are now (a) re-run full_catalogue from a post-fix snapshot,
+(b) implement `ldad_cycle` on the faithful planner (task #28), plus
+(c) a proportional slack ruler and (d) a longer ID band.
