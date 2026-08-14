@@ -29,6 +29,20 @@
   growing after prompt prefill and cannot be used as a sequence-length clock.
 - Carry a current-segment key mask into upper-only recurrence so packed prompt
   caches cannot leak previous documents.
+- Weight the next-token term explicitly. It carried a hard-coded weight of
+  1.0, so a prediction-weight sweep could not reach auxiliary dominance and
+  a negative from such a sweep did not mean what it appeared to.
+- Report held-out next-token loss unweighted whatever the training weights,
+  so cells that optimize it at different strengths stay comparable.
+- Size the corpus so a token budget stays under one epoch, and prefer a
+  corpus close to the model's own pretraining distribution: on WikiText-103
+  part of the measured cost was domain adaptation rather than the objective.
+- Download a fixed corpus subset rather than streaming one. Every cell
+  records a dataset digest and a stream has none.
+- No symbolic or hardcoded heads in trained components, per the 2026-08-14
+  rule. Steps-to-go regression and verified-outcome ranking labels are
+  evaluation-only; the energy head ranks counterfactual continuations
+  against the observed one.
 - Test exact-state scoring before predicted-state planning.
 - Label terminal-state geometry as oracle and verified candidate outcomes as
   candidate-privileged.

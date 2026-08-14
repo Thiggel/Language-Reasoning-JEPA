@@ -1,56 +1,64 @@
 # Current cycle
 
-`2026-08-12-qwen-stage1-pressure-v1` (complete)
+Stage 3A, `2026-08-14-qwen-stage3a-oracle-geometry-v1`.
 
-Stage 1's representation claim is closed as a negative, and the evidence for
-Stage 2 is better than it was. Full numbers in `EVIDENCE.md`.
+## In flight
 
-Across the screen and the pressure round, fifteen token-matched 20M-token cells
-now agree that the auxiliary objective does not shape this backbone. Every one
-lands within 0.0021 nats of the NTP-only control, across a 30x range of
-prediction weight, a 56x narrowing of the state channel, a linear-only
-predictor, and single-state conditioning. The cross-model probe says the same
-independently: at layer 24 ordinary training moves the representation about 5%
-of CKA away from the original checkpoint and the objective adds 0.02% on top.
+Update this table on every launch and every completion. A cell that is running
+and not listed here has not been handed off.
 
-The decisive cell is `proj8`. It genuinely crippled the predictor, more than
-doubling direction error, and the backbone did not compensate. The mechanism we
-hoped for, that a predictor unable to solve the transition would force the
-states to become more predictable, does not operate here.
+| Started | Round / cell | Where | What it decides |
+|---|---|---|---|
+| 2026-08-14 | `2026-08-14-qwen-stage3a-oracle-geometry-v1` state collection + oracle geometry probe | gruenau11:2 | whether terminal-state distance is monotone along correct GSM8K solutions, against four controls |
 
-Three findings do carry forward to recurrent execution:
+Nothing else is running. Completed rounds move to `EXPERIMENT_INDEX.md` and
+their numbers to `STATUS.md` or a dated report.
 
-- the transition is close to linear, cosine 0.1335 for a full-rank linear map
-  against 0.1067 for the SwiGLU;
-- eight dimensions of state, with the action channel intact, reach 0.1508
-  against 0.2078 for action-only, so the state's contribution is low
-  dimensional;
-- layer 24 is redundant. Layer 18 alone reaches 0.1050, marginally better than
-  both sources, while layer 24 alone reaches 0.1252.
+## Where the project stands
 
-Together with the screen's calibrated activation scale (RMS ratio 1.0006) these
-say the predicted state is cheap, accurate and injectable, which is exactly what
-Stage 2 needs and what Stage 1 failed to deliver on its own terms.
+Stage 1 is closed as a small, nearly free, real effect that does not meet its
+gate, on fifteen token-matched cells. Stage 2's efficiency half passes
+untrained (1.86x throughput, cache growth halved) while its fidelity half fails
+by roughly 4x, and the first curriculum was under-budgeted at about 7M tokens
+against the protocol's 60M. Stage 3A has 4,800 verified GSM8K trajectories and
+is being measured now. Numbers are in `STATUS.md`; the full account is in
+`research/reports/predictive_state/2026-08-14-stage1-closed-stage2-started/`.
 
-Next, in order:
+## Direction-changing outcomes for 3A
 
-1. Recommend to the project owner that the paper's weight moves to Stage 2.
-   Stage 1 becomes a reported negative with the pressure round as its evidence,
-   which is a stronger and more honest section than a marginal positive.
-2. Frozen-backbone `full` at 20M tokens. Still owed: the cosine improvement over
-   the frozen diagnostic confounds adaptation with 200x more optimization, and
-   this single cell separates them. Cheap and it closes an obvious hole.
-3. Persistence baseline on these checkpoints, against the 0.258 unrelated-pair
-   cosine floor.
-4. Before any Stage 2 run, revisit the source split. `src18only` and
-   `proj8-action448` together suggest the recurrent path may only need a
-   narrow slice of one layer.
+- Distance to an oracle terminal falls monotonically along correct solutions and
+  separates correct from incorrect at matched prefixes, and the four controls
+  (another correct trajectory for the same problem, a different problem with the
+  same answer, a random terminal, the same relative position elsewhere) do not:
+  the geometry exists and a learned energy head is worth building.
+- Monotonicity holds but the controls also score well: the signal is position or
+  length, not goal direction. Report as a negative and do not build on it.
+- Monotonicity fails on a model that solves only 29.6% of problems: rerun on a
+  stronger checkpoint before concluding anything about the geometry itself.
 
-Open items this cycle does not settle:
+## Next, in priority order
 
-1. One seed throughout, as the screen protocol specifies.
-2. Qwen2.5-0.5B only. The negative is established at 0.5B; whether it holds at
-   OLMo 1B is untested, though nothing in the pattern suggests scale is the
-   binding constraint.
-3. Outlier-robust scale reporting: `predicted_rms`/`target_rms` are linear means
-   over a heavy-tailed distribution while the objective is a log-space Huber.
+1. Stage 2 at the protocol's full 60M-token budget, so the current negative is
+   not attributable to my sizing.
+2. Speculative-verification evaluation. Top-20 agreement near 0.90 with top-1
+   near 0.52 is exactly the drafting profile, verification makes it lossless,
+   and it needs no training. Probably the strongest available Stage 2 claim.
+3. Rewrite Stage 3B before implementing it. See the normative conflict below.
+4. Owed controls: frozen backbone at matched tokens, persistence baseline, and
+   a long `ntp_weight = 0` cell.
+
+## Normative conflict blocking Stage 3B
+
+The 2026-08-14 rule in `CLAUDE.md` puts steps-to-go regression and symbolic
+ranking labels out of scope, even as diagnostics-turned-components. Stage 3B in
+`DESIGN.md` trains the goal distance with Huber regression to remaining chunks
+and a margin driven by verified correct/incorrect terminals, and trains a direct
+value head on verified outcomes. Both are now out of scope as components.
+
+Stage 3A is unaffected: it is a labeled oracle measurement, not a component.
+
+Stage 3B must be rewritten so the energy head is trained by ranking
+counterfactual continuations against the one that actually occurred, which is
+self-supervised because the observed continuation is in the data. The verifier
+stays evaluation-only. `DESIGN.md` has not been rewritten yet and currently
+describes the superseded design.

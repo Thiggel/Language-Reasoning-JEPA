@@ -161,6 +161,15 @@ trajectory. Compare original, Stage 1, and Stage 2 checkpoints.
 
 ## Stage 3B: usable learned distance and value
 
+**Superseded as written, 2026-08-14.** The remaining-chunk Huber regression
+and the verified-outcome margins below are steps-to-go regression and
+symbolic ranking labels, which `CLAUDE.md` now places out of scope for
+trained components. The replacement trains the energy head by ranking
+counterfactual continuations against the one that actually occurred, which
+is self-supervised, and keeps the verifier for evaluation only. Stage 3A
+above is unaffected: it is a labeled oracle measurement, not a component.
+This section is retained until the replacement is written.
+
 Predict a 128-dimensional goal `g_q` from the prompt state and project each
 current state to `e_t`. Begin with `d(s_t,q) = ||e_t - g_q||₂`; separate state
 and goal encoders permit some directionality. If it saturates, use a neural

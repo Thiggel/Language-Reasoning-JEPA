@@ -23,6 +23,21 @@
   1.0, 3.0) and predictor-projection bottleneck ladder (32, 8) at 20M
   tokens each, anchored on the screen's `full-scale0.1` corner; tests
   whether any auxiliary pressure reaches the backbone.
+- `2026-08-13-qwen-stage1-objective-balance-v1`: six cells. Explicit
+  `ntp_weight` at 0.01 and 0, direct full finetuning of layers 13-24, a
+  higher backbone learning rate, and one 80M-token cell. Established that
+  the earlier rounds never left next-token dominance, and that longer
+  training improves the transition and then plateaus.
+- `2026-08-13-qwen-stage1-fineweb-scale-v1`: 300M tokens at global batch
+  65,536 on FineWeb-Edu, with the NTP-only control re-measured on the new
+  corpus. Includes the fresh frozen-checkpoint sufficiency probes and the
+  untrained open-loop rollout evaluation.
+- `2026-08-13-qwen-stage2-curriculum-v1`: horizon 1/4/8/16/32 chained
+  curriculum from both FineWeb checkpoints, under-budgeted at roughly 7M
+  tokens against the protocol's 60M.
+- `2026-08-14-qwen-stage3a-oracle-geometry-v1`: 4,800 verified GSM8K
+  trajectories from stock Qwen2.5-0.5B-Instruct, plus boundary-state
+  collection and the oracle terminal-geometry probe.
 - `qwen-stage1-screen-*`: further 20M-token upper-half rank-16 LoRA controls
   (same_layer, nitp, frozen-LM-plus-predictor, equal-FLOP NTP).
 - `olmo1b-stage1-main-*`: 100M-token three-seed main comparison.
