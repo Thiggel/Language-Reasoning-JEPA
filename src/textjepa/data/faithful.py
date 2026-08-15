@@ -254,6 +254,7 @@ class FaithfulDataset(Dataset):
         geo_rank_policy: str = "random",
         geo_rank_beam_width: int = 1,
         invalid_counterfactual_k: int = 0,
+        invalid_counterfactual_unresolved_only: bool = False,
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
@@ -298,6 +299,15 @@ class FaithfulDataset(Dataset):
         self.geo_rank_beam_width = max(1, int(geo_rank_beam_width))
         self.invalid_counterfactual_k = max(
             0, int(invalid_counterfactual_k)
+        )
+        # Hard negatives only: an already-resolved variable is an EASY
+        # infeasible (it appears in the step history), while an unresolved
+        # variable with unmet prerequisites is the kind planning actually has
+        # to reject.  Training the cycle contrast on the easy kind does not
+        # transfer to the hard kind (2026-08-15 predcycle AUC stayed at
+        # chance while the contrast loss fell below neutral).
+        self.invalid_counterfactual_unresolved_only = bool(
+            invalid_counterfactual_unresolved_only
         )
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
@@ -413,6 +423,10 @@ class FaithfulDataset(Dataset):
             infeasible = [
                 q for q in fp.action_order
                 if q != executed and q not in env2.feasible_actions()
+                and not (
+                    self.invalid_counterfactual_unresolved_only
+                    and q in env2.resolved
+                )
             ]
             rng.shuffle(infeasible)
             alternatives.extend(

@@ -30,4 +30,5 @@ geo_rank_rollouts: 1
 geo_rank_policy: random
 geo_rank_beam_width: 1
 invalid_counterfactual_k: 0
+invalid_counterfactual_unresolved_only: false
 fresh_per_epoch: true
