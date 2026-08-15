@@ -146,10 +146,20 @@ def main(cfg: DictConfig) -> None:
                 for i, c in enumerate(cands):
                     seq = history + c
                     toks[i, : len(seq)] = torch.tensor(seq)
-                lp = model.sequence_logprob(
-                    toks.to(device),
-                    torch.full((len(cands),), len(history), device=device),
-                )
+                # Micro-batch: at long-budget OOD evals the history grows to
+                # hundreds of sentences and scoring the whole catalogue in one
+                # batch OOMs an 80 GB card (attention is quadratic in length).
+                chunk = int(cfg.get("candidate_chunk", 4))
+                lp = torch.cat([
+                    model.sequence_logprob(
+                        toks[i:i + chunk].to(device),
+                        torch.full(
+                            (min(chunk, len(cands) - i),), len(history),
+                            device=device,
+                        ),
+                    )
+                    for i in range(0, len(cands), chunk)
+                ])
                 if cfg.get("length_normalize", True):
                     lengths = torch.tensor(
                         [len(c) for c in cands], device=device, dtype=lp.dtype
