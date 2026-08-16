@@ -80,3 +80,11 @@ story, and the OOD budget-curve instrument are all solid.
 No further faithful menu-free variants will be launched until the owner
 picks a direction. All numbers, cells, and probes are recorded in
 CAMPAIGN_LOG.md (2026-08-14 through 2026-08-16 entries).
+
+## Addendum (2026-08-17): planning check on the hard-negative checkpoint
+
+5x-budget ID band, 200 episodes: full_catalogue .495 (invalid .793),
+ldad_cycle top-2 .520 (invalid .775) vs random .655 / first-candidate .505.
+The .57 AUC buys essentially nothing in planning — both interfaces remain
+below random. This closes the loop: option (a) needs the AUC well above ~.8
+before planning rows are worth re-running, so the decision stands as framed.

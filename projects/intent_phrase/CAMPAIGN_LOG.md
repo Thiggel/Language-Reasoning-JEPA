@@ -4,7 +4,23 @@ _Keep short. Compress completed stages into a few lines; details live in
 `research/reports/intent_phrase/<date>-*/REPORT.md` and are mirrored to
 `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-14._
 
-## CURRENT STATE (2026-08-14) — read this first
+## CURRENT STATE (2026-08-16) — read this first
+
+- **DECISION POINT (owner input needed)**: faithful menu-free planning.
+  Full evidence + options in research/reports/intent_phrase/
+  2026-08-16-faithful-menufree-decision/REPORT.md (mirrored to paper repo).
+  TL;DR: cycle feasibility is stylized-only (AUC .48 chance on faithful vs
+  .85 stylized through the same code path); predictor-cycle + easy-negative
+  contrast training does NOT fix it (.49/.53 final); HARD negatives
+  (unresolved-only, commit a26f28e) is the only rising curve, final .570 —
+  real but weak. Options: (a) push hard-negative recipe (k=16, longer,
+  compositional phrases), (b) higher-capacity feasibility head through the
+  dynamics (probe ceiling .935), (c) documented-limitation framing. No new
+  menu-free variants launched pending the choice. 5x-budget planning rows
+  on the hardneg checkpoint running (menufree_check/ in its cell dir).
+- Menu-free grids COMPLETE for everything else; see 08-14..08-16 entries.
+
+## PRE-2026-08-16 STATE (superseded header, kept for context)
 
 - **Recipe (frozen)**: `mix4_aux025_nohorizon` + LDAD
   (`model.observed_action_ldad=true objective.observed_action_ldad.weight=1.0`),
@@ -48,6 +64,118 @@ _Keep short. Compress completed stages into a few lines; details live in
   running: #28 port (ldad_cycle+codebook_ground -> FaithfulPlanner) and
   LM full_catalogue-on-faithful port (plan_lm/plan_sentlm). Evals for both
   to launch on the fixed bands as soon as the ports land.
+- **2026-08-14 evening: #28/#29 first VERDICT rows (200 eps, fixed bands,
+  5x budget)**. full_catalogue ID nec8-15: LDAD .510 / GoalHead .505 /
+  TD-JEPA .585 vs RANDOM .655 — every JEPA family at or below random,
+  planner invalid rates .75-.79 vs random .70. codebook_ground (ported,
+  prior_top_k=2): .000 success, invalid .858 — cycle-ranked truncation on
+  the MENU-TRAINED checkpoint is worse than the full catalogue. Sentence LM
+  menu-free (new port bee6fec): .005 at 2x budget, invalid .814 — LMs fail
+  menu-free as well. ldad_cycle + token-LM grids still running.
+  Cycle-AUC probe (scripts/probe_faithful_cycle_auc.py, oracle-labeled
+  diagnostic) running on train-dist + ID-band caps to decide whether the
+  cycle SCORE lacks signal on faithful or the planning wiring wastes it.
+  Matched-caps retrains (caps 32/40/[3,32], lr {3e-4,1e-4}) training on
+  gruenau10 — the next checkpoints to test the mechanism on.
+- **2026-08-14 evening VERDICT: cycle feasibility does NOT transfer to
+  faithful iGSM.** Cycle-score feasibility AUC on hard-ldad-lr3e4 is .475
+  (= chance) ON ITS OWN TRAINING DISTRIBUTION (probe
+  scripts/probe_faithful_cycle_auc.py, 24 problems, 2945 scored
+  state-action pairs, oracle-labeled diagnostic; stylized reference .94).
+  Consistently, ldad_cycle planning == full_catalogue exactly (.505 vs
+  .510 at 5x ID budget, both below random .655). NOT a wiring/top-k issue
+  and NOT the caps mismatch. Diagnosis agent running: (1) probe-validity
+  control on the stylized checkpoint via the same code path, (2) training
+  -data diff (do faithful batches ever contain counterfactual/infeasible
+  candidate actions?), report to 2026-08-14-faithful-cycle-auc-diagnosis.
+  Matched-caps retrains stay useful for band-matched training but will not
+  by themselves rescue menu-free.
+- **2026-08-14 night: cycle failure MECHANISM PINNED** (report
+  2026-08-14-faithful-cycle-auc-diagnosis, commit 6967c23). Probe control:
+  stylized checkpoint scores AUC .846 through the same code path, so
+  faithful .475 is real. Cause is the PREDICTOR, not the decoder/data:
+  decoder decodes the observed phrase from the REAL displacement at 1.00
+  top-1 on BOTH tracks, but from the predictor's IMAGINED displacement
+  .95 stylized vs .145 faithful (cos imagined-vs-real .74 vs .11). The
+  cycle's eval input predictor(s,u)-s is never trained on either track.
+  Faithful even trains with MORE infeasible counterfactual exposure
+  (invalid_counterfactual_k=2) — data diff ruled out. FIX IN PROGRESS
+  (agent): (1) predictor-cycle LDAD term (decode observed phrase from the
+  predictor displacement, gradients into predictor — self-supervised);
+  (2) counterfactual cycle-score contrast (observed beats counterfactual,
+  logistic — contract-compliant ranking). Retrain with both terms to
+  launch at matched caps when a GPU frees. Also: token LM is the ONLY
+  method above random menu-free so far (.310 vs .250 at 3x ID) — the
+  menu-free table currently reads token LM > random > all planners.
+- **2026-08-14 night (cont.): predictor-cycle fix IMPLEMENTED + retrain
+  LAUNCHED.** Commit d74d9c6: opt-in `observed_action_ldad_predictor_cycle`
+  (decode observed phrase from predictor(s,u)-s, gradients into predictor)
+  and `observed_action_ldad_cf_contrast` (logistic: observed cycle score
+  beats each counterfactual candidate's, incl. faithful's
+  invalid_counterfactual_k infeasibles). Defaults off, 6 new tests +
+  existing suites green, both losses nonzero in CPU smokes on both tracks.
+  Cell `hard-ldad-caps32-predcycle-lr3e4-s0-v1` (matched caps 32/40/[3,32],
+  both terms weight 1.0) RUNNING on gruenau7 GPU1, snapshot d74d9c6.
+  After training: cycle-AUC probe + ldad_cycle fixed-band evals vs the
+  plain matched-caps twins (ablation). Eval grids COMPLETE for
+  fullcat x3, ldad_cycle, codebook_ground, sentence LM; token LM 8/10.
+- **2026-08-15: matched-caps twins COMPLETED (10 epochs each); caps alone
+  do NOT fix the cycle** — caps32-lr3e4 checkpoint cycle AUC .481 = chance
+  on the ID band (probe), same as the op21-trained checkpoint (.475/.503).
+  This is the clean ablation reference for the predcycle run. predcycle
+  cell OOM'd once on a shared gruenau7 card, relaunched on gruenau10 GPU0
+  (A100, ~10h expected). Token-LM OOD frac4.0 row lost to the same OOM,
+  rerunning on gruenau10 GPU2.
+- **2026-08-15 (cont.): predcycle training reads.** pred_cycle loss trains
+  cleanly (1.94 -> 1.02 by epoch 2) but cycle AUC on the epoch-2
+  checkpoint is .425 — still chance. cf_contrast (the term that must
+  create feasible/infeasible separation) barely below its .693 neutral
+  point (.774 -> .748). Watch to ~epoch 6; if cf_contrast stalls and AUC
+  stays chance, next cells: cf_contrast weight 4x and/or compositional
+  faithful phrases (diagnosis fix 3 — "Define X ." may carry too little
+  for the decode to separate on).
+- **2026-08-15 (cont. 2):** predcycle at epoch 4 — pred_cycle converges
+  (1.94->0.66) but cf_contrast stuck ~.746 (neutral .693): the separation
+  term barely learns at weight 1. ESCALATION LAUNCHED without waiting:
+  `hard-ldad-caps32-predcycle-cfw4-lr3e4-s0-v1` (identical snapshot
+  d74d9c6, cf_contrast weight 4.0) on gruenau7 GPU0 — clean weight-only
+  ablation pair. plan_lm micro-batched candidate scoring committed
+  (d7f2f07; OOD 5x row OOM'd 80GB at ~140-step contexts x22-candidate
+  batches); token-LM OOD frac4.0 relaunched with candidate_chunk=4.
+- **2026-08-15 (cont. 3): contrast learns but does not GENERALIZE —
+  hard-negative variant launched.** predcycle w1: cf_contrast fell below
+  neutral (.685 at ep6) yet cycle AUC stays chance (.456). Diagnosis of
+  the mismatch: the training infeasible pool (faithful.py) includes
+  already-RESOLVED variables — easy negatives visible in the step history
+  — while planning/probe negatives are unresolved-with-unmet-prereqs (the
+  hard kind). Fix a26f28e: data flag
+  `invalid_counterfactual_unresolved_only` (hard negatives only; wired
+  through build_dataset explicitly — no silent drop) . Cell
+  `hard-ldad-caps32-predcycle-hardneg-lr3e4-s0-v1` (k=8 hard negatives,
+  cf weight 4) RUNNING on gruenau7 GPU2. Three-cell ablation now: w1 /
+  cfw4 (easy negatives) / hardneg (hard negatives).
+- **2026-08-16: predcycle w1 COMPLETED — final verdict chance.** 10 epochs,
+  cf_contrast plateaued .67-.69, final cycle AUC .490 pooled / .525
+  per-state (chance refs .43-.50). Feasible-menu planning healthy
+  (.88/.94 s16), so the checkpoint is sound; the cycle just carries no
+  catalogue-wide feasibility. Easy-negative contrast ruled out as the fix.
+  Live hypothesis: hard negatives (unresolved-only infeasibles, k=8,
+  weight 4) — hardneg cell training, decisive probe at its epoch >=2.
+- **2026-08-16 (cont.): LM menu-free grids COMPLETE.** Token LM ID:
+  0/.015/.065/.310/.630 at budgets {1,1.5,2,3,5}x (random 0/0/.030/.250/
+  .655) — above random at 1.5-3x, converges to random at 5x. Token LM OOD
+  5x: .255 vs random .480 — BELOW random out of distribution. Sentence LM
+  below random everywhere. Complete menu-free faithful picture: no method
+  beats random OOD; token LM is the only above-random cell anywhere
+  (ID mid-budgets). hardneg probe at ep1: AUC .495 (contrast not yet
+  learning, .747) — trajectory over next epochs decides the narrative.
+- **2026-08-16 (cont. 2): ablation closed + first positive hardneg signal.**
+  cfw4 (easy negatives, weight 4) COMPLETED: final AUC .530 = chance —
+  easy-negative contrast ruled out at both weights. hardneg (unresolved
+  -only negatives, k=8, w4) at ep3: AUC .538 pooled / .535 per-state —
+  FIRST probe above the .43-.50 chance band on both metrics, coinciding
+  with cf_contrast dropping on hard negatives (.747->.709). Trend, not
+  proof; re-probe at ep~6 and final.
 - **Next (critical path)**: #28 port `ldad_cycle`+`codebook_ground` to
   `FaithfulPlanner` and eval on the fixed bands vs the .700/.480 random
   reference; #29 re-run 12 void fullcat OOD rows from post-8acd62c snapshot;
