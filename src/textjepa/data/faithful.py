@@ -123,9 +123,15 @@ class FaithfulProblem:
             {q for q in nx.ancestors(p.template, self.query) if q[0] != -1}
             | {self.query}
         )
-        # reference solutions name parameters WITHOUT the 'each' prefix
+        # reference solutions name parameters WITHOUT the 'each' prefix.
+        # Strip ONLY the leading prefix: replace() also deleted the substring
+        # inside entity names containing "each " (e.g. "Beach Homes" ->
+        # "BHomes"), yielding intent phrases that never occur in prompts or
+        # reference solutions (and are out-of-vocabulary, so training targets
+        # contained <unk> while free-generation grounding required the exact
+        # corrupted string — those actions were permanently ungroundable).
         self.names = {
-            q: p.get_param(q).replace("each ", "") for q in self.params
+            q: p.get_param(q).removeprefix("each ") for q in self.params
         }
         self.values = {q: int(p.sketch[q].get_value.a) for q in self.params
                        if q in p.sketch}
