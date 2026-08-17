@@ -13,7 +13,8 @@ horizon=4; horizons=null; dense_depth=4; dense_weight=1
 dense_discount=1; rollouts=4; frozen=false
 root_distill_weight=0.25; candidate_interface=feasible_menu; rank_k=2
 feasible_k=null; invalid_k=null; invalid_mode=noop; prefix_energy=false
-horizon_rank_weight=1; counterfactual_weight=1; latent_weight=1
+horizon_rank_weight=1; counterfactual_weight=1
+latent_weight=${LATENT_WEIGHT:-1}
 ranking_kind=logistic; chunk_weight=2; vicreg_weight=1
 horizon_input=true; predictor_residual=true; td_auxiliary=none
 factual_only=false
@@ -303,7 +304,8 @@ fi
 
 "$py" "$TEXTJEPA_ROOT/scripts/train.py" \
   +experiment=paper_gar_scoring_screen \
-  seed="$seed" device="$device" allow_legacy_predictor=true \
+  seed="$seed" device="$device" \
+  allow_legacy_predictor="${ALLOW_LEGACY_PREDICTOR:-false}" \
   train.lr="$lr" train.epochs="$epochs" train.batch_size="$batch" \
   train.num_workers="${NUM_WORKERS:-2}" data.train_size="$train_size" data.val_size=500 \
   data.test_size=500 train.eval_batches=40 train.warmup_steps=500 \
