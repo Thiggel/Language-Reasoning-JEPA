@@ -30,6 +30,141 @@ from textjepa.utils import seed_everything
 from textjepa.utils.checkpoint import apply_eval_data_overrides, build_dataset
 
 
+def _percentile(sorted_vals: list, q: float) -> float:
+    if not sorted_vals:
+        return float("nan")
+    idx = min(len(sorted_vals) - 1, int(math.ceil(q * len(sorted_vals))) - 1)
+    return float(sorted_vals[max(idx, 0)])
+
+
+def free_generation_eval(
+    cfg, run_cfg, model, vocab, dataset, device, score_kind
+) -> None:
+    """Menu-free eval matching the LM's training-time inference mode.
+
+    The intent-policy LM was trained on causal streams
+    ``prompt, intent_1, outcome_1, ...`` with next-token CE on intent tokens.
+    Its natural inference mode is therefore FREE GENERATION of the next intent
+    phrase — no candidate catalogue, no scored budget.  We greedily decode one
+    phrase at a time (a phrase ends at a token ending in "."), ground it
+    against the faithful environment's action texts, execute it, and append
+    the observed outcome; an unparseable or infeasible phrase yields the
+    invalid-definition outcome sentence (env unchanged).  An episode is graded
+    like a generated solution in the original iGSM paper: goal reached
+    (query defined => answer computed).  The only cap is a runaway stop at
+    ``gen_step_cap_mult`` x necessary steps — it is NOT a scored budget.
+    """
+    from textjepa.data.faithful import INVALID_DEFINITION_OUTCOME, FaithfulEnv
+
+    max_len = int(run_cfg.model.get("max_len", 4096))
+    cap_mult = float(cfg.get("gen_step_cap_mult", 4.0))
+    phrase_tok_cap = int(cfg.get("gen_phrase_token_cap", 24))
+    # "fail": an invalid/unparseable generated definition ends the episode
+    # unsolved — matching how a free-generated solution containing an invalid
+    # step would be graded in the original iGSM paper (the solution is simply
+    # wrong; there is no retry loop).  "ignore": append the invalid-definition
+    # outcome sentence and keep generating (note: that sentence never occurs
+    # in the training streams, so continuation is off-distribution).
+    invalid_policy = cfg.get("gen_invalid_policy", "fail")
+    if invalid_policy not in {"fail", "ignore"}:
+        raise ValueError(f"unknown gen_invalid_policy: {invalid_policy}")
+    episodes = []
+    with torch.no_grad():
+        for ep in range(cfg.n_episodes):
+            problem, _ = dataset.problem(ep)
+            env = FaithfulEnv(problem)
+            history = [
+                t for s in problem.prompt_sentences for t in vocab.encode(s)
+            ]
+            n_necessary = len(problem.necessary)
+            step_cap = int(math.ceil(cap_mult * n_necessary))
+            action_by_text = {
+                env.action_text(q): q for q in problem.params
+            }
+            steps = n_invalid = n_unparseable = 0
+            while not env.solved and steps < step_cap:
+                # Greedy autoregressive decode of one intent phrase.
+                phrase: list[int] = []
+                for _ in range(phrase_tok_cap):
+                    ctx = (history + phrase)[-max_len:]
+                    toks = torch.tensor(
+                        ctx, dtype=torch.long, device=device
+                    ).unsqueeze(0)
+                    logits = model(toks)[0, -1]
+                    logits[vocab.pad_id] = float("-inf")
+                    nxt = int(logits.argmax().item())
+                    phrase.append(nxt)
+                    if vocab.id_to_token[nxt].endswith("."):
+                        break
+                history += phrase
+                text = vocab.decode(phrase).strip()
+                pick = action_by_text.get(text)
+                invalid = pick is None or pick not in env.feasible_actions()
+                n_unparseable += int(pick is None)
+                n_invalid += int(invalid)
+                steps += 1
+                if invalid:
+                    if invalid_policy == "fail":
+                        break
+                    outcome = INVALID_DEFINITION_OUTCOME
+                else:
+                    outcome = env.step(pick)
+                history += vocab.encode(outcome)
+            episodes.append({
+                "success": bool(env.solved),
+                "steps": steps,
+                "necessary": n_necessary,
+                "invalid": n_invalid,
+                "unparseable": n_unparseable,
+            })
+            if (ep + 1) % 10 == 0:
+                sr = sum(e["success"] for e in episodes) / len(episodes)
+                print(
+                    f"[ep {ep + 1}/{cfg.n_episodes}] success_rate={sr:.3f}",
+                    flush=True,
+                )
+    n = len(episodes)
+    total_steps = sum(e["steps"] for e in episodes)
+    all_steps = sorted(e["steps"] for e in episodes)
+    solved_steps = sorted(e["steps"] for e in episodes if e["success"])
+    metrics = {
+        "success_rate": sum(e["success"] for e in episodes) / n,
+        "invalid_step_rate": (
+            sum(e["invalid"] for e in episodes) / max(total_steps, 1)
+        ),
+        "unparseable_step_rate": (
+            sum(e["unparseable"] for e in episodes) / max(total_steps, 1)
+        ),
+        "steps_mean": sum(all_steps) / n,
+        "steps_median": _percentile(all_steps, 0.5),
+        "steps_p90": _percentile(all_steps, 0.9),
+        "solved_steps_mean": (
+            sum(solved_steps) / len(solved_steps) if solved_steps
+            else float("nan")
+        ),
+        "solved_steps_median": _percentile(solved_steps, 0.5),
+        "solved_steps_p90": _percentile(solved_steps, 0.9),
+        "necessary_mean": sum(e["necessary"] for e in episodes) / n,
+        "n_episodes": n,
+        "gen_step_cap_mult": cap_mult,
+        "gen_invalid_policy": invalid_policy,
+        "episode_invalid_rate": sum(
+            e["invalid"] > 0 for e in episodes
+        ) / n,
+    }
+    out = {f"lm_{score_kind}_freegen": metrics, "episodes": episodes}
+    for k, v in metrics.items():
+        print(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}")
+    split = cfg.get("split", "val")
+    split_suffix = "" if split == "val" else f"_{split}"
+    dest = Path(
+        cfg.out or Path(cfg.ckpt).parent
+        / f"plan_freegen_lm_{score_kind}{split_suffix}.json"
+    )
+    dest.write_text(json.dumps(out, indent=2))
+    print(f"saved to {dest}")
+
+
 @hydra.main(config_path="../configs", config_name="plan", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
@@ -68,6 +203,15 @@ def main(cfg: DictConfig) -> None:
         model.blocks.eval_loops = int(cfg.eval_loops)
     split = cfg.get("split", "val")
     dataset = build_dataset(run_cfg, vocab, split=split)
+
+    mode = cfg.get("mode", "candidate_ranking")
+    if mode == "free_generation":
+        if not faithful:
+            raise ValueError("free_generation mode is implemented for faithful iGSM only")
+        free_generation_eval(cfg, run_cfg, model, vocab, dataset, device, score_kind)
+        return
+    if mode != "candidate_ranking":
+        raise ValueError(f"unknown mode: {mode}")
 
     results = []
     measure_flops = bool(cfg.get("measure_flops", False))
