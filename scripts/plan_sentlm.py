@@ -33,6 +33,166 @@ from textjepa.utils import seed_everything
 from textjepa.utils.checkpoint import apply_eval_data_overrides, build_dataset
 
 
+def _percentile(sorted_vals: list, q: float) -> float:
+    if not sorted_vals:
+        return float("nan")
+    idx = min(len(sorted_vals) - 1, int(math.ceil(q * len(sorted_vals))) - 1)
+    return float(sorted_vals[max(idx, 0)])
+
+
+def free_generation_eval(cfg, run_cfg, model, vocab, dataset, device) -> None:
+    """Menu-free eval matching the sentence LM's training-time inference mode.
+
+    The intent-target sentence LM was trained to decode the next intent
+    sentence from the discourse context latent.  Its natural inference mode is
+    therefore FREE GENERATION: greedily decode the next intent sentence
+    token-by-token from the context latent (no candidate catalogue, no scored
+    budget), ground it against the faithful environment's action texts,
+    execute it, and append the observed outcome sentence.  Grading follows the
+    original iGSM paper's free-generated solutions: goal reached; the only cap
+    is a runaway stop at ``gen_step_cap_mult`` x necessary steps.
+    ``gen_invalid_policy=fail`` (default) ends the episode on an invalid or
+    unparseable generated definition; ``ignore`` appends the
+    invalid-definition outcome sentence and continues.
+    """
+    from textjepa.data.faithful import INVALID_DEFINITION_OUTCOME, FaithfulEnv
+
+    max_chunk_len = int(run_cfg.model.get("max_chunk_len", 48))
+    cap_mult = float(cfg.get("gen_step_cap_mult", 4.0))
+    invalid_policy = cfg.get("gen_invalid_policy", "fail")
+    if invalid_policy not in {"fail", "ignore"}:
+        raise ValueError(f"unknown gen_invalid_policy: {invalid_policy}")
+
+    def tokens(texts):
+        ids = [vocab.encode(t) for t in texts]
+        L = max(len(i) for i in ids)
+        out = torch.full((1, len(ids), L), vocab.pad_id, dtype=torch.long)
+        for c, i in enumerate(ids):
+            out[0, c, : len(i)] = torch.tensor(i)
+        return out.to(device)
+
+    def greedy_sentence(ctx) -> str:
+        """Greedy autoregressive decode of one sentence from a context latent
+        with the trained per-sentence decoder (same net as decode_ce)."""
+        import torch.nn as nn
+
+        generated: list[int] = []
+        for _ in range(max_chunk_len):
+            inp = torch.tensor(
+                [[model.pad_id] + generated], dtype=torch.long, device=device
+            )
+            L = inp.shape[1]
+            x = model.dec_tok(inp) + model.dec_pos[:, :L]
+            causal = nn.Transformer.generate_square_subsequent_mask(
+                L, device=device
+            )
+            h = model.decoder(x, ctx.unsqueeze(1), tgt_mask=causal)
+            logits = model.dec_head(h)[0, -1]
+            logits[vocab.pad_id] = float("-inf")
+            nxt = int(logits.argmax().item())
+            generated.append(nxt)
+            if vocab.id_to_token[nxt].endswith("."):
+                break
+        return vocab.decode(generated).strip()
+
+    episodes = []
+    with torch.no_grad():
+        for ep in range(cfg.n_episodes):
+            problem, _ = dataset.problem(ep)
+            env = FaithfulEnv(problem)
+            prompt = problem.prompt_sentences
+            n_necessary = len(problem.necessary)
+            step_cap = int(math.ceil(cap_mult * n_necessary))
+            action_by_text = {env.action_text(q): q for q in problem.params}
+            history_texts: list[str] = []
+            steps = n_invalid = n_unparseable = 0
+            while not env.solved and steps < step_cap:
+                batch = {
+                    "prompt_tokens": tokens(prompt),
+                    "prompt_mask": torch.ones(
+                        1, len(prompt), dtype=torch.bool, device=device
+                    ),
+                    "step_tokens": tokens(history_texts or ["."]),
+                    "step_mask": torch.tensor(
+                        [[bool(history_texts)] * max(len(history_texts), 1)],
+                        device=device,
+                    ),
+                }
+                prompt_emb = model.encode_chunks(batch["prompt_tokens"])
+                step_emb = model.encode_chunks(batch["step_tokens"])
+                s0, states = model.state_model(
+                    prompt_emb, batch["prompt_mask"], step_emb,
+                    batch["step_mask"],
+                )
+                ctx = (
+                    states[:, len(history_texts) - 1] if history_texts else s0
+                )
+                text = greedy_sentence(ctx)
+                pick = action_by_text.get(text)
+                invalid = pick is None or pick not in env.feasible_actions()
+                n_unparseable += int(pick is None)
+                n_invalid += int(invalid)
+                steps += 1
+                history_texts.append(text)
+                if invalid:
+                    if invalid_policy == "fail":
+                        break
+                    history_texts.append(INVALID_DEFINITION_OUTCOME)
+                else:
+                    history_texts.append(env.step(pick))
+            episodes.append({
+                "success": bool(env.solved),
+                "steps": steps,
+                "necessary": n_necessary,
+                "invalid": n_invalid,
+                "unparseable": n_unparseable,
+            })
+            if (ep + 1) % 10 == 0:
+                sr = sum(e["success"] for e in episodes) / len(episodes)
+                print(
+                    f"[ep {ep + 1}/{cfg.n_episodes}] success_rate={sr:.3f}",
+                    flush=True,
+                )
+    n = len(episodes)
+    total_steps = sum(e["steps"] for e in episodes)
+    all_steps = sorted(e["steps"] for e in episodes)
+    solved_steps = sorted(e["steps"] for e in episodes if e["success"])
+    metrics = {
+        "success_rate": sum(e["success"] for e in episodes) / n,
+        "invalid_step_rate": (
+            sum(e["invalid"] for e in episodes) / max(total_steps, 1)
+        ),
+        "unparseable_step_rate": (
+            sum(e["unparseable"] for e in episodes) / max(total_steps, 1)
+        ),
+        "steps_mean": sum(all_steps) / n,
+        "steps_median": _percentile(all_steps, 0.5),
+        "steps_p90": _percentile(all_steps, 0.9),
+        "solved_steps_mean": (
+            sum(solved_steps) / len(solved_steps) if solved_steps
+            else float("nan")
+        ),
+        "solved_steps_median": _percentile(solved_steps, 0.5),
+        "solved_steps_p90": _percentile(solved_steps, 0.9),
+        "necessary_mean": sum(e["necessary"] for e in episodes) / n,
+        "n_episodes": n,
+        "gen_step_cap_mult": cap_mult,
+        "gen_invalid_policy": invalid_policy,
+        "episode_invalid_rate": sum(e["invalid"] > 0 for e in episodes) / n,
+    }
+    out = {"sentlm_intent_freegen": metrics, "episodes": episodes}
+    for k, v in metrics.items():
+        print(f"{k}={v:.3f}" if isinstance(v, float) else f"{k}={v}")
+    split = cfg.get("split", "val")
+    split_suffix = "" if split == "val" else f"_{split}"
+    dest = Path(
+        cfg.out or Path(cfg.ckpt).parent
+        / f"plan_freegen_sentlm_intent{split_suffix}.json"
+    )
+    dest.write_text(json.dumps(out, indent=2))
+    print(f"saved to {dest}")
+
+
 @hydra.main(config_path="../configs", config_name="plan", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     seed_everything(cfg.seed)
@@ -73,6 +233,19 @@ def main(cfg: DictConfig) -> None:
             "full_catalogue candidate_interface requires target_kind=intent "
             "(outcome-scoring needs a feasible action to render the outcome)"
         )
+
+    mode = cfg.get("mode", "candidate_ranking")
+    if mode == "free_generation":
+        if not faithful:
+            raise ValueError(
+                "free_generation mode is implemented for faithful iGSM only"
+            )
+        if target_kind != "intent":
+            raise ValueError("free_generation requires target_kind=intent")
+        free_generation_eval(cfg, run_cfg, model, vocab, dataset, device)
+        return
+    if mode != "candidate_ranking":
+        raise ValueError(f"unknown mode: {mode}")
 
     def tokens(texts):
         ids = [vocab.encode(t) for t in texts]
