@@ -4,6 +4,11 @@ max_op: 15        # official iGSM-med; hard = 21
 max_edge: 20      # official iGSM-med; hard = 28
 op_range: [3, 15]
 necessary_range: null  # [lo, hi] rejection on solution length (planning bands)
+# Vocabulary scan caps. Null = historical 21/28 cache (frozen token list;
+# existing checkpoints depend on it). Runs at larger generator caps must set
+# these to the training caps so eval-band parameter names are in-vocabulary.
+vocab_max_op: null
+vocab_max_edge: null
 n_vars_range: [6, 12]   # unused by the faithful generator (interface compat)
 leaf_prob: 0.35
 steps_range: [3, 9]

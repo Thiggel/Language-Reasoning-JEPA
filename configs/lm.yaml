@@ -21,6 +21,11 @@ model:
 
 train:
   target_kind: outcome  # outcome | intent
+  # intent target only: which tokens receive next-token CE.
+  #   intent        loss on intent phrases only (information-matched policy)
+  #   all_solution  loss on intent AND outcome tokens (original iGSM paper's
+  #                 full-solution next-token baseline; prompt unsupervised)
+  lm_loss_on: intent
   batch_size: 64
   gradient_accumulation_steps: 1
   num_workers: 8

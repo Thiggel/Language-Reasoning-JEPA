@@ -609,14 +609,25 @@ def build_faithful_vocab(n_scan: int = 1500, max_op: int = 21,
     return Vocab(sorted(words))
 
 
-_VOCAB_CACHE = Path(__file__).resolve().parents[3] / "configs" / "faithful_vocab.txt"
+_CONFIGS_DIR = Path(__file__).resolve().parents[3] / "configs"
+_VOCAB_CACHE = _CONFIGS_DIR / "faithful_vocab.txt"
 
 
-def cached_faithful_vocab() -> Vocab:
-    if _VOCAB_CACHE.exists():
-        return Vocab(_VOCAB_CACHE.read_text().split("\n"))
-    v = build_faithful_vocab()
-    _VOCAB_CACHE.write_text(
+def cached_faithful_vocab(max_op: int = 21, max_edge: int = 28) -> Vocab:
+    """Vocab scanned at the given generator caps.
+
+    The historical cache ``faithful_vocab.txt`` was scanned at 21/28 (its
+    token list is frozen — every existing checkpoint's embedding table is
+    indexed by it).  Other caps use a separate ``faithful_vocab_{op}_{edge}``
+    cache so eval-band names (e.g. at 32/40) are in-vocabulary."""
+    cache = (
+        _VOCAB_CACHE if (max_op, max_edge) == (21, 28)
+        else _CONFIGS_DIR / f"faithful_vocab_{max_op}_{max_edge}.txt"
+    )
+    if cache.exists():
+        return Vocab(cache.read_text().split("\n"))
+    v = build_faithful_vocab(max_op=max_op, max_edge=max_edge)
+    cache.write_text(
         "\n".join(t for t in v.token_to_id if not t.startswith("<"))
     )
     return v

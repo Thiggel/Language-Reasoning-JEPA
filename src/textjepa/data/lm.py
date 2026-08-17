@@ -111,13 +111,20 @@ class IntentPolicyLMDataset(Dataset):
     """Causal policy view of a discourse trace.
 
     The stream is ``prompt, intent_1, outcome_1, ..., intent_T, outcome_T``.
-    Only intent tokens receive next-token cross-entropy.  Outcomes are still
-    appended as observations, making train-time histories identical to those
-    constructed by :mod:`scripts.plan_lm` after each selected action.
+    With ``loss_on="intent"`` (default) only intent tokens receive next-token
+    cross-entropy; outcomes are appended as observations only, making
+    train-time histories identical to those constructed by
+    :mod:`scripts.plan_lm` after each selected action.  With
+    ``loss_on="all_solution"`` the outcome tokens (definitions + arithmetic)
+    are supervised too — the original iGSM paper's full-solution next-token
+    CE baseline (prompt tokens stay unsupervised).
     """
 
-    def __init__(self, discourse: Dataset):
+    def __init__(self, discourse: Dataset, loss_on: str = "intent"):
+        if loss_on not in {"intent", "all_solution"}:
+            raise ValueError(f"unknown IntentPolicyLMDataset loss_on: {loss_on}")
         self.discourse = discourse
+        self.loss_on = loss_on
 
     def __len__(self) -> int:
         return len(self.discourse)
@@ -132,7 +139,7 @@ class IntentPolicyLMDataset(Dataset):
             tokens.extend(action)
             loss_mask.extend([True] * len(action))
             tokens.extend(outcome)
-            loss_mask.extend([False] * len(outcome))
+            loss_mask.extend([self.loss_on == "all_solution"] * len(outcome))
         return {
             "tokens": tokens,
             "prompt_len": len(tokens),  # unused when loss_mask is present

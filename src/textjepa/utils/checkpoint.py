@@ -62,7 +62,13 @@ def build_vocab_for_config(cfg):
     if name == "igsm_real":
         from textjepa.data.faithful import cached_faithful_vocab
 
-        return cached_faithful_vocab()
+        # Vocab caps default to the historical 21/28 scan; runs trained at
+        # larger generator caps set data.vocab_max_op/vocab_max_edge so their
+        # band's parameter names are in-vocabulary.
+        return cached_faithful_vocab(
+            max_op=int(cfg.data.get("vocab_max_op") or 21),
+            max_edge=int(cfg.data.get("vocab_max_edge") or 28),
+        )
     return build_vocab(cfg.data.modulus)
 
 

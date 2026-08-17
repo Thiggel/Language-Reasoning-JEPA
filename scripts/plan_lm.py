@@ -68,6 +68,37 @@ def free_generation_eval(
     invalid_policy = cfg.get("gen_invalid_policy", "fail")
     if invalid_policy not in {"fail", "ignore"}:
         raise ValueError(f"unknown gen_invalid_policy: {invalid_policy}")
+    # "env" (default, historical): after each grounded intent the TRUE
+    # environment outcome sentence is appended — matching the intent-policy
+    # LM's training streams.  "model": the LM free-generates its own outcome
+    # sentence (definition + arithmetic) which is kept in the context, and
+    # only the intent (definition) sentences are grounded/stepped through the
+    # environment — the original iGSM paper's fully free-generated solution.
+    outcome_source = cfg.get("gen_outcome", "env")
+    if outcome_source not in {"env", "model"}:
+        raise ValueError(f"unknown gen_outcome: {outcome_source}")
+    outcome_tok_cap = int(cfg.get("gen_outcome_token_cap", 96))
+
+    def decode_sentence(history: list[int], cap: int) -> list[int]:
+        """Greedy autoregressive decode until a token ending in '.'."""
+        phrase: list[int] = []
+        for _ in range(cap):
+            ctx = (history + phrase)[-max_len:]
+            toks = torch.tensor(
+                ctx, dtype=torch.long, device=device
+            ).unsqueeze(0)
+            logits = model(toks)[0, -1]
+            logits[vocab.pad_id] = float("-inf")
+            nxt = int(logits.argmax().item())
+            phrase.append(nxt)
+            if vocab.id_to_token[nxt].endswith("."):
+                break
+        return phrase
+
+    def last_int(text: str):
+        ints = [t for t in text.split() if t.lstrip("-").isdigit()]
+        return int(ints[-1]) if ints else None
+
     episodes = []
     with torch.no_grad():
         for ep in range(cfg.n_episodes):
@@ -82,20 +113,10 @@ def free_generation_eval(
                 env.action_text(q): q for q in problem.params
             }
             steps = n_invalid = n_unparseable = 0
+            n_valid = n_value_match = 0
+            answer_correct = None
             while not env.solved and steps < step_cap:
-                # Greedy autoregressive decode of one intent phrase.
-                phrase: list[int] = []
-                for _ in range(phrase_tok_cap):
-                    ctx = (history + phrase)[-max_len:]
-                    toks = torch.tensor(
-                        ctx, dtype=torch.long, device=device
-                    ).unsqueeze(0)
-                    logits = model(toks)[0, -1]
-                    logits[vocab.pad_id] = float("-inf")
-                    nxt = int(logits.argmax().item())
-                    phrase.append(nxt)
-                    if vocab.id_to_token[nxt].endswith("."):
-                        break
+                phrase = decode_sentence(history, phrase_tok_cap)
                 history += phrase
                 text = vocab.decode(phrase).strip()
                 pick = action_by_text.get(text)
@@ -103,19 +124,41 @@ def free_generation_eval(
                 n_unparseable += int(pick is None)
                 n_invalid += int(invalid)
                 steps += 1
-                if invalid:
-                    if invalid_policy == "fail":
-                        break
-                    outcome = INVALID_DEFINITION_OUTCOME
+                if invalid and invalid_policy == "fail":
+                    break
+                true_outcome = (
+                    INVALID_DEFINITION_OUTCOME if invalid else env.step(pick)
+                )
+                if outcome_source == "model":
+                    gen_out = decode_sentence(history, outcome_tok_cap)
+                    history += gen_out
+                    if not invalid:
+                        n_valid += 1
+                        # Grade the model's OWN computed value (last integer
+                        # of its generated outcome sentence) against the true
+                        # value — robust to arbitrary temp-variable letters.
+                        ok = last_int(vocab.decode(gen_out)) == last_int(
+                            true_outcome
+                        )
+                        n_value_match += int(ok)
+                        if env.solved:
+                            answer_correct = bool(
+                                ok and last_int(vocab.decode(gen_out))
+                                == problem.answer
+                            )
                 else:
-                    outcome = env.step(pick)
-                history += vocab.encode(outcome)
+                    history += vocab.encode(true_outcome)
             episodes.append({
                 "success": bool(env.solved),
                 "steps": steps,
                 "necessary": n_necessary,
                 "invalid": n_invalid,
                 "unparseable": n_unparseable,
+                "valid_steps": n_valid,
+                "value_match": n_value_match,
+                "answer_correct": answer_correct,
+                "success_answer": bool(env.solved)
+                and (answer_correct is True or outcome_source == "env"),
             })
             if (ep + 1) % 10 == 0:
                 sr = sum(e["success"] for e in episodes) / len(episodes)
@@ -148,6 +191,17 @@ def free_generation_eval(
         "n_episodes": n,
         "gen_step_cap_mult": cap_mult,
         "gen_invalid_policy": invalid_policy,
+        "gen_outcome": outcome_source,
+        # Model-outcome mode only: does the model's own arithmetic match?
+        "outcome_value_match_rate": (
+            sum(e["value_match"] for e in episodes)
+            / max(sum(e["valid_steps"] for e in episodes), 1)
+        ),
+        # Success requiring the model's OWN final answer to be correct
+        # (equals success_rate in gen_outcome=env mode).
+        "success_answer_rate": (
+            sum(e["success_answer"] for e in episodes) / n
+        ),
         "episode_invalid_rate": sum(
             e["invalid"] > 0 for e in episodes
         ) / n,
@@ -187,9 +241,11 @@ def main(cfg: DictConfig) -> None:
             "(outcome-scoring needs a feasible action to render the outcome)"
         )
     if faithful:
-        from textjepa.data.faithful import cached_faithful_vocab
+        from textjepa.utils.checkpoint import build_vocab_for_config
 
-        vocab = cached_faithful_vocab()
+        # Uses the checkpoint's own vocab caps (data.vocab_max_op/max_edge),
+        # NOT the eval overrides — the embedding table is indexed by it.
+        vocab = build_vocab_for_config(run_cfg)
     else:
         vocab = build_vocab(run_cfg.data.modulus)
     model = DecoderLM(

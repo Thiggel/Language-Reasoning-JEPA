@@ -80,7 +80,10 @@ def main(cfg: DictConfig) -> None:
         if target_kind == "intent":
             if cfg.train.get("rank_weight", 0):
                 raise ValueError("ranking loss is not defined for the intent policy LM")
-            return IntentPolicyLMDataset(build_dataset(cfg, vocab, split=split))
+            loss_on = cfg.train.get("lm_loss_on", "intent")
+            return IntentPolicyLMDataset(
+                build_dataset(cfg, vocab, split=split), loss_on=loss_on
+            )
         if target_kind != "outcome":
             raise ValueError(f"unknown LM target_kind: {target_kind}")
         if d.get("name", "igsm") in {"igsm_real", "observed_action"}:
