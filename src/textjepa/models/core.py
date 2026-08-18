@@ -398,13 +398,20 @@ class LatentDynamicsCore(nn.Module):
                 alt_actions.reshape(B * T * K, d_action),
             ).reshape(B, T, K, d_state)
         states = prev_states[:, None, None].expand(-1, T, K, -1, -1)
-        acts = actions[:, None, None].expand(-1, T, K, -1, -1).clone()
+        acts = actions[:, None, None].expand(-1, T, K, -1, -1)
         anchor = torch.arange(T, device=actions.device)
-        # Avoid advanced indexing here: indexing both trajectory axes with
-        # ``anchor`` moves that axis in front of the batch axis and silently
-        # changes the expected layout from [B,T,K,D] to [T,B,K,D].
-        for step in range(T):
-            acts[:, step, :, step] = alt_actions[:, step]
+        # Substitute the k-th alternative at its anchor position in one
+        # vectorized kernel: position ``pos`` of the (anchor=t, k) sequence
+        # carries alt_actions[:, t, k] iff pos == t, else the observed action.
+        # (torch.where instead of advanced indexing: indexing both trajectory
+        # axes with ``anchor`` would move that axis in front of the batch axis
+        # and silently change the layout from [B,T,K,D] to [T,B,K,D].)
+        diag = torch.eye(T, dtype=torch.bool, device=actions.device)
+        acts = torch.where(
+            diag[None, :, None, :, None],  # [1, anchor, 1, pos, 1]
+            alt_actions.unsqueeze(3),      # [B, anchor, K, 1, d]
+            acts,
+        )
         prefix = torch.arange(T, device=actions.device)[None, :] <= anchor[:, None]
         valid = (
             step_mask[:, None, None, :]
@@ -416,9 +423,10 @@ class LatentDynamicsCore(nn.Module):
             valid.reshape(B * T * K, T),
         )
         flat_pred = flat_pred.reshape(B, T, K, T, d_state)
-        return torch.stack(
-            [flat_pred[:, step, :, step] for step in range(T)], dim=1
-        )
+        # Read prediction (anchor=t, pos=t) for every anchor in one gather:
+        # diagonal over (anchor, pos) returns [..., T] with the diagonal
+        # index last; move it back to the anchor slot.
+        return flat_pred.diagonal(dim1=1, dim2=3).permute(0, 3, 1, 2)
 
     def _predict_second_steps(
         self,
