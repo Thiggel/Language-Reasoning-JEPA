@@ -440,10 +440,29 @@ class DiscourseJEPA(nn.Module):
     def encode_chunks(
         self, tokens: torch.Tensor, teacher: bool = False
     ) -> torch.Tensor:
-        """[B, C, L] token ids -> [B, C, D] chunk embeddings."""
+        """[B, C, L] token ids -> [B, C, D] chunk embeddings.
+
+        Exact-compute optimizations (mathematically identical output):
+        trailing all-pad token columns are trimmed, and duplicate chunk
+        rows are encoded once and gathered back.  Counterfactual / rollout
+        candidate encoding repeats the factual prefix chunks many times,
+        so deduplication removes most of the teacher-encoder volume.
+        """
         B, C, L = tokens.shape
         enc = self.chunk_teacher if teacher else self.chunk_encoder
-        return enc(tokens.reshape(B * C, L)).reshape(B, C, -1)
+        flat = tokens.reshape(B * C, L)
+        pad_id = self.chunk_encoder.pad_id
+        nonpad_cols = flat.ne(pad_id).any(0)
+        if nonpad_cols.any():
+            last = int(nonpad_cols.nonzero().max()) + 1
+            if last < L:
+                flat = flat[:, :last]
+        uniq, inverse = torch.unique(flat, dim=0, return_inverse=True)
+        if uniq.shape[0] < flat.shape[0]:
+            emb = enc(uniq)[inverse]
+        else:
+            emb = enc(flat)
+        return emb.reshape(B, C, -1)
 
     def encode_states(
         self,
