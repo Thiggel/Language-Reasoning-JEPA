@@ -1567,3 +1567,158 @@ unchanged). CPU smoke @ n_episodes=4, ID band, slack_frac=0.5 against the
 hard-v1 LR-screen checkpoints: tok-lm success .25 / invalid .73, sent-lm
 success .00 / invalid .87 — consistent with the "no feasibility signal
 menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
+
+## 2026-08-17 — owner redirect: budgets out, LMs must work, push hard negatives
+- Owner decision (chat): (1) retire scored attempt budgets — primary instrument
+  becomes accuracy + distribution of steps used (run until solved or runaway
+  cap); (2) token/sentence LM MUST work on faithful iGSM (original iGSM paper
+  did) — suspected harness fault: we evaluated LMs by candidate-ranking under
+  budget instead of free generation; (3) push hard-negative cf-contrast with
+  more counterfactual data, parallel sweep.
+- LAUNCHED `2026-08-17-cf-k-sweep-v1`: hardneg-k{4,16,64,128}, weight 4,
+  unresolved-only, effective batch 4 via +train.microbatch_size grad-accum,
+  snapshot a26f28e. Hosts: k4 gruenau7:0, k16 gruenau7:2, k64 gruenau9:0
+  (A100-80), k128 gruenau10:0 (A100-80). Each job.sh runs the cycle-AUC probe
+  on best.pt at end → cycle_auc_probe.json. Wiring of
+  data.invalid_counterfactual_k verified (faithful.py:256/300/433,
+  checkpoint.py:292-295).
+- IN FLIGHT: free-generation LM eval port (plan_lm.py mode) + train/eval
+  mismatch diagnosis; round `2026-08-17-lm-freegen-v1` expected.
+- 2026-08-17 LM freegen verdict (round `2026-08-17-lm-freegen-v1`, commits
+  ef7a732/3e38210): free-generation eval ported (greedy decode, env-grounded,
+  goal-reached grading, runaway cap 4x nec, no scored budget). Harness
+  VERIFIED correct (5-episode dumps: format/prompt/parse all match training).
+  tokLM & sentLM free-gen success = .000 (ID band, 200 eps, both invalid
+  policies); teacher-forced on TRAIN traces: greedy next intent only 32%
+  feasible. Old candidate-ranking numbers were propping LMs UP. Root cause:
+  our LM row was NOT the Ye et al. recipe — loss on intent phrases only, no
+  outcome/arithmetic text, trained caps 21/28 vs eval 32/40. Also ~1.5% vocab
+  OOV on catalogue names (minor).
+- LAUNCHED `2026-08-17-lm-fullsol-v1`: proper Ye-et-al-style token LM — CE on
+  full solution text, caps 32/40/[3,32] nec 8-15 — with automatic free-gen
+  eval at end. This is the "LMs must work" fix.
+- `2026-08-17-lm-fullsol-v1/tok-lm-fullsol-caps32-lr3e4-s0` RUNNING on
+  gruenau10:2 (A100): Ye-style full-solution CE (commit 5d99a99,
+  train.lm_loss_on=all_solution, wiring smoke-verified), caps 32/40/[3,32]
+  nec 8-15, new cap-keyed vocab (faithful_vocab_32_40.txt, OOV .012%).
+  ~7 h train, then auto free-gen eval (gen_outcome=model: LM writes its own
+  arithmetic, only definition sentences stepped; grades success_rate and
+  success_answer_rate). Old checkpoints/vocab untouched.
+- 2026-08-17 iGSM-faithfulness AUDIT (agent, full findings in chat/report):
+  generator+rendering genuinely faithful (vendored official iGSM, mod-23,
+  reference renderer, machine-checked). THREE suspect deviations: (1) eval
+  band op<=32/edge40/nec8-15 is AT/BEYOND the paper's hardest OOD point for a
+  FULLY-trained model — we eval an undertrained model exclusively there;
+  (2) token budget ~0.1B tokens vs paper's full pretraining (100-1000x under);
+  (3) LM row trained intent-only loss (~10% of solution tokens) vs paper's
+  full-solution CE. Minor: no hash-bin train/test dedup (paper uses hash<17
+  vs >=17 mod 23) — reviewer-proofing gap; frozen 21/28 vocab corrupts ~20%
+  of 32/40-cap problems (OOV names). 15% distractor injection judged mild.
+- LAUNCHED (agent): (A) in-dist freegen eval of existing tokLM at its own
+  training caps 21/28 no nec-filter → cell
+  2026-08-17-lm-freegen-v1/tok-lm-freegen-indist-s0; (B) paper-repro run
+  2026-08-17-lm-med-repro-v1/tok-lm-med-fullsol-s0: iGSM-med caps 15/20,
+  all_solution loss, 20x30k epochs, freegen_curve.jsonl every 2 epochs
+  (success-vs-tokens slope = tests the undertraining hypothesis).
+- 2026-08-17 JEPA ARCHITECTURE AUDIT — SMOKING GUN. Measured on the hardneg
+  checkpoint: (1) recipe trains the LEGACY Markov MLP predictor
+  (predictor_kind=concat via paper_recovery_mlp_geometry.yaml inheritance;
+  allow_legacy_predictor=true silenced the train.py guard) — the causal
+  history predictor never trained; (2) predictor output scale exploded ~2e6
+  (imagined displacement norm 1.5e7 vs real 7.2; every touching loss is
+  scale-invariant) → raw cos(imagined,real)=-0.001, so ALL cycle/manifold
+  diagnostics and planning scores were reading noise; (3) latent_pred = <1%
+  of predictor gradient (cf_contrast 58%, ranking 24%) → predictor worse
+  than identity in LN space and action-blind (cos .96 under action
+  permutation; d_action=16 pooled). Encoder causality, EMA, detaches, term
+  plumbing all verified CORRECT. This retroactively explains the off-manifold
+  finding, chance cycle AUC, and possibly the whole faithful menu-free
+  failure. Full audit in chat; script in session scratchpad.
+- ACTION: cf-k-sweep-v1 (legacy predictor → wasted) KILLED; relaunching as
+  `2026-08-17-causal-fix-v1`: causal-k0 (fix only, no contrast — isolates the
+  bug), causal-k8, causal-k64, causal-k8-act64 (d_action 16→64), all with
+  latent_pred reweighted to first-class predictor gradient and auc_curve
+  probes every 2 epochs.
+- 2026-08-17 in-dist freegen eval (tok-lm-freegen-indist-s0, gruenau2:1):
+  existing intent-only-CE tokLM at ITS OWN caps 21/28, no nec filter —
+  success .010 (fail) / .020 (ignore), first step invalid in 99% of episodes.
+  So the OOD eval band was NOT the main LM problem; the intent-only training
+  loss is. Ranking of suspects updated accordingly.
+- `2026-08-17-lm-med-repro-v1/tok-lm-med-fullsol-s0` RUNNING gruenau7:3
+  (snapshot 5d99a99, no new commits needed): iGSM-med caps 15/20, no nec
+  filter, distractor_prob=0, all_solution CE, 20x30k, gen_outcome=model
+  evals; freegen_curve.jsonl every 2 epochs (first point ~3 h in), full eval
+  at end; ETA ~32 h (~Aug 19 early).
+- `2026-08-17-causal-fix-v1` RUNNING (commit 0f52367: cell script no longer
+  hardcodes allow_legacy_predictor=true; guard verified by negative+positive
+  dry-runs; latent_pred weight 15, predictor_kind=causal). Cells: causal-k0
+  (fix only) g7:0, causal-k8 g7:2, causal-k64 g9:0 (mb1, may hit timeout),
+  causal-k8-act64 (d_action 64, token_bottleneck) g10:0. Old sweep KILLED
+  cleanly (PID-verified, incl. 29 orphaned dataloader workers). auc_curve
+  .jsonl every ~2 epochs per cell; first points ~6-7 h in; ETA 26-35 h.
+- lm-med-repro epoch-1 freegen point: success .000 but
+  outcome_value_match .615 (arithmetic forming), first step invalid .79 —
+  early; slope over next epochs is the signal.
+- lm-fullsol-caps32 COMPLETED (~7 h + eval): full-solution CE at caps 32/40
+  improves the pieces (first-step invalid .55 vs .76 intent-only,
+  unparseable .05 vs .12, own-arithmetic match .76) but success still .000
+  (fail) / .015 (ignore) — every episode hits an invalid step. Together with
+  the FLAT med-repro curve (epochs 1-3), suspicion moves to an eval-harness
+  format divergence or a residual training-signal gap; targeted diagnostic
+  agent running (teacher-forced vs free-gen token-stream diff on the
+  med-repro checkpoint).
+- 2026-08-17 med-repro flat-curve diagnostic (agent, CPU on epoch-3 ckpt):
+  harness VERIFIED correct end-to-end — eval prompt token ids byte-identical
+  to training streams, loss mask covers all outcome tokens (41/41, 89/89),
+  env feasible set at t=0 exactly the DAG sources, eval vocab = checkpoint
+  vocab. Flat curve is real early-training behavior: val_loss .98→.59 and
+  first-step-invalid .794→.746 ARE improving; success stays 0 under
+  fail-policy until first-step feasibility clears ~13% random-plausible.
+  Judge at epochs 7-11. Bug found+fixed (not the cause): names built with
+  .replace("each ","") corrupted entity names containing "each" ("Beach
+  Homes"→"BHomes"; 8/2337 params ungroundable) — commit c00526d, snapshot
+  archived; rerun periodic evals from new snapshot for clean grading. Also
+  noted: 15/20 vocab misses rare punctuation-attached forms (~20% of
+  problems have 1-2 <unk> prompt tokens) — rescan if recipe kept.
+- med-repro freegen curve (50-ep, fail-policy): success 0/.0/.0/.02/.04/.02/
+  .06 at epochs 1-13; invalid-step .79→.42 monotone, unparseable .25→.08.
+  Reading: recipe learns, budget short — plan a scaled run after epoch 20.
+  causal-fix cells: causal predictor ~4x slower than MLP (~14 h/epoch);
+  first AUC probes expected 2026-08-18/19.
+- 2026-08-18 med-repro COMPLETED (20 epochs, 600k problems): final 200-ep
+  free-gen at own caps 15/20: success .110 (fail) / .205 (ignore), invalid
+  .34, unparseable .06 — up from ~0 for intent-only training. Recipe is
+  RIGHT, budget short; curve still rising at end. Scaled run
+  (lm-med-scale-v1, 100k/epoch x30, gruenau10:2) tracking: success .04 at
+  epoch 3 (~300k problems seen).
+- causal-k0 epoch-1 cycle AUC .483 (chance) — expected this early; k0 has no
+  pred_cycle term, so cycle AUC can only rise via displacement becoming
+  on-manifold. Judge at epochs 4-6.
+- 2026-08-18 scaled LM (100k/ep): success .02/.04/.10/.18/.30 at epochs
+  1/3/5/7/9, invalid-step .70→.19 — accelerating, first fully-own-arithmetic
+  correct answers from epoch 7. TOKEN LM CONFIRMED LEARNABLE with paper
+  recipe + data scale. causal-fix early AUCs: k0 .483, k8 .524,
+  k8-act64 .557 at epoch 1 (old broken recipe needed 9 epochs for .570).
+
+## CURRENT STATE (2026-08-18, evening) — "make it work" campaign
+- BREAKTHROUGHS this cycle: (1) token LM works with the paper recipe
+  (full-solution CE + fresh data scale): scaled run at 40% free-gen success
+  by epoch 11/30 and accelerating (intent-only recipe: ~0%). (2) JEPA audit
+  found the recipe trained the legacy Markov MLP predictor with exploded
+  output scale and latent_pred at <1% of predictor gradient — all prior
+  faithful menu-free negatives are confounded by this.
+- RUNNING: scaled LM lr3e4 (g10:2, ~2 d left), LM lr1e3 (g7:3, ~3 d), LM
+  lr1e4 pending GPU. JEPA causal-fix cells being relaunched from a faster
+  snapshot (profiler agent in flight; old pace 14 h/epoch was ~4x too slow)
+  as 2026-08-18-causal-fix-v2: causal-{k0,k8,k64,k8-act64} + MLP-control LR
+  sweep mlp-k8-lr{1e3,3e4,1e4,3e5} (arch-vs-weighting isolation). All cells
+  self-probe: freegen_curve.jsonl / auc_curve.jsonl every 2 epochs.
+- DECISION RULES: JEPA cycle AUC must clear ~.8 before planning rows are
+  worth rerunning. LM eval = free generation + steps-used distribution
+  (budgets retired). Old candidate-ranking LM numbers are invalid as
+  baselines (they propped weak LMs up).
+- NEXT: read auc_curve/freegen_curve across cells; pick winning JEPA recipe;
+  then scale winning recipes to caps 32/40 and port no-budget protocol to
+  JEPA planning eval. Reports: research/reports/intent_phrase/
+  2026-08-16-faithful-menufree-decision/ (superseded in parts by the
+  2026-08-17 audits — see entries above).
