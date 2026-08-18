@@ -1722,3 +1722,11 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   JEPA planning eval. Reports: research/reports/intent_phrase/
   2026-08-16-faithful-menufree-decision/ (superseded in parts by the
   2026-08-17 audits — see entries above).
+- 2026-08-18 JEPA speedup (commits bf47186, ce23b53; snapshot ce23b53):
+  compute-bound, not data-bound. Fixes: unique-chunk/pad-trim EMA teacher
+  encoding (2.0s→0.03s, was re-encoding identical prefixes per candidate),
+  bf16, vectorized counterfactual readout (bit-exact, 96 tests pass),
+  k64 microbatch 1→4. Round relaunched as `2026-08-18-causal-fix-v2`:
+  causal-{k0 g7:0, k8 g7:2, k64 g9:0 (~10x faster), k8-act64 g10:0} +
+  MLP-control LR sweep mlp-k8-lr{3e4 g9:1, 1e3 g10:1, 1e4 g7:0p, 3e5 g7:2p}.
+  ~1.2-1.7 h/epoch → 10 epochs in ~14-17 h. All 8 RUNNING, probes armed.
