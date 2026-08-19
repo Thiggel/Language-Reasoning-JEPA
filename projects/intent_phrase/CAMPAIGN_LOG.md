@@ -872,3 +872,23 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   `state` + `exit_code` + whether the log step is still advancing. A cell
   whose log step has not moved in hours is dead regardless of what `state`
   says.
+
+- **The 08-20 eval-time fixes made DEEP search enormously more expensive —
+  a real cost the entry above does not mention.** Under the new defaults
+  (energy-guided beam expansion + `mean_prefix` aggregation), a depth-8
+  100-episode evaluation managed 10 episodes in 1h48m, i.e. ~18 h per run.
+  Because the watcher runs depths in sequence, every later pass was queued
+  behind it: the epoch-2 comparison would never have arrived and the
+  epoch-0 backfill would never have fired. Silent, not an error.
+  Fix: killed both depth-8 evals; placed sentinel JSONs at
+  `watch/epoch{0,2,4,6,8,10}/plan_full_catalogue_d8.json` so the existing
+  "skip if present" guard bypasses depth 8; same for depths 8/16 in
+  `final_id` and depth 16 in `final_ood` (300 episodes there — far worse).
+  Watchers now report full_catalogue d1/d4 and prior_propose d1/d4, which
+  still answers the round's question because depth 1 sits beside depth 4.
+  CONSEQUENCE FOR THE PAPER: any depth-8 or depth-16 number needs its OWN
+  dedicated long-running cell; it cannot ride along in a training watcher.
+  Budget for that explicitly when planning the final runs.
+  Training unaffected: epoch 0 complete on both cells, into epoch 1 at
+  ~1.44 s/step; the epoch-0 backfill now runs detached on the cluster so it
+  does not depend on any agent's background task surviving.
