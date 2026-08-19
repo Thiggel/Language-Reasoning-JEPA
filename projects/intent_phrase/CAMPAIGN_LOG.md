@@ -1878,3 +1878,46 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   (no LM init → proposer cannot form phrases), confirming LM init is what
   makes the no-menu mode possible. noprior cell died on "too many open
   files" (dataloader) → relaunched with ulimit 65536 + 6 workers.
+
+## 2026-08-19 (evening) — depth is the open problem; drift is the lead suspect
+- FULL epoch-0 numbers, best cell flat-lminit-ecf16-s0 (energy_cf weight 16),
+  iGSM-med ID, 100 episodes, no budget, oracle-free lookahead:
+  | setting | depth 1 | depth 4 |
+  | legal-moves list (feasible_menu) | .99, 8.5 steps (1.42x min), 0% illegal | .99, 10.0 steps |
+  | full list (full_catalogue) | .88, 12.2 steps (1.71x), 30% illegal | .54, 20.1 steps, 62% illegal |
+  | no list (prior_propose) | .64, 1.07x min steps when solved, 6% illegal, proposal recall .92 | .38, 16% illegal |
+  RANDOM reference: .98 / .59 / .59. Legal-list setting is saturated
+  (random .98) — reference column only, as on faithful.
+- CORRECTION to an earlier chat claim: the "16-21 steps" figure quoted for
+  the random policy was actually OUR model's step count under full_catalogue.
+  The eval records steps only for our planner, NOT for the random/
+  first-feasible references. ACTION: add step recording for reference
+  policies to the watcher/eval (needed for the steps-distribution figure).
+- No-list failures are "gives up", not "wanders": flat_search ends the
+  episode when no usable proposal exists (n_no_proposal, break at
+  flat_search.py:382); proposal recall .92 per state compounds over ~5 steps.
+  Cheap fixes (eval-time, no retraining): more proposal samples per step
+  (now 16) and/or fall back to the full catalogue when nothing is usable.
+- DEPTH IS THE OPEN PROBLEM: deeper search hurts in both discriminative
+  settings, and the illegal-pick rate roughly DOUBLES from depth 1 to 4
+  (30->62%, 6->16%). Not a legality-signal problem any more (AUC .77 at the
+  current state, .85 at imagined depth 1).
+- DIAGNOSTIC RUNNING (agent): (i) OWNER'S 2x2 — {learned energy vs ORACLE
+  latent-distance-to-solved-state} x {imagined endpoints vs truly-executed
+  endpoints}, depths 1/2/4/8, 200 eps, all oracle rows labelled
+  candidate-privileged. Reading: energy<oracle on imagined ⇒ the head is the
+  limiter; imagined<executed ⇒ predictor drift is the limiter; oracle+
+  executed still flat ⇒ the endpoint-distance formulation itself is wrong.
+  (ii) DRIFT CURVE (prioritized): cosine/L2 between k-step imagined and true
+  EMA states for k=1..8, against the typical distance between unrelated real
+  states, in the layer-normalized space the loss uses, plus a check that the
+  old 2e6 norm explosion has not returned, plus energy legality AUC at
+  imagined depth 2/3/4.
+- OWNER FIX LAUNCHED (agent): multi-step rollout prediction. The predictor is
+  a cheap 2-layer residual MLP (model.predictor_kind=mlp) trained ONLY
+  one step ahead, so imagined states plausibly leave the manifold after 1-2
+  steps. New opt-in objective `latent_rollout_pred` regresses the k-step
+  imagined state onto the EMA teacher's true state for k in [1,2,4] and
+  [1,2,3,4,6,8], per-k losses logged plus a live cosine drift diagnostic.
+  Cells flat-lminit-ecf16-roll124-s0 and -roll1248-s0 (energy_cf 16 + rollout
+  1), evaluated at depths 1 AND 4 every 2 epochs.
