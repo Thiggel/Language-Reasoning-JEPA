@@ -2003,3 +2003,22 @@ printed next to it or it will not survive review.
 NEXT: `nocfrank` vs `ecf16` on the same order-invariance test, to see
 whether the counterfactual-ranking energy term is what drives .568 -> .711.
 Both cells are training now.
+
+- **Drift is now essentially gone during training** (cells RUNNING).
+  Cosine between the k-step imagined state and the true state:
+
+  | steps imagined ahead | 1 | 2 | 3 | 4 | 6 | 8 |
+  |---|---|---|---|---|---|---|
+  | before rollout training | .607 | .571 | | .470 | | |
+  | roll124 @ step 1940 | .948 | .930 | | .910 | | |
+  | roll1248 @ step 2960 | .946 | .932 | .927 | .923 | .911 | .891 |
+
+  The 4-step imagination went .47 -> .91; even 8 steps holds .89, i.e. the
+  decay with depth is flat rather than falling. `energy_cf_depth_acc` .97 in
+  both. Cost: 0.075-0.119 s/problem, no penalty vs the reference cell.
+  `flat-lminit-ecf16-roll1248-s0` gruenau9:0, `-roll124-s0` gruenau10:0;
+  ~2.1-3.3 h/epoch, 10 epochs in 21-33 h.
+  OPEN: this is the imagination being accurate, NOT yet planning improving.
+  The epoch-0 watcher gives the first depth-1 vs depth-4 planning comparison;
+  if depth 4 still loses to depth 1 with drift removed, the scorer is the
+  remaining suspect and the oracle-scorer 2x2 decides it.
