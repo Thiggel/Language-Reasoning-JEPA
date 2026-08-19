@@ -1825,3 +1825,16 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   imagined_invalid_rate. Round `2026-08-19-flat-jepa-v1`: flat-lminit-s0
   (g10:0), lr3e5 (g10:1), scratch (g10:2), nocfrank ablation (g7:0),
   frozen-encoder (g7:1, FAILED - to fix). ~.07 s/problem, ~1.9 h/epoch A100.
+- 2026-08-19 FLAT-JEPA v2 EPOCH-0 CURVE (iGSM-med ID, 100 eps, no budget,
+  runaway cap 4x; random = same-interface random reference):
+  | interface | flat-lminit | ablation (cf-rank off) | random |
+  | feasible_menu d1 | .99 | .99 | .98  (DEGENERATE at these caps) |
+  | full_catalogue d1 | **.72** | .60 | .59 |
+  | full_catalogue d4 | .48 | .51 | .59 |
+  | prior_propose d1 | .56 (5.2 steps, 1.05x necessary, recall .91) | .44 | .59 (16-21 steps) |
+  energy AUC depth0/depth1: lminit .606/.594, ablation .512/.493.
+  FIRST EVER above-random full_catalogue (mode 2) result, and it is caused by
+  energy_cf_feasibility_rank (ablation = random). prior_propose (mode 3)
+  solves in ~1.05x necessary steps vs random's 3x — the steps-distribution
+  instrument is the right frame for no-menu. Epoch 0 of 10; d4 still below
+  d1 (deeper search not yet helped — watch as legality AUC rises).
