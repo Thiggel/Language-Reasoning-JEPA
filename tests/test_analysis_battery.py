@@ -287,3 +287,40 @@ def test_token_lm_batched_context_matches_single(tiny_vocab):
         [ad.encode_actions_ctx(prompt, [], [p], batch=1) for p in phrases]
     )
     assert torch.allclose(batched, one_by_one, atol=1e-4)
+
+
+# --------------------------------------------------------------------------- #
+# report tables
+# --------------------------------------------------------------------------- #
+def test_normalized_table_removes_encoder_scale(tmp_path):
+    """Two encoders with identical STRUCTURE but different overall scale must
+    produce identical normalized rows -- that is the point of the statistic."""
+    import json
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "summarize_battery",
+        Path(__file__).resolve().parents[1]
+        / "scripts" / "analysis" / "summarize_battery.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    def block(scale):
+        return {"pair_geometry": {"action_ctx": {"cosine": {"per_subkind": {
+            "premise_negation": {"mean": 0.2 * scale},
+            "premise_reorder": {"mean": 0.01 * scale},
+            "other_legal_application": {"mean": 1.0 * scale},
+        }}}}}
+
+    path = tmp_path / "geo.json"
+    path.write_text(json.dumps(
+        {"models": {"big": block(1.0), "collapsed": block(0.001)}}
+    ))
+    out = mod.normalized_table(path, "other_legal_application")
+    assert "0.2000" in out and "0.0100" in out
+    # both models produce the same two normalized values
+    assert out.count("0.2000") == 2
+    assert out.count("0.0100") == 2
+    # the reference family itself is not repeated as a column
+    assert "other_legal_application |" not in out.split("\n")[2]

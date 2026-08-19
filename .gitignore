@@ -33,3 +33,4 @@ data/
 
 # claude worktrees
 .claude/
+research/reports/intent_phrase/2026-08-20-representation-analysis/data/embeddings/

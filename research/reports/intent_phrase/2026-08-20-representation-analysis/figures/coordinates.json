@@ -1,0 +1,21 @@
+{
+  "n_maps": 16,
+  "keys": [
+    "jepa_stylized/actions/tsne",
+    "jepa_stylized/actions/umap",
+    "jepa_stylized/states/tsne",
+    "jepa_stylized/states/umap",
+    "jepa_stylized__random_init/actions/tsne",
+    "jepa_stylized__random_init/actions/umap",
+    "jepa_stylized__random_init/states/tsne",
+    "jepa_stylized__random_init/states/umap",
+    "sent_lm_stylized/actions/tsne",
+    "sent_lm_stylized/actions/umap",
+    "sent_lm_stylized/states/tsne",
+    "sent_lm_stylized/states/umap",
+    "token_lm_stylized/actions/tsne",
+    "token_lm_stylized/actions/umap",
+    "token_lm_stylized/states/tsne",
+    "token_lm_stylized/states/umap"
+  ]
+}
