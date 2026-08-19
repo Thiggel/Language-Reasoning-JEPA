@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import contextlib
 from functools import partial
 import json
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import hydra
 import torch
 import torch.nn.functional as F
+torch.multiprocessing.set_sharing_strategy("file_system")
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
@@ -46,6 +48,23 @@ def rank_loss(model, batch, device, margin=1.0):
     )
     n = (rb != 0).float().sum().clamp(min=1.0)
     return loss.sum() / n
+
+
+def make_autocast(cfg, device):
+    """Return a context-manager factory for the configured precision.
+
+    ``train.precision`` was previously dead: the LM trainer always ran fp32.
+    ``bf16`` enables torch.autocast on CUDA (no GradScaler needed, bf16 has
+    fp32 range); anything else keeps full fp32.
+    """
+    prec = str(cfg.train.get("precision", "fp32")).lower()
+    if prec in {"bf16", "bfloat16"} and device.type == "cuda":
+        if not torch.cuda.is_bf16_supported():
+            raise RuntimeError("train.precision=bf16 but device lacks bf16")
+        return lambda: torch.autocast("cuda", dtype=torch.bfloat16)
+    if prec not in {"fp32", "float32", "bf16", "bfloat16"}:
+        raise ValueError(f"unknown train.precision: {prec}")
+    return contextlib.nullcontext
 
 
 def lm_loss(model, batch, device):
@@ -130,6 +149,7 @@ def main(cfg: DictConfig) -> None:
     n_params = sum(p.numel() for p in model.parameters())
     print(f"LM parameters: {n_params / 1e6:.2f}M")
 
+    amp = make_autocast(cfg, device)
     opt = build_optimizer(model, cfg.train.lr, cfg.train.weight_decay)
     total = cfg.train.epochs * len(train_loader)
     logger = MetricLogger(out_dir)
@@ -144,13 +164,15 @@ def main(cfg: DictConfig) -> None:
                 g["lr"] = cfg.train.lr * cosine_warmup(
                     step, total, cfg.train.warmup_steps
                 )
-            loss = lm_loss(model, batch, device)
+            with amp():
+                loss = lm_loss(model, batch, device)
             if isinstance(model.blocks, LoopedTransformerEncoder):
                 loop_counts[model.blocks.last_num_loops] += 1
             if cfg.train.get("rank_weight", 0) and "rank_tokens" in batch:
-                loss = loss + cfg.train.rank_weight * rank_loss(
-                    model, batch, device
-                )
+                with amp():
+                    loss = loss + cfg.train.rank_weight * rank_loss(
+                        model, batch, device
+                    )
             opt.zero_grad(set_to_none=True)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.train.grad_clip)
@@ -160,10 +182,11 @@ def main(cfg: DictConfig) -> None:
             step += 1
         model.eval()
         with torch.no_grad():
-            val_losses = [
-                lm_loss(model, b, device).item()
-                for i, b in enumerate(val_loader) if i < 40
-            ]
+            with amp():
+                val_losses = [
+                    lm_loss(model, b, device).item()
+                    for i, b in enumerate(val_loader) if i < 40
+                ]
             vloss = sum(val_losses) / len(val_losses)
         logger.log(step, {"loss": vloss}, prefix="val/")
         ckpt = {
