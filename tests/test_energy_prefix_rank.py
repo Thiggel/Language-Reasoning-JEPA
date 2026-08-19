@@ -5,8 +5,8 @@ of only its endpoint, so a path that wastes a step on an infeasible intent is
 penalised even though it reaches the same endpoint.  These tests pin the
 wiring: the term is off by default and bit-identical to the legacy path, the
 depth-1 prefix energy coincides with the existing one-step anchor energy,
-each counterfactual path is exactly one inserted no-op longer than the
-observed one, and gradients reach the encoder, predictor and Energy head.
+each counterfactual path spends the same number of imagined steps as the
+observed one but wastes one of them on an infeasible no-op, and gradients reach the encoder, predictor and Energy head.
 """
 
 import pytest
@@ -68,14 +68,15 @@ def test_depth1_prefix_energy_equals_the_one_step_anchor_energy():
     torch.testing.assert_close(obs1[valid], ref[valid])
 
 
-def test_counterfactual_path_is_one_inserted_step_longer():
+def test_counterfactual_path_is_length_matched():
     vocab, batch = _batch()
     e = _model(vocab, energy_prefix_rank=True)(batch).extras
     n_obs = e["energy_prefix_obs_valid"].sum(-1).unsqueeze(-1)
     n_cf = e["energy_prefix_cf_valid"].sum(-1)
     pair = e["energy_prefix_pair_valid"]
     assert pair.any()
-    assert torch.unique((n_cf - n_obs)[pair]).tolist() == [1]
+    # same imagined budget, one step of it wasted on an infeasible intent
+    assert torch.unique((n_cf - n_obs)[pair]).tolist() == [0]
 
 
 @pytest.mark.parametrize("aggregate", ["mean_prefix", "endpoint"])

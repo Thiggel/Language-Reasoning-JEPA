@@ -544,10 +544,11 @@ class FlatIntentJEPA(nn.Module):
         actually occurred (a_1..a_H).  A counterfactual PATH is the same
         sequence with one counterfactual intent INSERTED at a random depth
         j >= 1 (``ga_roll_cf``, the infeasible intents the dataset already
-        samples at every rollout state).  Because an infeasible intent is a
-        no-op in the environment, the inserted path reaches the SAME place
-        having wasted a step -- exactly the degeneracy an endpoint-only
-        Energy cannot see.  The head therefore emits an energy for EVERY
+        samples at every rollout state) and the last true action dropped, so
+        both paths are the same length.  Because an infeasible intent is a
+        no-op in the environment, the inserted path simply WASTES one of its
+        imagined steps -- exactly the degeneracy an endpoint-only Energy
+        cannot see.  The head therefore emits an energy for EVERY
         prefix of both paths, E(root, prefix_j, s_0, j), and the objective
         aggregates them into one path score before the pairwise contrast.
 
@@ -589,20 +590,30 @@ class FlatIntentJEPA(nn.Module):
         b_of_n = torch.arange(B, device=device).repeat_interleave(C * R)
         cf_vec = cat_vecs[b_of_n.unsqueeze(1), cf_pick]        # [N, Kc, D]
 
-        # ---- build the inserted action sequence (length Hh + 1) -----------
-        L = Hh + 1
+        # ---- build the inserted action sequence (LENGTH-MATCHED) ----------
+        # [a_0 .. a_{j-1}, cf, a_j .. a_{Hh-2}]: the junk step displaces the
+        # last true action instead of being appended, so the counterfactual
+        # path spends exactly as many imagined steps as the observed one.
+        # This matters: at planning time every candidate is rolled out to the
+        # same depth, so a score that separated the paths by LENGTH would
+        # transfer nothing.
+        L = Hh
         ar = torch.arange(L, device=device).view(1, 1, L)
         src = torch.where(ar < j.unsqueeze(-1), ar, ar - 1).clamp(min=0)
-        seq = codes.unsqueeze(1).expand(N, Kc, Hh, D).gather(
-            2, src.unsqueeze(-1).expand(N, Kc, L, D)
-        )
-        msk = flat_mask.unsqueeze(1).expand(N, Kc, Hh).gather(2, src)
+        seq = codes.gather(
+            1, src.reshape(N, Kc * L, 1).expand(N, Kc * L, D)
+        ).reshape(N, Kc, L, D)
+        msk = flat_mask.gather(1, src.reshape(N, Kc * L)).reshape(N, Kc, L)
         seq = seq.scatter(
             2, j.view(N, Kc, 1, 1).expand(N, Kc, 1, D), cf_vec.unsqueeze(2)
         )
         msk = msk.scatter(
             2, j.unsqueeze(-1), torch.ones_like(j.unsqueeze(-1), dtype=msk.dtype)
         )
+        # padded rows have spare slots after the true actions; truncate so the
+        # counterfactual path never buys back the step it wasted.
+        n_obs = flat_mask.sum(-1, keepdim=True).unsqueeze(-1)   # [N, 1, 1]
+        msk = msk & (ar < n_obs)
 
         # ---- imagine the counterfactual paths and score every prefix ------
         M = N * Kc
