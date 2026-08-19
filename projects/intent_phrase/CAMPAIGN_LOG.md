@@ -908,3 +908,18 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   For the steps figure: `solved_exact_necessary_frac` = .944 at epoch 7 —
   when it solves, it uses EXACTLY the minimum number of steps 94% of the
   time. The model is not wandering to the answer.
+
+- **Watch item: `energy_prefix_acc` is at .986-.992 on all three prefix
+  cells by epoch 1.** Not the instant saturation that exposed the earlier
+  length-cue bug (it took ~an epoch, and started at chance), so the term is
+  learning something real. But near-ceiling accuracy means the DISCRIMINATION
+  MAY BE TOO EASY: if detecting one inserted infeasible intent is close to
+  trivial, the gradient dies long before the head is shaped into a scorer
+  that helps search. If epoch-2/4 planning shows depth still not helping
+  while this sits at .99, the fix is a HARDER negative, not more weight —
+  e.g. insert an action that is feasible but useless (a legal step that does
+  not advance the solution) rather than an infeasible one, or insert deeper
+  into the path where the consequences are subtler.
+  Epoch-0 rows (step-500 sanity checkpoint, NOT evidence): prior_propose
+  d1/d4 = .62/.40, .61/.46, .60/.45; full_catalogue d1 .76 where backfilled.
+  Depth still hurts at this stage, as expected this early.
