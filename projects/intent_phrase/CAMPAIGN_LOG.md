@@ -892,3 +892,19 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   Training unaffected: epoch 0 complete on both cells, into epoch 1 at
   ~1.44 s/step; the epoch-0 backfill now runs detached on the cluster so it
   does not depend on any agent's background task surviving.
+
+- **hard21 token LM is working on the HARD faithful split.** Strict free
+  generation (model writes the whole solution, no menu, no partial credit),
+  50 episodes every 2 epochs:
+
+  | epoch | 1 | 3 | 5 | 7 |
+  |---|---|---|---|---|
+  | success | .00 | .02 | .22 | .36 |
+  | invalid-step rate | .82 | .65 | .29 | .17 |
+  | unparseable-step rate | .23 | .11 | .053 | .011 |
+
+  At epoch 9 of 30 and still climbing (val_loss .91 -> .27). Same
+  `lm_loss_on=all_solution` fix that took iGSM-med from 0 to .82.
+  For the steps figure: `solved_exact_necessary_frac` = .944 at epoch 7 —
+  when it solves, it uses EXACTLY the minimum number of steps 94% of the
+  time. The model is not wandering to the answer.
