@@ -261,6 +261,8 @@ class FaithfulDataset(Dataset):
         geo_rank_beam_width: int = 1,
         invalid_counterfactual_k: int = 0,
         invalid_counterfactual_unresolved_only: bool = False,
+        invalid_counterfactual_resolved_k: int = 0,
+        rollout_counterfactual_k: int = 0,
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
@@ -315,6 +317,20 @@ class FaithfulDataset(Dataset):
         self.invalid_counterfactual_unresolved_only = bool(
             invalid_counterfactual_unresolved_only
         )
+        # Easy negatives on top of the hard ones: already-resolved actions
+        # (they appear in the step history).  Together with the unresolved
+        # hard negatives the energy sees the whole legality boundary.
+        self.invalid_counterfactual_resolved_k = max(
+            0, int(invalid_counterfactual_resolved_k)
+        )
+        # Counterfactual (infeasible) intents at every depth of the random
+        # rollouts (half premature-unresolved, half already-resolved), so the
+        # energy can be contrasted along IMAGINED prefixes, not only at the
+        # anchor.  Emitted as ``ga_rollout_cf_actions[c][r][h]`` = token lists
+        # of infeasible intents at the rollout state BEFORE rollout action h
+        # (h >= 1; index 0 is left empty -- the anchor is covered by
+        # ``ga_alt_actions``).
+        self.rollout_counterfactual_k = max(0, int(rollout_counterfactual_k))
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
@@ -438,6 +454,15 @@ class FaithfulDataset(Dataset):
             alternatives.extend(
                 infeasible[: self.invalid_counterfactual_k]
             )
+            if self.invalid_counterfactual_resolved_k:
+                resolved_neg = [
+                    q for q in fp.action_order
+                    if q in env2.resolved and q not in alternatives
+                ]
+                rng.shuffle(resolved_neg)
+                alternatives.extend(
+                    resolved_neg[: self.invalid_counterfactual_resolved_k]
+                )
             if alternatives:
                 candidates = [executed, *alternatives]
                 ga = {
@@ -465,11 +490,14 @@ class FaithfulDataset(Dataset):
                 elif geo_rank_horizon > 1 or self.geo_rank_rollout_for_h1:
                     rollout_steps = []
                     rollout_actions = []
+                    rollout_cf_actions = []
                     for candidate in candidates:
                         candidate_rollouts = []
                         candidate_action_rollouts = []
+                        candidate_cf_rollouts = []
                         for _ in range(self.geo_rank_rollouts):
                             roll_env = env2.clone()
+                            cf_sequence = [[]]
                             sequence = list(steps[:t_star])
                             # Horizon-mode GAR consumes the intent phrases of
                             # the rollout actions (ga_rollout_actions ->
@@ -495,6 +523,25 @@ class FaithfulDataset(Dataset):
                                 feasible = roll_env.feasible_actions()
                                 if not feasible:
                                     break
+                                if self.rollout_counterfactual_k:
+                                    feasible_set = set(feasible)
+                                    premature = [
+                                        q for q in fp.action_order
+                                        if q not in feasible_set
+                                        and q not in roll_env.resolved
+                                    ]
+                                    resolved_neg = [
+                                        q for q in fp.action_order
+                                        if q in roll_env.resolved
+                                    ]
+                                    rng.shuffle(premature)
+                                    rng.shuffle(resolved_neg)
+                                    half = (self.rollout_counterfactual_k + 1) // 2
+                                    chosen = premature[:half] + resolved_neg[:half]
+                                    cf_sequence.append([
+                                        self.vocab.encode(roll_env.action_text(q))
+                                        for q in chosen[: self.rollout_counterfactual_k]
+                                    ])
                                 nxt = feasible[rng.randrange(len(feasible))]
                                 action_sequence.append(
                                     self.vocab.encode(
@@ -506,10 +553,14 @@ class FaithfulDataset(Dataset):
                                 )
                             candidate_rollouts.append(sequence)
                             candidate_action_rollouts.append(action_sequence)
+                            candidate_cf_rollouts.append(cf_sequence)
                         rollout_steps.append(candidate_rollouts)
                         rollout_actions.append(candidate_action_rollouts)
+                        rollout_cf_actions.append(candidate_cf_rollouts)
                     ga["ga_rollout_steps"] = rollout_steps
                     ga["ga_rollout_actions"] = rollout_actions
+                    if self.rollout_counterfactual_k:
+                        ga["ga_rollout_cf_actions"] = rollout_cf_actions
         # Grounding falsifier (named negative control): permute the
         # correspondence between on-trajectory action phrases and their
         # rendered transitions.  Drawn last, after all other randomness, to

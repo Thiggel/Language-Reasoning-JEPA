@@ -299,6 +299,10 @@ def build_dataset(cfg, vocab, split: str = "val", size: int | None = None):
             invalid_counterfactual_unresolved_only=d.get(
                 "invalid_counterfactual_unresolved_only", False
             ),
+            invalid_counterfactual_resolved_k=d.get(
+                "invalid_counterfactual_resolved_k", 0
+            ),
+            rollout_counterfactual_k=d.get("rollout_counterfactual_k", 0),
             macro_alt_k=d.get("macro_alt_k", 0),
             macro_alt_horizon=d.get("macro_alt_horizon", 3),
             all_action_supervision=d.get("all_action_supervision", False),
