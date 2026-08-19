@@ -796,3 +796,41 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   always check `exit_code` and the log tail; (2) nothing prevents two
   launches of the same cell into one run dir. A lock file or a
   refuse-if-state-exists guard in job.sh would prevent recurrence.
+
+- **Term isolation: what actually builds the consequence geometry.** Same
+  test as above (faithful, 120 problems, 72 pairs), four arms that differ
+  only in one ingredient. Steps are noted because they are NOT matched:
+
+  | arm | steps | AUC (cos) | AUC (L2) | Cohen's d |
+  |---|---|---|---|---|
+  | full recipe | 13500 | .797 | .795 | 1.089 |
+  | minus energy ranking | 10500 | .774 | .765 | 1.011 |
+  | **minus intent_prior_lm** | 8500 | **.938** | .933 | 1.905 |
+  | **from scratch (no LM init)** | 13000 | **.879** | .880 | 1.269 |
+  | (reference: LM-init before any JEPA training) | 0 | .568 | | |
+
+  TWO FINDINGS, both against the current framing:
+  1. **The generative `intent_prior_lm` term is the main thing SUPPRESSING
+     the geometry** (.938 without it vs .797 with, on FEWER steps — so this
+     is not a training-amount artifact, the direction is against the
+     confound). Intuitive: a term that forces the state to keep enough
+     surface detail to regenerate the exact tokens works directly against
+     collapsing paraphrases onto one point.
+  2. **LM initialization HURTS the geometry**: from scratch .879 beats
+     LM-init .797 at comparable steps (13000 vs 13500). Consistent with the
+     08-20 finding that the token LM's own geometry is anti-consequence
+     (ProofWriter AUC .170). Starting from it is a handicap, not a head
+     start.
+  REFRAMING NEEDED: the "before/after on identical weights" story
+  (.568 -> .711/.797) is still true and still the cleanest CAUSAL evidence
+  that JEPA training builds this structure, but it must NOT be presented as
+  if LM init were beneficial. The stronger claim available is that JEPA
+  training builds consequence geometry from scratch, and does so BETTER
+  without the generative prior.
+  REAL TRADE-OFF TO QUANTIFY BEFORE ACTING: `intent_prior_lm` is also the
+  anti-collusion anchor and the source of no-menu proposals
+  (`prior_propose`). Dropping it would buy geometry and lose the menu-free
+  interface. Needs the planning numbers from `flat-lminit-noprior-s0` side
+  by side with the geometry before any recipe change.
+  CAVEATS: one seed, 72 pairs, mid-training checkpoints at unequal steps.
+  Re-run at convergence with matched steps before this goes in the paper.
