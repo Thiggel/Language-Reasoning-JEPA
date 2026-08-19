@@ -20,6 +20,32 @@ class LatentPrediction(Objective):
         return masked_mean(d, out.step_mask.float())
 
 
+class LatentRolloutPrediction(Objective):
+    """Multi-step latent rollout: ||F^k(s_t, a_t..a_{t+k-1}) - sg(s_{t+k})||.
+
+    Same loss form and normalization as ``LatentPrediction``, averaged over
+    the configured k list; the per-k terms are stashed as diagnostics.
+    """
+
+    def __init__(self, kind: str = "smooth_l1", norm_targets: bool = True):
+        super().__init__()
+        self.kind, self.norm_targets = kind, norm_targets
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        pred = out.extras.get("rollout_preds")
+        if pred is None:
+            return out.preds.sum() * 0.0
+        target = out.extras["rollout_targets"]
+        mask = out.extras["rollout_valid"].float()
+        d = latent_distance(pred, target, self.kind, self.norm_targets)
+        per_k = []
+        for i, k in enumerate(out.extras["rollout_ks"]):
+            lk = masked_mean(d[:, :, i], mask[:, :, i])
+            out.extras[f"diag_latent_rollout_pred_k{k}"] = lk.detach()
+            per_k.append(lk)
+        return torch.stack(per_k).mean()
+
+
 class TokenAlignedPrediction(Objective):
     """Next-token-latent JEPA loss on the structured edit state."""
 

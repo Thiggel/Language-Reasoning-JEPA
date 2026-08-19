@@ -34,6 +34,7 @@ from textjepa.objectives import (
     GeoHorizonRank,
     IntentPriorLM,
     LatentPrediction,
+    LatentRolloutPrediction,
     ObservedActionLDAD,
     VICReg,
 )
@@ -83,6 +84,9 @@ def _leaves(d: dict, prefix: str = "") -> set:
 def build_objective(oc) -> CompositeObjective:
     objs = {
         "latent_pred": LatentPrediction(oc.latent_pred.kind, oc.latent_pred.norm_targets),
+        "latent_rollout_pred": LatentRolloutPrediction(
+            oc.latent_rollout_pred.kind, oc.latent_rollout_pred.norm_targets
+        ),
         "vicreg": VICReg(oc.vicreg.std_target, oc.vicreg.cov_weight, oc.vicreg.action_weight),
         "counterfactual_state": CounterfactualStatePrediction(
             oc.counterfactual_state.kind, oc.counterfactual_state.norm_targets
@@ -198,9 +202,15 @@ def main(cfg: DictConfig) -> None:
     device = torch.device(c.device)
     _ = c.run_name
     vocab = build_vocab_for(c.data)
+    rollout_ks = (
+        list(c.objective.latent_rollout_pred.ks)
+        if float(c.objective.latent_rollout_pred.weight) > 0.0 else []
+    )
     model = FlatIntentJEPA(
-        vocab_size=len(vocab), pad_id=vocab.pad_id, **c.model.as_dict()
+        vocab_size=len(vocab), pad_id=vocab.pad_id,
+        latent_rollout_ks=rollout_ks, **c.model.as_dict()
     ).to(device)
+    _ = c.objective.latent_rollout_pred.ks
     objective = build_objective(c.objective)
     lm_loss_on = c.model.lm_loss_on
     train_ds = build_data(c.data, vocab, "train", lm_loss_on)
@@ -305,6 +315,9 @@ def main(cfg: DictConfig) -> None:
             for k in ("energy_cf_depth_acc", "energy_cf_depth_pairs"):
                 if k in out.extras:
                     acc_items[k] += float(out.extras[k]) / accum
+            for k, v in out.extras.items():
+                if k.startswith("diag_"):
+                    acc_items[k[len("diag_"):]] += float(v) / accum
             micro_i += 1
             problems_seen += batch["tokens"].shape[0]
             if micro_i % accum:

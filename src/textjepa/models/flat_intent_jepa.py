@@ -77,6 +77,7 @@ class FlatIntentJEPA(nn.Module):
         value_detach: bool = False,
         teacher_chunk: int = 96,
         lm_loss_on: str = "all_solution",
+        latent_rollout_ks: tuple[int, ...] = (),
     ):
         super().__init__()
         if encoder_mode not in {"full", "frozen", "lora"}:
@@ -96,6 +97,13 @@ class FlatIntentJEPA(nn.Module):
         self.value_detach = bool(value_detach)
         self.teacher_chunk = int(teacher_chunk)
         self.lm_loss_on = lm_loss_on
+        self.latent_rollout_ks = tuple(sorted({int(k) for k in latent_rollout_ks}))
+        if self.latent_rollout_ks and min(self.latent_rollout_ks) < 1:
+            raise ValueError("latent_rollout_ks must be >= 1")
+        if self.latent_rollout_ks and predictor_kind != "mlp":
+            raise NotImplementedError(
+                "latent_rollout_pred currently supports predictor_kind=mlp only"
+            )
         self.init_from_lm = init_from_lm
         self.encoder = DecoderLM(
             vocab_size=vocab_size, pad_id=pad_id, d_model=d_model,
@@ -270,6 +278,10 @@ class FlatIntentJEPA(nn.Module):
             extras["observed_action_logits"] = self.observed_action_decoder(
                 step_states - prev_states
             )
+        if self.latent_rollout_ks:
+            self._latent_rollout(
+                extras, prev_states, actions, step_states_t, step_mask
+            )
         extras["s0_tgt"] = s0_t
         extras["prev_states_tgt"] = torch.cat(
             [s0_t.unsqueeze(1), step_states_t[:, :-1]], dim=1
@@ -283,6 +295,52 @@ class FlatIntentJEPA(nn.Module):
         if "ga_cand_cat" in batch and (batch["ga_t"] >= 0).any():
             self._geo_rank(batch, out, cat_vecs, s_all, s_all_t)
         return out
+
+    # -------------------------------------------------- multi-step rollout
+    def _latent_rollout(self, extras, prev_states, actions, step_states_t,
+                        step_mask) -> None:
+        """k-step latent rollout along the TRUE observed action sequence.
+
+        From every anchor state s_t the predictor is rolled forward k steps
+        using the observed actions a_t..a_{t+k-1} (reusing ``imagine``, the
+        same recursive machinery planning uses) and the k-step imagined state
+        is regressed onto the EMA teacher's true s_{t+k}.  A single rollout of
+        length max(ks) yields every prefix, so all k are free.
+        """
+        B, T, D = prev_states.shape
+        ks = self.latent_rollout_ks
+        kmax = max(ks)
+        pad_a = F.pad(actions, (0, 0, 0, kmax - 1))
+        pad_m = F.pad(step_mask.float(), (0, kmax - 1))
+        pad_t = F.pad(step_states_t, (0, 0, 0, kmax - 1))
+        codes = torch.stack([pad_a[:, j:j + T] for j in range(kmax)], 2)
+        steps = torch.stack([pad_m[:, j:j + T] for j in range(kmax)], 2)
+        valid = steps.cumprod(-1)  # [B, T, kmax]: all of a_t..a_{t+k-1} exist
+        _, prefixes = self.imagine(
+            prev_states.reshape(B * T, D),
+            codes.reshape(B * T, kmax, D),
+            steps.reshape(B * T, kmax) > 0,
+            return_prefixes=True,
+        )
+        prefixes = prefixes.reshape(B, T, kmax + 1, D)
+        preds, tgts, masks = [], [], []
+        for k in ks:
+            preds.append(prefixes[:, :, k])
+            tgts.append(pad_t[:, k - 1:k - 1 + T])
+            masks.append(valid[:, :, k - 1])
+        extras["rollout_preds"] = torch.stack(preds, 2)     # [B, T, K, D]
+        extras["rollout_targets"] = torch.stack(tgts, 2).detach()
+        extras["rollout_valid"] = torch.stack(masks, 2)     # [B, T, K]
+        extras["rollout_ks"] = ks
+        with torch.no_grad():
+            for i, k in enumerate(ks):
+                cos = F.cosine_similarity(
+                    _ln(preds[i].float()), _ln(tgts[i].float()), dim=-1
+                )
+                m = masks[i]
+                extras[f"diag_rollout_cos_k{k}"] = (
+                    (cos * m).sum() / m.sum().clamp(min=1.0)
+                )
 
     # ----------------------------------------------------------- geo rank
     def _geo_rank(self, batch, out, cat_vecs, s_all, s_all_t) -> None:
