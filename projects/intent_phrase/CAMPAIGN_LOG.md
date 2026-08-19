@@ -2177,3 +2177,11 @@ machinery.
   CORRECTION: the expected ~2x speedup is **~1.1x**. At batch 16 with short
   iGSM sequences these runs are dataloader/launch bound, not matmul bound.
   Do not claim 2x anywhere.
+
+- **hard21 local token LM OOM'd and is relaunched.**
+  `2026-08-19-lm-hard21-local-v1/tok-lm-hard21-fullsol-s0` died with
+  `torch.OutOfMemoryError` on a 22GB card (faithful hard split needs
+  `model.max_len=4096`). Old dir kept as `-oom`. Relaunched on gruenau12
+  GPU 4 (L40, 46GB) from snapshot `_code/09f5657...` with `train.precision=bf16`
+  and `train.num_workers=6`; steady-state ~18.9GB, comfortable headroom.
+  This cell is what unblocks `flat-hard21-lminit-s0` (job.sh.pending).
