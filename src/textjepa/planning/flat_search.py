@@ -71,7 +71,8 @@ def _last_int(text: str):
 class FlatPlanner:
     def __init__(self, model, vocab, device, lookahead: int = 1,
                  max_expand: int = 64, candidate_interface: str = "feasible_menu",
-                 branch: int = 4,
+                 branch: int = 4, scorer: str = "energy",
+                 endpoints: str = "imagined",
                  cap_mult: float = 4.0, mask_attempted: bool = True,
                  prior_samples: int = 16, prior_top_p: float = 0.95,
                  prior_temperature: float = 1.3, prior_greedy: int = 1,
@@ -87,6 +88,17 @@ class FlatPlanner:
         self.lookahead = int(lookahead)
         self.max_expand = int(max_expand)
         self.branch = int(branch)
+        # DIAGNOSTIC ONLY (candidate-privileged / oracle rows; never a paper
+        # headline): `scorer=oracle_distance` ranks by latent distance to the
+        # encoded TRUE solved state, `endpoints=true` executes each candidate
+        # sequence in a copy of the environment and encodes the REAL state.
+        if scorer not in {"energy", "oracle_distance"}:
+            raise ValueError(f"unknown scorer {scorer!r}")
+        if endpoints not in {"imagined", "true"}:
+            raise ValueError(f"unknown endpoints {endpoints!r}")
+        self.scorer = scorer
+        self.endpoints = endpoints
+        self.oracle_diagnostic = (scorer != "energy" or endpoints != "imagined")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
         self.mask_attempted = bool(mask_attempted)
@@ -294,10 +306,71 @@ class FlatPlanner:
         rng.shuffle(seqs)
         return seqs
 
+
+    # ------------------------------------------- diagnostic (oracle) helpers
+    @torch.no_grad()
+    def _encode_batch(self, histories: list[list[int]]) -> torch.Tensor:
+        """Last hidden state for a batch of token histories (right padded;
+        causal attention makes the padding inert for earlier positions)."""
+        hs = [h[-self.max_len:] for h in histories]
+        L = max(len(h) for h in hs)
+        toks = torch.full((len(hs), L), self.vocab.pad_id, dtype=torch.long,
+                          device=self.device)
+        for i, h in enumerate(hs):
+            toks[i, : len(h)] = torch.tensor(h, dtype=torch.long, device=self.device)
+        outs = []
+        for st in range(0, len(hs), 64):
+            chunk = toks[st: st + 64]
+            keep = max(len(h) for h in hs[st: st + 64])
+            h = self.model.encode(chunk[:, :keep])
+            self.counter.backbone(chunk.shape[0], keep)
+            idx = torch.tensor([len(x) - 1 for x in hs[st: st + 64]], device=self.device)
+            outs.append(h[torch.arange(h.shape[0], device=self.device), idx])
+        return torch.cat(outs, 0)
+
+    @torch.no_grad()
+    def _goal_vector(self, env, history: list[int]):
+        """ORACLE: encode the state reached by completing the problem from
+        here along necessary feasible actions (the reference solved state)."""
+        probe = env.clone()
+        hist = list(history)
+        guard = 0
+        while not probe.solved and guard < 64:
+            feas = probe.feasible_actions()
+            if not feas:
+                break
+            nxt = [q for q in feas if q in env.fp.necessary] or list(feas)
+            q = sorted(nxt)[0]
+            hist = hist + self.vocab.encode(probe.action_text(q))
+            hist = hist + self.vocab.encode(probe.step(q))
+            guard += 1
+        return self._encode_batch([hist])[0], bool(probe.solved)
+
+    @torch.no_grad()
+    def _true_endpoints(self, seqs: list[list], env, history: list[int]):
+        """ORACLE: execute each candidate sequence in a copy of the env
+        (illegal actions are no-ops, as for the real executor) and encode the
+        resulting REAL state."""
+        hists = []
+        for seq in seqs:
+            probe = env.clone()
+            hist = list(history)
+            for a in seq:
+                if a is None:
+                    continue
+                hist = hist + self.vocab.encode(probe.action_text(a))
+                hist = hist + self.vocab.encode(probe.step_or_invalid(a))
+            hists.append(hist)
+        return self._encode_batch(hists)
+
     @torch.no_grad()
     def _score(self, seqs: list[list], state, s0, code_of: dict,
-               hist_s: list, hist_a: list, horizon: float):
-        """Endpoint energy E(s, imagine(s, seq), s_0) for a batch of rollouts."""
+               hist_s: list, hist_a: list, horizon: float, env=None,
+               history=None, goal=None, endpoints: str | None = None,
+               _force_oracle: bool = False):
+        """Rank a batch of rollouts (lower = better).  Default = the endpoint
+        energy E(s, imagine(s, seq), s_0) on IMAGINED endpoints.  The oracle
+        diagnostic rows swap the endpoint source and/or the scorer."""
         n = len(seqs)
         depth = max(len(q) for q in seqs)
         D = state.shape[-1]
@@ -319,19 +392,26 @@ class FlatPlanner:
         else:
             endpoint = self.model.imagine(root, act, act_mask)
         self.counter.latent(n, depth)
+        src = endpoints or self.endpoints
+        if src == "true":
+            endpoint = self._true_endpoints(seqs, env, history)
+        if self.scorer == "oracle_distance" or _force_oracle:
+            return (endpoint.float() - goal.float().unsqueeze(0)).norm(dim=-1)
         self.counter.bump("energy_forwards", n)
         return self.model.energy(root, endpoint, s0.unsqueeze(0).expand(n, -1),
                                  float(horizon))
 
     @torch.no_grad()
     def _beam(self, roots: list, pool: list, state, s0, code_of: dict,
-              hist_s: list, hist_a: list, rng: random.Random):
+              hist_s: list, hist_a: list, rng: random.Random, env=None,
+              history=None, goal=None):
         """Energy-guided beam over imagined rollouts.  Depth 1 is exactly the
         old behaviour (score every root); each deeper level extends every
         surviving beam by its ``branch`` lowest-energy pool continuations and
         keeps the ``max_expand`` best beams overall."""
         seqs = [[r] for r in roots]
-        energy = self._score(seqs, state, s0, code_of, hist_s, hist_a, 1)
+        kw = dict(env=env, history=history, goal=goal)
+        energy = self._score(seqs, state, s0, code_of, hist_s, hist_a, 1, **kw)
         for d in range(2, self.lookahead + 1):
             order = torch.argsort(energy).tolist()[: self.max_expand]
             beams = [seqs[i] for i in order]
@@ -342,11 +422,11 @@ class FlatPlanner:
                     cand.append(seq + [None])
                     continue
                 ext = [seq + [a] for a in rest]
-                e = self._score(ext, state, s0, code_of, hist_s, hist_a, d)
+                e = self._score(ext, state, s0, code_of, hist_s, hist_a, d, **kw)
                 keep = torch.argsort(e).tolist()[: max(self.branch, 1)]
                 cand += [ext[i] for i in keep]
             seqs = cand
-            energy = self._score(seqs, state, s0, code_of, hist_s, hist_a, d)
+            energy = self._score(seqs, state, s0, code_of, hist_s, hist_a, d, **kw)
         return seqs, energy
 
     # ------------------------------------------------------------ episode
@@ -364,7 +444,8 @@ class FlatPlanner:
         attempted: set = set()
         stats = {"n_proposed": 0, "n_parseable": 0, "n_unique": 0, "n_kept": 0,
                  "n_no_proposal": 0, "recall_hits": 0, "recall_steps": 0,
-                 "imagined_slots": 0, "imagined_invalid": 0}
+                 "imagined_slots": 0, "imagined_invalid": 0,
+                 "beam_slots": 0, "beam_better_than_d1": 0}
         menu_free = self.candidate_interface in MENU_FREE_INTERFACES
         autonomous = self.candidate_interface == "autonomous"
         value_match = n_valid = 0
@@ -393,13 +474,35 @@ class FlatPlanner:
                     break
             stats["n_kept"] += len(roots)
             pool = [q for q in pool_actions if q not in attempted] if self.mask_attempted else list(pool_actions)
+            goal = None
+            if self.scorer == "oracle_distance" or self.lookahead > 1:
+                # goal vector: ORACLE for the oracle_distance scorer, and the
+                # measurement metric for the depth-offers-better-options stat.
+                goal, _g_ok = self._goal_vector(env, history)
             if self.lookahead == 1:
                 seqs = [[r] for r in roots]
                 energy = self._score(seqs, state, s0, code_of, hist_s, hist_a,
-                                     self.lookahead)
+                                     self.lookahead, env=env, history=history,
+                                     goal=goal)
             else:
                 seqs, energy = self._beam(roots, pool, state, s0, code_of,
-                                          hist_s, hist_a, rng)
+                                          hist_s, hist_a, rng, env=env,
+                                          history=history, goal=goal)
+                # MEASUREMENT (oracle): does deeper imagination even offer
+                # options whose imagined endpoint is closer to the solved
+                # state than the depth-1 pick's would be?
+                d1 = [[r] for r in roots]
+                e1 = self._score(d1, state, s0, code_of, hist_s, hist_a, 1,
+                                 env=env, history=history, goal=goal)
+                pick1 = d1[int(e1.argmin().item())]
+                dist1 = self._score([pick1], state, s0, code_of, hist_s, hist_a,
+                                    1, env=env, history=history, goal=goal,
+                                    _force_oracle=True)[0]
+                dall = self._score(seqs, state, s0, code_of, hist_s, hist_a,
+                                   self.lookahead, env=env, history=history,
+                                   goal=goal, _force_oracle=True)
+                stats["beam_slots"] += int(dall.numel())
+                stats["beam_better_than_d1"] += int((dall < dist1).sum().item())
             best = seqs[int(energy.argmin().item())]
             q = best[0]
             if len(best) > 1:
@@ -512,6 +615,10 @@ def summarize(episodes: list[dict]) -> dict:
             out["proposal_parse_rate"] = sum(s["n_parseable"] for s in st) / max(sum(s["n_proposed"] for s in st), 1)
             out["proposal_unique_per_step"] = sum(s["n_unique"] for s in st) / rs
         out["no_proposal_episode_rate"] = sum(s["n_no_proposal"] > 0 for s in st) / n
+        bs = sum(s.get("beam_slots", 0) for s in st)
+        if bs:
+            out["beam_closer_to_goal_than_d1_frac"] = (
+                sum(s.get("beam_better_than_d1", 0) for s in st) / bs)
         slots = sum(s["imagined_slots"] for s in st)
         if slots:
             out["imagined_invalid_rate"] = sum(s["imagined_invalid"] for s in st) / slots

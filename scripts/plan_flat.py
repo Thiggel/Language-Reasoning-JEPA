@@ -81,6 +81,11 @@ def main() -> None:
     ap.add_argument("--interface", default="feasible_menu", choices=CANDIDATE_INTERFACES)
     ap.add_argument("--lookahead", type=int, default=1)
     ap.add_argument("--max-expand", type=int, default=64)
+    ap.add_argument("--scorer", default="energy",
+                    choices=["energy", "oracle_distance"],
+                    help="DIAGNOSTIC: oracle_distance ranks by latent distance to the encoded TRUE solved state")
+    ap.add_argument("--endpoints", default="imagined", choices=["imagined", "true"],
+                    help="DIAGNOSTIC: true = execute candidates in a copy of the env and encode the REAL state")
     ap.add_argument("--branch", type=int, default=4,
                     help="energy-guided continuations kept per beam at depth>1")
     ap.add_argument("--n-episodes", type=int, default=100)
@@ -110,7 +115,7 @@ def main() -> None:
         args.max_edge, args.op_lo, args.op_hi,
     )
     planner = FlatPlanner(
-        model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand, branch=args.branch,
+        model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand, branch=args.branch, scorer=args.scorer, endpoints=args.endpoints,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
         prior_samples=args.prior_samples, prior_top_p=args.prior_top_p,
         prior_temperature=args.prior_temperature, prior_top_k=args.prior_top_k,
@@ -128,10 +133,14 @@ def main() -> None:
     results["protocol"] = {
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
         "max_expand": args.max_expand, "branch": args.branch,
-        "cap_mult": args.cap_mult, "expansion": "energy-guided beam (oracle-free)",
+        "cap_mult": args.cap_mult,
+        "scorer": args.scorer, "endpoints": args.endpoints,
+        "expansion": "energy-guided beam (oracle-free)" if not planner.oracle_diagnostic else "beam guided by an ORACLE diagnostic scorer/state-source",
         "caps": caps,
         "oracle_future_actions": False, "budget": "none (runaway cap only)",
-        "evidence_label": (
+        "evidence_label": ("CANDIDATE-PRIVILEGED ORACLE DIAGNOSTIC "
+            f"(scorer={args.scorer}, endpoints={args.endpoints}) -- NOT a headline row; "
+            if planner.oracle_diagnostic else "") + (
             "menu (feasibility oracle at the root only)" if args.interface == "feasible_menu"
             else "menu-free, oracle executor" if args.interface != "autonomous"
             else "menu-free, model-written outcomes, env used for grading only"
