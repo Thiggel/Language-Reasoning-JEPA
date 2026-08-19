@@ -74,6 +74,7 @@ class FlatIntentJEPA(nn.Module):
         ldad_max_len: int = 16,
         energy_cf_feasibility_rank: bool = True,
         energy_cf_scope: str = "all",  # all | invalid_only
+        energy_prefix_rank: bool = False,
         value_detach: bool = False,
         teacher_chunk: int = 96,
         lm_loss_on: str = "all_solution",
@@ -93,6 +94,7 @@ class FlatIntentJEPA(nn.Module):
         self.encoder_mode = encoder_mode
         self.predictor_kind = predictor_kind
         self.energy_cf_feasibility_rank = bool(energy_cf_feasibility_rank)
+        self.energy_prefix_rank = bool(energy_prefix_rank)
         self.energy_cf_scope = energy_cf_scope
         self.value_detach = bool(value_detach)
         self.teacher_chunk = int(teacher_chunk)
@@ -103,6 +105,10 @@ class FlatIntentJEPA(nn.Module):
         if self.latent_rollout_ks and predictor_kind != "mlp":
             raise NotImplementedError(
                 "latent_rollout_pred currently supports predictor_kind=mlp only"
+            )
+        if self.energy_prefix_rank and predictor_kind != "mlp":
+            raise NotImplementedError(
+                "energy_prefix_rank currently supports predictor_kind=mlp only"
             )
         self.init_from_lm = init_from_lm
         self.encoder = DecoderLM(
@@ -521,6 +527,106 @@ class FlatIntentJEPA(nn.Module):
                     out.extras["energy_cf_depth_acc"] = (
                         ordered.sum().float() / valid_flat.sum().clamp(min=1)
                     )
+
+        # ---- PARTIAL-TRAJECTORY (prefix) ranking ---------------------------
+        if self.energy_prefix_rank and "ga_roll_cf" in batch:
+            self._prefix_rank(
+                out, batch, cat_vecs, root, initial, codes, flat_mask,
+                prefixes, act_mask, rv, B, C, R, Hh,
+            )
+
+    # ------------------------------------------------- prefix (path) rank
+    def _prefix_rank(self, out, batch, cat_vecs, root, initial, codes,
+                     flat_mask, prefixes, act_mask, rv, B, C, R, Hh) -> None:
+        """Rank whole imagined PATHS, not just their endpoints.
+
+        The observed continuation of a rollout is the action sequence that
+        actually occurred (a_1..a_H).  A counterfactual PATH is the same
+        sequence with one counterfactual intent INSERTED at a random depth
+        j >= 1 (``ga_roll_cf``, the infeasible intents the dataset already
+        samples at every rollout state).  Because an infeasible intent is a
+        no-op in the environment, the inserted path reaches the SAME place
+        having wasted a step -- exactly the degeneracy an endpoint-only
+        Energy cannot see.  The head therefore emits an energy for EVERY
+        prefix of both paths, E(root, prefix_j, s_0, j), and the objective
+        aggregates them into one path score before the pairwise contrast.
+
+        The only label is "which continuation actually occurred", which is in
+        the data.  No symbolic state, step count, or ranking label is read.
+        """
+        device = root.device
+        D = root.shape[-1]
+        N = root.shape[0]
+        cf = batch["ga_roll_cf"].reshape(N, Hh, -1)
+        cf_mask = (
+            batch["ga_roll_cf_mask"] & act_mask.unsqueeze(-1)
+        ).reshape(N, Hh, -1)
+        Kc = cf.shape[-1]
+        # depth 0 is the anchor decision (already contrasted by
+        # energy_cf_feasibility_rank); insertions live strictly inside the
+        # imagined continuation.
+        depth_ok = torch.zeros(Hh, dtype=torch.bool, device=device)
+        depth_ok[1:] = True
+        cf_mask = cf_mask & depth_ok.view(1, Hh, 1)
+        if not bool(cf_mask.any()):
+            return
+
+        # ---- energies of every prefix of the OBSERVED path ---------------
+        depths = torch.arange(1, Hh + 1, device=device, dtype=root.dtype)
+        root_h = root.unsqueeze(1).expand(-1, Hh, -1)
+        init_h = initial.unsqueeze(1).expand(-1, Hh, -1)
+        e_obs = self.energy(root_h, prefixes[:, 1:], init_h, depths.view(1, Hh))
+
+        # ---- one random insertion depth per counterfactual slot -----------
+        valid_nk = cf_mask.permute(0, 2, 1).contiguous()      # [N, Kc, Hh]
+        has_pair = valid_nk.any(-1)                            # [N, Kc]
+        probs = torch.where(
+            has_pair.unsqueeze(-1), valid_nk.float(),
+            torch.ones_like(valid_nk, dtype=torch.float),
+        )
+        j = torch.multinomial(probs.reshape(N * Kc, Hh), 1).reshape(N, Kc)
+        cf_pick = cf.permute(0, 2, 1).gather(2, j.unsqueeze(-1)).squeeze(-1)
+        b_of_n = torch.arange(B, device=device).repeat_interleave(C * R)
+        cf_vec = cat_vecs[b_of_n.unsqueeze(1), cf_pick]        # [N, Kc, D]
+
+        # ---- build the inserted action sequence (length Hh + 1) -----------
+        L = Hh + 1
+        ar = torch.arange(L, device=device).view(1, 1, L)
+        src = torch.where(ar < j.unsqueeze(-1), ar, ar - 1).clamp(min=0)
+        seq = codes.unsqueeze(1).expand(N, Kc, Hh, D).gather(
+            2, src.unsqueeze(-1).expand(N, Kc, L, D)
+        )
+        msk = flat_mask.unsqueeze(1).expand(N, Kc, Hh).gather(2, src)
+        seq = seq.scatter(
+            2, j.view(N, Kc, 1, 1).expand(N, Kc, 1, D), cf_vec.unsqueeze(2)
+        )
+        msk = msk.scatter(
+            2, j.unsqueeze(-1), torch.ones_like(j.unsqueeze(-1), dtype=msk.dtype)
+        )
+
+        # ---- imagine the counterfactual paths and score every prefix ------
+        M = N * Kc
+        root_k = root.unsqueeze(1).expand(N, Kc, D).reshape(M, D)
+        _, cf_pre = self.imagine(
+            root_k, seq.reshape(M, L, D), msk.reshape(M, L),
+            return_prefixes=True,
+        )
+        depths_l = torch.arange(1, L + 1, device=device, dtype=root.dtype)
+        root_l = root_k.unsqueeze(1).expand(M, L, D)
+        init_l = initial.unsqueeze(1).expand(N, Kc, D).reshape(M, 1, D).expand(
+            M, L, D
+        )
+        e_cf = self.energy(
+            root_l, cf_pre[:, 1:], init_l, depths_l.view(1, L)
+        ).reshape(N, Kc, L)
+
+        out.extras["energy_prefix_obs"] = e_obs                # [N, Hh]
+        out.extras["energy_prefix_obs_valid"] = flat_mask      # [N, Hh]
+        out.extras["energy_prefix_cf"] = e_cf                  # [N, Kc, L]
+        out.extras["energy_prefix_cf_valid"] = msk             # [N, Kc, L]
+        out.extras["energy_prefix_pair_valid"] = (
+            has_pair & rv.reshape(N, 1) & flat_mask.any(-1, keepdim=True)
+        )
 
     def _histories(self, out, t):
         """Teacher-forced prefix (s_0..s_t, a_0..a_{t-1}) padded per row for

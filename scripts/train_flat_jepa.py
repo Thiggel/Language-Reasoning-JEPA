@@ -36,6 +36,7 @@ from textjepa.objectives import (
     CompositeObjective,
     CounterfactualStatePrediction,
     EnergyCFFeasibilityRank,
+    EnergyPrefixRank,
     GeoAdvantageRegression,
     GeoHorizonRank,
     IntentPriorLM,
@@ -105,6 +106,7 @@ def build_objective(oc) -> CompositeObjective:
         "geo_advantage_mse": GeoAdvantageRegression(oc.geo_advantage_mse.target_scale),
         "observed_action_ldad": ObservedActionLDAD(),
         "energy_cf_feasibility_rank": EnergyCFFeasibilityRank(),
+        "energy_prefix_rank": EnergyPrefixRank(oc.energy_prefix_rank.aggregate),
         "intent_prior_lm": IntentPriorLM(),
     }
     weights = {name: float(getattr(oc, name).weight) for name in objs}
@@ -214,7 +216,9 @@ def main(cfg: DictConfig) -> None:
     )
     model = FlatIntentJEPA(
         vocab_size=len(vocab), pad_id=vocab.pad_id,
-        latent_rollout_ks=rollout_ks, **c.model.as_dict()
+        latent_rollout_ks=rollout_ks,
+        energy_prefix_rank=float(c.objective.energy_prefix_rank.weight) > 0.0,
+        **c.model.as_dict()
     ).to(device)
     _ = c.objective.latent_rollout_pred.ks
     objective = build_objective(c.objective)

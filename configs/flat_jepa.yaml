@@ -64,6 +64,9 @@ objective:
   geo_advantage_mse: {weight: 0.25, target_scale: 1.0}
   observed_action_ldad: {weight: 1.0}
   energy_cf_feasibility_rank: {weight: 4.0}
+  # path-level counterfactual ranking: score every prefix of an imagined
+  # trajectory, not only its endpoint (opt-in; 0 = off, no behaviour change)
+  energy_prefix_rank: {weight: 0.0, aggregate: mean_prefix}  # mean_prefix | endpoint
   intent_prior_lm: {weight: 1.0}
 
 train:
