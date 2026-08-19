@@ -132,6 +132,9 @@ def grad_norm_report(model, objective, out, batch) -> dict:
         if w == 0.0:
             continue
         loss = obj(out, batch) * w
+        if not loss.requires_grad:
+            report[name] = {"(no trainable parameters)": 0.0}
+            continue
         grads = torch.autograd.grad(
             loss, [p for _, p in params], retain_graph=True, allow_unused=True,
         )
