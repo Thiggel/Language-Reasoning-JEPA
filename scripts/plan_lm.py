@@ -96,7 +96,16 @@ def free_generation_eval(
         return phrase
 
     def last_int(text: str):
-        ints = [t for t in text.split() if t.lstrip("-").isdigit()]
+        # Sentence-final numbers are single tokens WITH the trailing period
+        # ("15.") in the faithful vocab and in the rendered outcome strings,
+        # so strip punctuation before the digit test.  (Before 2026-08-19
+        # this missed the final number and compared the penultimate integer
+        # — typically the last operand — which made success_answer_rate and
+        # outcome_value_match_rate meaningless in gen_outcome=model mode.)
+        ints = [
+            t.rstrip(".;,") for t in text.split()
+            if t.rstrip(".;,").lstrip("-").isdigit()
+        ]
         return int(ints[-1]) if ints else None
 
     episodes = []
@@ -188,6 +197,20 @@ def free_generation_eval(
         "solved_steps_median": _percentile(solved_steps, 0.5),
         "solved_steps_p90": _percentile(solved_steps, 0.9),
         "necessary_mean": sum(e["necessary"] for e in episodes) / n,
+        # Steps used on solved problems relative to the necessary count
+        # (1.0 = no detours).
+        "solved_steps_over_necessary_mean": (
+            sum(e["steps"] / e["necessary"] for e in episodes if e["success"])
+            / len(solved_steps) if solved_steps else float("nan")
+        ),
+        "solved_steps_over_necessary_median": _percentile(
+            sorted(e["steps"] / e["necessary"] for e in episodes if e["success"]),
+            0.5,
+        ),
+        "solved_exact_necessary_frac": (
+            sum(e["steps"] == e["necessary"] for e in episodes if e["success"])
+            / len(solved_steps) if solved_steps else float("nan")
+        ),
         "n_episodes": n,
         "gen_step_cap_mult": cap_mult,
         "gen_invalid_policy": invalid_policy,
