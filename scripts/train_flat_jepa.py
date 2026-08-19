@@ -20,6 +20,12 @@ import torch
 from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader
 
+# Dataloader workers pass tensors by file descriptor by default; with many
+# workers and many small tensors per batch this exhausts the process fd limit
+# and kills training mid-run (observed at ~step 2000, cells ecf1/s1/s2 on
+# 2026-08-19). The file_system strategy avoids per-tensor fds entirely.
+torch.multiprocessing.set_sharing_strategy("file_system")
+
 from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
 from textjepa.data.flat_stream import FlatIntentStreamDataset, collate_flat
 from textjepa.data.igsm.dataset import IGSMDataset
