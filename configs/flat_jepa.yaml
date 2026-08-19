@@ -1,0 +1,92 @@
+# Flat-backbone intent JEPA (faithful iGSM).  Every key below is read by
+# scripts/train_flat_jepa.py, which fails loudly on unread keys.
+run_name: flat_jepa
+seed: 0
+device: cuda:0
+
+data:
+  max_op: 15
+  max_edge: 20
+  op_range: [3, 15]
+  vocab_max_op: 15
+  vocab_max_edge: 20
+  necessary_range: null
+  distractor_prob: 0.0
+  max_distractors: 2
+  train_size: 100000
+  val_size: 500
+  train_seed: 1
+  val_seed: 2
+  # geometric-ranking counterfactuals (frozen recipe): K feasible alternatives,
+  # R random rollouts per candidate at a horizon sampled from `horizons`,
+  # plus hard-negative infeasible intents (unresolved-only).
+  geo_rank_k: 2
+  geo_rank_horizons: [1, 2, 4, 8]
+  geo_rank_rollouts: 4
+  invalid_counterfactual_k: 8
+  invalid_counterfactual_unresolved_only: true
+  invalid_counterfactual_resolved_k: 4   # easy negatives (already resolved) on top
+  rollout_counterfactual_k: 4            # infeasible intents at every rollout depth (legality along imagined prefixes)
+
+model:
+  d_model: 768
+  n_layers: 12
+  n_heads: 12
+  ff_mult: 4
+  max_len: 4096
+  init_from_lm: runs/autonomy/intent_phrase/2026-08-18-lm-med-scale-v1/tok-lm-med-fullsol-big-lr1e3-s0/model/best.pt
+  encoder_mode: full        # full | frozen | lora
+  lora_rank: 16
+  lora_alpha: 32.0
+  predictor_kind: mlp       # mlp | causal
+  predictor_hidden_mult: 4
+  predictor_layers: 2
+  predictor_residual: true
+  predictor_heads: 8
+  energy_hidden_mult: 2
+  geo_horizon_input: false  # horizon-blind endpoint Energy (frozen recipe)
+  observed_action_ldad: true
+  ldad_max_len: 16
+  energy_cf_feasibility_rank: true
+  energy_cf_scope: all      # all | invalid_only
+  value_detach: false
+  teacher_chunk: 96
+  lm_loss_on: all_solution  # intent | all_solution
+
+objective:
+  latent_pred: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  vicreg: {weight: 1.0, std_target: 1.0, cov_weight: 0.04, action_weight: 0.1}
+  counterfactual_state: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  geo_horizon_rank: {weight: 1.0, kind: logistic, margin: 0.5, label_gap: 0.02, temperature: 0.3, teacher_temperature: 0.1}
+  geo_advantage_mse: {weight: 0.25, target_scale: 1.0}
+  observed_action_ldad: {weight: 1.0}
+  energy_cf_feasibility_rank: {weight: 4.0}
+  intent_prior_lm: {weight: 1.0}
+
+train:
+  batch_size: 16
+  microbatch_size: 16
+  num_workers: 12
+  epochs: 10
+  lr: 1.0e-4
+  encoder_lr_mult: 1.0      # lr multiplier for the backbone (1 = same lr)
+  betas: [0.9, 0.95]
+  lr_floor: 0.05
+  weight_decay: 0.05
+  warmup_steps: 500
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 20
+  eval_batches: 20
+  precision: bf16
+  max_steps: null           # smoke runs: stop after this many optimizer steps
+  grad_norm_report_steps: 1 # per-term per-module grad-norm report on the first N steps
+  checkpoint_every_steps: 500
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  output_subdir: null
+  job:
+    chdir: false
