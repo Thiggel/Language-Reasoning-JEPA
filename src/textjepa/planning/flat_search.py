@@ -71,7 +71,8 @@ def _last_int(text: str):
 class FlatPlanner:
     def __init__(self, model, vocab, device, lookahead: int = 1,
                  max_expand: int = 64, candidate_interface: str = "feasible_menu",
-                 branch: int = 4, scorer: str = "energy",
+                 branch: int = 4, aggregate: str = "mean_prefix",
+                 scorer: str = "energy",
                  endpoints: str = "imagined",
                  cap_mult: float = 4.0, mask_attempted: bool = True,
                  prior_samples: int = 16, prior_top_p: float = 0.95,
@@ -88,6 +89,9 @@ class FlatPlanner:
         self.lookahead = int(lookahead)
         self.max_expand = int(max_expand)
         self.branch = int(branch)
+        if aggregate not in {"endpoint", "mean_prefix"}:
+            raise ValueError(f"unknown aggregate {aggregate!r}")
+        self.aggregate = aggregate
         # DIAGNOSTIC ONLY (candidate-privileged / oracle rows; never a paper
         # headline): `scorer=oracle_distance` ranks by latent distance to the
         # encoded TRUE solved state, `endpoints=true` executes each candidate
@@ -388,18 +392,30 @@ class FlatPlanner:
                   if hist_s else s0.view(1, 1, -1).expand(n, -1, -1))
             ha = (torch.stack(hist_a, 0).unsqueeze(0).expand(n, -1, -1)
                   if hist_a else act[:, :0])
-            endpoint = self.model.imagine(root, act, act_mask, hs, ha)
+            endpoint, prefixes = self.model.imagine(root, act, act_mask, hs, ha,
+                                                    return_prefixes=True)
         else:
-            endpoint = self.model.imagine(root, act, act_mask)
+            endpoint, prefixes = self.model.imagine(root, act, act_mask,
+                                                    return_prefixes=True)
         self.counter.latent(n, depth)
         src = endpoints or self.endpoints
         if src == "true":
             endpoint = self._true_endpoints(seqs, env, history)
         if self.scorer == "oracle_distance" or _force_oracle:
             return (endpoint.float() - goal.float().unsqueeze(0)).norm(dim=-1)
-        self.counter.bump("energy_forwards", n)
-        return self.model.energy(root, endpoint, s0.unsqueeze(0).expand(n, -1),
-                                 float(horizon))
+        init = s0.unsqueeze(0).expand(n, -1)
+        if self.aggregate == "endpoint" or src == "true" or depth == 1:
+            self.counter.bump("energy_forwards", n)
+            return self.model.energy(root, endpoint, init, float(horizon))
+        # Trajectory-mean energy over the imagined prefixes s_1..s_depth.  The
+        # endpoint-only score is blind to WASTED first steps: an illegal (no-op)
+        # action reaches the same endpoint for free, so at depth > 1 the argmin
+        # is free to start with an illegal action.  Averaging over prefixes
+        # charges every step.  Identical to the endpoint score at depth 1.
+        self.counter.bump("energy_forwards", n * depth)
+        es = [self.model.energy(root, prefixes[:, h + 1], init, float(h + 1))
+              for h in range(depth)]
+        return torch.stack(es, 1).mean(1)
 
     @torch.no_grad()
     def _beam(self, roots: list, pool: list, state, s0, code_of: dict,
@@ -459,6 +475,13 @@ class FlatPlanner:
                 stats["recall_steps"] += 1
                 feas = set(env.feasible_actions())
                 stats["recall_hits"] += int(any(q in feas for q in roots))
+            if not roots and self.mask_attempted and attempted - set(env.resolved):
+                # Every candidate at this state has been masked as invalid.
+                # An intent that was illegal earlier can be legal again later,
+                # so clear the invalid mask and retry instead of dead-ending;
+                # the runaway cap (not the mask) is the budget.
+                attempted = set(env.resolved)
+                roots = self._roots(env, history, attempted, rng, stats)
             if not roots:
                 stats["n_no_proposal"] += 1
                 break

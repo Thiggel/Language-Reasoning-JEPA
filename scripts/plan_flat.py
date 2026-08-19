@@ -81,6 +81,8 @@ def main() -> None:
     ap.add_argument("--interface", default="feasible_menu", choices=CANDIDATE_INTERFACES)
     ap.add_argument("--lookahead", type=int, default=1)
     ap.add_argument("--max-expand", type=int, default=64)
+    ap.add_argument("--aggregate", default="mean_prefix", choices=["endpoint", "mean_prefix"],
+                    help="rollout score: endpoint energy only (legacy) or mean energy over imagined prefixes")
     ap.add_argument("--scorer", default="energy",
                     choices=["energy", "oracle_distance"],
                     help="DIAGNOSTIC: oracle_distance ranks by latent distance to the encoded TRUE solved state")
@@ -115,7 +117,7 @@ def main() -> None:
         args.max_edge, args.op_lo, args.op_hi,
     )
     planner = FlatPlanner(
-        model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand, branch=args.branch, scorer=args.scorer, endpoints=args.endpoints,
+        model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand, branch=args.branch, aggregate=args.aggregate, scorer=args.scorer, endpoints=args.endpoints,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
         prior_samples=args.prior_samples, prior_top_p=args.prior_top_p,
         prior_temperature=args.prior_temperature, prior_top_k=args.prior_top_k,
@@ -134,7 +136,7 @@ def main() -> None:
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
         "max_expand": args.max_expand, "branch": args.branch,
         "cap_mult": args.cap_mult,
-        "scorer": args.scorer, "endpoints": args.endpoints,
+        "aggregate": args.aggregate, "scorer": args.scorer, "endpoints": args.endpoints,
         "expansion": "energy-guided beam (oracle-free)" if not planner.oracle_diagnostic else "beam guided by an ORACLE diagnostic scorer/state-source",
         "caps": caps,
         "oracle_future_actions": False, "budget": "none (runaway cap only)",
