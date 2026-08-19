@@ -750,3 +750,28 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   chance at init) — the head reliably separates a path that wasted one
   imagined step from the path that actually occurred, which is exactly the
   discrimination the endpoint-only objective never had.
+
+- **Ablation: the counterfactual-ranking term does NOT cause the consequence
+  geometry.** Ran `scripts/analysis/consequence_geometry.py` on faithful,
+  120 problems / 72 pairs, over three cells that differ only in
+  `energy_cf_feasibility_rank.weight`, at comparable training (steps 10000 /
+  10500 / 11000):
+
+  | weight | state order-invariance AUC (cosine) | AUC (L2) | Cohen's d |
+  |---|---|---|---|
+  | 0 (`nocfrank`) | **.774** | .765 | 1.011 |
+  | 16 (`ecf16`) | .701 | .705 | .716 |
+  | 64 (`ecf64`) | .698 | .692 | .764 |
+
+  Not a dose-response — the opposite, mildly. And the arm with the MOST
+  steps (ecf64, 11000) scores lowest, so this is not a training-amount
+  artifact. Checkpoints were copied before reading, since the cells are
+  live and writing `last.pt`.
+  READING: all three remain well above the LM-init baseline (.568), so JEPA
+  training as a whole still causes the effect — but it is NOT the energy
+  counterfactual-ranking term that does it. The natural next suspects are
+  the terms shared by all three arms (`latent_pred`, `counterfactual_state`,
+  `observed_action_ldad`, vicreg). The paper must not attribute the geometry
+  result to the energy objective.
+  CAVEAT: one seed, epoch-1 checkpoints, 72 pairs. Worth re-running at
+  convergence before it goes in the paper.
