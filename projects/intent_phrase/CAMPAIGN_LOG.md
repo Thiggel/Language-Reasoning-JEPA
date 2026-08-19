@@ -2022,3 +2022,45 @@ Both cells are training now.
   The epoch-0 watcher gives the first depth-1 vs depth-4 planning comparison;
   if depth 4 still loses to depth 1 with drift removed, the scorer is the
   remaining suspect and the oracle-scorer 2x2 decides it.
+
+## 2026-08-20 — test-time compute baselines: self-consistency is the real bar
+
+Round `runs/autonomy/intent_phrase/2026-08-19-lm-testtime-compute-v1/`
+(commits 92a99e8, fe7bbb9, abd8090). 200 episodes, iGSM-med in-distribution,
+under the headline free-generation protocol. Compute is counted on a shared
+axis: backbone token positions (proportional to FLOPs), generated tokens,
+and for the JEPA also predictor/energy forwards.
+
+| token LM (lr 3e-4) | N=1 | N=4 | N=16 |
+|---|---|---|---|
+| plain | .810 | .815 | .815 |
+| sample-and-rerank (sum logprob) | .810 | .650 | .525 |
+| self-consistency on the answer | .795 | .880 | **.930** |
+| ORACLE pass@N (upper bound) | .810 | .895 | .955 |
+| token positions / episode | 29k | 112k | 442k |
+
+lr 1e-3 ckpt: self-consistency .815 -> **.950**, pass@16 .970.
+
+1. **Sample-and-rerank buys nothing and ranking by total log-probability
+   actively hurts** (.81 -> .53): the model's own likelihood is not a
+   verifier, and summed log-prob rewards stopping early.
+2. **Self-consistency (sample 16 solutions, take the majority answer) is the
+   real baseline, +.135.** Every depth claim we make must be stated against
+   this, not against greedy decoding. Correcting the earlier framing.
+3. pass@16 is .96 — a correct solution is almost always among the samples;
+   the entire gap is *selecting* it. That is exactly the job we claim an
+   energy head should do, and it is a good motivating number for the paper.
+4. **The "looped LM" rows are NOT a looped LM.** No recurrent checkpoint has
+   ever been trained; the finished LMs are fixed 12-layer. Feeding one a
+   repeated prefix is off-distribution and destroys it (.81 -> .000). The
+   architecture (`LoopedTransformerEncoder`, `model.recurrent=true`) exists;
+   the checkpoint does not. A genuine looped baseline must be TRAINED.
+   Do not report the current looped rows as a baseline.
+5. JEPA on the same axis (`flat-lminit-s0/last.pt`, 50 eps): full_catalogue
+   depth 1 **.94 at 9.6k token positions and zero generated tokens** — ~46x
+   cheaper than self-consistency at 442k for a comparable score. But depth 4
+   .52 and depth 16 .36, so the cheapness claim currently rests on depth 1.
+   Interface-matched prior_propose depth 1 .82 at 168k token positions.
+
+Sentence LM skipped: no current-recipe iGSM-med checkpoint yet (Alex).
+NEXT: train a real recurrent token LM so the looped comparison exists.
