@@ -671,4 +671,9 @@ def evaluate_flat_planning(planner: FlatPlanner, dataset, n_episodes: int,
         "random_policy": summarize(rand_),
         "first_feasible_policy": summarize(first_),
         "episodes": planned,
+        # Per-episode records for the reference policies too, so the
+        # steps-to-solve *distribution* can be plotted for every policy on one
+        # axis, not just aggregate means for the baselines.
+        "episodes_random": rand_,
+        "episodes_first_feasible": first_,
     }
