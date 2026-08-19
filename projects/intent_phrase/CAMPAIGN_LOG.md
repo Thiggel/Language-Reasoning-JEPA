@@ -1934,3 +1934,21 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   init; grads reach encoder (4.37e-1) and predictor (1.69e-1). No measurable
   throughput cost (~0.10 s/problem). Cells on gruenau10:0 and gruenau9:0,
   ~28-30 h for 10 epochs, first depth-1-vs-depth-4 watcher readout ~3 h in.
+
+- **Seeds s1/s2 crashed at ~step 2000 (epoch 0)**, not a modelling failure:
+  dataloader worker file-descriptor exhaustion (`FileNotFoundError` in
+  `multiprocessing.resource_sharer`), same family as the earlier
+  `Too many open files` kill. Their job.sh predated the fix (no
+  `ulimit -n 65536`, `num_workers=12`). Old dirs kept as
+  `flat-lminit-s{1,2}-crashed-fd`; relaunched fresh with `ulimit -n 65536`
+  and `num_workers=6` on gruenau7:0 (s1) and gruenau10:0 (s2). Side effect:
+  throughput improved 0.176 -> 0.10 s/problem with 6 workers.
+  ACTION: audit every remaining pre-fix job.sh in this round for the same
+  two settings.
+  Their epoch-0 curve is still valid and reconfirms the depth penalty
+  independently (s1, 100 episodes): feasible_menu .99 -> .99 (degenerate,
+  random .98); full_catalogue .74 -> .46 (random .59); prior_propose
+  .63 -> .46 (random .59), with imagined-step illegality .54 under
+  full_catalogue at depth 4 -- i.e. over half the actions the model imagines
+  taking at depth 4 are not legal, which is what the drift measurement and
+  the rollout-trained cells are meant to fix.
