@@ -81,6 +81,8 @@ def main() -> None:
     ap.add_argument("--interface", default="feasible_menu", choices=CANDIDATE_INTERFACES)
     ap.add_argument("--lookahead", type=int, default=1)
     ap.add_argument("--max-expand", type=int, default=64)
+    ap.add_argument("--branch", type=int, default=4,
+                    help="energy-guided continuations kept per beam at depth>1")
     ap.add_argument("--n-episodes", type=int, default=100)
     ap.add_argument("--cap-mult", type=float, default=4.0)
     ap.add_argument("--device", default="cuda:0")
@@ -108,7 +110,7 @@ def main() -> None:
         args.max_edge, args.op_lo, args.op_hi,
     )
     planner = FlatPlanner(
-        model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand,
+        model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand, branch=args.branch,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
         prior_samples=args.prior_samples, prior_top_p=args.prior_top_p,
         prior_temperature=args.prior_temperature, prior_top_k=args.prior_top_k,
@@ -125,7 +127,8 @@ def main() -> None:
         results = evaluate_flat_planning(planner, dataset, args.n_episodes, seed=args.seed)
     results["protocol"] = {
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
-        "max_expand": args.max_expand, "cap_mult": args.cap_mult,
+        "max_expand": args.max_expand, "branch": args.branch,
+        "cap_mult": args.cap_mult, "expansion": "energy-guided beam (oracle-free)",
         "caps": caps,
         "oracle_future_actions": False, "budget": "none (runaway cap only)",
         "evidence_label": (

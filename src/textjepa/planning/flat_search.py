@@ -21,10 +21,14 @@ steps used.  Candidate interfaces:
                       sentence itself (the environment is consulted only to
                       grade the final goal, as in the free-generation LM eval).
 
-Lookahead > 1 is oracle-free: deeper slots of each imagined rollout are
-drawn from the root pool (catalogue minus used), never from the environment's
-future menus.  Scoring is the horizon-blind endpoint Energy
-E(s, imagined endpoint, s_0); argmin over root-balanced rollouts.
+Lookahead > 1 is oracle-free: deeper slots are drawn from the same root pool
+(catalogue minus used), never from the environment's future menus.  They are
+selected by the model's OWN endpoint energy in a beam (``branch`` best
+continuations per surviving beam, ``max_expand`` beams kept), not sampled at
+random -- random tails made deeper search strictly noisier than depth 1.
+Scoring is the horizon-blind endpoint Energy E(s, imagined endpoint, s_0);
+the first action of the argmin rollout is executed and the plan is recomputed
+(MPC) after every executed step.
 """
 
 from __future__ import annotations
@@ -67,6 +71,7 @@ def _last_int(text: str):
 class FlatPlanner:
     def __init__(self, model, vocab, device, lookahead: int = 1,
                  max_expand: int = 64, candidate_interface: str = "feasible_menu",
+                 branch: int = 4,
                  cap_mult: float = 4.0, mask_attempted: bool = True,
                  prior_samples: int = 16, prior_top_p: float = 0.95,
                  prior_temperature: float = 1.3, prior_greedy: int = 1,
@@ -81,6 +86,7 @@ class FlatPlanner:
         self.device = device
         self.lookahead = int(lookahead)
         self.max_expand = int(max_expand)
+        self.branch = int(branch)
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
         self.mask_attempted = bool(mask_attempted)
@@ -272,6 +278,7 @@ class FlatPlanner:
         return roots
 
     def _sequences(self, roots: list, pool: list, rng: random.Random) -> list[list]:
+        """Legacy random-tail expansion (kept for the ablation flag)."""
         if self.lookahead == 1:
             return [[r] for r in roots]
         total = max(self.max_expand, len(roots))
@@ -286,6 +293,61 @@ class FlatPlanner:
                 seqs.append(seq)
         rng.shuffle(seqs)
         return seqs
+
+    @torch.no_grad()
+    def _score(self, seqs: list[list], state, s0, code_of: dict,
+               hist_s: list, hist_a: list, horizon: float):
+        """Endpoint energy E(s, imagine(s, seq), s_0) for a batch of rollouts."""
+        n = len(seqs)
+        depth = max(len(q) for q in seqs)
+        D = state.shape[-1]
+        any_code = next(iter(code_of.values()))
+        act = torch.zeros(n, depth, D, device=self.device, dtype=any_code.dtype)
+        act_mask = torch.zeros(n, depth, dtype=torch.bool, device=self.device)
+        for i, q in enumerate(seqs):
+            for d, entry in enumerate(q):
+                if entry is not None:
+                    act[i, d] = code_of[entry]
+                    act_mask[i, d] = True
+        root = state.unsqueeze(0).expand(n, -1)
+        if self.model.predictor_kind == "causal":
+            hs = (torch.stack([s0] + hist_s, 0).unsqueeze(0).expand(n, -1, -1)
+                  if hist_s else s0.view(1, 1, -1).expand(n, -1, -1))
+            ha = (torch.stack(hist_a, 0).unsqueeze(0).expand(n, -1, -1)
+                  if hist_a else act[:, :0])
+            endpoint = self.model.imagine(root, act, act_mask, hs, ha)
+        else:
+            endpoint = self.model.imagine(root, act, act_mask)
+        self.counter.latent(n, depth)
+        self.counter.bump("energy_forwards", n)
+        return self.model.energy(root, endpoint, s0.unsqueeze(0).expand(n, -1),
+                                 float(horizon))
+
+    @torch.no_grad()
+    def _beam(self, roots: list, pool: list, state, s0, code_of: dict,
+              hist_s: list, hist_a: list, rng: random.Random):
+        """Energy-guided beam over imagined rollouts.  Depth 1 is exactly the
+        old behaviour (score every root); each deeper level extends every
+        surviving beam by its ``branch`` lowest-energy pool continuations and
+        keeps the ``max_expand`` best beams overall."""
+        seqs = [[r] for r in roots]
+        energy = self._score(seqs, state, s0, code_of, hist_s, hist_a, 1)
+        for d in range(2, self.lookahead + 1):
+            order = torch.argsort(energy).tolist()[: self.max_expand]
+            beams = [seqs[i] for i in order]
+            cand = []
+            for seq in beams:
+                rest = [a for a in pool if a not in seq]
+                if not rest:
+                    cand.append(seq + [None])
+                    continue
+                ext = [seq + [a] for a in rest]
+                e = self._score(ext, state, s0, code_of, hist_s, hist_a, d)
+                keep = torch.argsort(e).tolist()[: max(self.branch, 1)]
+                cand += [ext[i] for i in keep]
+            seqs = cand
+            energy = self._score(seqs, state, s0, code_of, hist_s, hist_a, d)
+        return seqs, energy
 
     # ------------------------------------------------------------ episode
     @torch.no_grad()
@@ -331,28 +393,13 @@ class FlatPlanner:
                     break
             stats["n_kept"] += len(roots)
             pool = [q for q in pool_actions if q not in attempted] if self.mask_attempted else list(pool_actions)
-            seqs = self._sequences(roots, pool, rng)
-            n = len(seqs)
-            depth = max(len(q) for q in seqs)
-            D = state.shape[-1]
-            act = torch.zeros(n, depth, D, device=self.device, dtype=codes.dtype)
-            act_mask = torch.zeros(n, depth, dtype=torch.bool, device=self.device)
-            for i, q in enumerate(seqs):
-                for d, entry in enumerate(q):
-                    if entry is not None:
-                        act[i, d] = code_of[entry]
-                        act_mask[i, d] = True
-            root = state.unsqueeze(0).expand(n, -1)
-            if self.model.predictor_kind == "causal":
-                hs = torch.stack([s0] + hist_s, 0).unsqueeze(0).expand(n, -1, -1) if hist_s else s0.view(1, 1, -1).expand(n, -1, -1)
-                ha = (torch.stack(hist_a, 0).unsqueeze(0).expand(n, -1, -1)
-                      if hist_a else act[:, :0])
-                endpoint = self.model.imagine(root, act, act_mask, hs, ha)
+            if self.lookahead == 1:
+                seqs = [[r] for r in roots]
+                energy = self._score(seqs, state, s0, code_of, hist_s, hist_a,
+                                     self.lookahead)
             else:
-                endpoint = self.model.imagine(root, act, act_mask)
-            self.counter.latent(n, depth)
-            self.counter.bump("energy_forwards", n)
-            energy = self.model.energy(root, endpoint, s0.unsqueeze(0).expand(n, -1), float(self.lookahead))
+                seqs, energy = self._beam(roots, pool, state, s0, code_of,
+                                          hist_s, hist_a, rng)
             best = seqs[int(energy.argmin().item())]
             q = best[0]
             if len(best) > 1:
