@@ -27,6 +27,8 @@ from textjepa.objectives.delta_action import (
     ObservedActionLDADCFContrast,
     ObservedActionLDADPredictorCycle,
 )
+from textjepa.objectives.energy_feasibility import EnergyCFFeasibilityRank
+from textjepa.objectives.intent_prior import IntentPriorLM
 from textjepa.objectives.value import (
     ActionDecode, ActionKL, GoalAdvantageDistill, ValueDistill, ValueRegression,
 )
@@ -91,6 +93,8 @@ from textjepa.objectives.hierarchical_language import (
 
 __all__ = [
     "ActionFeasibility",
+    "EnergyCFFeasibilityRank",
+    "IntentPriorLM",
     "ActionGeneration",
     "GaussianActionPriorNLL",
     "HierarchyReachability",
