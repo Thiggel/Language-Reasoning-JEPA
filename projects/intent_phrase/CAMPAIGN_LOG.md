@@ -1952,3 +1952,13 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   full_catalogue at depth 4 -- i.e. over half the actions the model imagines
   taking at depth 4 are not legal, which is what the drift measurement and
   the rollout-trained cells are meant to fix.
+- Root-caused and fixed at source (commit 12b1510, snapshot
+  `runs/autonomy/_code/12b1510495050ca501cf8b111e61e923490f1782`):
+  `scripts/train_flat_jepa.py` now calls
+  `torch.multiprocessing.set_sharing_strategy("file_system")`. Dataloader
+  workers previously passed every tensor by file descriptor, exhausting the
+  process fd limit mid-run. `flat-lminit-ecf1-s0` died of exactly this
+  (`RuntimeError: Too many open files`) and is relaunched from the new
+  snapshot on gruenau7:1 (old dir kept as `-crashed-fd`).
+  Caveat: the 8 cells already running still use the pre-fix snapshot and
+  remain exposed until they finish; relaunch on crash rather than restart.
