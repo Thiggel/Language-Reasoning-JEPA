@@ -19,6 +19,8 @@ from pathlib import Path
 import torch
 
 from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
+from textjepa.data.igsm.dataset import IGSMDataset
+from textjepa.data.stylized_flat import StylizedFlatDataset, build_flat_stylized_vocab
 from textjepa.models.flat_intent_jepa import FlatIntentJEPA
 from textjepa.planning.flat_search import (
     CANDIDATE_INTERFACES, FlatPlanner, evaluate_flat_planning,
@@ -29,12 +31,48 @@ from textjepa.utils import seed_everything
 def load_flat_run(ckpt_path: str, device: str = "cuda:0"):
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     cfg = ckpt["cfg"]
-    vocab = cached_faithful_vocab(*ckpt["vocab_caps"])
+    if ckpt.get("data_name", "faithful") == "stylized":
+        vocab = build_flat_stylized_vocab(*ckpt["vocab_caps"])
+    else:
+        vocab = cached_faithful_vocab(*ckpt["vocab_caps"])
     mcfg = dict(cfg["model"])
     mcfg["init_from_lm"] = None  # weights come from the checkpoint itself
     model = FlatIntentJEPA(vocab_size=len(vocab), pad_id=vocab.pad_id, **mcfg)
     model.load_state_dict(ckpt["model"], strict=True)
     return model.to(device).eval(), vocab, cfg
+
+
+def build_eval_dataset(cfg, vocab, size: int, seed: int, max_op=None,
+                       max_edge=None, op_lo=None, op_hi=None):
+    """Evaluation problems in the checkpoint's data setting.
+
+    faithful: caps/op_range (overridable for the OOD band).  stylized: the
+    generator's own knobs, with ``op_lo/op_hi`` reinterpreted as the
+    necessary-steps range so the same CLI drives both.
+    """
+    dc = cfg["data"]
+    if dc.get("name", "faithful") == "stylized":
+        steps = list(dc["steps_range"])
+        base = IGSMDataset(
+            vocab, size=size, seed=seed, modulus=dc["modulus"],
+            n_vars_range=tuple(dc["n_vars_range"]), leaf_prob=dc["leaf_prob"],
+            steps_range=(op_lo or steps[0], op_hi or steps[1]),
+            distractor_prob=0.0, max_distractors=dc["max_distractors"],
+            all_action_supervision=True,
+        )
+        return StylizedFlatDataset(base), {
+            "generator": "stylized", "modulus": dc["modulus"],
+            "n_vars_range": list(dc["n_vars_range"]),
+            "steps_range": [op_lo or steps[0], op_hi or steps[1]],
+        }
+    mo = max_op or dc["max_op"]
+    me = max_edge or dc["max_edge"]
+    orange = (op_lo or dc["op_range"][0], op_hi or dc["op_range"][1])
+    return FaithfulDataset(
+        vocab, size=size, seed=seed, max_op=mo, max_edge=me,
+        op_range=orange, distractor_prob=0.0,
+    ), {"generator": "faithful", "max_op": mo, "max_edge": me,
+        "op_range": list(orange)}
 
 
 def main() -> None:
@@ -65,12 +103,9 @@ def main() -> None:
     device = torch.device(args.device)
     model, vocab, cfg = load_flat_run(args.ckpt, str(device))
     dc = cfg["data"]
-    max_op = args.max_op or dc["max_op"]
-    max_edge = args.max_edge or dc["max_edge"]
-    op_range = (args.op_lo or dc["op_range"][0], args.op_hi or dc["op_range"][1])
-    dataset = FaithfulDataset(
-        vocab, size=args.n_episodes, seed=args.split_seed, max_op=max_op,
-        max_edge=max_edge, op_range=op_range, distractor_prob=0.0,
+    dataset, caps = build_eval_dataset(
+        cfg, vocab, args.n_episodes, args.split_seed, args.max_op,
+        args.max_edge, args.op_lo, args.op_hi,
     )
     planner = FlatPlanner(
         model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand,
@@ -80,10 +115,8 @@ def main() -> None:
         codebook_k=args.codebook_k, max_len=int(cfg["model"]["max_len"]),
     )
     if args.interface == "codebook_ground":
-        train_ds = FaithfulDataset(
-            vocab, size=args.codebook_problems, seed=dc["train_seed"],
-            max_op=dc["max_op"], max_edge=dc["max_edge"],
-            op_range=tuple(dc["op_range"]), distractor_prob=0.0,
+        train_ds, _ = build_eval_dataset(
+            cfg, vocab, args.codebook_problems, dc["train_seed"],
         )
         planner.fit_action_prior([train_ds.problem(i)[0] for i in range(args.codebook_problems)])
     ctx = (torch.autocast("cuda", dtype=torch.bfloat16)
@@ -93,7 +126,7 @@ def main() -> None:
     results["protocol"] = {
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
         "max_expand": args.max_expand, "cap_mult": args.cap_mult,
-        "caps": {"max_op": max_op, "max_edge": max_edge, "op_range": list(op_range)},
+        "caps": caps,
         "oracle_future_actions": False, "budget": "none (runaway cap only)",
         "evidence_label": (
             "menu (feasibility oracle at the root only)" if args.interface == "feasible_menu"

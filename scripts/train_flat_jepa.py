@@ -22,6 +22,8 @@ from torch.utils.data import DataLoader
 
 from textjepa.data.faithful import FaithfulDataset, cached_faithful_vocab
 from textjepa.data.flat_stream import FlatIntentStreamDataset, collate_flat
+from textjepa.data.igsm.dataset import IGSMDataset
+from textjepa.data.stylized_flat import StylizedFlatDataset, build_flat_stylized_vocab
 from textjepa.data.sampling import FreshEpochSampler
 from textjepa.models.flat_intent_jepa import FlatIntentJEPA
 from textjepa.objectives import (
@@ -99,11 +101,45 @@ def build_objective(oc) -> CompositeObjective:
     return CompositeObjective(objs, weights)
 
 
+def build_vocab_for(dc):
+    """Vocabulary for the configured data setting (faithful | stylized)."""
+    if dc.get("name", "faithful") == "stylized":
+        return build_flat_stylized_vocab(dc.modulus)
+    return cached_faithful_vocab(dc.vocab_max_op, dc.vocab_max_edge)
+
+
 def build_data(dc, vocab, split: str, lm_loss_on: str, size=None):
+    n = size if size is not None else (
+        dc.train_size if split == "train" else dc.val_size)
+    seed = dc.train_seed if split == "train" else dc.val_seed
+    if dc.get("name", "faithful") == "stylized":
+        # Stylized iGSM (the paper's mechanism environment).  Same
+        # counterfactual/rollout recipe as faithful; the generator's own
+        # knobs replace the caps.
+        base = IGSMDataset(
+            vocab, size=n, seed=seed, modulus=dc.modulus,
+            n_vars_range=tuple(dc.n_vars_range), leaf_prob=dc.leaf_prob,
+            steps_range=tuple(dc.steps_range),
+            distractor_prob=dc.distractor_prob,
+            max_distractors=dc.max_distractors,
+            geo_rank_k=dc.geo_rank_k, geo_rank_horizon=max(dc.geo_rank_horizons),
+            geo_rank_horizons=list(dc.geo_rank_horizons),
+            geo_rank_rollout_for_h1=True,
+            geo_rank_rollouts=dc.geo_rank_rollouts,
+            invalid_counterfactual_k=dc.invalid_counterfactual_k,
+            invalid_counterfactual_unresolved_only=(
+                dc.invalid_counterfactual_unresolved_only),
+            invalid_counterfactual_resolved_k=(
+                dc.invalid_counterfactual_resolved_k),
+            rollout_counterfactual_k=dc.rollout_counterfactual_k,
+            all_action_supervision=True,
+        )
+        return FlatIntentStreamDataset(
+            StylizedFlatDataset(base), lm_loss_on=lm_loss_on
+        )
     base = FaithfulDataset(
         vocab,
-        size=size if size is not None else (dc.train_size if split == "train" else dc.val_size),
-        seed=dc.train_seed if split == "train" else dc.val_seed,
+        size=n, seed=seed,
         max_op=dc.max_op, max_edge=dc.max_edge, op_range=tuple(dc.op_range),
         distractor_prob=dc.distractor_prob, max_distractors=dc.max_distractors,
         geo_rank_k=dc.geo_rank_k, geo_rank_horizon=max(dc.geo_rank_horizons),
@@ -161,7 +197,7 @@ def main(cfg: DictConfig) -> None:
     print(OmegaConf.to_yaml(cfg))
     device = torch.device(c.device)
     _ = c.run_name
-    vocab = cached_faithful_vocab(c.data.vocab_max_op, c.data.vocab_max_edge)
+    vocab = build_vocab_for(c.data)
     model = FlatIntentJEPA(
         vocab_size=len(vocab), pad_id=vocab.pad_id, **c.model.as_dict()
     ).to(device)
@@ -232,7 +268,10 @@ def main(cfg: DictConfig) -> None:
     def save(tag, epoch, step, extra=None):
         ckpt = {
             "model": model.state_dict(), "cfg": raw, "epoch": epoch, "step": step,
-            "vocab_caps": [c.data.vocab_max_op, c.data.vocab_max_edge],
+            "vocab_caps": (
+                [c.data.modulus] if c.data.get("name", "faithful") == "stylized"
+                else [c.data.vocab_max_op, c.data.vocab_max_edge]),
+            "data_name": c.data.get("name", "faithful"),
             "kind": "flat_intent_jepa", **(extra or {}),
         }
         torch.save(ckpt, model_dir / f"{tag}.pt")

@@ -34,9 +34,7 @@ import random
 
 import torch
 
-from textjepa.data.faithful import (
-    INVALID_DEFINITION_OUTCOME, FaithfulEnv,
-)
+
 from textjepa.planning.evaluate import aggregate_episodes
 from textjepa.planning.ldad_decode import phrase_log_probs
 from textjepa.planning.search import EpisodeResult
@@ -174,7 +172,7 @@ class FlatPlanner:
         return phrases
 
     @torch.no_grad()
-    def _propose(self, history: list[int], env: FaithfulEnv, rng_seed: int,
+    def _propose(self, history: list[int], env, rng_seed: int,
                  stats: dict) -> list:
         """Sample intent phrases; return grounded unique actions (catalogue
         objects).  Grounding = exact match on the environment's action
@@ -210,7 +208,7 @@ class FlatPlanner:
 
         vecs = []
         for fp in problems:
-            env = FaithfulEnv(fp)
+            env = fp.make_env()
             history = [t for s in fp.prompt_sentences for t in self.vocab.encode(s)]
             phrases = [self.vocab.encode(env.action_text(q)) for q in fp.action_order]
             vecs.append(self._codes(history, phrases))
@@ -218,7 +216,7 @@ class FlatPlanner:
                                      seed=self.codebook_seed)
         return self.codebook
 
-    def _roots(self, env: FaithfulEnv, history: list[int], attempted: set,
+    def _roots(self, env, history: list[int], attempted: set,
                rng: random.Random, stats: dict) -> list:
         iface = self.candidate_interface
         mask = attempted if self.mask_attempted else set()
@@ -233,7 +231,7 @@ class FlatPlanner:
         return roots
 
     @torch.no_grad()
-    def _filter_roots(self, roots: list, env: FaithfulEnv, state, codes_by_action: dict):
+    def _filter_roots(self, roots: list, env, state, codes_by_action: dict):
         """ldad_cycle / codebook_ground: rank catalogue roots by cycle score or
         ground codebook entries to nearest catalogue vectors."""
         iface = self.candidate_interface
@@ -279,7 +277,7 @@ class FlatPlanner:
     # ------------------------------------------------------------ episode
     @torch.no_grad()
     def plan_episode(self, fp, seed: int = 0) -> dict:
-        env = FaithfulEnv(fp)
+        env = fp.make_env()
         rng = random.Random(seed)
         history = [t for s in fp.prompt_sentences for t in self.vocab.encode(s)]
         prompt_len = len(history)
@@ -397,7 +395,7 @@ class FlatPlanner:
 
 def _reference_episode(fp, policy: str, menu_free: bool, cap_mult: float,
                        rng: random.Random, mask: bool = True) -> dict:
-    env = FaithfulEnv(fp)
+    env = fp.make_env()
     cap = int(math.ceil(cap_mult * len(fp.necessary)))
     steps = n_d = n_inv = 0
     attempted: set = set()

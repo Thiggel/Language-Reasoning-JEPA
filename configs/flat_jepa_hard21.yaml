@@ -1,16 +1,18 @@
-# Flat-backbone intent JEPA (faithful iGSM).  Every key below is read by
+# Flat-backbone intent JEPA on FAITHFUL iGSM-HARD (caps 21/28, the paper's
+# target band).  Encoder from scratch until the caps-21/28 token LM lands.
+# (faithful iGSM).  Every key below is read by
 # scripts/train_flat_jepa.py, which fails loudly on unread keys.
-run_name: flat_jepa
+run_name: flat_jepa_hard21
 seed: 0
 device: cuda:0
 
 data:
   name: faithful
-  max_op: 15
-  max_edge: 20
-  op_range: [3, 15]
-  vocab_max_op: 15
-  vocab_max_edge: 20
+  max_op: 21
+  max_edge: 28
+  op_range: [3, 21]
+  vocab_max_op: 21
+  vocab_max_edge: 28
   necessary_range: null
   distractor_prob: 0.0
   max_distractors: 2
@@ -35,7 +37,7 @@ model:
   n_heads: 12
   ff_mult: 4
   max_len: 4096
-  init_from_lm: /vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-18-lm-med-scale-v1/tok-lm-med-fullsol-big-lr1e3-s0/model/best.pt
+  init_from_lm: null        # scratch; caps-21/28 token LM still training
   encoder_mode: full        # full | frozen | lora
   lora_rank: 16
   lora_alpha: 32.0

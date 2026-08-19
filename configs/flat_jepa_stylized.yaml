@@ -1,33 +1,32 @@
-# Flat-backbone intent JEPA (faithful iGSM).  Every key below is read by
-# scripts/train_flat_jepa.py, which fails loudly on unread keys.
-run_name: flat_jepa
+# Flat-backbone intent JEPA on STYLIZED iGSM -- the paper's mechanism
+# environment (headline generator setting: steps_range [3,9], leaf_prob 0.35,
+# modulus 23, 6-12 variables).  Same model/losses/recipe as configs/flat_jepa.yaml;
+# only the data section differs.  Encoder is trained from scratch: no stylized
+# token LM exists to initialise from (the trained LMs are faithful-vocabulary).
+run_name: flat_jepa_stylized
 seed: 0
 device: cuda:0
 
 data:
-  name: faithful
-  max_op: 15
-  max_edge: 20
-  op_range: [3, 15]
-  vocab_max_op: 15
-  vocab_max_edge: 20
-  necessary_range: null
+  name: stylized
+  modulus: 23
+  n_vars_range: [6, 12]
+  leaf_prob: 0.35
+  steps_range: [3, 9]
   distractor_prob: 0.0
   max_distractors: 2
   train_size: 100000
   val_size: 500
   train_seed: 1
   val_seed: 2
-  # geometric-ranking counterfactuals (frozen recipe): K feasible alternatives,
-  # R random rollouts per candidate at a horizon sampled from `horizons`,
-  # plus hard-negative infeasible intents (unresolved-only).
+  # geometric-ranking counterfactuals (frozen recipe, identical to faithful)
   geo_rank_k: 2
   geo_rank_horizons: [1, 2, 4, 8]
   geo_rank_rollouts: 4
   invalid_counterfactual_k: 8
   invalid_counterfactual_unresolved_only: true
-  invalid_counterfactual_resolved_k: 4   # easy negatives (already resolved) on top
-  rollout_counterfactual_k: 4            # infeasible intents at every rollout depth (legality along imagined prefixes)
+  invalid_counterfactual_resolved_k: 4
+  rollout_counterfactual_k: 4
 
 model:
   d_model: 768
@@ -35,7 +34,7 @@ model:
   n_heads: 12
   ff_mult: 4
   max_len: 4096
-  init_from_lm: /vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-18-lm-med-scale-v1/tok-lm-med-fullsol-big-lr1e3-s0/model/best.pt
+  init_from_lm: null        # no stylized LM exists; encoder from scratch
   encoder_mode: full        # full | frozen | lora
   lora_rank: 16
   lora_alpha: 32.0

@@ -17,7 +17,7 @@ from the same checkpoint:
 
 Usage:
   .venv/bin/python scripts/probe_flat_energy_auc.py --ckpt <pt> --n-problems 24 \
-      --max-op 15 --max-edge 20 --op-lo 3 --op-hi 15 --device cuda:0 --out out.json
+      --device cuda:0 --out out.json   # caps default to the checkpoint's setting
 """
 
 from __future__ import annotations
@@ -32,9 +32,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from probe_faithful_cycle_auc import pooled_auc  # noqa: E402
-from plan_flat import load_flat_run  # noqa: E402
+from plan_flat import build_eval_dataset, load_flat_run  # noqa: E402
 
-from textjepa.data.faithful import FaithfulDataset, FaithfulEnv  # noqa: E402
 from textjepa.planning.ldad_decode import phrase_log_probs  # noqa: E402
 
 
@@ -42,10 +41,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True)
     ap.add_argument("--n-problems", type=int, default=24)
-    ap.add_argument("--max-op", type=int, default=15)
-    ap.add_argument("--max-edge", type=int, default=20)
-    ap.add_argument("--op-lo", type=int, default=3)
-    ap.add_argument("--op-hi", type=int, default=15)
+    ap.add_argument("--max-op", type=int, default=None)
+    ap.add_argument("--max-edge", type=int, default=None)
+    ap.add_argument("--op-lo", type=int, default=None)
+    ap.add_argument("--op-hi", type=int, default=None)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--split-seed", type=int, default=2)
@@ -53,9 +52,9 @@ def main() -> None:
     args = ap.parse_args()
     device = torch.device(args.device)
     model, vocab, cfg = load_flat_run(args.ckpt, str(device))
-    dataset = FaithfulDataset(
-        vocab, size=args.n_problems, seed=args.split_seed, max_op=args.max_op,
-        max_edge=args.max_edge, op_range=(args.op_lo, args.op_hi), distractor_prob=0.0,
+    dataset, caps = build_eval_dataset(
+        cfg, vocab, args.n_problems, args.split_seed, args.max_op,
+        args.max_edge, args.op_lo, args.op_hi,
     )
     rng = random.Random(args.seed)
     scores = {"energy_depth0": [], "energy_depth1": [], "cycle": []}
@@ -67,7 +66,7 @@ def main() -> None:
     with torch.no_grad(), ctx:
         for i in range(args.n_problems):
             fp, _ = dataset.problem(i)
-            env = FaithfulEnv(fp)
+            env = fp.make_env()
             history = [t for s in fp.prompt_sentences for t in vocab.encode(s)]
             h = model.encode(torch.tensor(history, device=device).unsqueeze(0))
             s0 = h[0, -1]
@@ -128,7 +127,7 @@ def main() -> None:
                 history += vocab.encode(env.step(q))
     report = {
         "ckpt": args.ckpt,
-        "caps": {"max_op": args.max_op, "max_edge": args.max_edge, "op_range": [args.op_lo, args.op_hi]},
+        "caps": caps,
         "n_problems": args.n_problems,
         "evidence_label": "candidate-privileged oracle-labeled diagnostic",
     }

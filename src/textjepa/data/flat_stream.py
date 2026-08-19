@@ -37,18 +37,21 @@ def _cat(lists: list[list[int]]) -> list[int]:
 class FlatIntentStreamDataset(Dataset):
     """Wrap a FaithfulDataset built with ``all_action_supervision=True``."""
 
-    def __init__(self, base: FaithfulDataset, lm_loss_on: str = "all_solution"):
+    def __init__(self, base, lm_loss_on: str = "all_solution"):
         if lm_loss_on not in {"intent", "all_solution"}:
             raise ValueError(f"unknown lm_loss_on: {lm_loss_on}")
         if not getattr(base, "all_action_supervision", False):
             raise ValueError(
                 "FlatIntentStreamDataset needs the action catalogue "
-                "(FaithfulDataset(all_action_supervision=True))"
+                "(dataset built with all_action_supervision=True)"
             )
         self.base = base
         self.lm_loss_on = lm_loss_on
         self.vocab = base.vocab
-        self._invalid_tokens = tuple(base.vocab.encode(INVALID_DEFINITION_OUTCOME))
+        # faithful and stylized iGSM render different "invalid action"
+        # sentences; both datasets declare theirs as INVALID_OUTCOME.
+        invalid = getattr(base, "INVALID_OUTCOME", INVALID_DEFINITION_OUTCOME)
+        self._invalid_tokens = tuple(base.vocab.encode(invalid))
 
     def __len__(self) -> int:
         return len(self.base)

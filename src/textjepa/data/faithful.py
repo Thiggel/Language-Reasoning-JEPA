@@ -141,6 +141,11 @@ class FaithfulProblem:
         parts[-1] = parts[-1].rstrip(".")
         self.prompt_sentences = parts
 
+    def make_env(self) -> "FaithfulEnv":
+        """Planning/eval environment for this problem (uniform entry point
+        shared with the stylized adapter, see data/stylized_flat.py)."""
+        return FaithfulEnv(self)
+
     def op_label(self, q) -> int:
         exp = self.p.sketch[q]
         if not exp.param_list:
@@ -235,6 +240,8 @@ def enumerate_faithful_action_sequences(
 class FaithfulDataset(Dataset):
     """Batch schema compatible with the discourse collate; traces follow
     the official minimal solution order with optional distractor detours."""
+
+    INVALID_OUTCOME = INVALID_DEFINITION_OUTCOME
 
     def __init__(
         self,

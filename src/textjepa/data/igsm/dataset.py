@@ -115,6 +115,10 @@ class IGSMDataset(Dataset):
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
+        invalid_counterfactual_k: int = 0,
+        invalid_counterfactual_unresolved_only: bool = False,
+        invalid_counterfactual_resolved_k: int = 0,
+        rollout_counterfactual_k: int = 0,
         sample_max_tries: int = 50,
         strict_steps_range: bool = False,
         adjectives: list[str] | None = None,
@@ -152,6 +156,19 @@ class IGSMDataset(Dataset):
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
+        # Hard negatives for the energy feasibility ranking (same recipe as
+        # FaithfulDataset): premature intents (unresolved, parents missing)
+        # at the ranking anchor, optional already-resolved intents on top,
+        # and infeasible intents at every imagined rollout depth
+        # (``ga_rollout_cf_actions[c][r][h]`` = token lists).
+        self.invalid_counterfactual_k = max(0, int(invalid_counterfactual_k))
+        self.invalid_counterfactual_unresolved_only = bool(
+            invalid_counterfactual_unresolved_only
+        )
+        self.invalid_counterfactual_resolved_k = max(
+            0, int(invalid_counterfactual_resolved_k)
+        )
+        self.rollout_counterfactual_k = max(0, int(rollout_counterfactual_k))
         self.sample_max_tries = max(1, int(sample_max_tries))
         self.strict_steps_range = bool(strict_steps_range)
         if self.geo_rank_policy not in {"random", "greedy", "latent_beam"}:
@@ -288,6 +305,35 @@ class IGSMDataset(Dataset):
             )
             if self.geo_rank_factual_only:
                 alts = []
+            or_invalid = (
+                self.geo_rank_candidate_interface == "full_catalogue"
+                or bool(self.invalid_counterfactual_k
+                        or self.invalid_counterfactual_resolved_k)
+            )
+            if self.invalid_counterfactual_k or self.invalid_counterfactual_resolved_k:
+                feasible_now = set(env2.feasible_actions())
+                resolved_now = env2.resolved_set
+                chosen = set(alts) | {trace[t_star]}
+                infeasible = [
+                    v.idx for v in p.vars
+                    if v.idx not in chosen and v.idx not in feasible_now
+                    and not (
+                        self.invalid_counterfactual_unresolved_only
+                        and v.idx in resolved_now
+                    )
+                ]
+                rng.shuffle(infeasible)
+                alts = list(alts) + infeasible[: self.invalid_counterfactual_k]
+                if self.invalid_counterfactual_resolved_k:
+                    chosen = set(alts) | {trace[t_star]}
+                    resolved_neg = [
+                        v.idx for v in p.vars
+                        if v.idx in resolved_now and v.idx not in chosen
+                    ]
+                    rng.shuffle(resolved_neg)
+                    alts = alts + resolved_neg[
+                        : self.invalid_counterfactual_resolved_k
+                    ]
             if alts or self.geo_rank_factual_only:
                 ga = {
                     "ga_t": t_star,
@@ -300,9 +346,7 @@ class IGSMDataset(Dataset):
                     ],
                     "ga_alt_steps": [
                         self.vocab.encode(
-                            env2.clone().step_or_invalid(a)
-                            if self.geo_rank_candidate_interface
-                            == "full_catalogue"
+                            env2.clone().step_or_invalid(a) if or_invalid
                             else env2.clone().step(a)
                         )
                         for a in alts
@@ -333,20 +377,21 @@ class IGSMDataset(Dataset):
                     candidates = [trace[t_star], *alts]
                     rollout_steps = []
                     rollout_actions = []
+                    rollout_cf_actions = []
                     for candidate in candidates:
                         candidate_rollouts = []
                         candidate_action_rollouts = []
+                        candidate_cf_rollouts = []
                         for _ in range(self.geo_rank_rollouts):
                             roll_env = env2.clone()
+                            cf_sequence = [[]]
                             sequence = list(steps[:t_star])
                             action_sequence = [
                                 self.vocab.encode(action_phrase(p, candidate))
                             ]
                             outcome = (
                                 roll_env.step_or_invalid(candidate)
-                                if self.geo_rank_candidate_interface
-                                == "full_catalogue"
-                                else roll_env.step(candidate)
+                                if or_invalid else roll_env.step(candidate)
                             )
                             sequence.append(self.vocab.encode(outcome))
                             for _depth in range(1, geo_rank_horizon):
@@ -366,6 +411,28 @@ class IGSMDataset(Dataset):
                                 feasible = roll_env.feasible_actions()
                                 if not feasible:
                                     break
+                                if self.rollout_counterfactual_k:
+                                    feasible_set = set(feasible)
+                                    resolved_here = roll_env.resolved_set
+                                    premature = [
+                                        v.idx for v in p.vars
+                                        if v.idx not in feasible_set
+                                        and v.idx not in resolved_here
+                                    ]
+                                    resolved_neg = [
+                                        v.idx for v in p.vars
+                                        if v.idx in resolved_here
+                                    ]
+                                    rng.shuffle(premature)
+                                    rng.shuffle(resolved_neg)
+                                    half = (self.rollout_counterfactual_k + 1) // 2
+                                    picked = premature[:half] + resolved_neg[:half]
+                                    cf_sequence.append([
+                                        self.vocab.encode(action_phrase(p, q))
+                                        for q in picked[
+                                            : self.rollout_counterfactual_k
+                                        ]
+                                    ])
                                 nxt = feasible[rng.randrange(len(feasible))]
                                 action_sequence.append(
                                     self.vocab.encode(action_phrase(p, nxt))
@@ -373,10 +440,14 @@ class IGSMDataset(Dataset):
                                 sequence.append(self.vocab.encode(roll_env.step(nxt)))
                             candidate_rollouts.append(sequence)
                             candidate_action_rollouts.append(action_sequence)
+                            candidate_cf_rollouts.append(cf_sequence)
                         rollout_steps.append(candidate_rollouts)
                         rollout_actions.append(candidate_action_rollouts)
+                        rollout_cf_actions.append(candidate_cf_rollouts)
                     ga["ga_rollout_steps"] = rollout_steps
                     ga["ga_rollout_actions"] = rollout_actions
+                    if self.rollout_counterfactual_k:
+                        ga["ga_rollout_cf_actions"] = rollout_cf_actions
 
         # Keep the grounding falsifier exactly paired with the aligned
         # condition.  In particular, draw the GAR anchor, alternatives, and
