@@ -726,3 +726,27 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   working setting. Training normally at 0.19 s/problem, 14GB.
   All other GPUs genuinely busy; gruenau8's four A6000s still show 45GB
   allocated at 0% util (held-but-idle foreign job) and are left alone.
+
+- **RETRACTED: the epoch-0 prefix-energy numbers (.770 / .780).** When the
+  superseded length-cue cells were stopped, the trainer was killed but the
+  watcher subshell was not. Its `train_finished` sentinel moved with the
+  directory rename, so its loop never terminated, and it kept polling the
+  ORIGINAL path string — which had since been recreated as the live cell. It
+  wrote `watch/epoch0/plan_*.json` there using the OLD length-cue code, and
+  the live watcher's "skip if the file exists" guard then skipped its own
+  proper evaluation. Tell-tale signs: the depth-1 result appeared implausibly
+  fast, and the eval log showed duplicated `[ep 10/100]` lines.
+  Cleanup: four orphaned watcher shells and two evals (all from snapshot
+  6c6a39a) killed; `watch/epoch0`, `curve.jsonl` and eval logs deleted on
+  both live cells; incident written up in the round `NOTES.md`.
+  TRAINING WAS NEVER AFFECTED — both cells ran from the correct snapshot
+  c8115c9 throughout.
+  LESSON (now in NOTES.md): when relaunching into a REUSED round directory,
+  kill the watcher subshell explicitly, not just the trainer. A stale watcher
+  writing into a recreated path is silent and looks like a real result.
+  Epoch 0 discarded; first trustworthy depth-1 vs depth-4 comparison is the
+  epoch-2 pass, ~3-6 h out.
+- Training signal meanwhile is strong: `energy_prefix_acc` .966 / .954 (from
+  chance at init) — the head reliably separates a path that wasted one
+  imagined step from the path that actually occurred, which is exactly the
+  discrimination the endpoint-only objective never had.
