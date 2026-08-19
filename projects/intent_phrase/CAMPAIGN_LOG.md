@@ -2197,3 +2197,57 @@ machinery.
   `episodes_first_feasible`. Purely additive; existing keys unchanged.
   This is what the owner asked for: show our model solving problems in
   fewer steps as a distribution, not as a scored budget.
+
+## 2026-08-20 — prefix-scoring energy launched (the depth fix)
+
+Round `runs/autonomy/intent_phrase/2026-08-20-prefix-energy-v1/`, snapshot
+`_code/c8115c9d23f35eca3c026cf88ff6c000a341e1ff` (includes the 12b1510
+file_system fd fix). Commits 6c6a39a (objective) and c8115c9 (bug fix).
+
+**Design.** The old energy answered only "how good is the place this rollout
+ENDS UP?", which is blind to the path. New term `energy_prefix_rank` scores
+whole paths: take the rollout the environment actually produced (a_1..a_H);
+build a counterfactual by INSERTING one infeasible intent (from the existing
+`rollout_counterfactual_k` env-driven negatives) at a random depth and
+DROPPING the last true action, so both paths spend the same imagined budget
+and the counterfactual simply wastes one step — exactly the degeneracy
+endpoint scoring cannot see. The head emits an energy at every prefix; each
+path is reduced by the mean over prefixes (matching the planner's
+`--aggregate mean_prefix`; `endpoint` kept as the blind ablation) and
+contrasted with the same `softplus(E_obs - E_cf)`.
+CONTRACT CHECK: the only label is which continuation actually occurred,
+which is in the data. No steps-to-go, no remaining-step counter, no symbolic
+ranking label. Complies with the no-symbolic-heads rule.
+
+**Bug caught mid-flight, worth remembering.** The first version APPENDED the
+junk step, making every counterfactual path one step longer.
+`energy_prefix_acc` hit 1.000 within 40 optimizer steps — the head had
+learned to read PATH LENGTH, not the wasted step. At eval every candidate is
+rolled to the same depth, so a length cue transfers nothing and the term
+would have been silently inert while looking perfect. Length-matching fixed
+it: accuracy back at chance at init (.496/.457) and climbing honestly
+(.42 -> .72 over 80 steps). Three cells stopped and relaunched.
+GENERAL LESSON: a term that saturates almost immediately is a shortcut
+suspect, not a success.
+
+**Smoke evidence.** `tests/test_energy_prefix_rank.py`, 7 tests passing, plus
+from the real launched cell: depth-1 prefix energy equals the existing
+one-step anchor energy to 1.19e-07 over 68 pairs (same root, same action,
+same head — catches wrong index order or wrong s_0); all counterfactual
+paths length-matched; grads non-zero (encoder 3.9e-3, predictor 1.99e-2,
+energy head 8.29e-2); with the flag off the prefix loss is exactly 0.0 and
+`energy_cf_feasibility_rank` is bit-identical (delta 0.00e+00); unread-key
+guard aborts on a bogus key. Cost 0.089-0.092 s/problem — no slowdown.
+
+| cell | host:GPU | recipe |
+|---|---|---|
+| `ecf16-prefix4-s0` | gruenau12:5 (L40) | ecf16 + energy_prefix_rank 4 |
+| `ecf16-prefix4-roll124-s0` | gruenau12:6 (L40) | + latent_rollout_pred 1, ks [1,2,4] |
+
+~2.8 h/epoch, 10 epochs ~28 h. Watcher every 2 epochs, 100 eps, NEW eval
+defaults: full_catalogue at depths 1/4/8 and prior_propose at 1/4 — depth 1
+measured alongside every deep number, since the claim is "depth HELPS".
+Final on best.pt: 300 eps, depths 1/2/4/8/16 ID and 1/4/16 OOD.
+A third weight arm (`prefix16`) is generated but NOT launched: the only free
+GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
+10-day run). Needs one free A100/A6000/L40.
