@@ -26,7 +26,14 @@ def rows_from_lm(path: Path):
             "success": m["success_rate"],
             "answer": m["success_answer_rate"],
             "oracle_pass@n": m["oracle_pass_at_n"],
-            "self_cons": m.get("self_consistency_success_rate", float("nan")),
+            # Self-consistency is an ANSWER metric: majority vote over the
+            # final answers the model wrote.  Attempts that never reached the
+            # goal write no answer and therefore abstain, which is why
+            # ``self_consistency_success_rate`` in the JSON tracks pass@N and
+            # must NOT be quoted as a success rate -- use this one.
+            "self_cons_ans": m.get("self_consistency_answer_accuracy",
+                                   float("nan")),
+            "rerank_sum": m.get("rerank_sumlogp_success_rate", float("nan")),
             "steps/nec": m["solved_steps_over_necessary_mean"],
             "gen_tok/ep": c["generated_tokens_per_episode"],
             "tokpos/ep": c["backbone_token_positions_per_episode"],
@@ -41,7 +48,8 @@ def rows_from_jepa(path: Path):
         "success": m["success"], "answer": m.get("success_answer_rate",
                                                  float("nan")),
         "oracle_pass@n": float("nan"),
-        "self_cons": float("nan"),
+        "self_cons_ans": float("nan"),
+        "rerank_sum": float("nan"),
         "steps/nec": m["solved_steps_over_necessary_mean"],
         "gen_tok/ep": c["generated_tokens_per_episode"],
         "tokpos/ep": c["backbone_token_positions_per_episode"],
@@ -49,8 +57,8 @@ def rows_from_jepa(path: Path):
 
 
 def table(rows):
-    cols = ["row", "success", "answer", "oracle_pass@n", "self_cons",
-            "steps/nec", "gen_tok/ep", "tokpos/ep"]
+    cols = ["row", "success", "answer", "rerank_sum", "self_cons_ans",
+            "oracle_pass@n", "steps/nec", "gen_tok/ep", "tokpos/ep"]
     print("| " + " | ".join(cols) + " |")
     print("|" + "---|" * len(cols))
     for r in rows:
