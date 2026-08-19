@@ -2254,3 +2254,10 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
 - hard21 local token LM is healthy after the L40 relaunch: epoch 0
   val_loss 0.9096 in ~26 min, so ~13 h for 30 epochs. (My earlier "no step
   line" worry was a wrong grep — this script logs per-epoch, not per-step.)
+- Third arm `ecf16-prefix16-s0` launched on gruenau10:2 (A100, 62GB free at
+  launch; packed alongside an existing cell). Completes the dose-response on
+  the new path-scoring term: weight 4 (x2, one with the rollout drift fix)
+  and weight 16. A dose-response is far more defensible than a single
+  working setting. Training normally at 0.19 s/problem, 14GB.
+  All other GPUs genuinely busy; gruenau8's four A6000s still show 45GB
+  allocated at 0% util (held-but-idle foreign job) and are left alone.
