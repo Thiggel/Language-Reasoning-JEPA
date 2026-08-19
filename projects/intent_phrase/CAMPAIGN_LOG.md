@@ -2147,3 +2147,33 @@ NEXT (training change, not eval): make the energy score PARTIAL TRAJECTORIES
 — rank counterfactual prefixes by whether the observed continuation followed,
 at imagined horizons 2/3/4, using the existing rollout-counterfactual
 machinery.
+
+- **Real looped-LM baseline now training** (round
+  `runs/autonomy/intent_phrase/2026-08-19-lm-looped-real-v1`, snapshot
+  `_code/09f56579ffc60bd808deb8b1f09e89b64f881b4f`): `looped-med-lr1e3-s0`
+  and `looped-med-lr3e4-s0` on gruenau12 GPUs 2/3 (L40), ~7-8 h train + 1-2 h
+  eval. Recipe is byte-for-byte the 2026-08-18 med-scale LM recipe
+  (`lm_loss_on=all_solution`, caps 15/20, 100k fresh problems/epoch x 30)
+  except `model.recurrent=true` and bf16.
+  Fairness for reviewers: fixed baseline 90.8M params, 12 block applications
+  per forward; looped 12.8M params (one shared 7.09M block + 5.7M
+  embed/pos/norm), K applications. ~7x fewer params, K/12 of baseline FLOPs;
+  K=12 is equal block work and the eval axis K in {1,2,4,8,16} brackets it.
+  Deliberately NOT parameter-matched by widening the block: that would move
+  d_model off the frozen recipe and make K=8 cost ~8x baseline. Extra loops
+  are then unambiguously test-time compute, not extra capacity. Training
+  loop count is Poisson-lognormal (Geiping et al. 2025) mean 8 sigma 0.5
+  clipped to [1,16], so the whole eval axis is in-distribution — the thing
+  `looped_reread` lacked.
+  NOTE: gruenau12 exists and had five genuinely idle L40s; add it to the
+  survey list.
+
+- **bf16 landed in `scripts/train_lm.py`** (commit 09f5657): `train.precision`
+  was a dead key and is now live (unknown values error instead of being
+  ignored); the same `set_sharing_strategy("file_system")` fd fix was needed
+  here too and is applied. A/B at 3 epochs, identical seed, only precision
+  differing: wall 246s -> 222s, val loss 3.334 vs 3.358, train curves track
+  step-for-step from step 0. Safe, and in use.
+  CORRECTION: the expected ~2x speedup is **~1.1x**. At batch 16 with short
+  iGSM sequences these runs are dataloader/launch bound, not matmul bound.
+  Do not claim 2x anywhere.
