@@ -2251,3 +2251,6 @@ Final on best.pt: 300 eps, depths 1/2/4/8/16 ID and 1/4/16 OOD.
 A third weight arm (`prefix16`) is generated but NOT launched: the only free
 GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
 10-day run). Needs one free A100/A6000/L40.
+- hard21 local token LM is healthy after the L40 relaunch: epoch 0
+  val_loss 0.9096 in ~26 min, so ~13 h for 30 epochs. (My earlier "no step
+  line" worry was a wrong grep — this script logs per-epoch, not per-step.)
