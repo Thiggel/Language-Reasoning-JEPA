@@ -1921,3 +1921,16 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   [1,2,3,4,6,8], per-k losses logged plus a live cosine drift diagnostic.
   Cells flat-lminit-ecf16-roll124-s0 and -roll1248-s0 (energy_cf 16 + rollout
   1), evaluated at depths 1 AND 4 every 2 epochs.
+
+- **Drift measured, and it is real** (commit 408fb0f, snapshot
+  `runs/autonomy/_code/408fb0fd433a6cfe7a3e6e391372e6088210ede1/`). Cosine
+  similarity between the k-step imagined state and the true EMA state, on
+  the LM-init encoder before rollout training: k1 .607, k2 .571, k4 .470 —
+  imagined futures decay with depth, which is the shape needed to explain
+  why deeper search hurt. After 140 steps of `latent_rollout_pred`: k1 .860,
+  k2 .857, k4 .860 — the decay flattens entirely. Root cause: the predictor
+  was only ever trained one step ahead but asked at planning time to imagine
+  four. Sanity check passed: the k=1 term equals `latent_pred` exactly at
+  init; grads reach encoder (4.37e-1) and predictor (1.69e-1). No measurable
+  throughput cost (~0.10 s/problem). Cells on gruenau10:0 and gruenau9:0,
+  ~28-30 h for 10 epochs, first depth-1-vs-depth-4 watcher readout ~3 h in.
