@@ -1860,3 +1860,21 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   CAUTION for the paper: on stylized, `first_feasible` is privileged (the
   catalogue order is near-topological → 100% success); the honest menu-free
   reference on stylized is RANDOM.
+- 2026-08-19 EPOCH-0 DOSE-RESPONSE for energy_cf_feasibility_rank (iGSM-med
+  ID, 100 eps, oracle-free lookahead; random reference .59):
+  | weight | energy AUC d0 / imagined-d1 | full_catalogue d1 | prior_propose d1 |
+  |   0    | .512 / .493 | .60 (= random)  | .44 |
+  |   4    | .606 / .594 | .72             | .56 |
+  |  16    | **.771 / .852** | **.88**     | .64 |
+  MONOTONE and strong: at weight 16 the energy separates legal from illegal
+  continuations at AUC .85 along IMAGINED rollouts, and menu-of-all-actions
+  planning hits .88 vs random .59 — the first decisive menu-free-ish result
+  in the project. LAUNCHED weight 64 (flat-lminit-ecf64-s0, g10:2) to find
+  the top of the curve. OPEN PUZZLE: depth 4 still < depth 1 everywhere
+  (.54 vs .88 at w16) — deeper oracle-free search still not paying off;
+  diagnose next (beam/expansion pool, not legality, is now the suspect).
+  Also: lr3e-5 favours prior_propose (.69) over lr1e-4 (.56) while lr1e-4
+  favours full_catalogue — worth a note. flat-scratch prior_propose = .00
+  (no LM init → proposer cannot form phrases), confirming LM init is what
+  makes the no-menu mode possible. noprior cell died on "too many open
+  files" (dataloader) → relaunched with ulimit 65536 + 6 workers.
