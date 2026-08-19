@@ -35,6 +35,7 @@ import random
 import torch
 
 
+from textjepa.utils.compute_counter import ComputeCounter
 from textjepa.planning.evaluate import aggregate_episodes
 from textjepa.planning.ldad_decode import phrase_log_probs
 from textjepa.planning.search import EpisodeResult
@@ -71,7 +72,8 @@ class FlatPlanner:
                  prior_temperature: float = 1.3, prior_greedy: int = 1,
                  phrase_token_cap: int = 24, outcome_token_cap: int = 96,
                  codebook_k: int = 64, codebook_seed: int = 0,
-                 prior_top_k: int = 0, max_len: int = 4096):
+                 prior_top_k: int = 0, max_len: int = 4096,
+                 counter: ComputeCounter | None = None):
         if candidate_interface not in CANDIDATE_INTERFACES:
             raise ValueError(f"unknown candidate interface {candidate_interface!r}")
         self.model = model
@@ -93,6 +95,8 @@ class FlatPlanner:
         self.prior_top_k = int(prior_top_k)
         self.max_len = int(max_len)
         self.codebook = None
+        # Test-time-compute accounting (passive); see utils/compute_counter.py.
+        self.counter = counter if counter is not None else ComputeCounter()
         if candidate_interface == "ldad_cycle" and model.observed_action_decoder is None:
             raise RuntimeError("ldad_cycle needs observed_action_ldad=true")
 
@@ -102,10 +106,14 @@ class FlatPlanner:
         toks = torch.tensor(history[-self.max_len:], dtype=torch.long,
                             device=self.device).unsqueeze(0)
         h = self.model.encode(toks)
+        self.counter.backbone(1, toks.shape[1])
         return h[0, -1], h[0]
 
     @torch.no_grad()
     def _codes(self, history: list[int], phrases: list[list[int]]) -> torch.Tensor:
+        # One block-attention pass over prefix + all candidate phrases.
+        ctx = len(history[-self.max_len:])
+        self.counter.backbone(1, ctx + sum(len(p) for p in phrases))
         return self.model.encode_candidates_in_context(
             history[-self.max_len:], phrases, self.device
         )
@@ -119,6 +127,7 @@ class FlatPlanner:
             ctx = (history + phrase)[-self.max_len:]
             toks = torch.tensor(ctx, dtype=torch.long, device=self.device).unsqueeze(0)
             logits = self.model.encoder(toks)[0, -1].float()
+            self.counter.backbone(1, toks.shape[1], generated=1)
             logits[self.vocab.pad_id] = float("-inf")
             if greedy:
                 nxt = int(logits.argmax().item())
@@ -148,6 +157,10 @@ class FlatPlanner:
         greedy = torch.arange(n, device=self.device) < n_greedy
         for _ in range(cap):
             logits = self.model.encoder(toks)[:, -1].float()
+            self.counter.backbone(
+                toks.shape[0], toks.shape[1],
+                generated=int((~done).sum().item()),
+            )
             logits[:, self.vocab.pad_id] = float("-inf")
             g_pick = logits.argmax(-1)
             probs = torch.softmax(logits / self.prior_temperature, -1)
@@ -278,6 +291,7 @@ class FlatPlanner:
     @torch.no_grad()
     def plan_episode(self, fp, seed: int = 0) -> dict:
         env = fp.make_env()
+        self.counter.new_episode()
         rng = random.Random(seed)
         history = [t for s in fp.prompt_sentences for t in self.vocab.encode(s)]
         prompt_len = len(history)
@@ -336,6 +350,8 @@ class FlatPlanner:
                 endpoint = self.model.imagine(root, act, act_mask, hs, ha)
             else:
                 endpoint = self.model.imagine(root, act, act_mask)
+            self.counter.latent(n, depth)
+            self.counter.bump("energy_forwards", n)
             energy = self.model.energy(root, endpoint, s0.unsqueeze(0).expand(n, -1), float(self.lookahead))
             best = seqs[int(energy.argmin().item())]
             q = best[0]
@@ -473,6 +489,7 @@ def evaluate_flat_planning(planner: FlatPlanner, dataset, n_episodes: int,
             sr = sum(e["solved"] for e in planned) / len(planned)
             print(f"[ep {i+1}/{n_episodes}] success={sr:.3f}", flush=True)
     return {
+        "compute": planner.counter.report(),
         "latent_planner": summarize(planned),
         "random_policy": summarize(rand_),
         "first_feasible_policy": summarize(first_),

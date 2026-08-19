@@ -134,6 +134,9 @@ def main() -> None:
             else "menu-free, model-written outcomes, env used for grading only"
         ),
     }
+    c = results["compute"]["per_episode"]
+    print("compute/episode  " + "  ".join(
+        f"{k}={v:.1f}" for k, v in c.items()))
     for name in ("latent_planner", "random_policy", "first_feasible_policy"):
         m = results[name]
         print(f"{name:22s} " + "  ".join(f"{k}={v:.3f}" for k, v in m.items() if isinstance(v, float)))
