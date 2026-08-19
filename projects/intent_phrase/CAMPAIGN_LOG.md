@@ -1838,3 +1838,10 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   solves in ~1.05x necessary steps vs random's 3x — the steps-distribution
   instrument is the right frame for no-menu. Epoch 0 of 10; d4 still below
   d1 (deeper search not yet helped — watch as legality AUC rises).
+- 2026-08-19 local hard21 token LM launched (gruenau1:2, snapshot 502d2ad,
+  same recipe/snapshot as the Alex hard21 seeds → bit-comparable): caps
+  21/28, vocab 3479 tokens, OOV .09%, 0.75 s/step, ~39 h (ETA 2026-08-21
+  ~09:00 UTC). Hedge against the Alex a100 queue; will initialize the
+  faithful-band FlatIntentJEPA. NOTE for future LM runs: scripts/train_lm.py
+  has NO bf16/autocast (configs/lm.yaml precision key is dead) — adding it
+  is a free ~2x on all LM training.
