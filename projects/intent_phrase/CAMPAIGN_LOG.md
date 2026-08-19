@@ -2185,3 +2185,15 @@ machinery.
   GPU 4 (L40, 46GB) from snapshot `_code/09f5657...` with `train.precision=bf16`
   and `train.num_workers=6`; steady-state ~18.9GB, comfortable headroom.
   This cell is what unblocks `flat-hard21-lminit-s0` (job.sh.pending).
+
+- **Steps-distribution figure unblocked** (commit 043b34f). CORRECTION to the
+  earlier note that reference-policy step counts were never recorded: they
+  are — `_reference_episode` tracks steps for both the random and the
+  first-feasible policy and both go through the same `summarize`, which
+  already reports mean / median / p90 / steps-over-necessary. The real gap
+  was narrower: only the planner's PER-EPISODE records were returned, so a
+  distribution could be plotted for us but not for the baselines.
+  `evaluate_flat_planning` now also returns `episodes_random` and
+  `episodes_first_feasible`. Purely additive; existing keys unchanged.
+  This is what the owner asked for: show our model solving problems in
+  fewer steps as a distribution, not as a scored budget.
