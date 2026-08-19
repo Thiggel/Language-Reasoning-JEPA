@@ -193,8 +193,9 @@ def main(cfg: DictConfig) -> None:
         ]
 
     param_groups = groups(rest, tc.lr)
+    enc_lr = tc.lr * tc.encoder_lr_mult
     if enc_params:
-        param_groups += groups(enc_params, tc.lr * tc.encoder_lr_mult)
+        param_groups += groups(enc_params, enc_lr)
     opt = torch.optim.AdamW(param_groups, lr=tc.lr, betas=tuple(tc.betas), fused=device.type == "cuda")
     n_total = sum(p.numel() for p in model.parameters())
     n_train = sum(p.numel() for p in model.parameters() if p.requires_grad)
