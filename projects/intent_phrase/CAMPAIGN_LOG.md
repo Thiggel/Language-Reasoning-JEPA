@@ -1845,3 +1845,18 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   faithful-band FlatIntentJEPA. NOTE for future LM runs: scripts/train_lm.py
   has NO bf16/autocast (configs/lm.yaml precision key is dead) — adding it
   is a free ~2x on all LM training.
+- 2026-08-19 v2 ROUND COMPLETE (12 cells running). iGSM-med round
+  `2026-08-19-flat-jepa-v1`: s0/s1/s2 (seeds; s1/s2 also vary data seed),
+  lr3e5, scratch, frozen, nocfrank (w0), ecf1 (w1), ecf16 (w16), noprior
+  (intent_prior_lm=0) — dose-response for the central term = 0/1/4/16.
+  NEW `2026-08-19-flat-jepa-stylized-v1/flat-stylized-s0` (g7:2, scratch,
+  ~33 h) and `2026-08-19-flat-jepa-hard21-v1/flat-hard21-scratch-s0`
+  (g7:3, caps 21/28, ~70 h shared-GPU; lminit sibling pending the hard21 LM).
+  Stylized port (commit 4a56784, snapshot archived): IGSMDataset gained the
+  hard-negative + rollout-counterfactual pools (defaults 0 = legacy
+  bit-identical), new src/textjepa/data/stylized_flat.py adapter, shared
+  build_eval_dataset; 11 tests pass; stylized vocab 108 tokens, hard21 vocab
+  covers the 32/40 OOD band with 0% OOV.
+  CAUTION for the paper: on stylized, `first_feasible` is privileged (the
+  catalogue order is near-topological → 100% success); the honest menu-free
+  reference on stylized is RANDOM.
