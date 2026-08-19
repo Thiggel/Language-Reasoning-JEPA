@@ -852,3 +852,23 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   as training matures. Need both arms at the SAME later epoch before acting.
   (The epoch-2 comparison I first pulled was confounded — noprior was at
   epoch 0 and the full recipe at epoch 2.)
+
+- **Integrity sweep of all 18 running cells** (prompted by the frozen-cell
+  duplicate). Found one more silently-dead run: `flat-lminit-nocfrank-s0`
+  had crashed with the same file-descriptor bug at step 10680 roughly five
+  hours earlier, but showed as RUNNING the whole time — job.sh only writes
+  its final state AFTER the eval stage, and the eval stage was spinning in
+  `while [ ! -f train_finished ]`, which could never become true. Killed the
+  three stuck shells by PID on gruenau7, marked FAILED, relaunched on
+  gruenau7:2 from the fd-fixed snapshot 12b1510 (confirmed training,
+  `energy_cf_feasibility_rank=0.0000` as the arm requires; old dir kept as
+  `-crashed-fd`).
+  Its step-10500 checkpoint PREDATES the crash, so the geometry ablation
+  that used it stands.
+  Rest of the sweep: two cells carry a stale `exit_code` from an earlier
+  crash-and-relaunch today (benign, both live and advancing), the frozen
+  cell is legitimately in final eval, everything else healthy.
+  STANDING CHECK, use it routinely: `state` is NOT a health check. Read
+  `state` + `exit_code` + whether the log step is still advancing. A cell
+  whose log step has not moved in hours is dead regardless of what `state`
+  says.
