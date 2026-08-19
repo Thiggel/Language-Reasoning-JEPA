@@ -775,3 +775,24 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   result to the energy objective.
   CAVEAT: one seed, epoch-1 checkpoints, 72 pairs. Worth re-running at
   convergence before it goes in the paper.
+
+- **Duplicate-run incident: `flat-lminit-frozen-s0` was running TWICE**, on
+  gruenau7:1 (the host recorded in the round's HOSTS.txt) and an
+  unregistered duplicate on gruenau2, both writing the SAME `model/` dir.
+  The gruenau7 copy had already crashed in training with the file-descriptor
+  bug (exit 1, but its `state` file still read RUNNING because job.sh only
+  writes the final state after the eval stage) and moved on to final eval;
+  the gruenau2 duplicate kept training and overwrote `last.pt` and
+  `metrics.csv` underneath it.
+  Resolution: killed the gruenau2 duplicate by PID (28657/28661/28662; never
+  `pkill -f`). `best.pt` is dated 16:40, BEFORE the duplicate started
+  (~16:46), so the final eval reading it is clean. `last.pt` (20:59) is
+  contaminated and was dropped from the geometry ablation.
+  HOW IT WAS CAUGHT, worth reusing: the checkpoint reported step 1500 while
+  the training log was at step 11280. Checkpoint-step vs log-step mismatch is
+  a cheap integrity check — apply it before trusting any checkpoint.
+  TWO REAL BUGS EXPOSED: (1) `state` can read RUNNING for a cell whose
+  training has already failed, so `state` alone is not a health check —
+  always check `exit_code` and the log tail; (2) nothing prevents two
+  launches of the same cell into one run dir. A lock file or a
+  refuse-if-state-exists guard in job.sh would prevent recurrence.
