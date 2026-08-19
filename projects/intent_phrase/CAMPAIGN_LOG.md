@@ -2064,3 +2064,86 @@ lr 1e-3 ckpt: self-consistency .815 -> **.950**, pass@16 .970.
 
 Sentence LM skipped: no current-recipe iGSM-med checkpoint yet (Alex).
 NEXT: train a real recurrent token LM so the looped comparison exists.
+
+## 2026-08-20 — depth diagnosed: the SEARCH FORMULATION is broken, not drift
+
+Commits 8644dae, 0a6f850, e6ad7d1; snapshots archived under
+`runs/autonomy/_code/`. All 2x2 rows below are CANDIDATE-PRIVILEGED ORACLE
+DIAGNOSTICS — never paper rows.
+
+**The 2x2 (ecf16 last.pt, 100 eps, prior_propose).** Cross the scorer
+(learned energy vs a perfect goal metric) with the endpoints (imagined vs
+truly executed):
+
+| scorer x endpoints | d1 | d2 | d4 | d8 |
+|---|---|---|---|---|
+| A energy x imagined | .850 | .420 | .360 | .360 |
+| B oracle-distance x imagined | .520 | .390 | .370 | .380 |
+| C energy x TRUE executed | .830 | .410 | .370 | .390 |
+| D oracle-distance x TRUE executed | .860 | .440 | .410 | .400 |
+
+Row D is the full upper bound: perfect states AND a perfect goal metric.
+**It collapses with depth exactly like row A.** So:
+- A ~= C => **drift is NOT the cause.** Handing the planner the true
+  executed states instead of imagined ones changes almost nothing.
+- A > B => the learned energy is *better* than the oracle goal-distance it
+  is trained to imitate (.85 vs .52 at depth 1). The energy head is not the
+  bottleneck either.
+- CORRECTION to the 08-19 entry: latent drift was the stated lead suspect
+  and it is now ruled out as the cause of the depth collapse. The drift
+  measurement and the rollout-trained cells remain valid and worth having
+  (drift is real and severe, see below), but they will not by themselves
+  make depth pay off.
+
+**The actual mechanism, measured.**
+1. Scoring only the ENDPOINT is blind to wasted steps. An illegal action is
+   a no-op, so [illegal, a, b] reaches the same endpoint as [a, b] at no
+   cost. From depth 2 the argmin is free to start with an illegal move:
+   invalid rate of the *executed* action .02 -> .17 (d1->d4) in ALL FOUR
+   rows including the full-oracle one.
+2. Those illegal picks ended episodes. Each was masked "attempted", the
+   proposer only emits ~1.6 unique parseable intents per state, and once all
+   were masked the planner gave up: no-proposal episode rate .15 (d1) ->
+   .58-.64 (d>=2). That is most of the prior_propose collapse.
+3. Expansion was random, not the pool: a legal action was present in the
+   pool at 98.8-100% of imagined depth-2/3/4 states, but the random tail
+   draw picked a legal one only 38.8-45.6% of the time. Roots were being
+   ranked by the luckiest of ~2-3 junk continuations.
+
+**Drift IS severe on the reference (no-rollout) checkpoint** — 60 problems,
+teacher-forced, LN space (the space the loss uses):
+
+| k | 1 | 2 | 3 | 4 | 6 | 8 | two UNRELATED real states |
+|---|---|---|---|---|---|---|---|
+| cosine | .928 | .853 | .771 | .687 | .496 | .310 | .945 |
+| LN relL2 | .370 | .535 | .670 | .785 | .998 | 1.169 | .326 |
+
+Already at k=1 the imagined state is farther from its target than a random
+unrelated real state is. No 2e6 explosion (norms inflate 25-80% with k).
+Energy legality AUC decays much more gently (d0 .818, d4 .838, d8 .734) —
+it reads legality off geometrically wrong states.
+
+**Eval-time fixes applied** (depth 1 bit-identical in all cases; legacy
+paths kept for ablation): energy-guided beam expansion instead of random
+tails; `--aggregate mean_prefix` (default) charges every imagined step
+rather than only the endpoint; when all candidates are masked, clear the
+mask and retry instead of ending the episode.
+
+| interface | depth | before | after |
+|---|---|---|---|
+| full_catalogue | 1 | .965 | .965 |
+| full_catalogue | 2 | .865 (inv .44) | **.920** (inv .30) |
+| prior_propose | 2 | .420 | **.575** |
+
+(30-ep spot check of the full fix at prior_propose d2: .42 -> .67, imagined
+invalid rate .376 -> .032.) The checkpoint has also trained further since
+the 08-19 tables: full_catalogue d1 is now .965 (was .88), prior_propose d1
+.850 (was .64).
+
+**Honest status: depth still does not HELP, it just hurts less.** The 2x2
+says the rest is not fixable at eval time — the objective rewards reaching a
+goal-like endpoint and never the ordering or cost of the path.
+NEXT (training change, not eval): make the energy score PARTIAL TRAJECTORIES
+— rank counterfactual prefixes by whether the observed continuation followed,
+at imagined horizons 2/3/4, using the existing rollout-counterfactual
+machinery.
