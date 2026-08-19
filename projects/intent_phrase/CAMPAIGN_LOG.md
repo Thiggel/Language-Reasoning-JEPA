@@ -834,3 +834,21 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   by side with the geometry before any recipe change.
   CAVEATS: one seed, 72 pairs, mid-training checkpoints at unequal steps.
   Re-run at convergence with matched steps before this goes in the paper.
+- The `intent_prior_lm` trade-off is MILDER than first stated (correcting my
+  own note above). At the only fairly matched point available (epoch 0 for
+  both), dropping the term costs essentially nothing in planning:
+
+  | | full recipe | minus intent_prior_lm |
+  |---|---|---|
+  | full_catalogue d1 / d4 | .720 / .480 | .720 / .490 |
+  | prior_propose d1 / d4 | .560 / .510 | .540 / .480 |
+  | proposal recall | .912 | .894 |
+
+  So the menu-free interface does NOT collapse without the term — the
+  proposal head is initialized from the token LM and keeps producing usable
+  intents (recall .894) even with the loss weight at 0. My earlier claim
+  that dropping it "loses the menu-free interface" was wrong.
+  STILL UNRESOLVED: epoch 0 is early, and the term's value may only appear
+  as training matures. Need both arms at the SAME later epoch before acting.
+  (The epoch-2 comparison I first pulled was confounded — noprior was at
+  epoch 0 and the full recipe at epoch 2.)
