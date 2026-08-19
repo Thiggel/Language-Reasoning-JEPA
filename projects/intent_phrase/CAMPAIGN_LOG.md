@@ -1962,3 +1962,44 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   snapshot on gruenau7:1 (old dir kept as `-crashed-fd`).
   Caveat: the 8 cells already running still use the pre-fix snapshot and
   remain exposed until they finish; relaunch on crash rather than restart.
+
+## 2026-08-20 — representation analysis: one strong result, one dead claim
+
+Full report: `research/reports/intent_phrase/2026-08-20-representation-analysis/`
+(commit cc8e678; mirrored to TextJEPA-paper, 129 figures). Every comparison
+carries a **random-init control**, which is what makes the reading honest.
+
+**Holds up — consequence geometry.** Two independent steps taken in either
+order lead to the same situation; the state should encode that. Because the
+flat encoder starts as a copy of the token LM, this is a before/after on the
+same weights: AUC .711 after JEPA training vs .568 at LM-init, vs .568 for
+the token LM (reproduces exactly, sanity check) and .516 for random-init.
+JEPA training is what creates this. On ProofWriter, adding a single "not"
+moves the JEPA state 21x further than a reordering that changes nothing;
+the token LM is *anti*-consequence (AUC .170) — a meaning-preserving
+reorder moves it further than a completely different action.
+CAVEAT: one seed, one epoch-0 checkpoint, 72 cases; and the stylized JEPA
+*fails* the same order-invariance test (.538, chance). Not yet a paper claim.
+
+**Does NOT hold up — "JEPA states probe better than LM states."** This was
+to be the paper's largest section. It is not true:
+resolved .969 (JEPA) / .906 (token LM) / .923 (sentence LM) / **.912
+(random-init JEPA)**. The trained margin over an untrained network is
++.057. Operator-from-displacement .995 looks impressive until the random
+controls read .960/.972 — it is architectural, not learned. Likewise the
+stylized paraphrase AUC of 1.000 is matched by random-init. And the
+sentence LM separates negation *better* than the JEPA (.590 vs .208).
+The step's value is not decodable by anyone (R^2 <= 0 everywhere).
+JEPA resolvedness also decays with depth (.951 -> .602 by depth 5) while
+both LMs hold at 1.000 — same decay found on 08-12, now replicated.
+
+DECISION IMPLIED: the probe battery cannot be the paper's centrepiece as
+planned. The defensible version of the analysis story is the narrower,
+control-backed one: JEPA training reshapes the state so that *actions with
+the same consequence land together and negations land apart*, measured as a
+before/after on identical weights. Everything else needs the random control
+printed next to it or it will not survive review.
+
+NEXT: `nocfrank` vs `ecf16` on the same order-invariance test, to see
+whether the counterfactual-ranking energy term is what drives .568 -> .711.
+Both cells are training now.
