@@ -34,7 +34,7 @@ model:
   n_heads: 12
   ff_mult: 4
   max_len: 4096
-  init_from_lm: runs/autonomy/intent_phrase/2026-08-18-lm-med-scale-v1/tok-lm-med-fullsol-big-lr1e3-s0/model/best.pt
+  init_from_lm: /vol/home-vol2/ml/laitenbf/TextJEPA/runs/autonomy/intent_phrase/2026-08-18-lm-med-scale-v1/tok-lm-med-fullsol-big-lr1e3-s0/model/best.pt
   encoder_mode: full        # full | frozen | lora
   lora_rank: 16
   lora_alpha: 32.0
