@@ -264,6 +264,9 @@ def main(cfg: DictConfig) -> None:
                 cem_prior_anchor=float(cfg.get("cem_prior_anchor", 0.1)),
                 codebook_k=int(cfg.get("codebook_k", 64)),
                 codebook_seed=int(cfg.get("codebook_seed", 0)),
+                lookahead_expansion=str(
+                    cfg.get("lookahead_expansion", "oracle_menu")
+                ),
             )
             if planner.proposer is not None:
                 # The proposal distribution (the cem_cycle Gaussian or the
@@ -327,6 +330,9 @@ def main(cfg: DictConfig) -> None:
             "n_episodes": int(cfg.n_episodes),
             "slack": int(cfg.slack),
             "oracle_future_action_tree": bool(cfg.allow_oracle_future_actions),
+            "lookahead_expansion": str(
+                cfg.get("lookahead_expansion", "oracle_menu")
+            ),
             "score_control": str(cfg.get("score_control", "model")),
             "search_algorithm": str(cfg.get("search_algorithm", "shooting")),
             "transition_energy_composition": str(cfg.get(

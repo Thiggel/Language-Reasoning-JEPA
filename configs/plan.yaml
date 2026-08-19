@@ -30,6 +30,7 @@ lookahead: 1
 # actions. Keep false for the information-matched evaluation; enable only for
 # an explicitly labeled oracle-action diagnostic.
 allow_oracle_future_actions: false
+lookahead_expansion: oracle_menu  # oracle_menu | ldad_cycle (oracle-free expansion from JEPA-imagined states for feasible_menu roots)
 prior_top_m: 0  # 0 = no prior filtering; otherwise keep top-M current actions
 prior_only: false
 proposal_source: current_feasible  # current_feasible | learned_catalogue

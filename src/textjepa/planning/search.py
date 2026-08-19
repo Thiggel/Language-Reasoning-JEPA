@@ -226,7 +226,17 @@ class LatentPlanner:
         cem_prior_anchor: float = 0.1,
         codebook_k: int = 64,
         codebook_seed: int = 0,
+        lookahead_expansion: str = "oracle_menu",
     ):
+        if lookahead_expansion not in {"oracle_menu", "ldad_cycle"}:
+            raise ValueError(
+                f"unknown lookahead expansion: {lookahead_expansion}"
+            )
+        # ``ldad_cycle`` expansion: deeper beam slots are proposed from the
+        # JEPA-imagined state by the LDAD cycle score over the catalogue
+        # (mirrors FaithfulPlanner._cycle_sequences); the reference
+        # environment is never consulted beyond the root menu.
+        self.lookahead_expansion = lookahead_expansion
         if candidate_interface not in {
             "feasible_menu", "full_catalogue", "learned_catalogue",
             "ldad_cycle", "generator_cycle", "cem_cycle", "codebook_cycle",
@@ -257,12 +267,14 @@ class LatentPlanner:
         if (
             lookahead > 1
             and candidate_interface == "feasible_menu"
+            and lookahead_expansion == "oracle_menu"
             and not allow_oracle_future_actions
         ):
             raise ValueError(
                 "lookahead > 1 enumerates future actions with the reference "
                 "dependency graph; set allow_oracle_future_actions=true "
-                "only for a labeled oracle-action diagnostic"
+                "only for a labeled oracle-action diagnostic, or "
+                "lookahead_expansion=ldad_cycle for oracle-free expansion"
             )
         self.model = model
         self.vocab = vocab
@@ -1156,6 +1168,25 @@ class LatentPlanner:
                     reached = resolved | {
                         a for a in sequence if a is not None
                     }
+                    if self.lookahead_expansion == "ldad_cycle":
+                        # Oracle-free: expand from the imagined state with
+                        # the LDAD cycle filter, masking only the planner's
+                        # own executed/imagined actions.
+                        if sequence[-1] is None:
+                            expanded.append(sequence)
+                            continue
+                        cands = self._cycle_candidates(
+                            problem,
+                            self._imagined_state(problem, s, sequence),
+                            executed=frozenset(reached),
+                        )
+                        if cands:
+                            expanded.extend(
+                                sequence + [action] for action in cands
+                            )
+                        else:
+                            expanded.append(sequence + [None])
+                        continue
                     if problem.query in reached:
                         expanded.append(sequence + [None])
                         continue
