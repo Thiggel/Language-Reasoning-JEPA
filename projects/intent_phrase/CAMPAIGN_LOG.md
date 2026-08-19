@@ -1730,3 +1730,98 @@ menu-free" picture. GPU band runs (ID + OOD, both LM rows) still to launch.
   causal-{k0 g7:0, k8 g7:2, k64 g9:0 (~10x faster), k8-act64 g10:0} +
   MLP-control LR sweep mlp-k8-lr{3e4 g9:1, 1e3 g10:1, 1e4 g7:0p, 3e5 g7:2p}.
   ~1.2-1.7 h/epoch → 10 epochs in ~14-17 h. All 8 RUNNING, probes armed.
+- 2026-08-18 Alex submissions (`2026-08-18-alex-lm-v1`, local README has all
+  remote paths + pull-rsync command): lm-med lr1e4 (jobs 4040212-217) and
+  tok-lm-hard32-fullsol-big-s0 — caps 32/40 x 100k x 30, the target-band LM
+  scale-up (jobs 4040218-225). 24h wall limit handled via resume-chaining
+  (train_lm_resume.py, Alex-side patch only). Runs live in Alex $HOME
+  because the atuin $WORK group inode quota is exceeded (573K/500K, grace
+  expired) — admin attention needed. Alex cannot ssh out; results pulled
+  from Grünau side.
+
+## 2026-08-19 readout (after ~1 day)
+- TOKEN LM SOLVED at iGSM-med (caps 15/20, own caps, 200 eps, free-gen,
+  model writes own arithmetic): lr3e-4 .810 strict / .840 lenient; lr1e-3
+  .825 / .850; invalid-step .03. Curves: 0→.86 over 30x100k. LR 1e-3 ≈
+  3e-4 (not LR-limited at this scale); lr1e-4 + caps-32 scale-up queued on
+  Alex. CAVEAT: success_answer_rate only .06-.09 while per-step arithmetic
+  match ~.9 — suspected final-answer grading bug, being checked.
+- JEPA causal-fix-v2 (all 8 done, 10 epochs): cycle AUC trajectories flat/
+  weak for ALL cells — causal-k8 .53, causal-k64 .53, causal-k8-act64 .57,
+  mlp-k8 lr1e-3 .49 / 3e-4 .51 / 1e-4 .60 / 3e-5 .58. causal-k0 OOM'd
+  (packed GPU) at epoch 3 (.50). VERDICT: correct architecture + loss
+  weighting do NOT make LDAD cycle-consistency a feasibility signal on
+  faithful; the causal predictor is not the limiter for this readout; LR
+  1e-3 collapses. The cycle mechanism is closed as the menu-free route.
+  With-menu slack-curve planning on these ckpts is healthy (.32→.79).
+- NEXT (launching): feasibility through the ENERGY head (the target
+  system's own mechanism): probe energy-head feasible-vs-infeasible AUC on
+  v2 checkpoints; add self-supervised energy ranking term observed-next vs
+  hard-negative counterfactual-next (predictor in loop); train on freed
+  Grünau GPUs; port no-budget/steps-distribution eval to JEPA planning.
+
+## 2026-08-19 — OWNER DECISIONS: paper plan + 1-week architecture push
+- Record audit (this session): only feasible_menu ever worked; full_catalogue
+  and no-menu (ldad_cycle .29 slack-4, codebook_ground .28 / recall 1.0,
+  autonomous chance) never exceeded ~.3 on stylized and were <= random on
+  faithful. "JEPA probes beat LM probes" is contradicted by 08-12 LM
+  state-readout report — representation story must be consequence-based
+  geometry / use, not probe superiority.
+- PAPER PLAN (owner): analysis-heavy; floor = stylized feasible-menu JEPA vs
+  token/sentence LM + depth scaling + looped-LM test-time-compute; emphasis
+  = representation analysis (paraphrase clustering / negation separation,
+  counterfactual geometry, LDAD decodability) across domains; stretch =
+  faithful iGSM OOD in modes feasible/full-catalogue/no-menu. 1 week
+  architecture push, then ~3 weeks finals.
+- ARCHITECTURE DECISION (owner): intent JEPA moves to a FLAT TOKEN BACKBONE
+  (causal token transformer, init from the trained token LM; state = hidden
+  at intent boundaries; predictor + endpoint energy + LDAD + EMA unchanged;
+  backbone-matched vs LMs). No-menu: generative intent-phrase prior head
+  (CE on observed intents) proposes, JEPA energy plans; codebook kept as
+  comparison. Energy hard-negative feasibility ranking to be added.
+- Day-1 launches: (a) oracle-free depth-curve re-measure of stylized
+  headline; (b) flat-backbone intent JEPA v2 build + iGSM-med smoke/train;
+  (c) energy-head feasibility AUC probe on existing checkpoints.
+- 2026-08-19 ENERGY-HEAD FEASIBILITY PROBE (commit b2d53ff, round
+  2026-08-19-energy-auc-probe-v1): faithful ckpts energy AUC ~chance
+  (.47-.51), like cycle. STYLIZED HEADLINE: cycle .846 but the planning
+  ENERGY head is ANTI-feasible (.386 pooled / .318 per-state) — imagined
+  successors of premature actions get LOWER energy. Energy = goal-progress,
+  never legality.
+- 2026-08-19 ORACLE-FREE DEPTH RE-MEASURE (round
+  2026-08-19-oraclefree-depth-v1, 5 seeds x 300 eps, feasible menu at root,
+  oracle-free expansion at depth>1):
+  | depth | strict | slack2 | slack4 | OLD strict (symbolic future menus) |
+  |   1   | .202   | .650   | .898   | .202 (identical — sanity check) |
+  |   2   | .071   | .399   | .784   | .729 |
+  |   4   | .013   | .205   | .641   | .885 |
+  |   8   | .021   | .226   | .655   | .965 |
+  |  16   | .019   | .215   | .649   | .975 |
+  VERDICT: the headline depth scaling was ENTIRELY carried by symbolic
+  future menus. Oracle-free, deeper search HURTS (energy prefers illegal
+  imagined continuations, cf. anti-feasible AUC). Paper consequence: depth
+  claims must be re-earned with a legality-aware energy; the v2
+  energy_cf_feasibility_rank term (anchor + along imagined rollouts) is the
+  central mechanism, with flat-lminit-nocfrank-s0 as its ablation.
+- 2026-08-19 ALEX: existing chains healthy (lm-med lr1e4 ep10 freegen .26;
+  hard32 caps-32 ep5 freegen .12 — the target band IS learning with scale).
+  NEW round `2026-08-19-alex-lm-finals-v1` (snapshot 502d2ad, lr1e-3,
+  100k x 30): tok-lm-hard21 s0/1/2 (paper split, ID + OOD 28-32), tok-lm-med
+  s1/2, sent-lm-med s0, sent-lm-hard21 s0 (sentence LM gained all_solution
+  decode loss). Jobs 4046275-4046292 PENDING. RISK: Alex $HOME 91/100G.
+- 2026-08-19 FLAT INTENT JEPA v2 BUILT + LAUNCHED (docs/flat_intent_jepa_
+  design.md; commits 985643b/a112ba8/51a4cb0/b60c9a7/4f8e99e; snapshot
+  4f8e99e): one causal token transformer (init from tok-lm-med best.pt),
+  s_t = hidden at outcome_t end, action = intent hidden in context via a
+  block-attention phrase pass (all catalogue candidates in ONE forward),
+  EMA teacher, residual-MLP predictor, horizon-blind energy, LDAD, tied LM
+  head = intent prior. Losses: latent_pred 1, vicreg 1, cf_state 1,
+  geo_horizon_rank 1, geo_adv_mse .25, ldad 1, energy_cf_feasibility_rank 4
+  (anchor: 2 feasible + 8 premature + 4 resolved negatives; PLUS along every
+  imagined rollout prefix, k=4), intent_prior_lm 1 (replaces chunk_pred).
+  Planner scripts/plan_flat.py: feasible_menu / full_catalogue / ldad_cycle /
+  codebook_ground / prior_propose (16 sampled phrases, grounded) /
+  autonomous; no budget, steps-used distribution, oracle-free lookahead with
+  imagined_invalid_rate. Round `2026-08-19-flat-jepa-v1`: flat-lminit-s0
+  (g10:0), lr3e5 (g10:1), scratch (g10:2), nocfrank ablation (g7:0),
+  frozen-encoder (g7:1, FAILED - to fix). ~.07 s/problem, ~1.9 h/epoch A100.
