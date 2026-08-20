@@ -55,6 +55,7 @@ model:
 
 objective:
   latent_pred: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  latent_rollout_pred: {weight: 0.0, kind: smooth_l1, norm_targets: true, ks: [1, 2, 4]}
   vicreg: {weight: 1.0, std_target: 1.0, cov_weight: 0.04, action_weight: 0.1}
   counterfactual_state: {weight: 1.0, kind: smooth_l1, norm_targets: true}
   geo_horizon_rank: {weight: 1.0, kind: logistic, margin: 0.5, label_gap: 0.02, temperature: 0.3, teacher_temperature: 0.1}
