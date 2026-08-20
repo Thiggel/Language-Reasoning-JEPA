@@ -188,6 +188,12 @@ solution-following rollout policy; latent planning + detached decoder.
 - tok-lm-hard21-fullsol-s0 hit 250000s TIMEOUT during a late free-gen eval; training + 3 main eval JSONs complete; only the last eval truncated.
 - All round dirs have HANDOFF.md with PIDs and exact continuation commands.
 
+
+### 2026-08-21 code_prior first end-to-end numbers (main session)
+- Bench (roll124 ckpt, 611 states): code_prior K=16 recall_true_next .586 / recall_feasible .820 / parse .667 / no-proposal .003 vs token_head .961. Prior code-ranking is the bottleneck, not breadth or decoder.
+- Planning cap1.0 d1: code_prior .115 (OOD .000, d4 .030) vs prior_propose .840 on SAME ckpt (best prior_propose yet; answer criterion within .01). codebook_ground collapsed to .010 on roll124 (was .890 on ecf16) -> codebook quality is strongly checkpoint-dependent.
+- Wide-K test launched (K=32/64 proposals + --prior-samples 64, gruenau1): does breadth + energy selection recover recall? Results: runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/eval-wideK/.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
