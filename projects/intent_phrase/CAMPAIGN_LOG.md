@@ -4,6 +4,174 @@ _Keep short. Compress completed stages into a few lines; details live in
 `research/reports/intent_phrase/<date>-*/REPORT.md` and are mirrored to
 `/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/`. Last update: 2026-08-20._
 
+## CURRENT STATE (2026-08-20, end of night) — READ THIS FIRST
+
+A complete pick-up-from-here summary. Detail for every line is in the dated
+entries below and in `research/reports/intent_phrase/2026-08-20-*/`.
+
+### The one-sentence status
+Both LM baselines now work (iGSM-med .82, faithful-hard .90 free generation).
+The JEPA planner beats every test-time-compute baseline at depth 1 and at a
+fraction of the compute. **Depth still does not help, and we now know why it
+probably cannot in iGSM** (see "THE DEPTH ANSWER"). The representation
+claims from before today have been withdrawn or narrowed after proper
+controls.
+
+### THE DEPTH ANSWER (most important insight of the day)
+Depth helps when the depth-1 scorer is WEAK and hurts when it is STRONG:
+
+| protocol | d1 | d2 | d4 |
+|---|---|---|---|
+| 2026-08 stylized, latent oracle-distance | .106 | .456 | **.534** (monotone UP) |
+| 2026-08 stylized, exact symbolic distance | 1.000 | .534 | **.144** (monotone DOWN) |
+| today, full_catalogue @cap1.0 | .725 | — | .310 |
+| today, prior_propose @cap1.0 | .790 | — | .415 |
+
+The old monotone-increasing curves came from a scorer so bad at depth 1
+(.106) that extra search could still recover ground. That is not the
+demonstration we want. Today depth 1 is genuinely good, and deeper search
+makes the model pick a WORSE FIRST ACTION: executed invalid rate 1.3% -> 35%
+(full_catalogue) and 1.7% -> 14.5% (prior_propose) going d1 -> d4.
+**Structural reason: iGSM HAS NO DEAD ENDS.** Every legal action is either
+necessary or merely wasteful; nothing forecloses a later solution. So
+lookahead has almost nothing to discover, while it does add imagination
+error. Verified: this is not a budget artefact — depth 1 wins at every cap
+from 1.0 to 4.0.
+**TO GET MONOTONE DEPTH GAINS we need choices that FORECLOSE** —
+irreversibility, dead ends, consumable resources. Blocksworld has exactly
+this (un-stacking is required). This is a paper-level finding, not a failure.
+Contributing but secondary: the energy head is a strong LEGALITY detector at
+every depth (.95-.99) but a weak GOODNESS ranker that collapses off the root
+(progress AUC .842 d0 -> .695 d1 -> .615 d2 -> .606 d4).
+
+### DECISIONS IN FORCE (owner)
+1. **Success = the model EMITS THE ANSWER explicitly** (`gen_outcome=model`,
+   `success_answer_rate`) for BOTH families. Only definition under which the
+   planner and the LM do the same task; random is 0 at any budget. NOT yet
+   applied to the running watchers — this is the top pending change.
+2. **Report the budget curve** (cap 1.0 / 1.25 / 4.0), never a single cap.
+   `scripts/rescore_budget.py` re-scores any completed plan JSON for free.
+3. **Traps should scale with problem size** — distractors as a fraction of
+   legal actions, so bigger problems get proportionally MORE traps. Not yet
+   implemented.
+4. **Target architecture**: learned prior over action codes (codebook
+   preferred, flow fallback) + rollout ENTIRELY IN LATENT SPACE + energy
+   selection + a DETACHED decoder rendering to text only at execution. Model
+   never sees a menu, list or feasibility signal.
+5. **Step-efficiency is ONE result, not the lens on every experiment.**
+   Success rate is primary.
+6. No symbolic or hardcoded heads (CLAUDE.md). Symbolic state is
+   evaluation-only and must be labelled.
+
+### WHAT IS RUNNING (all verified 2026-08-20 end of night)
+Round `2026-08-19-flat-jepa-v1` (iGSM-med, 13 cells): `flat-lminit-s0/s1/s2`
+(seeds), `flat-scratch-s0` (no LM init), `flat-lminit-frozen-s0`,
+`flat-lminit-lr3e5-s0`, dose-response `nocfrank`/`ecf1`/`ecf16`/`ecf64`,
+`flat-lminit-noprior-s0`, `flat-lminit-ecf16-roll124-s0` and `-roll1248-s0`
+(multi-step rollout prediction).
+Round `2026-08-20-prefix-energy-v1` (4 cells): `ecf16-prefix4-s0`,
+`-roll124-s0`, `-prefix16-s0`, `-premature-s0` (the hard-negative arm).
+Round `2026-08-20-detach-lm-state-v1` (2 cells): `ecf16-prefix4-detachlm-s0`
+and matched control `ecf16-prefix4-tied-s0`.
+Round `2026-08-19-flat-jepa-stylized-v1`: `flat-stylized-s0`.
+Round `2026-08-19-flat-jepa-hard21-v1`: `flat-hard21-scratch-s0` (relaunched
+on gruenau9:1 after an unexplained exit 1 at ep2 step 13620 — stderr showed
+only a warning, suspect an external kill; WATCH IT). `flat-hard21-lminit-s0`
+is ARMED with the finished hard21 LM checkpoint but NOT YET LAUNCHED.
+Round `2026-08-19-lm-hard21-local-v1`: token LM in final 200-episode eval.
+Round `2026-08-19-lm-looped-real-v1`: COMPLETE, both seeds.
+Alex `2026-08-19-alex-lm-finals-v1`: 7 LM cells, all still PENDING on
+priority, not blocking anything.
+IN-FLIGHT AGENT ROUNDS with no cells yet: true-oracle upper bound;
+solution-following rollout policy; latent planning + detached decoder.
+
+### HEADLINE NUMBERS (all with their caveats)
+- Token LM free generation: iGSM-med **.82**, faithful-hard **.90** (0% before
+  the `lm_loss_on=all_solution` fix). Solves in exactly the minimum number of
+  steps 94% of the time.
+- Test-time compute, one axis (token positions/episode): greedy .81 @29k;
+  sample-16 + confidence rerank **.53** @442k (HURTS); sample-16 + majority
+  **.93** @442k; looped LM 8x **.73** @217k (saturates, 16x gains nothing);
+  **JEPA depth 1 .94 @9.6k**. pass@16 is .96 — the whole gap is SELECTION.
+- Planning, budget curve, full_catalogue ID d1: cap1.0 **.740** vs random
+  .000; cap1.25 .855 vs .010; cap4.0 .995 vs .595. **Our margin over guessing
+  was understated ~2x by the generous budget.**
+- Codebook proposer: **.027 -> .890** on a current checkpoint, purely from
+  today's fixes. BUT it is CATALOGUE-PRIVILEGED (snaps to the problem's own
+  action list); truly catalogue-free scores exactly **.000**.
+- `prior_propose` IS a genuine no-menu-at-all interface (writes phrases token
+  by token, exact-match grounding only): **.620 ID @cap1.25 vs random .010**,
+  and a progress-making action is in its top 4 for **96%** of states.
+
+### WITHDRAWN / CORRECTED CLAIMS (do not resurrect)
+- "JEPA states probe better than LM states" — FALSE with proper floors.
+  Set-valued state readout is AT FLOOR for every arm in both domains (a step
+  counter beats every encoder). Only ~+.07 of the binary-probe margin is
+  training. The v1 probe table is WITHDRAWN.
+- "Oracle-goal planning scored 1.0 before" — protocol conflation. It never
+  exceeded .756 (privileged) / .21 (honest). The 1.0 rows were ExpertReplay
+  and exact symbolic distance. Two reports carrying this error have been
+  corrected in the repo AND the paper mirror.
+- "`--scorer oracle_distance` is an upper bound" — it is NOT. It encodes the
+  true solved state with our own model and ranks by latent L2, so it measures
+  the REPRESENTATION. The real symbolic upper bound is being measured now.
+- "full_catalogue / feasible_menu are meaningful comparisons" — both are
+  SATURATED REFERENCE COLUMNS at cap 4 (random .595 / .975).
+- "OOD is harder" — FALSE as configured: useless-action fraction falls
+  .407 -> .181 because bigger problems use a larger share of their catalogue.
+- "The energy counterfactual-ranking term drives the consequence geometry" —
+  FALSE, the ablation without it scores HIGHER (.774 vs .701).
+- "bf16 gives ~2x" — it gives ~1.1x; these runs are dataloader-bound.
+- "Latent drift causes the depth collapse" — ruled out by the oracle 2x2.
+  Drift is real and severe (fixed by `latent_rollout_pred`) but not the cause.
+
+### OPERATIONAL TRAPS (all cost us time today)
+- **Dataloader fd exhaustion killed SIX cells.** Fixed at source
+  (`set_sharing_strategy("file_system")`, commit 12b1510) but any job.sh
+  built from an older snapshot is still exposed. ALWAYS `ulimit -n 65536` as
+  line 2 and `train.num_workers=6`.
+- **`state` is NOT a health check.** job.sh writes the final state only AFTER
+  the eval stage, so a crashed cell can read RUNNING for hours. Check
+  `state` + `exit_code` + whether the log step is still advancing.
+- **Nothing prevents launching the same cell twice** into one run dir. It
+  happened (frozen-s0, two hosts, same model/ dir). Detect via
+  checkpoint-step vs log-step mismatch.
+- **Kill the WATCHER subshell explicitly** when relaunching into a reused
+  round dir; a stale watcher writes results from old code into the recreated
+  path and looks like a real result.
+- **Do not delete live eval output**; `plan_flat.py` opens its `--out` up
+  front, so files deleted mid-pass vanish silently.
+- **`configs/flat_jepa_hard21.yaml` and `flat_jepa_stylized.yaml` are
+  STANDALONE** — they do not inherit from `flat_jepa.yaml`. Every new
+  objective key must be added to all three or those runs abort with KeyError.
+- **A term that saturates almost immediately is a shortcut suspect.** The
+  first prefix-energy version hit 1.000 in 40 steps by reading PATH LENGTH.
+- **Turing cards (Quadro RTX 6000)**: bf16 falls back to fp32 and OOMs; use
+  `train.microbatch_size=4`. They are also ~8x slower.
+- **gruenau8's four A6000s** show 45GB at 0% util — held-but-idle foreign
+  job, leave alone. **gruenau12 exists** (ten L40s) and was missing from the
+  survey list for most of the campaign.
+- Never `pkill -f` on gruenau1 (kills the shell). Kill only own PIDs.
+- Copy `last.pt` before reading it — cells are live and writing.
+
+### TOP PENDING WORK, in priority order
+1. Apply the answer-emission success criterion to every watcher and re-run
+   the headline tables under it.
+2. Land the solution-following rollout policy (training rollouts currently
+   pick uniformly at random among legal actions, so "what happened next"
+   carries no quality information — the likeliest cause of the goodness
+   collapse off the root).
+3. The true symbolic-oracle upper bound; if it is ~1.0 the loss decomposes
+   cleanly into representation + energy.
+4. The decoder gate for the target architecture: can a context-conditioned
+   detached decoder exactly reconstruct HELD-OUT action phrases? If not, the
+   latent-planning architecture is not viable and we must know early.
+5. Implement traps-as-a-fraction, and re-establish a genuinely harder OOD
+   band.
+6. Launch `flat-hard21-lminit-s0` (armed, not launched).
+7. Re-run the geometry and probe comparisons at MATCHED training steps on
+   converged checkpoints before anything goes in the paper.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
