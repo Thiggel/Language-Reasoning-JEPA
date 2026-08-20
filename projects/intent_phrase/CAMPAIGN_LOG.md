@@ -1606,3 +1606,60 @@ re-encode of a completed trajectory per step plus three extra scoring passes)
 was ~99% of depth>1 eval cost. Skipping it gives bit-identical plans and took
 depth-4 evals from hours to minutes — which also makes the previously-18h
 depth-8 eval cheap, so the depth-8 column is back on the table.
+
+## 2026-08-20 (night) — probes v2: withdraw the v1 table
+
+Report: `research/reports/intent_phrase/2026-08-20-probes-v2/`
+(REPORT/METHOD/TABLES + data), mirrored to the paper repo. New code:
+`scripts/analysis/probe_battery_v2.py`, `probe_domains.py`,
+`summarize_probes_v2.py`, `common.py` additions, 7 new tests (27 pass).
+
+DESIGN: balanced accuracy (floor exactly .500); state-only multi-label
+targets (`resolved_set`, `frontier_set`) plus `query_reachable` /
+`frontier_size` where an action-only baseline is at chance BY CONSTRUCTION;
+controls `majority`, `prompt_only`, `step_index_only`, `prompt_plus_step`,
+`shuffled_state`, `action_only`, `prompt_plus_action`, `state_only`; a
+same-architecture-untrained arm for EVERY arm including both LMs; gradient
+steps held constant across row counts so a 768-d state probe is not
+handicapped against a 25-d control; and RANDOMISED feasible trajectories so
+"problem + step index" does not determine the answer — that is what makes
+`step_index_only` a real floor rather than a formality.
+
+**FINDINGS, blunt:**
+- The v1 headline is gone. .969/.912 were MLP AUC. On balanced accuracy
+  against an ACTION-ONLY floor the trained stylized JEPA is **+.207**, its
+  own UNTRAINED control **+.136** — only about **+.07 is training**.
+- On `feasible` the SENTENCE LM (+.176) beats the trained JEPA (+.172), and
+  the UNTRAINED sentence LM (+.153) beats the trained token LM (+.150).
+- **Set-valued state readout is a flat negative for every arm in both
+  domains**: `resolved_set` best margin over the step-counter floor is
+  **-.002** across 16 arms; `frontier_set` best **+.010**. Counting the steps
+  beats every encoder, trained or not.
+- Steps-to-go is dead on stylized on the evidence, not just by policy: every
+  arm is BELOW the step-index floor (JEPA R2 .480 vs floor .560).
+- `operator_from_displacement` is architectural: the best stylized arm is an
+  UNTRAINED token LM (.998) vs trained JEPA (.991).
+- Training DESTROYS arithmetic value decoding: R2 .35/-.01/-.08 trained vs
+  .58/.49/.59 untrained.
+- **The one real positive**: on faithful, on IDENTICAL weights, JEPA training
+  moves `frontier_size` from **-.036** (the token LM, i.e. the LM-init arm)
+  to **+.067..+.136**, and `query_reachable` from +.018 to +.036..+.084.
+  Replicates across seeds s0/s1/s2; from-scratch and untrained arms are at or
+  below floor, so here the LM init IS load-bearing (note this cuts against
+  the geometry result, where scratch beat LM-init — different property).
+  But `nocfrank` is the BEST arm on `query_reachable`, so the energy
+  counterfactual-ranking term is NOT what produces it — the same negative as
+  the geometry ablation. And the corresponding SET question is at floor: the
+  model encodes how OPEN the frontier is, not WHAT is in it.
+- Sanity check passed: the `lm_init_untrained` arm reproduces the token-LM
+  row to three decimals, as it must.
+
+**DECISION: withdraw the v1 probe table rather than rescue it.** On stylized
+iGSM, JEPA states are not better than LM states — the 2026-08-12 conclusion
+stands. The only defensible representation claim is the faithful before/after
+on two scalar probes worth a few points, and it must be printed next to the
+set-readout negative.
+
+- Incidental fix: `scripts/analysis/adapters.py` had a pre-existing
+  IndentationError (an uncommitted `lm_detach_state` insert at the wrong
+  level) that made the whole analysis package unimportable. Fixed.
