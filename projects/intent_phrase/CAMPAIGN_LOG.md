@@ -1447,3 +1447,91 @@ phrasing.
   checkpoints; but the direction is a property of the metric, not the model.
   ACTION: report the budget curve (1.0 / 1.25 / 4.0) for every planning table
   in the paper, with 1.25 as the headline and 1.0 as the strict column.
+
+## 2026-08-20 (night) — proposers: the codebook revives, the flow does not help
+
+Round `runs/autonomy/intent_phrase/2026-08-20-flow-prior-v1/`. New files:
+`src/textjepa/planning/flow_prior.py`, `scripts/train_flow_prior.py`,
+`scripts/measure_proposal_quality.py`, `tests/test_flow_prior.py`.
+
+**Owner's codebook hypothesis CONFIRMED.** Re-running `codebook_ground`
+unchanged on a current checkpoint (`flat-lminit-ecf16-roll124-s0`, with
+`energy_cf_feasibility_rank` on), 100 val episodes, depth 1:
+
+| | success | invalid rate | no-proposal episodes |
+|---|---|---|---|
+| codebook_ground | **.890** | .282 | **.000** |
+| random (same rules) | .590 | .619 | — |
+| first-feasible | .420 | .713 | — |
+| historical | .027-.28 | — | ~100% |
+
+Proposal exhaustion is gone and the planner beats its same-interface random
+control by 30 points. **The codebook was never the bottleneck — the
+anti-feasible energy head and the give-up behaviour were**, and both were
+fixed today. .027 -> .89.
+
+**BUT label it honestly: `codebook_ground` is CATALOGUE-PRIVILEGED.** It
+snaps each k-means row to the nearest vector among the *current problem's own
+catalogue* (`_filter_roots`), so its text is executable by construction and
+its recall is near-1 by construction. With `prior_top_k=0` (the default) no
+truncation happens at all, so on iGSM-med it kept ~12 of ~12 catalogue
+actions — in the planning runs it was close to a re-ordering of the full
+catalogue. It is menu-free only in the sense of having no feasibility oracle.
+**`codebook_free` (genuinely catalogue-free) scores exactly .000 on every
+axis at every K**, reproducing the 2026-08-11 result on a current
+checkpoint. All of the codebook's planning strength comes from the catalogue.
+
+**Proposal bench at matched K** (611 states, 100 val problems; oracle used
+for measurement only):
+
+| arm | K | recall necessary | parse | unique/state | decodes/state |
+|---|---|---|---|---|---|
+| token_head (current) | 4 | **.959** | .300 | 1.20 | 4 |
+| token_head | 16 | .989 | .102 | 1.63 | 16 |
+| codebook_ground* | 4 | .216 | 1.00 | 3.92 | 0 |
+| codebook_ground* | 16 | .368 | 1.00 | 8.20 | 0 |
+| codebook_free | any | .000 | .000 | 0.00 | K |
+| flow_rerank | 4 | .799 | .376 | 1.22 | **64** |
+
+*catalogue-privileged.
+
+**The proposer is NOT the bottleneck, again.** The existing token head
+already contains a progress-making action in its top 4 for **96%** of states.
+There is no headroom for a better proposer to buy planning accuracy. The
+flow loses at matched K (.799 vs .959) for 16x the decodes, improves parse
+rate (.376 vs .300) and does NOT improve diversity (1.22 vs 1.20).
+KEY MECHANISM: the ~1.6 unique-proposals-per-state figure is a collapse in
+the TOKEN HEAD'S SAMPLING DISTRIBUTION, not in the selection rule — 64
+oversampled phrases collapse to a handful of distinct strings before any
+selection sees them. So no reranking machinery on top can fix it. The lever
+that would: raise decode temperature and let a density gate filter the junk.
+One-line knob, deliberately not added mid-round.
+
+**Why a catalogue-free proposer is structurally hard here** (2026-08-12
+diagnosis, re-confirmed): compute phrases name three variables, so 0/1367
+held-out compute phrases were ever seen in 4000 training problems and the
+phrase space grows linearly forever. An unseen action's EMBEDDING is nearly
+reproducible (NN distance .77 vs 10.69 between same-problem actions) but the
+embedding is a coarse role/operation code that does not carry the names, so
+the decoder emits a different problem's phrase. This is a property of the
+environment, not an engineering miss.
+
+**RECOMMENDATION (agent's, and I agree): carry neither the flow nor the
+catalogue-free codebook as the menu-free story.** The defensible menu-free
+claim is catalogue enumeration from the prompt + energy-based selection. The
+newly-earned result is that today's fixes lift codebook planning .027 -> .89.
+
+**Two measurement bugs the agent caught in its own work**, both worth the
+pattern: (1) the bench's `codebook_ground` arm first reported recall 1.0 /
+parse 1.0 / unique 12.19 at EVERY K — `_filter_roots` dispatches on
+`planner.candidate_interface`, which the bench left at default, so it was
+silently measuring the whole catalogue. Uncorrected, this would have been a
+FABRICATED CONFIRMATION of the recall-1.0 story. (2) a unit test caught a
+diversity rule dominated by the density term that would have returned four
+copies of one cluster.
+Opt-in verified: zero new config keys (the flow is a separate artifact loaded
+by `--flow-prior`, trained post-hoc on a frozen checkpoint, val NLL/dim
+.743 -> -.184); all three interfaces produce BYTE-IDENTICAL result JSON
+before/after; 8 new tests pass; suite 999 passed / 2 failed, both
+pre-existing and unrelated (one fails standalone on main, one is a
+test-order global-state flake).
