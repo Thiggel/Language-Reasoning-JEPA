@@ -103,95 +103,120 @@ def context_hiddens(model, toks, mask):
     return h.float().detach()
 
 
-def run_arm(arm, cache_tr, cache_va, model, vocab, cfg, args, device,
-            seen_texts):
+def run_arms(arms, cache_tr, cache_va, model, vocab, cfg, args, device,
+             seen_texts):
+    """Train every arm in ONE pass over the data.
+
+    All arms consume the SAME frozen context hidden states, and that encoder
+    forward dominates the cost, so sharing it makes the four-arm ablation
+    roughly as cheap as a single arm -- and guarantees the arms see byte-
+    identical inputs and batch order, which is what makes the comparison a
+    controlled one.
+    """
     hist_tr, codes_tr, ph_tr, _ = cache_tr
     hist_va, codes_va, ph_va, tx_va = cache_va
     d_state = int(cfg["model"]["d_model"])
-    dec = ContextActionDecoder(
-        d_state, len(vocab), max_len=args.max_phrase, d_model=args.d_model,
-        n_layers=args.n_layers, n_heads=args.n_heads,
-        use_action=(arm != "no_action"), use_context=(arm != "no_context"),
-    ).to(device)
-    opt = torch.optim.AdamW(dec.parameters(), lr=args.lr, weight_decay=0.01)
+    decs, opts, scheds = {}, {}, {}
     N = len(hist_tr)
     steps = args.epochs * ((N + args.batch_size - 1) // args.batch_size)
-    sched = torch.optim.lr_scheduler.OneCycleLR(
-        opt, args.lr, total_steps=max(steps, 1), pct_start=0.1)
+    for arm in arms:
+        seed_everything(args.seed)  # identical init across arms
+        dec = ContextActionDecoder(
+            d_state, len(vocab), max_len=args.max_phrase,
+            d_model=args.d_model, n_layers=args.n_layers,
+            n_heads=args.n_heads, use_action=(arm != "no_action"),
+            use_context=(arm != "no_context"),
+        ).to(device)
+        decs[arm] = dec
+        opts[arm] = torch.optim.AdamW(dec.parameters(), lr=args.lr,
+                                      weight_decay=0.01)
+        scheds[arm] = torch.optim.lr_scheduler.OneCycleLR(
+            opts[arm], args.lr, total_steps=max(steps, 1), pct_start=0.1)
     lossf = nn.CrossEntropyLoss(ignore_index=-100)
     rng = random.Random(args.seed)
-    history_log = []
+    logs = {a: [] for a in arms}
     for ep in range(args.epochs):
-        dec.train()
+        for d in decs.values():
+            d.train()
         order = list(range(N))
         rng.shuffle(order)
-        tot, nb = 0.0, 0
+        tot = {a: 0.0 for a in arms}
+        nb = 0
         for s in range(0, N, args.batch_size):
             idx = order[s:s + args.batch_size]
             toks, mask, tgt = pad_batch(
                 [hist_tr[i] for i in idx], [ph_tr[i] for i in idx],
                 vocab.pad_id, args.max_ctx, args.max_phrase, device)
             ctx = context_hiddens(model, toks, mask)
-            act = codes_tr[idx if isinstance(idx, torch.Tensor)
-                           else torch.tensor(idx)].to(device)
-            if arm == "shuffled_action":
-                perm = torch.randperm(len(idx), device=device)
-                act = act[perm]
-            logits = dec(act, ctx, mask, tgt)
-            # PAD immediately after the phrase is the EOS target; PAD beyond
-            # that is ignored.
+            base_act = codes_tr[torch.tensor(idx)].to(device)
             target = tgt.clone()
             for b, i in enumerate(idx):
                 k = len(ph_tr[i])
                 if k + 1 < args.max_phrase:
                     target[b, k + 1:] = -100
-            loss = lossf(logits.reshape(-1, logits.shape[-1]),
-                         target.reshape(-1))
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
-            nn.utils.clip_grad_norm_(dec.parameters(), 1.0)
-            opt.step()
-            sched.step()
-            tot += float(loss); nb += 1
-        history_log.append({"epoch": ep, "loss": tot / max(nb, 1)})
-        print(f"[{arm}] epoch {ep} loss {tot / max(nb,1):.4f}", flush=True)
+            perm = torch.randperm(len(idx), device=device)
+            for arm in arms:
+                act = base_act[perm] if arm == "shuffled_action" else base_act
+                logits = decs[arm](act, ctx, mask, tgt)
+                loss = lossf(logits.reshape(-1, logits.shape[-1]),
+                             target.reshape(-1))
+                opts[arm].zero_grad(set_to_none=True)
+                loss.backward()
+                nn.utils.clip_grad_norm_(decs[arm].parameters(), 1.0)
+                opts[arm].step()
+                scheds[arm].step()
+                tot[arm] += float(loss)
+            nb += 1
+        for arm in arms:
+            logs[arm].append({"epoch": ep, "loss": tot[arm] / max(nb, 1)})
+        print(f"epoch {ep} " + " ".join(
+            f"{a}={tot[a]/max(nb,1):.4f}" for a in arms), flush=True)
 
     # ------------------------------------------------------------- eval
-    dec.eval()
-    exact = exact_seen = exact_unseen = 0
+    for d in decs.values():
+        d.eval()
+    stats = {a: dict(exact=0, es=0, eu=0) for a in arms}
+    preds = {a: [] for a in arms}
     n_seen = n_unseen = 0
-    preds = []
     for s in range(0, len(hist_va), args.batch_size):
         idx = list(range(s, min(s + args.batch_size, len(hist_va))))
         toks, mask, _ = pad_batch(
             [hist_va[i] for i in idx], [ph_va[i] for i in idx],
             vocab.pad_id, args.max_ctx, args.max_phrase, device)
         ctx = context_hiddens(model, toks, mask)
-        act = codes_va[torch.tensor(idx)].to(device)
-        if arm == "shuffled_action":
-            act = act[torch.randperm(len(idx), device=device)]
-        out = dec.generate(act, ctx, mask, eos_id=vocab.pad_id)
-        for b, i in enumerate(idx):
-            ok = out[b] == ph_va[i]
-            exact += int(ok)
-            novel = tx_va[i] not in seen_texts
-            if novel:
-                n_unseen += 1; exact_unseen += int(ok)
-            else:
-                n_seen += 1; exact_seen += int(ok)
-            if len(preds) < 40:
-                preds.append({"gold": tx_va[i],
-                              "pred": vocab.decode(out[b]), "novel": novel})
+        base_act = codes_va[torch.tensor(idx)].to(device)
+        perm = torch.randperm(len(idx), device=device)
+        novel = [tx_va[i] not in seen_texts for i in idx]
+        n_unseen += sum(novel)
+        n_seen += len(idx) - sum(novel)
+        for arm in arms:
+            act = base_act[perm] if arm == "shuffled_action" else base_act
+            out = decs[arm].generate(act, ctx, mask, eos_id=vocab.pad_id)
+            for b, i in enumerate(idx):
+                ok = out[b] == ph_va[i]
+                stats[arm]["exact"] += int(ok)
+                if novel[b]:
+                    stats[arm]["eu"] += int(ok)
+                else:
+                    stats[arm]["es"] += int(ok)
+                if len(preds[arm]) < 40:
+                    preds[arm].append({"gold": tx_va[i],
+                                       "pred": vocab.decode(out[b]),
+                                       "novel": novel[b]})
     n = len(hist_va)
-    return {
-        "arm": arm, "n_val": n,
-        "exact_match": exact / max(n, 1),
-        "n_novel": n_unseen, "n_seen": n_seen,
-        "exact_match_novel": exact_unseen / max(n_unseen, 1),
-        "exact_match_seen": exact_seen / max(n_seen, 1),
-        "train_loss": history_log[-1]["loss"] if history_log else None,
-        "history": history_log, "samples": preds,
-    }, dec
+    results = {}
+    for arm in arms:
+        st = stats[arm]
+        results[arm] = {
+            "arm": arm, "n_val": n,
+            "exact_match": st["exact"] / max(n, 1),
+            "n_novel": n_unseen, "n_seen": n_seen,
+            "exact_match_novel": st["eu"] / max(n_unseen, 1),
+            "exact_match_seen": st["es"] / max(n_seen, 1),
+            "train_loss": logs[arm][-1]["loss"] if logs[arm] else None,
+            "history": logs[arm], "samples": preds[arm],
+        }
+    return results, decs
 
 
 def main() -> None:
@@ -255,17 +280,18 @@ def main() -> None:
                "op_range": [args.op_lo, args.op_hi], "arms": {}}
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    for arm in args.arms.split(","):
+    arms = args.arms.split(",")
+    for arm in arms:
         assert arm in ARMS, arm
-        seed_everything(args.seed)
-        res, dec = run_arm(arm, cache_tr, cache_va, model, vocab, cfg, args,
-                           device, seen_texts)
-        results["arms"][arm] = res
-        print(json.dumps({k: v for k, v in res.items()
+    res, decs = run_arms(arms, cache_tr, cache_va, model, vocab, cfg, args,
+                         device, seen_texts)
+    results["arms"] = res
+    for arm in arms:
+        print(json.dumps({k: v for k, v in res[arm].items()
                           if k not in ("history", "samples")}), flush=True)
-        if arm == "full":
-            dec.save(str(out))
-        Path(str(out) + ".json").write_text(json.dumps(results, indent=2))
+    if "full" in decs:
+        decs["full"].save(str(out))
+    Path(str(out) + ".json").write_text(json.dumps(results, indent=2))
     print(json.dumps({a: r["exact_match"] for a, r in results["arms"].items()}))
 
 
