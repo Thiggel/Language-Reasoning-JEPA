@@ -1409,3 +1409,41 @@ phrasing.
   with `proposal_recall` and `no_proposal_episode_rate` (so a weak OOD
   prior_propose number can be distinguished from an exhausted proposal
   mask), PLUS the consequence-geometry AUC. First rows ~30 min out.
+
+- **`scripts/rescore_budget.py` added — every plan JSON on disk can now be
+  reported at ANY tighter budget with no reruns.** Valid because no policy
+  reads its own budget: the episode at cap c is a strict prefix of the
+  executed episode, so success at cap c is exactly
+  `solved_at <= ceil(c * necessary)`. Verified to reproduce the interface
+  audit's table exactly. Applied to all 350 plan files written since 08-19;
+  only 5 carry reference-policy episodes because `episodes_random` /
+  `episodes_first_feasible` were added just today (043b34f) — so this is
+  retroactive only from that commit onward. **Every future eval gets the
+  budget curve for free.**
+
+- **THE BUDGET WAS INVERTING OUR MENU-FREE CONCLUSION.** From one early
+  checkpoint (`ecf16-prefix4-premature-s0` epoch 0, step 500, 100 eps each) —
+  absolute values are low because the checkpoint is young, but the pattern is
+  unambiguous:
+
+  | interface | cap 4.0 (reported) | cap 1.25 | cap 1.0 |
+  |---|---|---|---|
+  | prior_propose ID | model .650 / random .590 → **+.06** | .620 / .010 → **+.61** | .510 / .000 → **+.51** |
+  | prior_propose OOD | model .140 / random .520 → **−.38** | .140 / .000 → **+.14** | .110 / .000 → **+.11** |
+  | full_catalogue ID | .810 / .590 → +.22 | .210 / .010 → +.20 | .050 / .000 → +.05 |
+
+  Read the middle row: at the budget we have been reporting, our planner looks
+  **38 points WORSE than random** on menu-free OOD. At a realistic budget it is
+  **14 points better**. The model's own score does not move at all
+  (.140 → .140 → .110) — only random collapses.
+  MECHANISM: our planner's successes are FAST; the reference policies only
+  ever succeed by flailing inside a huge budget. A 4x budget therefore hands
+  random almost all of its apparent competence, and every menu-free
+  comparison we have reported is understated or outright inverted.
+  This retires the earlier claims "prior_propose is barely above random"
+  (.64 vs .59) and "at weight 16 it is .64 vs random .59, above random, not
+  at it" — both were budget artefacts.
+  CAVEAT: one early checkpoint, 100 episodes per cell. Re-confirm on mature
+  checkpoints; but the direction is a property of the metric, not the model.
+  ACTION: report the budget curve (1.0 / 1.25 / 4.0) for every planning table
+  in the paper, with 1.25 as the headline and 1.0 as the strict column.
