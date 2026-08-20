@@ -19,7 +19,20 @@ steps used.  Candidate interfaces:
                       plan by Energy over them (menu-free, oracle executor);
 * ``autonomous``      prior_propose + the backbone writes the outcome
                       sentence itself (the environment is consulted only to
-                      grade the final goal, as in the free-generation LM eval).
+                      grade the final goal, as in the free-generation LM eval);
+* ``flow_rerank``     OPT-IN (needs ``flow_prior=``): oversample phrases from
+                      the token head at a high temperature, encode each in
+                      context, and keep K by a learned conditional density
+                      p(action code | state) with a diversity term.  Grounding
+                      still comes from the token decoder (which reads this
+                      problem's names off the prompt); the learned prior
+                      supplies WHICH actions and how spread out they are;
+* ``flow_decode``     OPT-IN (needs ``flow_prior=`` and an LDAD decoder):
+                      sample K action codes straight from p(a | s) and read
+                      phrases out of them.  This is the direct test of the
+                      decoding wall documented in the 2026-08-12 codebook
+                      diagnosis; it is expected to fail and is kept as the
+                      measurement that says so.
 
 Lookahead > 1 is oracle-free: deeper slots are drawn from the same root pool
 (catalogue minus used), never from the environment's future menus.  They are
@@ -46,12 +59,16 @@ from textjepa.planning.search import EpisodeResult
 
 CANDIDATE_INTERFACES = (
     "feasible_menu", "full_catalogue", "ldad_cycle", "codebook_ground",
-    "prior_propose", "autonomous",
+    "prior_propose", "autonomous", "flow_rerank", "flow_decode", "code_prior",
 )
 MENU_FREE_INTERFACES = (
     "full_catalogue", "ldad_cycle", "codebook_ground", "prior_propose",
-    "autonomous",
+    "autonomous", "flow_rerank", "flow_decode", "code_prior",
 )
+# Interfaces that propose actions instead of reading a menu/catalogue; these
+# are the ones for which proposal recall / parse rate / uniqueness are defined.
+PROPOSER_INTERFACES = ("prior_propose", "autonomous", "flow_rerank",
+                       "flow_decode", "code_prior")
 
 
 def _percentile(vals: list, q: float) -> float:
@@ -72,6 +89,8 @@ class FlatPlanner:
     def __init__(self, model, vocab, device, lookahead: int = 1,
                  max_expand: int = 64, candidate_interface: str = "feasible_menu",
                  branch: int = 4, aggregate: str = "mean_prefix",
+                 expansion: str = "beam", movement_weight: float = 1.0,
+                 beam_diagnostics: bool = True,
                  scorer: str = "energy",
                  endpoints: str = "imagined",
                  cap_mult: float = 4.0, mask_attempted: bool = True,
@@ -80,6 +99,12 @@ class FlatPlanner:
                  phrase_token_cap: int = 24, outcome_token_cap: int = 96,
                  codebook_k: int = 64, codebook_seed: int = 0,
                  prior_top_k: int = 0, max_len: int = 4096,
+                 flow_prior=None, flow_oversample: int = 64,
+                 flow_temperature: float = 1.0, flow_diversity: bool = True,
+                 code_prior=None, action_decoder=None,
+                 code_prior_temperature: float = 1.0,
+                 code_prior_sample: bool = False,
+                 generate_outcomes: bool | None = None,
                  counter: ComputeCounter | None = None):
         if candidate_interface not in CANDIDATE_INTERFACES:
             raise ValueError(f"unknown candidate interface {candidate_interface!r}")
@@ -89,14 +114,26 @@ class FlatPlanner:
         self.lookahead = int(lookahead)
         self.max_expand = int(max_expand)
         self.branch = int(branch)
-        if aggregate not in {"endpoint", "mean_prefix"}:
+        if aggregate not in {"endpoint", "mean_prefix", "movement"}:
             raise ValueError(f"unknown aggregate {aggregate!r}")
         self.aggregate = aggregate
+        if expansion not in {"beam", "random"}:
+            raise ValueError(f"unknown expansion {expansion!r}")
+        # ``random`` restores the LEGACY tail sampler (deeper slots drawn
+        # uniformly from the pool); ``beam`` is the energy-guided expansion.
+        self.expansion = expansion
+        self.movement_weight = float(movement_weight)
+        # The depth>1 "does the beam offer options closer to the solved state
+        # than depth 1 would" MEASUREMENT needs an ORACLE goal vector (a full
+        # re-encode of a completed trajectory at every step) plus three extra
+        # scoring passes.  It never touches the ranking -- switching it off
+        # gives bit-identical plans several times faster.
+        self.beam_diagnostics = bool(beam_diagnostics)
         # DIAGNOSTIC ONLY (candidate-privileged / oracle rows; never a paper
         # headline): `scorer=oracle_distance` ranks by latent distance to the
         # encoded TRUE solved state, `endpoints=true` executes each candidate
         # sequence in a copy of the environment and encodes the REAL state.
-        if scorer not in {"energy", "oracle_distance"}:
+        if scorer not in {"energy", "oracle_distance", "symbolic_oracle"}:
             raise ValueError(f"unknown scorer {scorer!r}")
         if endpoints not in {"imagined", "true"}:
             raise ValueError(f"unknown endpoints {endpoints!r}")
@@ -117,10 +154,40 @@ class FlatPlanner:
         self.prior_top_k = int(prior_top_k)
         self.max_len = int(max_len)
         self.codebook = None
+        # OPT-IN learned action-density head (``ConditionalFlowPrior``).  When
+        # it is None every code path below is exactly the pre-existing one.
+        self.flow_prior = flow_prior
+        self.flow_oversample = int(flow_oversample)
+        self.flow_temperature = float(flow_temperature)
+        self.flow_diversity = bool(flow_diversity)
+        if candidate_interface in {"flow_rerank", "flow_decode"} and flow_prior is None:
+            raise RuntimeError(
+                f"{candidate_interface} needs a fitted flow prior "
+                "(scripts/train_flow_prior.py); pass flow_prior=")
         # Test-time-compute accounting (passive); see utils/compute_counter.py.
         self.counter = counter if counter is not None else ComputeCounter()
-        if candidate_interface == "ldad_cycle" and model.observed_action_decoder is None:
-            raise RuntimeError("ldad_cycle needs observed_action_ldad=true")
+        # OPT-IN target architecture: a learned state-conditioned DISCRETE
+        # prior over action codes plus a DETACHED context-conditioned decoder.
+        # Both default to None, in which case every path below is exactly the
+        # pre-existing one.
+        self.code_prior = code_prior
+        self.action_decoder = action_decoder
+        self.code_prior_temperature = float(code_prior_temperature)
+        self.code_prior_sample = bool(code_prior_sample)
+        if candidate_interface == "code_prior" and (
+                code_prior is None or action_decoder is None):
+            raise RuntimeError(
+                "code_prior needs BOTH a fitted code prior "
+                "(scripts/train_code_prior.py) and a trained action decoder "
+                "(scripts/train_action_decoder.py)")
+        # Model-generated outcome sentences (and hence an explicitly emitted
+        # answer).  ``None`` reproduces the historical behaviour exactly:
+        # generated outcomes iff the interface is ``autonomous``.
+        self.generate_outcomes = (
+            candidate_interface == "autonomous" if generate_outcomes is None
+            else bool(generate_outcomes))
+        if candidate_interface in {"ldad_cycle", "flow_decode"} and model.observed_action_decoder is None:
+            raise RuntimeError(f"{candidate_interface} needs observed_action_ldad=true")
 
     # ----------------------------------------------------------- encoding
     @torch.no_grad()
@@ -234,6 +301,152 @@ class FlatPlanner:
         stats["n_unique"] += len(out)
         return out
 
+    # --------------------------------------------- learned density proposer
+    @torch.no_grad()
+    @torch.no_grad()
+    def _propose_code_prior(self, history: list[int], env, rng_seed: int,
+                            stats: dict) -> list:
+        """THE TARGET LOOP'S PROPOSAL STEP: latent codes -> detached decode.
+
+        The prior sees only the state; the decoder sees only the sampled
+        action vector plus the problem text already in the context window.
+        No menu, no catalogue, no feasibility signal is consulted anywhere.
+        Grounding is the same exact-string lookup every menu-free interface
+        gets, and exists purely so the environment can execute the string the
+        model wrote.
+        """
+        state, ctx = self._state(history)
+        k = self.prior_samples
+        gen = None
+        if self.code_prior_sample:
+            gen = torch.Generator(device=state.device)
+            gen.manual_seed(int(rng_seed))
+        _, vecs = self.code_prior.propose(
+            state.float().unsqueeze(0), k,
+            temperature=self.code_prior_temperature,
+            sample=self.code_prior_sample, generator=gen)
+        ctx_rep = ctx.unsqueeze(0).expand(k, -1, -1).float()
+        mask = torch.zeros(k, ctx.shape[0], dtype=torch.bool,
+                           device=ctx.device)
+        toks = self.action_decoder.generate(
+            vecs[0].float(), ctx_rep, mask, eos_id=self.vocab.pad_id)
+        texts = [self.vocab.decode(t).strip() for t in toks]
+        self.counter.backbone(k, ctx.shape[0], generated=k)
+        by_text = {env.action_text(q): q for q in env.fp.params}
+        stats["n_proposed"] += k
+        stats["n_decoded"] = stats.get("n_decoded", 0) + k
+        stats["n_unique_text"] = len(set(texts))
+        out, seen = [], set()
+        for text in texts:
+            q = by_text.get(text)
+            if q is None:
+                continue
+            stats["n_parseable"] += 1
+            if q in seen:
+                continue
+            seen.add(q)
+            out.append(q)
+        stats["n_unique"] += len(out)
+        return out
+
+    @torch.no_grad()
+    def _propose_flow_rerank(self, history: list[int], env, rng_seed: int,
+                             stats: dict) -> list:
+        """Oversample text, then let p(action code | state) choose K of it.
+
+        The token head is kept ONLY as the grounding device -- it is the one
+        module that reads this problem's variable names off the prompt, which
+        the 2026-08-12 codebook diagnosis identified as the thing no
+        embedding-space proposer can reconstruct.  Everything about WHICH
+        actions are proposed, and how spread out they are, comes from the
+        learned conditional density.
+        """
+        from textjepa.planning.flow_prior import maxmin_diverse
+
+        gen = torch.Generator(device=self.device).manual_seed(rng_seed)
+        m = max(self.flow_oversample, self.prior_samples)
+        raw = self._sample_phrases(history, m, self.prior_greedy,
+                                   self.phrase_token_cap, gen)
+        stats["n_decoded"] = stats.get("n_decoded", 0) + m
+        # Deduplicate on text before spending an encoder pass on them.
+        uniq: dict[str, list[int]] = {}
+        for phrase in raw:
+            text = self.vocab.decode(phrase).strip()
+            if text and text not in uniq:
+                uniq[text] = phrase
+        texts = list(uniq)
+        if not texts:
+            stats["n_proposed"] += 0
+            return []
+        # One block-attention pass has to hold prefix + every candidate phrase;
+        # trim the oldest history rather than overrun the position table.
+        phrases = [uniq[t] for t in texts]
+        budget = self.max_len - sum(len(p) for p in phrases) - 1
+        codes = self._codes(history[-max(budget, 1):], phrases)
+        state, _ = self._state(history)
+        s_rep = state.unsqueeze(0).expand(codes.shape[0], -1)
+        scores = self.flow_prior.log_prob(codes.float(), s_rep.float())
+        k = self.prior_samples
+        if self.flow_diversity:
+            keep = maxmin_diverse(codes, scores, k)
+        else:
+            keep = torch.argsort(scores, descending=True).tolist()[:k]
+        by_text = {env.action_text(q): q for q in env.fp.params}
+        out, n_parse = [], 0
+        for i in keep:
+            q = by_text.get(texts[i])
+            if q is None:
+                continue
+            n_parse += 1
+            out.append(q)
+        stats["n_proposed"] += len(keep)
+        stats["n_parseable"] += n_parse
+        stats["n_unique"] += len(out)
+        stats["flow_logp_sum"] = stats.get("flow_logp_sum", 0.0) + float(scores[keep].sum())
+        stats["flow_logp_n"] = stats.get("flow_logp_n", 0) + len(keep)
+        return out
+
+    @torch.no_grad()
+    def _propose_flow_decode(self, history: list[int], env, rng_seed: int,
+                             stats: dict) -> list:
+        """Sample action codes from p(a | s) and read phrases out of them.
+
+        MEASUREMENT ARM.  This is the pure embedding-space proposer, i.e. the
+        design the codebook / CEM screens already failed at (parse rate .03 to
+        .13, 2026-08-11).  It is implemented so the flow can be blamed or
+        exonerated separately from the decoder rather than assumed.
+        """
+        from textjepa.planning.ldad_decode import greedy_phrases
+
+        gen = torch.Generator(device=self.device).manual_seed(rng_seed)
+        state, _ = self._state(history)
+        k = self.prior_samples
+        codes = self.flow_prior.sample(
+            state.unsqueeze(0).float(), k, generator=gen,
+            temperature=self.flow_temperature,
+        )[0].to(state.dtype)
+        s_rep = state.unsqueeze(0).expand(k, -1)
+        logits = self.model.observed_action_decoder(
+            self.model.predict(s_rep, codes) - s_rep)
+        phrases, _ = greedy_phrases(logits.float(), self.vocab)
+        stats["n_decoded"] = stats.get("n_decoded", 0) + k
+        by_text = {env.action_text(q): q for q in env.fp.params}
+        out, seen, n_parse = [], set(), 0
+        for phrase in phrases:
+            text = self.vocab.decode(phrase).strip() if not isinstance(phrase, str) else phrase.strip()
+            if text in seen:
+                continue
+            seen.add(text)
+            q = by_text.get(text)
+            if q is None:
+                continue
+            n_parse += 1
+            out.append(q)
+        stats["n_proposed"] += k
+        stats["n_parseable"] += n_parse
+        stats["n_unique"] += len(out)
+        return out
+
     # ------------------------------------------------------------ pools
     @torch.no_grad()
     def fit_action_prior(self, problems: list) -> torch.Tensor:
@@ -260,6 +473,15 @@ class FlatPlanner:
         elif iface in {"prior_propose", "autonomous"}:
             roots = [q for q in self._propose(history, env, rng.randrange(1 << 30), stats)
                      if q not in mask]
+        elif iface == "flow_rerank":
+            roots = [q for q in self._propose_flow_rerank(
+                history, env, rng.randrange(1 << 30), stats) if q not in mask]
+        elif iface == "flow_decode":
+            roots = [q for q in self._propose_flow_decode(
+                history, env, rng.randrange(1 << 30), stats) if q not in mask]
+        elif iface == "code_prior":
+            roots = [q for q in self._propose_code_prior(
+                history, env, rng.randrange(1 << 30), stats) if q not in mask]
         else:
             roots = [q for q in env.fp.action_order if q not in mask]
         rng.shuffle(roots)
@@ -367,6 +589,45 @@ class FlatPlanner:
             hists.append(hist)
         return self._encode_batch(hists)
 
+    def _symbolic_scores(self, seqs: list[list], env) -> torch.Tensor:
+        """CANDIDATE-PRIVILEGED ORACLE DIAGNOSTIC (evaluation only; never a
+        model input, never a system component, never a paper headline).
+
+        Execute each candidate sequence in a CLONE of the environment -- an
+        illegal action is a no-op, exactly as the real executor treats it --
+        and rank by
+
+            (necessary actions still unresolved afterwards)
+                + 1e-3 * (steps that made no progress before the goal was hit)
+
+        Lower is better.  The primary term is the true symbolic distance to
+        the goal.  The tie-break matters at depth >= the number of remaining
+        necessary actions, where many sequences reach the solved state: without
+        it the argmin is free to put a LEGAL-BUT-USELESS action first and still
+        tie, and the planner would burn budget on distractors.  A step counts
+        as no-progress if it is illegal, is a ``None`` padding slot, or is a
+        legal action that does not reduce the remaining-necessary count.
+        Simulation stops once the clone is solved, so trailing slots are free.
+        """
+        out = []
+        for seq in seqs:
+            probe = env.clone()
+            rem = probe.remaining_necessary()
+            waste = 0
+            for a in seq:
+                if probe.solved:
+                    break
+                if a is not None and a in probe.feasible_actions():
+                    probe.step(a)
+                    now = probe.remaining_necessary()
+                    waste += int(now >= rem)
+                    rem = now
+                else:
+                    waste += 1
+            score = -1.0 if probe.solved else float(probe.remaining_necessary())
+            out.append(score + 1e-3 * waste)
+        return torch.tensor(out, dtype=torch.float32, device=self.device)
+
     @torch.no_grad()
     def _score(self, seqs: list[list], state, s0, code_of: dict,
                hist_s: list, hist_a: list, horizon: float, env=None,
@@ -377,6 +638,8 @@ class FlatPlanner:
         diagnostic rows swap the endpoint source and/or the scorer."""
         n = len(seqs)
         depth = max(len(q) for q in seqs)
+        if self.scorer == "symbolic_oracle" and not _force_oracle:
+            return self._symbolic_scores(seqs, env)
         D = state.shape[-1]
         any_code = next(iter(code_of.values()))
         act = torch.zeros(n, depth, D, device=self.device, dtype=any_code.dtype)
@@ -412,6 +675,26 @@ class FlatPlanner:
         # action reaches the same endpoint for free, so at depth > 1 the argmin
         # is free to start with an illegal action.  Averaging over prefixes
         # charges every step.  Identical to the endpoint score at depth 1.
+        if self.aggregate == "movement":
+            # WASTE-PENALISED ENDPOINT SCORE (no monotone-progress assumption).
+            # An illegal action is a no-op, so a wasted step is one where the
+            # imagined state barely moves.  Score = endpoint energy + a penalty
+            # for steps whose latent displacement is small relative to the
+            # typical displacement in this candidate batch.  Purely geometric:
+            # no symbolic label, no goal, no assumption that distance to the
+            # goal must decrease (a necessary detour still MOVES the state and
+            # is therefore not penalised).
+            self.counter.bump("energy_forwards", n)
+            e_end = self.model.energy(root, endpoint, init, float(horizon)).float()
+            step = (prefixes[:, 1:].float() - prefixes[:, :-1].float()).norm(dim=-1)
+            valid = act_mask.float()
+            live = step[valid > 0]
+            ref = live.median() if live.numel() else step.new_tensor(1.0)
+            ref = torch.clamp(ref, min=1e-6)
+            waste = torch.clamp(1.0 - step / ref, min=0.0) * valid
+            waste = waste.sum(1) / torch.clamp(valid.sum(1), min=1.0)
+            scale = e_end.std() if n > 1 else e_end.new_tensor(0.0)
+            return e_end + self.movement_weight * scale * waste
         self.counter.bump("energy_forwards", n * depth)
         es = [self.model.energy(root, prefixes[:, h + 1], init, float(h + 1))
               for h in range(depth)]
@@ -463,7 +746,7 @@ class FlatPlanner:
                  "imagined_slots": 0, "imagined_invalid": 0,
                  "beam_slots": 0, "beam_better_than_d1": 0}
         menu_free = self.candidate_interface in MENU_FREE_INTERFACES
-        autonomous = self.candidate_interface == "autonomous"
+        autonomous = self.generate_outcomes
         value_match = n_valid = 0
         answer_correct = None
         hist_s: list[torch.Tensor] = []
@@ -471,7 +754,7 @@ class FlatPlanner:
         while not env.solved and steps < cap:
             state, _ = self._state(history)
             roots = self._roots(env, history, attempted, rng, stats)
-            if self.candidate_interface in {"prior_propose", "autonomous"}:
+            if self.candidate_interface in PROPOSER_INTERFACES:
                 stats["recall_steps"] += 1
                 feas = set(env.feasible_actions())
                 stats["recall_hits"] += int(any(q in feas for q in roots))
@@ -486,7 +769,8 @@ class FlatPlanner:
                 stats["n_no_proposal"] += 1
                 break
             catalogue = [q for q in fp.action_order]
-            pool_actions = catalogue if self.candidate_interface != "prior_propose" and not autonomous else roots
+            pool_actions = (roots if self.candidate_interface in PROPOSER_INTERFACES
+                            else catalogue)
             needed = list(dict.fromkeys(list(roots) + (pool_actions if self.lookahead > 1 else [])))
             phrases = [self.vocab.encode(env.action_text(q)) for q in needed]
             codes = self._codes(history, phrases)
@@ -498,12 +782,19 @@ class FlatPlanner:
             stats["n_kept"] += len(roots)
             pool = [q for q in pool_actions if q not in attempted] if self.mask_attempted else list(pool_actions)
             goal = None
-            if self.scorer == "oracle_distance" or self.lookahead > 1:
+            if self.scorer == "oracle_distance" or (
+                    self.lookahead > 1 and self.beam_diagnostics):
                 # goal vector: ORACLE for the oracle_distance scorer, and the
                 # measurement metric for the depth-offers-better-options stat.
                 goal, _g_ok = self._goal_vector(env, history)
             if self.lookahead == 1:
                 seqs = [[r] for r in roots]
+                energy = self._score(seqs, state, s0, code_of, hist_s, hist_a,
+                                     self.lookahead, env=env, history=history,
+                                     goal=goal)
+            elif self.expansion == "random":
+                # LEGACY ABLATION: random tails, one scoring pass.
+                seqs = self._sequences(roots, pool, rng)
                 energy = self._score(seqs, state, s0, code_of, hist_s, hist_a,
                                      self.lookahead, env=env, history=history,
                                      goal=goal)
@@ -514,18 +805,19 @@ class FlatPlanner:
                 # MEASUREMENT (oracle): does deeper imagination even offer
                 # options whose imagined endpoint is closer to the solved
                 # state than the depth-1 pick's would be?
-                d1 = [[r] for r in roots]
-                e1 = self._score(d1, state, s0, code_of, hist_s, hist_a, 1,
-                                 env=env, history=history, goal=goal)
-                pick1 = d1[int(e1.argmin().item())]
-                dist1 = self._score([pick1], state, s0, code_of, hist_s, hist_a,
-                                    1, env=env, history=history, goal=goal,
-                                    _force_oracle=True)[0]
-                dall = self._score(seqs, state, s0, code_of, hist_s, hist_a,
-                                   self.lookahead, env=env, history=history,
-                                   goal=goal, _force_oracle=True)
-                stats["beam_slots"] += int(dall.numel())
-                stats["beam_better_than_d1"] += int((dall < dist1).sum().item())
+                if self.beam_diagnostics:
+                    d1 = [[r] for r in roots]
+                    e1 = self._score(d1, state, s0, code_of, hist_s, hist_a, 1,
+                                     env=env, history=history, goal=goal)
+                    pick1 = d1[int(e1.argmin().item())]
+                    dist1 = self._score([pick1], state, s0, code_of, hist_s,
+                                        hist_a, 1, env=env, history=history,
+                                        goal=goal, _force_oracle=True)[0]
+                    dall = self._score(seqs, state, s0, code_of, hist_s, hist_a,
+                                       self.lookahead, env=env, history=history,
+                                       goal=goal, _force_oracle=True)
+                    stats["beam_slots"] += int(dall.numel())
+                    stats["beam_better_than_d1"] += int((dall < dist1).sum().item())
             best = seqs[int(energy.argmin().item())]
             q = best[0]
             if len(best) > 1:
@@ -637,6 +929,12 @@ def summarize(episodes: list[dict]) -> dict:
             out["proposal_recall"] = sum(s["recall_hits"] for s in st) / rs
             out["proposal_parse_rate"] = sum(s["n_parseable"] for s in st) / max(sum(s["n_proposed"] for s in st), 1)
             out["proposal_unique_per_step"] = sum(s["n_unique"] for s in st) / rs
+            dec = sum(s.get("n_decoded", 0) for s in st)
+            if dec:
+                out["proposal_decodes_per_step"] = dec / rs
+            fn = sum(s.get("flow_logp_n", 0) for s in st)
+            if fn:
+                out["flow_mean_logp_kept"] = sum(s.get("flow_logp_sum", 0.0) for s in st) / fn
         out["no_proposal_episode_rate"] = sum(s["n_no_proposal"] > 0 for s in st) / n
         bs = sum(s.get("beam_slots", 0) for s in st)
         if bs:
