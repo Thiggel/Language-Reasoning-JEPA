@@ -36,6 +36,7 @@ from textjepa.objectives import (
     CompositeObjective,
     CounterfactualStatePrediction,
     EnergyCFFeasibilityRank,
+    EnergyImaginedRank,
     EnergyPrefixRank,
     GeoAdvantageRegression,
     GeoHorizonRank,
@@ -107,6 +108,7 @@ def build_objective(oc) -> CompositeObjective:
         "observed_action_ldad": ObservedActionLDAD(),
         "energy_cf_feasibility_rank": EnergyCFFeasibilityRank(),
         "energy_prefix_rank": EnergyPrefixRank(oc.energy_prefix_rank.aggregate),
+        "energy_imagined_rank": EnergyImaginedRank(),
         "intent_prior_lm": IntentPriorLM(),
     }
     weights = {name: float(getattr(oc, name).weight) for name in objs}
@@ -144,6 +146,7 @@ def build_data(dc, vocab, split: str, lm_loss_on: str, size=None):
             invalid_counterfactual_resolved_k=(
                 dc.invalid_counterfactual_resolved_k),
             rollout_counterfactual_k=dc.rollout_counterfactual_k,
+            rollout_solution_prob=dc.get('rollout_solution_prob', 0.0),
             all_action_supervision=True,
         )
         return FlatIntentStreamDataset(
@@ -161,6 +164,7 @@ def build_data(dc, vocab, split: str, lm_loss_on: str, size=None):
         invalid_counterfactual_unresolved_only=dc.invalid_counterfactual_unresolved_only,
         invalid_counterfactual_resolved_k=dc.invalid_counterfactual_resolved_k,
         rollout_counterfactual_k=dc.rollout_counterfactual_k,
+        rollout_solution_prob=dc.get('rollout_solution_prob', 0.0),
         all_action_supervision=True,
         necessary_range=tuple(dc.necessary_range) if dc.necessary_range else (None, None),
     )
@@ -191,8 +195,10 @@ def grad_norm_report(model, objective, out, batch) -> dict:
             if g is None:
                 continue
             group = next((m for m in MODULE_GROUPS if pname.startswith(m + ".")), "other")
-            if pname.startswith("encoder.tok.") or pname.startswith("encoder.head."):
-                group = "lm_head/embedding"
+            if pname.startswith("encoder.head."):
+                group = "lm_head"
+            elif pname.startswith("encoder.tok."):
+                group = "tok_embedding"
             norms[group] += float(g.float().pow(2).sum())
         report[name] = {k: math.sqrt(v) for k, v in norms.items()}
     return report
@@ -218,11 +224,26 @@ def main(cfg: DictConfig) -> None:
         vocab_size=len(vocab), pad_id=vocab.pad_id,
         latent_rollout_ks=rollout_ks,
         energy_prefix_rank=float(c.objective.energy_prefix_rank.weight) > 0.0,
+        energy_imagined_rank=float(c.objective.energy_imagined_rank.weight) > 0.0,
+        energy_imagined_depth=int(c.objective.energy_imagined_rank.depth),
+        energy_imagined_kcat=int(c.objective.energy_imagined_rank.kcat),
         energy_prefix_cf_kind=c.objective.energy_prefix_rank.cf_kind,
         energy_prefix_depth_bias=c.objective.energy_prefix_rank.depth_bias,
+        lm_detach_state=bool(c.objective.intent_prior_lm.detach_state),
         **c.model.as_dict()
     ).to(device)
     _ = c.objective.latent_rollout_pred.ks
+    init_ckpt = c.get("init_from_ckpt")
+    if init_ckpt:
+        # Warm start from a full flat-JEPA checkpoint (student + EMA teacher
+        # + heads).  New config flags add no parameters, so strict load.
+        state = torch.load(init_ckpt, map_location="cpu")
+        missing, unexpected = model.load_state_dict(state["model"], strict=False)
+        if missing or unexpected:
+            raise RuntimeError(
+                f"init_from_ckpt mismatch: missing={missing} unexpected={unexpected}"
+            )
+        print(f"warm-started from {init_ckpt} (epoch {state.get('epoch')}, step {state.get('step')})")
     objective = build_objective(c.objective)
     lm_loss_on = c.model.lm_loss_on
     train_ds = build_data(c.data, vocab, "train", lm_loss_on)

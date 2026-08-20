@@ -76,3 +76,41 @@ class EnergyPrefixRank(Objective):
             )
             out.extras["diag_energy_prefix_pairs"] = pair_valid.sum().float()
         return masked_mean(pair_loss, pair_valid.float())
+
+
+class EnergyImaginedRank(Objective):
+    """Energy ranking ON IMAGINED STATES along the observed trace.
+
+    Deep search scores actions at states the predictor has IMAGINED, but the
+    anchor-level ranking terms only ever query the Energy at REAL encoded
+    states -- which is exactly where the head's progress ranking was measured
+    to collapse off the root.  This term closes that train/test gap: from a
+    real prefix state s_t the predictor is rolled h steps under the OBSERVED
+    actions a_t..a_{t+h-1} (imagined chain, no re-encoding), and at each
+    imagined state the head must rank the continuation that ACTUALLY OCCURRED
+    (a_{t+h}) below sampled counterfactual catalogue actions imagined from
+    the same state.  Energies are E(s_t, predictor(s_hat, a), s_0, h+1) --
+    the identical call deep search makes at depth h.
+
+    Self-supervised: the only label is which continuation occurred, which is
+    in the data.  No symbolic state, feasibility bit, or step count is read.
+    Sampled counterfactuals are drawn uniformly from the problem's own
+    action catalogue (the planner's proposal set), excluding the observed
+    action; they are a mix of infeasible, wasteful and useful actions, and
+    the loss simply pushes the observed one below all of them.
+    """
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        e_exec = out.extras.get("energy_img_exec")
+        if e_exec is None:
+            return out.step_states.sum() * 0.0
+        e_alt = out.extras["energy_img_alt"]      # [M, K]
+        valid = out.extras["energy_img_valid"]    # [M, K]
+        pair_loss = F.softplus(e_exec.unsqueeze(-1) - e_alt)
+        with torch.no_grad():
+            ordered = (e_exec.unsqueeze(-1) < e_alt) & valid
+            out.extras["diag_energy_img_acc"] = (
+                ordered.sum().float() / valid.sum().clamp(min=1)
+            )
+            out.extras["diag_energy_img_pairs"] = valid.sum().float()
+        return masked_mean(pair_loss, valid.float())

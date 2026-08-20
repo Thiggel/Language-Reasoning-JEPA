@@ -119,6 +119,7 @@ class IGSMDataset(Dataset):
         invalid_counterfactual_unresolved_only: bool = False,
         invalid_counterfactual_resolved_k: int = 0,
         rollout_counterfactual_k: int = 0,
+        rollout_solution_prob: float = 0.0,
         sample_max_tries: int = 50,
         strict_steps_range: bool = False,
         adjectives: list[str] | None = None,
@@ -169,6 +170,15 @@ class IGSMDataset(Dataset):
             0, int(invalid_counterfactual_resolved_k)
         )
         self.rollout_counterfactual_k = max(0, int(rollout_counterfactual_k))
+        # See FaithfulDataset.rollout_solution_prob: probability that a
+        # rollout step follows the reference solution instead of a uniformly
+        # random feasible action.  0.0 = historical behaviour, bit-identical.
+        self.rollout_solution_prob = float(rollout_solution_prob)
+        if not 0.0 <= self.rollout_solution_prob <= 1.0:
+            raise ValueError(
+                f"rollout_solution_prob must be in [0, 1]: "
+                f"{self.rollout_solution_prob}"
+            )
         self.sample_max_tries = max(1, int(sample_max_tries))
         self.strict_steps_range = bool(strict_steps_range)
         if self.geo_rank_policy not in {"random", "greedy", "latent_beam"}:
@@ -447,7 +457,25 @@ class IGSMDataset(Dataset):
                                     cf_kind_sequence.append(
                                         kinds[: self.rollout_counterfactual_k]
                                     )
-                                nxt = feasible[rng.randrange(len(feasible))]
+                                # ROLLOUT POLICY: follow the reference
+                                # solution (feasible query-ancestor steps --
+                                # the same rule the factual trajectory uses)
+                                # with probability rollout_solution_prob,
+                                # else uniformly random feasible.  The
+                                # short-circuit keeps prob=0 bit-identical.
+                                nxt = None
+                                if (
+                                    self.rollout_solution_prob > 0.0
+                                    and rng.random() < self.rollout_solution_prob
+                                ):
+                                    on_path = [
+                                        i for i in feasible
+                                        if i in p.query_ancestors
+                                    ]
+                                    if on_path:
+                                        nxt = on_path[rng.randrange(len(on_path))]
+                                if nxt is None:
+                                    nxt = feasible[rng.randrange(len(feasible))]
                                 action_sequence.append(
                                     self.vocab.encode(action_phrase(p, nxt))
                                 )

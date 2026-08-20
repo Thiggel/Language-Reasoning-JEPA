@@ -270,6 +270,7 @@ class FaithfulDataset(Dataset):
         invalid_counterfactual_unresolved_only: bool = False,
         invalid_counterfactual_resolved_k: int = 0,
         rollout_counterfactual_k: int = 0,
+        rollout_solution_prob: float = 0.0,
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
@@ -338,6 +339,17 @@ class FaithfulDataset(Dataset):
         # (h >= 1; index 0 is left empty -- the anchor is covered by
         # ``ga_alt_actions``).
         self.rollout_counterfactual_k = max(0, int(rollout_counterfactual_k))
+        # ROLLOUT POLICY (see __getitem__).  Probability that a rollout step
+        # follows the environment's own reference solution -- i.e. picks a
+        # feasible action that the recorded correct solution actually needs --
+        # instead of a uniformly random feasible action.  0.0 reproduces the
+        # historical behaviour exactly (no extra RNG draw is made).
+        self.rollout_solution_prob = float(rollout_solution_prob)
+        if not 0.0 <= self.rollout_solution_prob <= 1.0:
+            raise ValueError(
+                f"rollout_solution_prob must be in [0, 1]: "
+                f"{self.rollout_solution_prob}"
+            )
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
@@ -563,7 +575,30 @@ class FaithfulDataset(Dataset):
                                     cf_kind_sequence.append(
                                         kinds[: self.rollout_counterfactual_k]
                                     )
-                                nxt = feasible[rng.randrange(len(feasible))]
+                                # ROLLOUT POLICY.  With probability
+                                # ``rollout_solution_prob`` continue along the
+                                # environment's reference solution (a feasible
+                                # action the correct solution still needs) --
+                                # the SAME rule that generates the factual
+                                # trajectory above (``rng.choice(nec)``).
+                                # Otherwise fall back to a uniformly random
+                                # feasible action (historical behaviour).  The
+                                # short-circuit keeps prob=0 bit-identical: no
+                                # extra draw is taken from ``rng``.
+                                nxt = None
+                                if (
+                                    self.rollout_solution_prob > 0.0
+                                    and rng.random() < self.rollout_solution_prob
+                                ):
+                                    on_path = [
+                                        q for q in feasible if q in fp.necessary
+                                    ]
+                                    if on_path:
+                                        nxt = on_path[
+                                            rng.randrange(len(on_path))
+                                        ]
+                                if nxt is None:
+                                    nxt = feasible[rng.randrange(len(feasible))]
                                 action_sequence.append(
                                     self.vocab.encode(
                                         roll_env.action_text(nxt)

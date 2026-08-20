@@ -30,6 +30,7 @@ from textjepa.objectives.delta_action import (
 )
 from textjepa.objectives.energy_feasibility import (
     EnergyCFFeasibilityRank,
+    EnergyImaginedRank,
     EnergyPrefixRank,
 )
 from textjepa.objectives.intent_prior import IntentPriorLM
@@ -98,6 +99,7 @@ from textjepa.objectives.hierarchical_language import (
 __all__ = [
     "ActionFeasibility",
     "EnergyCFFeasibilityRank",
+    "EnergyImaginedRank",
     "EnergyPrefixRank",
     "IntentPriorLM",
     "ActionGeneration",

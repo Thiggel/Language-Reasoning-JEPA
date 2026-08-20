@@ -35,6 +35,7 @@ class DecoderLM(nn.Module):
         eval_loops: int = 4,
         train_loop_distribution: str = "shifted_poisson",
         train_loop_sigma: float = 0.5,
+        untie_head: bool = False,
     ):
         super().__init__()
         self.pad_id = pad_id
@@ -63,7 +64,16 @@ class DecoderLM(nn.Module):
             self.blocks = nn.TransformerEncoder(layer, n_layers)
         self.norm = nn.LayerNorm(d_model)
         self.head = nn.Linear(d_model, vocab_size, bias=False)
-        self.head.weight = self.tok.weight  # tied
+        self.untied_head = bool(untie_head)
+        if self.untied_head:
+            # Output matrix kept SEPARATE from the input embedding so that a
+            # loss applied only at the head cannot reach the encoder through
+            # the tied weight.  Initialized as a copy of the embedding, so the
+            # model starts exactly where the tied version starts.
+            with torch.no_grad():
+                self.head.weight.copy_(self.tok.weight)
+        else:
+            self.head.weight = self.tok.weight  # tied
 
     def hidden(
         self, tokens: torch.Tensor, num_loops: int | None = None

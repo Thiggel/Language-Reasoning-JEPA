@@ -81,6 +81,7 @@ class FlatIntentStreamDataset(Dataset):
             "s_pos": s_pos,
             "a_pos": a_pos,
             "action_tokens": [list(a) for a in item["actions"]],
+            "action_cat": [cat_index[tuple(a)] for a in item["actions"]],
             "catalogue": catalogue,
             "index": index,
             "n_necessary": item["n_necessary"],
@@ -172,6 +173,7 @@ def collate_flat(batch: list[dict], pad_id: int) -> dict:
     a_pos = torch.zeros((B, T), dtype=torch.long)
     step_mask = torch.zeros((B, T), dtype=torch.bool)
     action_tokens = torch.full((B, T, La), pad_id, dtype=torch.long)
+    action_cat = torch.zeros((B, T), dtype=torch.long)
     Ncat = max(cat_n)
     cat_last = torch.zeros((B, Ncat), dtype=torch.long)
     cat_mask = torch.zeros((B, Ncat), dtype=torch.bool)
@@ -188,6 +190,7 @@ def collate_flat(batch: list[dict], pad_id: int) -> dict:
         step_mask[i, :n] = True
         for t, a in enumerate(b["action_tokens"]):
             action_tokens[i, t, : len(a)] = torch.tensor(a)
+        action_cat[i, :n] = torch.tensor(b["action_cat"])
         # Catalogue block.  Without a ranking anchor the block still exists
         # (attends to the full stream end) but is unused by the losses.
         anchor = int(b.get("ga_anchor_pos", b["s_pos"][-1]))
@@ -214,6 +217,7 @@ def collate_flat(batch: list[dict], pad_id: int) -> dict:
         "a_pos": a_pos,
         "step_mask": step_mask,
         "action_tokens": action_tokens,
+        "action_cat": action_cat,
         "cat_last": cat_last,
         "cat_mask": cat_mask,
         "index": torch.tensor([b["index"] for b in batch]),
