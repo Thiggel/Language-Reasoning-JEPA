@@ -178,6 +178,16 @@ solution-following rollout policy; latent planning + detached decoder.
 - flat-hard21-lminit-s0 LAUNCHED on gruenau9 GPU2, warm-start verified (latent_pred 0.22 at step 0 vs ~2+ scratch).
 - All five subagents told to wind down and write HANDOFF.md in their round dirs (answer-emission-v1, imagined-energy-v1, rollout-solution-v1, true-oracle-upper-bound, action-decoder-gate-v1); GPU cells left running. Check those HANDOFF.md files first when resuming.
 
+
+### 2026-08-21 agent wind-down: all five delivered (main session)
+- ANSWER-EMISSION OOD landed: prior_propose d1 OOD .835 cap1.0 (random .005), identical under answer criterion. All four cells done; round complete.
+- TRUE-ORACLE DECOMPOSITION (2026-08-20-true-oracle-upper-bound, commit 90cc2ac): symbolic oracle x true endpoints = 1.000 exact-minimum at ALL depths/caps -> search machinery fully exonerated; depth collapse is 100% the learned ruler. prior_propose ceiling .945 d1 / .920 d2, EVERY unsolved episode is proposal exhaustion (0 budget/invalid/bad-pick losses). Lat/energy-ruler ladders + beam-width controls still running on gruenau2 (RUNNING_PIDS.txt, summarize.py ready). CANDIDATE-PRIVILEGED, EVAL-ONLY labels everywhere.
+- DECODER GATE PASSED (2026-08-20-action-decoder-gate-v1): held-out action-phrase reconstruction .9978 exact (.9992 on never-seen phrases). Ablations: action-only .28 novel, context-only .37, full .999 -> the old catalogue-free .000-parse obstacle is dissolved. Codebook prior trained (K=64 top-4 recall .764; use ep8 artifacts, 60-ep overfits). New planner interface code_prior wired (prior->dequantize->detached decode->exact-text ground), tests pass. NEXT: proposal bench vs token_head .959, then d1/d4 ID/OOD planning. RISK: decoder saw only on-path states; if mid-episode parse sags, retrain on randomized feasible trajectories.
+- ROLLOUT-LABEL FIX (2026-08-20-rollout-solution-v1, in 5d1e8b8): training rollouts stepped uniformly at random among legal actions -> "observed continuation" at imagined depth carried zero quality signal (coin flip); explains legality-good/goodness-collapsed heads. New rollout_solution_prob (p=0 bit-identical). solp100-s0/solp050-s0 fine-tunes on gruenau11 + step-matched probe (matched_step11k/). Report all p values, never p=1.0 alone. TRAP: probe_flat_energy_progress.py was untracked -> git-archive snapshots omit it; commit it properly.
+- IMAGINED-ENERGY FIX (2026-08-21-imagined-energy-v1, commits 03bb351/0706638): re-encoded off-reference states are at CHANCE (AUC .49 d4) -> collapse is head/encoder train-test gap, not imagination error. energy_imagined_rank objective; fine-tune imagined-ecf16-ft-s0 on gruenau11:3 (runs own final evals).
+- tok-lm-hard21-fullsol-s0 hit 250000s TIMEOUT during a late free-gen eval; training + 3 main eval JSONs complete; only the last eval truncated.
+- All round dirs have HANDOFF.md with PIDs and exact continuation commands.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
