@@ -172,6 +172,12 @@ solution-following rollout policy; latent planning + detached decoder.
 7. Re-run the geometry and probe comparisons at MATCHED training steps on
    converged checkpoints before anything goes in the paper.
 
+
+### 2026-08-21 consolidation checkpoint (main session)
+- ANSWER-EMISSION CRITERION LANDED (commit e1c1f93): model must generate the final outcome sentence itself and terminate by choice; planner .720/.830 (cap 1.0/1.25) vs random .000/.010; random at cap 4 halves to .285; LM re-scored .815 hard / .795 med. Report: research/reports/intent_phrase/2026-08-21-answer-emission/. One cell still running: ood_prior_d1 (gruenau1 GPU2); rescore with scripts/rescore_budget.py when plan.json lands.
+- flat-hard21-lminit-s0 LAUNCHED on gruenau9 GPU2, warm-start verified (latent_pred 0.22 at step 0 vs ~2+ scratch).
+- All five subagents told to wind down and write HANDOFF.md in their round dirs (answer-emission-v1, imagined-energy-v1, rollout-solution-v1, true-oracle-upper-bound, action-decoder-gate-v1); GPU cells left running. Check those HANDOFF.md files first when resuming.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
