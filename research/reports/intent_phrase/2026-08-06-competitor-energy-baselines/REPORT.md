@@ -1,5 +1,9 @@
 # Competitor JEPA value/energy baselines: verified literature and adaptation contract
 
+**CORRECTION (2026-08-20):** the "oracle-goal ceiling 1.000 [FALSE, see correction at top]" claim in this report is WRONG and was a protocol conflation. `latent_planner_oracle_goal` never reached 1.0: its best stylized number on record is .756 (and that row is candidate-privileged), with non-privileged depth-1 at .106-.21. The 1.0 values sitting in the same result JSONs belong to DIFFERENT rows -- `oracle` is ExpertReplayPolicy (1.0 by construction) and `latent_planner_symbolic_distance` is exact symbolic graph distance on exact environment states (also 1.0 at D1, but .144 at D4). See the 2026-08-20 campaign-log entry and research/reports/intent_phrase/2026-08-20-true-oracle-upper-bound/.
+
+
+
 _2026-08-06. Web-verified citations for the baseline suite requested for the
 ICLR paper. No experiments in this report._
 
@@ -41,7 +45,7 @@ ICLR paper. No experiments in this report._
 ## Adaptation notes for the intent-phrase environment
 
 1. Family (c) with an *encoded terminal goal* is exactly our existing
-   `energy=oracle_goal` diagnostic (100% success): PLDM/DINO-WM-style
+   `energy=oracle_goal` diagnostic ([FALSE, see correction at top] claimed 100% success): PLDM/DINO-WM-style
    baselines are therefore already covered as the labeled oracle row.
    The non-oracle versions of family (c) require a learned subgoal/goal
    predictor (FF-JEPA's G or LAGO's language-conditioned head), which is
@@ -87,7 +91,7 @@ ICLR paper. No experiments in this report._
    z_goal_EMA is the EMA-encoded solved trajectory endpoint (training only);
    plan with the existing distance planner but scoring
    d(imagined endpoint, z_goal_hat). This is the non-oracle counterpart of
-   our oracle-goal diagnostic (oracle goal = 100% success), and the natural
+   our oracle-goal diagnostic ([FALSE, see correction at top] claimed oracle goal = 100% success), and the natural
    family-(c) row without symbolic goal access. In our environment the
    "instruction" is the problem statement, already encoded in z_0.
 
@@ -152,7 +156,7 @@ evaluated in `runs/autonomy/intent_phrase/2026-08-07-intent-faithful-baselines-v
 Both faithful implementations reproduce the family signature already seen
 with the simpler TD-Q/expectile stand-ins: competitive at depth 1, then
 *declining* with search depth (TD-JEPA slack-2 .530 -> .327; GoalHead
-collapses immediately after D1 despite its oracle-goal ceiling being 1.000).
+collapses immediately after D1 despite its oracle-goal ceiling being 1.000 [SEE CORRECTION AT TOP: this is false]).
 The successor-feature Q and the predicted-goal distance are both absolute
 calibrations, and neither survives recursive imagination — while the same
 backbone under ranking distillation reaches .884. This is the paper's

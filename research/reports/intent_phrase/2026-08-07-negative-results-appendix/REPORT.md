@@ -1,5 +1,9 @@
 # Negative-results appendix: what was measured and rejected on the way to the frozen recipe
 
+**CORRECTION (2026-08-20):** the "oracle-goal ceiling 1.000 [FALSE, see correction at top]" claim in this report is WRONG and was a protocol conflation. `latent_planner_oracle_goal` never reached 1.0: its best stylized number on record is .756 (and that row is candidate-privileged), with non-privileged depth-1 at .106-.21. The 1.0 values sitting in the same result JSONs belong to DIFFERENT rows -- `oracle` is ExpertReplayPolicy (1.0 by construction) and `latent_planner_symbolic_distance` is exact symbolic graph distance on exact environment states (also 1.0 at D1, but .144 at D4). See the 2026-08-20 campaign-log entry and research/reports/intent_phrase/2026-08-20-true-oracle-upper-bound/.
+
+
+
 _2026-08-07. Compilation report; no new experiments. Every number below is
 copied from a dated report or a run-directory metrics file, cited per item.
 Companion LaTeX table: `appendix_negative_results.tex` in this directory._
@@ -393,7 +397,7 @@ Recipe reference at the comparison depth is the five-seed frozen-recipe value
 | Expectile goal-value | absolute | D16 .187 (random .053) | .884 | rejected: near random |
 | Expectile-TD shaping auxiliary | absolute | D2 .323, D16 .863 | .450, .884 | rejected: no gain, D2 regression |
 | Faithful TD-JEPA (successor features) | absolute | D1 .133, D16 .107; slack-2 falls .530→.327 | D1 .126, D16 .884 | rejected: no depth scaling, deeper search hurts |
-| Takai-style GoalHead (predicted-goal distance) | absolute | D1 .137, D2 .037, D16 .060 | D1 .126, D16 .884 | rejected: collapses beyond depth 1 (oracle-goal ceiling 1.000) |
+| Takai-style GoalHead (predicted-goal distance) | absolute | D1 .137, D2 .037, D16 .060 | D1 .126, D16 .884 | rejected: collapses beyond depth 1 (oracle-goal ceiling 1.000 [FALSE, see correction at top]) |
 | Sparse multidepth prefix supervision | supervision | best cell D16 .550; most cells .1–.3 | .884 | rejected: dilutes endpoint-ranking signal |
 | Dense within-horizon endpoint loss | supervision | D16 .053–.183 | .884 | rejected: dense targets conflict with endpoint ordering |
 | Fixed training horizon H4 | supervision | D2 .290 (D4 .910) | D2 .450 | rejected: incoherent off training support |
