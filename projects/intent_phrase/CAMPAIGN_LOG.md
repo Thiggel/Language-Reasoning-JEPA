@@ -1535,3 +1535,74 @@ by `--flow-prior`, trained post-hoc on a frozen checkpoint, val NLL/dim
 before/after; 8 new tests pass; suite 999 passed / 2 failed, both
 pre-existing and unrelated (one fails standalone on main, one is a
 test-order global-state flake).
+
+## 2026-08-20 (night) — aggregation 2x2: owner hypothesis REFUTED; the energy head cannot rank goodness at depth
+
+Round `runs/autonomy/intent_phrase/2026-08-20-aggregate-ablation-v1/`.
+`ecf16-prefix4-roll124-s0` `last.pt` (copied first), 200 val episodes/cell.
+
+**Success at depth 4** (depth-1 reference: full_catalogue 1.000,
+prior_propose .880):
+
+| interface | expansion | endpoint | mean_prefix | movement |
+|---|---|---|---|---|
+| full_catalogue | random (legacy) | .665 | .775 | — |
+| full_catalogue | **beam** | .735 | **.915** | .680 |
+| prior_propose | random (legacy) | .385 | .455 | — |
+| prior_propose | **beam** | .370 | **.455** | .395 |
+
+1. **Endpoint STILL loses to mean_prefix once expansion is energy-guided,
+   and the gap is LARGER with the beam** (.735 -> .915) than with random
+   tails (.665 -> .775). The endpoint-blindness was NOT a random-tail
+   artefact. The owner's argument — a wasted step must cost one real step of
+   progress, so the endpoint should already punish it — is sound in
+   principle, but the imagined endpoint evidently does not encode that
+   difference cleanly enough for the energy head to see it.
+2. **The averaging, not the beam, is the load-bearing change.** With endpoint
+   scoring, beam ~= random (.735 vs .665; .370 vs .385). The beam only pays
+   off combined with mean_prefix.
+3. DECISION: keep `mean_prefix` as the default; do NOT revert.
+   PAPER CAVEAT to keep: mean_prefix is not potential-based and can change
+   which plan is optimal, so the Blocksworld/ALFWorld port must RE-RUN this
+   2x2 there rather than inherit the default.
+4. `--aggregate movement` (endpoint + scale-free geometric penalty on
+   rollout steps whose imagined state barely moves; no symbolic label, no
+   goal-distance assumption) is implemented and tested but NEGATIVE: .680
+   full_catalogue (worse than plain endpoint), .395 prior_propose. Kept as
+   the only variant that survives the detour objection, but not a drop-in.
+
+**THE MORE IMPORTANT RESULT — legality is not goodness, and goodness dies
+past the root.** New `scripts/probe_flat_energy_progress.py` (ORACLE-LABELLED
+DIAGNOSTIC: symbolic state labels the measurement only, never a model input).
+Among LEGAL actions only, does lower energy mean the action is necessary for
+the query?
+
+| imagined depth | legality AUC | **progress AUC (legal only)** |
+|---|---|---|
+| 0 | .950 | **.842** |
+| 1 | .990 | **.695** |
+| 2 | .986 | .615 |
+| 4 | .953 | .606 |
+| 8 | .847 | .716 |
+
+The head is a strong legality detector at EVERY depth but a weak goodness
+ranker, and the goodness signal COLLAPSES the moment it leaves the root
+(.842 -> .695 -> .615). **No aggregation can repair a score that cannot tell
+a useful legal action from a useless one at imagined depth. This — not the
+aggregation choice, not drift — is what blocks "depth helps".**
+NEXT TARGET is therefore the energy head's training signal at depth >= 1,
+which is exactly where the `premature` hard-negative arm and the
+rollout-policy change (follow the true solution instead of random feasible
+actions) both act.
+
+**prior_propose depth-4 failure is proposal EXHAUSTION, not scoring:**
+`no_proposal_episode_rate` .55-.63 at depth 4 vs .12 at depth 1. Deep search
+executes ~10x more invalid actions (.15-.18 vs .017), they get masked, and
+the planner runs out of candidates.
+
+**Operational win: `--no-beam-diagnostics`.** The oracle "does the beam offer
+options closer to the solved state than depth 1" MEASUREMENT (a full
+re-encode of a completed trajectory per step plus three extra scoring passes)
+was ~99% of depth>1 eval cost. Skipping it gives bit-identical plans and took
+depth-4 evals from hours to minutes — which also makes the previously-18h
+depth-8 eval cheap, so the depth-8 column is back on the table.
