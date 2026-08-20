@@ -75,6 +75,8 @@ class FlatIntentJEPA(nn.Module):
         energy_cf_feasibility_rank: bool = True,
         energy_cf_scope: str = "all",  # all | invalid_only
         energy_prefix_rank: bool = False,
+        energy_prefix_cf_kind: str = "all",     # all | premature | resolved
+        energy_prefix_depth_bias: str = "uniform",  # uniform | late
         value_detach: bool = False,
         teacher_chunk: int = 96,
         lm_loss_on: str = "all_solution",
@@ -95,6 +97,16 @@ class FlatIntentJEPA(nn.Module):
         self.predictor_kind = predictor_kind
         self.energy_cf_feasibility_rank = bool(energy_cf_feasibility_rank)
         self.energy_prefix_rank = bool(energy_prefix_rank)
+        if energy_prefix_cf_kind not in {"all", "premature", "resolved"}:
+            raise ValueError(
+                f"unknown energy_prefix_cf_kind: {energy_prefix_cf_kind}"
+            )
+        if energy_prefix_depth_bias not in {"uniform", "late"}:
+            raise ValueError(
+                f"unknown energy_prefix_depth_bias: {energy_prefix_depth_bias}"
+            )
+        self.energy_prefix_cf_kind = energy_prefix_cf_kind
+        self.energy_prefix_depth_bias = energy_prefix_depth_bias
         self.energy_cf_scope = energy_cf_scope
         self.value_detach = bool(value_detach)
         self.teacher_chunk = int(teacher_chunk)
@@ -569,6 +581,22 @@ class FlatIntentJEPA(nn.Module):
         depth_ok = torch.zeros(Hh, dtype=torch.bool, device=device)
         depth_ok[1:] = True
         cf_mask = cf_mask & depth_ok.view(1, Hh, 1)
+        # HARDER NEGATIVES (opt-in).  The dataset tags each rollout
+        # counterfactual as 1 = premature (its parents are not resolved yet)
+        # or 2 = already resolved (re-deriving a fact the state already
+        # contains -- it still reads as a sensible sentence, so telling it
+        # apart from a step that made progress is the harder judgement).
+        # This selects WHICH negatives are offered; the ranking label stays
+        # "which continuation actually occurred".
+        if self.energy_prefix_cf_kind != "all":
+            kinds = batch.get("ga_roll_cf_kind")
+            if kinds is None:
+                raise KeyError(
+                    "energy_prefix_cf_kind needs ga_roll_cf_kind from the "
+                    "dataset; rebuild the stream with a current snapshot"
+                )
+            want = 1 if self.energy_prefix_cf_kind == "premature" else 2
+            cf_mask = cf_mask & (kinds.reshape(N, Hh, -1) == want)
         if not bool(cf_mask.any()):
             return
 
@@ -581,9 +609,17 @@ class FlatIntentJEPA(nn.Module):
         # ---- one random insertion depth per counterfactual slot -----------
         valid_nk = cf_mask.permute(0, 2, 1).contiguous()      # [N, Kc, Hh]
         has_pair = valid_nk.any(-1)                            # [N, Kc]
+        weights = valid_nk.float()
+        if self.energy_prefix_depth_bias == "late":
+            # Bias the wasted step toward the END of the imagined path, where
+            # its consequence is subtler and less of the remaining trajectory
+            # is left to expose it.  Weight grows linearly with depth.
+            weights = weights * torch.arange(
+                1, Hh + 1, device=device, dtype=weights.dtype
+            ).view(1, 1, Hh)
         probs = torch.where(
-            has_pair.unsqueeze(-1), valid_nk.float(),
-            torch.ones_like(valid_nk, dtype=torch.float),
+            has_pair.unsqueeze(-1), weights,
+            torch.ones_like(weights),
         )
         j = torch.multinomial(probs.reshape(N * Kc, Hh), 1).reshape(N, Kc)
         cf_pick = cf.permute(0, 2, 1).gather(2, j.unsqueeze(-1)).squeeze(-1)
@@ -635,6 +671,13 @@ class FlatIntentJEPA(nn.Module):
         out.extras["energy_prefix_obs_valid"] = flat_mask      # [N, Hh]
         out.extras["energy_prefix_cf"] = e_cf                  # [N, Kc, L]
         out.extras["energy_prefix_cf_valid"] = msk             # [N, Kc, L]
+        with torch.no_grad():
+            # where in the path the wasted step was inserted (1-indexed);
+            # confirms energy_prefix_depth_bias is doing what it claims
+            pv0 = has_pair & rv.reshape(N, 1)
+            out.extras["diag_energy_prefix_ins_depth"] = (
+                (j.float() * pv0).sum() / pv0.sum().clamp(min=1)
+            )
         out.extras["energy_prefix_pair_valid"] = (
             has_pair & rv.reshape(N, 1) & flat_mask.any(-1, keepdim=True)
         )

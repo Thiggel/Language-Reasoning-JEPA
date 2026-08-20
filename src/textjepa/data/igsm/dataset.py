@@ -378,13 +378,16 @@ class IGSMDataset(Dataset):
                     rollout_steps = []
                     rollout_actions = []
                     rollout_cf_actions = []
+                    rollout_cf_kinds = []
                     for candidate in candidates:
                         candidate_rollouts = []
                         candidate_action_rollouts = []
                         candidate_cf_rollouts = []
+                        candidate_cf_kind_rollouts = []
                         for _ in range(self.geo_rank_rollouts):
                             roll_env = env2.clone()
                             cf_sequence = [[]]
+                            cf_kind_sequence = [[]]
                             sequence = list(steps[:t_star])
                             action_sequence = [
                                 self.vocab.encode(action_phrase(p, candidate))
@@ -427,12 +430,23 @@ class IGSMDataset(Dataset):
                                     rng.shuffle(resolved_neg)
                                     half = (self.rollout_counterfactual_k + 1) // 2
                                     picked = premature[:half] + resolved_neg[:half]
+                                    # 1 = premature (parents unresolved),
+                                    # 2 = already resolved (legal-looking but
+                                    # pointless).  Negative-sampling control
+                                    # only; never a ranking label.
+                                    kinds = (
+                                        [1] * len(premature[:half])
+                                        + [2] * len(resolved_neg[:half])
+                                    )
                                     cf_sequence.append([
                                         self.vocab.encode(action_phrase(p, q))
                                         for q in picked[
                                             : self.rollout_counterfactual_k
                                         ]
                                     ])
+                                    cf_kind_sequence.append(
+                                        kinds[: self.rollout_counterfactual_k]
+                                    )
                                 nxt = feasible[rng.randrange(len(feasible))]
                                 action_sequence.append(
                                     self.vocab.encode(action_phrase(p, nxt))
@@ -441,13 +455,16 @@ class IGSMDataset(Dataset):
                             candidate_rollouts.append(sequence)
                             candidate_action_rollouts.append(action_sequence)
                             candidate_cf_rollouts.append(cf_sequence)
+                            candidate_cf_kind_rollouts.append(cf_kind_sequence)
                         rollout_steps.append(candidate_rollouts)
                         rollout_actions.append(candidate_action_rollouts)
                         rollout_cf_actions.append(candidate_cf_rollouts)
+                        rollout_cf_kinds.append(candidate_cf_kind_rollouts)
                     ga["ga_rollout_steps"] = rollout_steps
                     ga["ga_rollout_actions"] = rollout_actions
                     if self.rollout_counterfactual_k:
                         ga["ga_rollout_cf_actions"] = rollout_cf_actions
+                        ga["ga_rollout_cf_kinds"] = rollout_cf_kinds
 
         # Keep the grounding falsifier exactly paired with the aligned
         # condition.  In particular, draw the GAR anchor, alternatives, and

@@ -63,7 +63,9 @@ objective:
   energy_cf_feasibility_rank: {weight: 4.0}
   # path-level counterfactual ranking: score every prefix of an imagined
   # trajectory, not only its endpoint (opt-in; 0 = off, no behaviour change)
-  energy_prefix_rank: {weight: 0.0, aggregate: mean_prefix}  # mean_prefix | endpoint
+  # cf_kind: all (current) | premature (easy control) | resolved (hard: legal-looking but pointless)
+  # depth_bias: uniform | late (bias the wasted step toward the end of the path)
+  energy_prefix_rank: {weight: 0.0, aggregate: mean_prefix, cf_kind: all, depth_bias: uniform}
   intent_prior_lm: {weight: 1.0}
 
 train:

@@ -218,6 +218,8 @@ def main(cfg: DictConfig) -> None:
         vocab_size=len(vocab), pad_id=vocab.pad_id,
         latent_rollout_ks=rollout_ks,
         energy_prefix_rank=float(c.objective.energy_prefix_rank.weight) > 0.0,
+        energy_prefix_cf_kind=c.objective.energy_prefix_rank.cf_kind,
+        energy_prefix_depth_bias=c.objective.energy_prefix_rank.depth_bias,
         **c.model.as_dict()
     ).to(device)
     _ = c.objective.latent_rollout_pred.ks

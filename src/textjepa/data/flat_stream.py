@@ -96,11 +96,14 @@ class FlatIntentStreamDataset(Dataset):
             ]
             roll_tokens, roll_first, roll_leaf, roll_act = [], [], [], []
             roll_cf = []
+            roll_cf_kind = []
             cf_rollouts = item.get("ga_rollout_cf_actions")
+            cf_kinds = item.get("ga_rollout_cf_kinds")
             for c, (step_rollouts, action_rollouts) in enumerate(zip(
                 item["ga_rollout_steps"], item["ga_rollout_actions"]
             )):
                 c_tokens, c_first, c_leaf, c_act, c_cf = [], [], [], [], []
+                c_cf_kind = []
                 for r, (outcomes, actions) in enumerate(
                     zip(step_rollouts, action_rollouts)
                 ):
@@ -111,6 +114,10 @@ class FlatIntentStreamDataset(Dataset):
                             [cat_index[tuple(a)] for a in depth_cf]
                             for depth_cf in cf_rollouts[c][r]
                         ])
+                        if cf_kinds is not None:
+                            c_cf_kind.append(
+                                [list(d) for d in cf_kinds[c][r]]
+                            )
                     seq = list(prefix)
                     first = None
                     # rollout outcome sequences carry the factual prefix
@@ -132,6 +139,7 @@ class FlatIntentStreamDataset(Dataset):
                 roll_leaf.append(c_leaf)
                 roll_act.append(c_act)
                 roll_cf.append(c_cf)
+                roll_cf_kind.append(c_cf_kind)
             out.update(
                 ga_t=t,
                 ga_anchor_pos=anchor_pos,
@@ -143,6 +151,7 @@ class FlatIntentStreamDataset(Dataset):
                 ga_roll_leaf=roll_leaf,
                 ga_roll_act=roll_act,
                 ga_roll_cf=roll_cf,
+                ga_roll_cf_kind=roll_cf_kind,
             )
         return out
 
@@ -237,6 +246,8 @@ def collate_flat(batch: list[dict], pad_id: int) -> dict:
         )
         roll_cf = torch.zeros((B, C, R, H, max(Kc, 1)), dtype=torch.long)
         roll_cf_mask = torch.zeros((B, C, R, H, max(Kc, 1)), dtype=torch.bool)
+        # 0 = pad, 1 = premature (parents unresolved), 2 = already resolved.
+        roll_cf_kind = torch.zeros((B, C, R, H, max(Kc, 1)), dtype=torch.long)
         horizon = torch.ones(B, dtype=torch.long)
         for i, b in enumerate(batch):
             if "ga_t" not in b:
@@ -263,6 +274,11 @@ def collate_flat(batch: list[dict], pad_id: int) -> dict:
                             if depth_cf and h < H:
                                 roll_cf[i, c, r, h, : len(depth_cf)] = torch.tensor(depth_cf)
                                 roll_cf_mask[i, c, r, h, : len(depth_cf)] = True
+                                kk = b.get("ga_roll_cf_kind")
+                                if kk and kk[c] and h < len(kk[c][r]):
+                                    dk = kk[c][r][h]
+                                    if dk:
+                                        roll_cf_kind[i, c, r, h, : len(dk)] = torch.tensor(dk)
         out.update(
             ga_cand_cat=cand_cat,
             ga_cand_valid=cand_valid,
@@ -275,6 +291,7 @@ def collate_flat(batch: list[dict], pad_id: int) -> dict:
             ga_roll_act_mask=roll_act_mask,
             ga_roll_cf=roll_cf,
             ga_roll_cf_mask=roll_cf_mask,
+            ga_roll_cf_kind=roll_cf_kind,
             ga_requested_horizon=horizon,
         )
     return out
