@@ -1363,3 +1363,49 @@ first-feasible .990 at cap 4; still .545 at cap 1.5); the .94-1.00 depth-1
 UNDERSTATED ~2x and the ceiling made "depth helps" unmeasurable); "OOD is
 harder" (it lowers the useless fraction); and any "random is at chance"
 phrasing.
+
+- **Detached proposal head implemented and launched** (round
+  `runs/autonomy/intent_phrase/2026-08-20-detach-lm-state-v1/`, snapshot
+  `_code/b8cdf47-detach-lm-state`). Switch
+  `objective.intent_prior_lm.detach_state`, default false, added to ALL
+  THREE configs.
+
+  **The subtlety that makes this non-trivial: detaching the state is NOT
+  enough.** The LM head is `nn.Linear(d, V, bias=False)` with
+  `head.weight = tok.weight` — the output matrix IS the encoder's input
+  embedding table. So the CE gradient still lands on `encoder.tok.weight`,
+  which the trunk reads on every forward. And you cannot detach that too:
+  the tied weight is the head's ONLY parameter, so detaching would make
+  `intent_prior_lm` gradient-free everywhere and the proposer would never
+  train. The only way to have both is to UNTIE. With `detach_state=true` the
+  head gets its own matrix initialised as an exact copy of `tok.weight`, so
+  training starts from the identical point.
+  Measured at step 0, and note which half was bigger:
+
+  | | detach arm | tied control |
+  |---|---|---|
+  | intent_prior_lm | lm_head 1.024 — **no encoder, no tok_embedding** | encoder .106 · **tok_embedding 1.023** |
+
+  The trunk gradient (.106) was always the SMALLER half of this term's pull
+  on the encoder; the larger half (1.023) went through the shared embedding.
+  Detaching the state alone would have left that in place and the experiment
+  would have looked done while changing almost nothing.
+  Every other term's encoder gradient unchanged to 3-4 s.f.; flag-off is
+  bit-identical (0/75 parameter gradients mismatched vs a git archive of
+  HEAD).
+  ALSO WORTH RECORDING: a first bit-identity check showed 27/75 "mismatches"
+  that were a FALSE ALARM — multi-threaded CPU reduction order is
+  nondeterministic at ~1.6e-7 relative scale; a same-code rerun mismatched
+  on the same tensors. Pin to one thread for exactness checks.
+  TRAP CAUGHT: `load_state_dict(strict=True)` would have SILENTLY loaded an
+  untied checkpoint into a tied model — in a tied model `head.weight` and
+  `tok.weight` are the same tensor, so the load succeeds while overwriting
+  the embedding. `plan_flat.py` and `scripts/analysis/adapters.py` now read
+  `detach_state` from the saved cfg and rebuild accordingly.
+
+  Arms: `ecf16-prefix4-detachlm-s0` (gruenau7:3) and matched control
+  `ecf16-prefix4-tied-s0` (gruenau12:3). Watcher reports BOTH sides in one
+  pass every 2 epochs: depths 1/4 x prior_propose/full_catalogue x ID/OOD
+  with `proposal_recall` and `no_proposal_episode_rate` (so a weak OOD
+  prior_propose number can be distinguished from an exhausted proposal
+  mask), PLUS the consequence-geometry AUC. First rows ~30 min out.
