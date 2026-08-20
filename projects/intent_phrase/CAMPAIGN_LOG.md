@@ -1160,3 +1160,22 @@ should be the one reported, with lr3e-4 as the second seed.
   planner running out of proposals — the 08-20 diagnosis traced much of the
   earlier prior_propose collapse to exhausted proposal masks. Need
   `proposal_recall` and `no_proposal_episode_rate` at this difficulty.
+
+- **Config-inheritance bug found and fixed (commit before snapshot
+  `ee0b9b2e5bcace86fddf36326fb45a5211f78edd`).** `configs/flat_jepa_hard21.yaml`
+  and `configs/flat_jepa_stylized.yaml` are STANDALONE — they do not inherit
+  from `flat_jepa.yaml` — so they never received `latent_rollout_pred`, and
+  any run using them on current code aborts instantly with
+  `KeyError: missing config key objective.latent_rollout_pred`.
+  This would have bitten at the worst possible time: those are the configs
+  for the FINAL faithful-hard and stylized runs. Both now carry the key at
+  weight 0; all three configs verified to parse with both new terms off, so
+  nothing existing changes.
+  WATCH FOR THIS: any new objective term must be added to all three configs,
+  not just `flat_jepa.yaml`.
+
+- Fifth fd-bug casualty: `flat-hard21-scratch-s0` (crashed ep1 step 10320,
+  `RuntimeError: Too many open files`). Its `final_id` evals on best.pt
+  survive. Relaunched on gruenau12:2 from snapshot ee0b9b2, training cleanly
+  with `latent_rollout_pred=0.0000` as expected. Old dir kept as
+  `-crashed-fd`.
