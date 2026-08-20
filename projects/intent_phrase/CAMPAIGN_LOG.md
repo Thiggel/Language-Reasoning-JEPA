@@ -994,3 +994,29 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   Today the "continuation that occurred" at depth >= 1 is a coin flip among
   feasible actions, which is precisely why every available negative can only
   be a no-op. That is the root limitation, not the negative sampler.
+- **Four-variant difficulty ordering settles it** (120 steps, identical seed
+  and init; lower accuracy = harder task, commit b8b3509):
+
+  | cf_kind / depth_bias | mean acc @ steps 80-120 |
+  |---|---|
+  | **premature / uniform** | **.507** (HARDEST) |
+  | all / uniform (default) | .609 |
+  | all / late | .613 (no effect) |
+  | resolved / uniform | .710 (EASIEST) |
+
+  The switch built as a throwaway CONTROL, `cf_kind=premature`, is the hard
+  negative: ~10 points below default, and its curve FLATTENS after step 80
+  (.553 -> .464 -> .437 -> .467) while the others keep climbing. That is
+  exactly the "starts at chance, climbs slowly" signature we were looking
+  for. Mechanism is defensible: a premature intent references variables
+  whose parents are not yet resolved, so separating it requires tracking
+  what is currently known — plausibly the judgement planning needs.
+  The depth-bias lever does nothing measurable (.613 vs .609); it only moved
+  mean insertion depth 2.05 -> 2.28 because most rollouts are short (horizon
+  drawn from [1,2,4,8] and a rollout stops once solved). Not worth an arm.
+  CAVEAT: 120 steps, one seed, within-run swing ~+/-.10 at fixed step. The
+  premature-vs-resolved gap (.507 vs .710) is comfortably outside that; the
+  all-vs-late difference is NOT resolvable.
+  PLAN IF DEPTH STILL FAILS AT EPOCH 2/4: launch one arm with
+  `cf_kind=premature, depth_bias=uniform`. Drop `resolved`, drop the depth
+  bias. If that is still not enough, go to the rollout-policy change.
