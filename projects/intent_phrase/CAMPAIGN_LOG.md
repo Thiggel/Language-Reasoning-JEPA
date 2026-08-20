@@ -1305,3 +1305,61 @@ failure mode).
   leaving recall at 1.0. Today's fixes address both, so re-running
   `codebook_ground` on a current checkpoint is the cheap first test and is
   to be done BEFORE building any density model.
+
+## 2026-08-20 (night) — interface audit: I WAS WRONG; the BUDGET was the artefact
+
+Full report: `research/reports/intent_phrase/2026-08-20-interface-difficulty/`
+(mirrored to the paper repo). Checkpoint `flat-lminit-ecf16-s0/model/best.pt`
+(epoch 2), copied before reading. 200 ID val episodes.
+
+**Two of my premises from the entry above are FALSE. Corrections:**
+1. "Every catalogue action is in the solution sketch — no wrong actions, only
+   wrong orderings" is **WRONG**. Catalogue mean 11.7 vs solution length mean
+   6.18 → **40.3% of catalogue actions are off-path**, and random's own
+   executed `distractor_rate` is .35. The interface DOES test action
+   selection. My error: I equated `p.sketch` membership with being on the
+   solution path; it is not.
+2. "Illegal picks are masked permanently, so guessing is enumeration" is
+   **WRONG as stated**. The mask is cleared on every SUCCESSFUL step
+   (`attempted = set(env.resolved)`), so it is sampling-without-replacement
+   only within a run of consecutive invalid picks.
+3. Also: `distractor_prob`/`max_distractors` CANNOT be the difficulty lever.
+   They are consumed only in `FaithfulDataset.__getitem__` to push the
+   TRAINING trace off-path; they never touch the generator, the catalogue or
+   evaluation (`plan_flat.py` hardcodes 0.0 for eval). The distractor sweep I
+   asked for would have produced six identical rows.
+   My remaining premises (small catalogue, env computes outcomes, success =
+   query resolved, 4x budget) all check out.
+
+**The real artefact is the STEP BUDGET.** Difficulty settings barely move
+random (.46-.59 at cap 4 across every generator setting tried; larger
+problems are EASIER — useless fraction .403 -> .206 in the OOD band, which
+also kills the "OOD is harder" claim). The budget moves random from .565 to
+.000. Since no policy reads its budget, one cap-4 run scores every smaller
+cap exactly from `solved_at`.
+
+`full_catalogue`, ID, 200 episodes, depth 1:
+
+| cap_mult | model | random | first-feasible | gap |
+|---|---|---|---|---|
+| 1.0 | .740 | .000 | .000 | **+.740** |
+| 1.25 | .855 | .010 | .015 | **+.845** |
+| 1.5 | .895 | .035 | .030 | +.860 |
+| 4.0 (what we have been reporting) | .995 | .595 | .430 | +.400 |
+
+**THE FEARED NEGATIVE DID NOT HAPPEN — the opposite did.** Tightening the
+budget costs the planner .995 -> .740 while costing random .595 -> .000, so
+the gap roughly DOUBLES. A harder distribution (`nec_range [3,5]`, useless
+fraction .547) costs the model almost nothing (.850 at cap 1.25 vs .895).
+
+**DECISION: keep ID + `full_catalogue`; change `--cap-mult` 4.0 -> 1.25, with
+1.0 as a strict column.** Depth-1 headroom: .855 at 1.25, .740 at 1.0 — so
+run the depth comparison at cap 1.0.
+`scripts/plan_flat.py` gained `--nec-lo/--nec-hi`.
+
+**Must relabel or drop:** every `feasible_menu` number (random .975 /
+first-feasible .990 at cap 4; still .545 at cap 1.5); the .94-1.00 depth-1
+`full_catalogue` headlines (real, but the margin over guessing was
+UNDERSTATED ~2x and the ceiling made "depth helps" unmeasurable); "OOD is
+harder" (it lowers the useless fraction); and any "random is at chance"
+phrasing.
