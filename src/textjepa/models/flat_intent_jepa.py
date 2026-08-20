@@ -75,11 +75,15 @@ class FlatIntentJEPA(nn.Module):
         energy_cf_feasibility_rank: bool = True,
         energy_cf_scope: str = "all",  # all | invalid_only
         energy_prefix_rank: bool = False,
+        energy_imagined_rank: bool = False,
+        energy_imagined_depth: int = 4,
+        energy_imagined_kcat: int = 8,
         energy_prefix_cf_kind: str = "all",     # all | premature | resolved
         energy_prefix_depth_bias: str = "uniform",  # uniform | late
         value_detach: bool = False,
         teacher_chunk: int = 96,
         lm_loss_on: str = "all_solution",
+        lm_detach_state: bool = False,
         latent_rollout_ks: tuple[int, ...] = (),
     ):
         super().__init__()
@@ -97,6 +101,9 @@ class FlatIntentJEPA(nn.Module):
         self.predictor_kind = predictor_kind
         self.energy_cf_feasibility_rank = bool(energy_cf_feasibility_rank)
         self.energy_prefix_rank = bool(energy_prefix_rank)
+        self.energy_imagined_rank = bool(energy_imagined_rank)
+        self.energy_imagined_depth = int(energy_imagined_depth)
+        self.energy_imagined_kcat = int(energy_imagined_kcat)
         if energy_prefix_cf_kind not in {"all", "premature", "resolved"}:
             raise ValueError(
                 f"unknown energy_prefix_cf_kind: {energy_prefix_cf_kind}"
@@ -111,6 +118,7 @@ class FlatIntentJEPA(nn.Module):
         self.value_detach = bool(value_detach)
         self.teacher_chunk = int(teacher_chunk)
         self.lm_loss_on = lm_loss_on
+        self.lm_detach_state = bool(lm_detach_state)
         self.latent_rollout_ks = tuple(sorted({int(k) for k in latent_rollout_ks}))
         if self.latent_rollout_ks and min(self.latent_rollout_ks) < 1:
             raise ValueError("latent_rollout_ks must be >= 1")
@@ -126,7 +134,7 @@ class FlatIntentJEPA(nn.Module):
         self.encoder = DecoderLM(
             vocab_size=vocab_size, pad_id=pad_id, d_model=d_model,
             n_layers=n_layers, n_heads=n_heads, ff_mult=ff_mult,
-            max_len=max_len,
+            max_len=max_len, untie_head=self.lm_detach_state,
         )
         if init_from_lm:
             ckpt = torch.load(init_from_lm, map_location="cpu", weights_only=False)
@@ -289,7 +297,15 @@ class FlatIntentJEPA(nn.Module):
         extras: dict = {}
         # intent prior / LM head over the main stream only
         Lm = int(batch["main_len"].max().item())
-        extras["lm_logits"] = self.encoder.head(H[:, :Lm])
+        h_lm = H[:, :Lm]
+        if self.lm_detach_state:
+            # Stop-gradient: the proposal head still learns to write intent
+            # phrases, but ``intent_prior_lm`` can no longer pull the encoder
+            # toward retaining surface detail.  The head is untied in this
+            # mode (see DecoderLM.untie_head), so the CE term reaches NO
+            # encoder parameter at all -- not even the token embedding.
+            h_lm = h_lm.detach()
+        extras["lm_logits"] = self.encoder.head(h_lm)
         extras["lm_mask"] = batch["lm_mask"][:, :Lm]
         extras["lm_tokens"] = tokens[:, :Lm]
         if self.observed_action_decoder is not None:
@@ -310,9 +326,110 @@ class FlatIntentJEPA(nn.Module):
             action_emb_tgt=None, preds=preds, rollout=preds, op_logits=None,
             emb_pred=None, value_pred=None, step_mask=step_mask, extras=extras,
         )
+        if self.energy_imagined_rank and "action_cat" in batch:
+            self._imagined_energy_rank(out, batch, cat_vecs, s0)
         if "ga_cand_cat" in batch and (batch["ga_t"] >= 0).any():
             self._geo_rank(batch, out, cat_vecs, s_all, s_all_t)
         return out
+
+    # ------------------------------------- energy ranking on imagined states
+    def _imagined_energy_rank(self, out, batch, cat_vecs, s0) -> None:
+        """Train the Energy head on the DISTRIBUTION DEEP SEARCH QUERIES.
+
+        From every real prefix state s_t, the predictor is rolled h steps
+        (h = 1..energy_imagined_depth-1) under the OBSERVED actions
+        a_t..a_{t+h-1}, exactly like planning lookahead (``imagine``; no
+        re-encoding).  At each imagined state s_hat the observed continuation
+        a_{t+h} is contrasted with ``energy_imagined_kcat`` catalogue actions
+        sampled uniformly from the problem's own action catalogue (the
+        planner's proposal set), excluding the observed one.  Both are pushed
+        one further predictor step and scored with
+        E(s_t, predictor(s_hat, a), s_0, h+1) -- the identical call the
+        planner makes at depth h.  Loss (``EnergyImaginedRank``): the
+        continuation that actually occurred must have lower energy.
+
+        Self-supervised: the label is which continuation occurred; no
+        symbolic state or feasibility bit is read.  Depth h=0 (the real
+        anchor state) is intentionally excluded -- it is covered by
+        ``energy_cf_feasibility_rank`` / ``geo_horizon_rank``.
+        """
+        if self.predictor_kind != "mlp":
+            raise NotImplementedError(
+                "energy_imagined_rank currently supports predictor_kind=mlp"
+            )
+        prev_states, actions = out.prev_states, out.actions
+        step_mask = out.step_mask
+        B, T, D = prev_states.shape
+        device = prev_states.device
+        kmax = self.energy_imagined_depth
+        if kmax < 2:
+            return
+        Hh = kmax - 1  # imagined depths 1..Hh get a contrast
+        pad_a = F.pad(actions, (0, 0, 0, kmax))
+        pad_m = F.pad(step_mask.float(), (0, kmax))
+        pad_c = F.pad(batch["action_cat"], (0, kmax))
+        codes = torch.stack([pad_a[:, j:j + T] for j in range(kmax)], 2)
+        steps = torch.stack([pad_m[:, j:j + T] for j in range(kmax)], 2)
+        obs_cat = torch.stack([pad_c[:, j:j + T] for j in range(kmax)], 2)
+        valid = steps.cumprod(-1) > 0  # [B, T, kmax]
+        N = B * T
+        _, prefixes = self.imagine(
+            prev_states.reshape(N, D),
+            codes.reshape(N, kmax, D),
+            steps.reshape(N, kmax) > 0,
+            return_prefixes=True,
+        )  # [N, kmax+1, D]
+        pre = prefixes[:, 1:1 + Hh]                      # imagined s_hat at depth h
+        exec_codes = codes.reshape(N, kmax, D)[:, 1:]    # observed a_{t+h}
+        exec_cat = obs_cat.reshape(N, kmax)[:, 1:]       # its catalogue index
+        # depth h contrast needs: a_{t+h} exists AND the whole imagined chain
+        # up to it exists (valid[..., h] covers both, cumulative).
+        valid_h = valid.reshape(N, kmax)[:, 1:]          # [N, Hh]
+        if not bool(valid_h.any()):
+            return
+        # ---- sample catalogue counterfactuals (uniform over real entries) --
+        K = self.energy_imagined_kcat
+        cat_mask = batch["cat_mask"]                     # [B, Ncat]
+        probs = cat_mask.float().clamp(min=0.0) + 1e-9
+        samp = torch.multinomial(
+            probs, T * Hh * K, replacement=True
+        ).reshape(B, T, Hh, K)
+        samp_valid = cat_mask.gather(
+            1, samp.reshape(B, -1)
+        ).reshape(B, T, Hh, K)
+        samp = samp.reshape(N, Hh, K)
+        alt_valid = (
+            samp_valid.reshape(N, Hh, K)
+            & valid_h.unsqueeze(-1)
+            & (samp != exec_cat.unsqueeze(-1))
+        )
+        b_of_n = torch.arange(B, device=device).repeat_interleave(T)
+        alt_codes = cat_vecs[b_of_n.view(N, 1, 1), samp]  # [N, Hh, K, D]
+        # ---- one predictor step from the imagined state, then the Energy ---
+        exec_next = self.predictor(pre, exec_codes)                    # [N, Hh, D]
+        alt_next = self.predictor(
+            pre.unsqueeze(2).expand(-1, -1, K, -1), alt_codes
+        )                                                              # [N, Hh, K, D]
+        root_h = prev_states.reshape(N, D).unsqueeze(1).expand(-1, Hh, -1)
+        init_h = s0.repeat_interleave(T, 0).unsqueeze(1).expand(-1, Hh, -1)
+        horizons = torch.arange(
+            2, Hh + 2, device=device, dtype=root_h.dtype
+        ).view(1, Hh)  # depth h imagined => endpoint is h+1 steps from root
+        e_root, e_init = root_h, init_h
+        e_exec_in, e_alt_in = exec_next, alt_next
+        if self.value_detach:
+            e_root, e_init = root_h.detach(), init_h.detach()
+            e_exec_in, e_alt_in = exec_next.detach(), alt_next.detach()
+        e_exec = self.energy(e_root, e_exec_in, e_init, horizons)      # [N, Hh]
+        e_alt = self.energy(
+            e_root.unsqueeze(2).expand(-1, -1, K, -1), e_alt_in,
+            e_init.unsqueeze(2).expand(-1, -1, K, -1),
+            horizons.unsqueeze(-1),
+        )                                                              # [N, Hh, K]
+        keep = alt_valid.any(-1).reshape(-1)
+        out.extras["energy_img_exec"] = e_exec.reshape(-1)[keep]
+        out.extras["energy_img_alt"] = e_alt.reshape(-1, K)[keep]
+        out.extras["energy_img_valid"] = alt_valid.reshape(-1, K)[keep]
 
     # -------------------------------------------------- multi-step rollout
     def _latent_rollout(self, extras, prev_states, actions, step_states_t,

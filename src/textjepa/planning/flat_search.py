@@ -1031,7 +1031,8 @@ def summarize(episodes: list[dict]) -> dict:
     if any(e.get("answer_correct") is not None for e in episodes):
         out["success_answer_rate"] = sum(bool(e.get("answer_correct")) for e in episodes) / n
         vs = sum(e.get("valid_steps", 0) for e in episodes)
-        out["outcome_value_match_rate"] = sum(e.get("value_match", 0) for e in episodes) / max(vs, 1)
+        if vs:
+            out["outcome_value_match_rate"] = sum(e.get("value_match", 0) for e in episodes) / vs
     return out
 
 
