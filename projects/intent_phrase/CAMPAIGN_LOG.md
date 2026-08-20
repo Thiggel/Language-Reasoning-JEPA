@@ -1179,3 +1179,78 @@ should be the one reported, with lr3e-4 as the second seed.
   survive. Relaunched on gruenau12:2 from snapshot ee0b9b2, training cleanly
   with `latent_rollout_pred=0.0000` as expected. Old dir kept as
   `-crashed-fd`.
+
+## 2026-08-20 (night) — owner questions forced four corrections
+
+**1. `full_catalogue` is not merely saturated, it is TRIVIAL.** Measured on
+iGSM-med with the real config (`distractor_prob: 0.0`), 60 val problems:
+
+| quantity | value |
+|---|---|
+| catalogue size | 12.3 (min 3, max 24) |
+| of which EVER legal (in the sketch) | 12.3 — **all of them** |
+| necessary steps | 5.9 |
+| legal at the first step | 3.4 |
+| attempt budget (4x necessary) | 23.5 |
+
+Plus, from the code: illegal picks are masked permanently, so guessing is
+sampling WITHOUT replacement (enumeration, not gambling);
+`FaithfulEnv.step` calls `p2.to_sol`, i.e. **the environment computes every
+outcome** — a policy never generates arithmetic; and `solved` just means the
+query variable got resolved, with no answer string produced.
+So random at .52-.59 is not "a correct chain of thought by luck": it is
+"shuffle ~12 pieces, discard the ones that do not fit yet, retry, and let the
+environment do the maths". THE INTERFACE MEASURES ORDERING, NOT SELECTION.
+This retroactively explains feasible_menu .98 and the depth-1 ceiling.
+ACTION: round `<date>-interface-difficulty` launched — turn distractors on,
+enlarge the catalogue, find the level at which random stops being
+competitive, and re-measure OUR model there. Expect our number to fall too;
+the decisive quantity is the GAP to random.
+
+**2. Averaged-prefix energy is not theoretically free** (owner question).
+At fixed rollout depth mean = sum/H with H constant, so there is no length
+artefact between candidates and the shared root cancels. Summing a
+distance-like energy along a path = area under the distance curve, which
+favours fast descent AND a close endpoint — the intended direction.
+BUT: potential-based shaping telescopes to (endpoint - start), so ANY
+aggregation that differs from endpoint-only is by construction NOT
+potential-based and CAN change which plan is optimal. Specifically it
+penalises NECESSARY DETOURS. Safe in iGSM (progress is monotone); NOT safe
+in Blocksworld/ALFWorld, where un-stacking is required. Flag before porting.
+CLEANER ALTERNATIVE to test: an illegal action is a no-op, so a wasted step
+is one where the state does not move — penalise near-zero state movement
+directly. Targets waste without assuming monotone progress and needs no
+symbolic label. Add as a third `--aggregate` option.
+
+**3. The probes measure the text, not the training** (owner was right that
+.912 from an untrained net makes no sense). From
+`data/probe_battery_stylized.json`: the quoted numbers are **AUC of a
+nonlinear probe**, not accuracy; majority-class floor is **.779**
+(`resolved`) and **.613** (`feasible`); in accuracy the arms are .833
+trained / .819 untrained / .779 floor. The existing `mlp_shuffled_state`
+control — destroy the state, keep the candidate action — still scores
+**.720 AUC**, so most signal is in the ACTION not the state. And
+"random-init" is NOT random numbers: it is an untrained deterministic
+encoder of real text, and probes recover a lot from a random projection.
+ACTION: round `<date>-probes-v2` — report every probe against BOTH floors
+(majority-class and action-only), add state-only targets the action cannot
+leak, balance classes, keep all controls.
+
+**4. "Rollouts wander randomly" meant TRAINING DATA, not planning** (owner
+confusion my fault). `src/textjepa/data/faithful.py` picks
+`nxt = feasible[rng.randrange(len(feasible))]` when generating rollouts.
+Eval-time planning does use energy-guided beam search (as of today's fix).
+NOTE: `geo_rank_policy: greedy` and `ga_latent_beam` rollout policies exist
+in the OLD discourse model (`_greedy_geo_labels`, `_latent_beam_geo_labels`)
+but were NEVER ported to `flat_intent_jepa.py` — grep count 0. So the
+current architecture only ever sees random rollouts. Making training
+rollouts follow the solution is re-enabling a dropped mechanism, not a new
+one.
+
+**Launched in response** (4 rounds): detached proposal head (stop-gradient
+so `intent_prior_lm` keeps the proposer without suppressing the geometry,
+watcher reports BOTH planning and geometry in the same run); interface
+difficulty; probes v2; learned action prior via flow matching (agent
+instructed to first report why the codebook proposer failed — recall 1.0,
+planning .027 — and to say so if a flow prior cannot address the real
+failure mode).
