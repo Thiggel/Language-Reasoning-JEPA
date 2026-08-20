@@ -1125,3 +1125,38 @@ should be the one reported, with lr3e-4 as the second seed.
   — the one lever the four-variant comparison supported. 0.08 s/problem,
   `energy_prefix_acc` .49 at step 40. Its watcher evaluates depths 1 and 4 on
   both interfaces, ID **and OOD**, every 2 epochs (depth 8 excluded, ~18 h).
+
+- **Final epoch-2 depth pair, ID `full_catalogue`, roll124 arm, 100 eps:**
+
+  | depth | success | invalid rate | mean steps |
+  |---|---|---|---|
+  | 1 | 1.000 | .037 | 7.2 |
+  | 4 | .930 | .286 | 11.5 |
+
+  Depth 4 below depth 1 — but depth 1 is at 1.000, so this column CANNOT
+  show a gain. Uninformative for the claim, not evidence against it.
+  THE DIAGNOSTIC IS THE REAL CONTENT: at depth 4 the EXECUTED invalid-action
+  rate is .286 vs .037 at depth 1, and the planner takes 11.5 steps vs 7.2.
+  So training `energy_prefix_acc` reached ~.99 while deeper search still
+  executes wasteful steps at eval time. Training accuracy is saturating
+  WITHOUT transferring to search — exactly the failure mode flagged when the
+  accuracy hit .99, and the reason the `premature` (harder-negative) arm is
+  the right next move rather than more weight on the current term.
+
+- **FOUND THE UNSATURATED COLUMN: OOD `prior_propose`.**
+
+  | interface / distribution | depth-1 success |
+  |---|---|
+  | full_catalogue, ID | .980 / 1.000 |
+  | full_catalogue, OOD | .960 / .940 |
+  | prior_propose, ID | .880 |
+  | **prior_propose, OOD** | **.350 / .425** (40/100 eps, partial) |
+
+  Depth 1 at ~.35-.43 leaves ample headroom, and `prior_propose` is the
+  interface-matched, menu-free one reviewers take most seriously.
+  PLAN: re-centre the depth claim on OOD `prior_propose`; `full_catalogue`
+  (ID and OOD) becomes a reference column alongside `feasible_menu`.
+  CHECK BEFORE COMMITTING: confirm the .35-.43 is bad SCORING and not the
+  planner running out of proposals — the 08-20 diagnosis traced much of the
+  earlier prior_propose collapse to exhausted proposal masks. Need
+  `proposal_recall` and `no_proposal_episode_rate` at this difficulty.
