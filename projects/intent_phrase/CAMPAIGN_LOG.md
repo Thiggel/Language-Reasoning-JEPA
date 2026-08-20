@@ -966,3 +966,31 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   accumulation to the same effective batch of 16 -> 17.2GB. Relevant because
   the RTX 6000s are the cards most often actually free, and this is part of
   why they are ~8x slower for us.
+
+- **The "resolved" negative is NOT harder — it is easier. Hypothesis dead.**
+  120-step trajectories, identical seed and init:
+
+  | step | all/uniform (default) | resolved/uniform (predicted harder) |
+  |---|---|---|
+  | 0 | .305 | .322 |
+  | 60 | .492 | .493 |
+  | 80 | .700 | .831 |
+  | 120 | .632 | .678 |
+
+  It climbs FASTER, ahead from step 70 on. In hindsight obvious: the state
+  already contains that fact, so the imagined next state barely moves — a
+  very distinctive geometric signature. A premature intent at least produces
+  a novel-looking sentence.
+  HONEST READING: the curves are noisy (default swings .700 -> .556 -> .632
+  over 40 steps) and the .678 vs .632 gap at step 120 sits inside that band.
+  The defensible statement is "no evidence `resolved` is harder, and the
+  trend runs the other way". Do NOT launch it as the harder-negative arm.
+  Variant #2 (late depth bias) also looks weak: mean insertion depth moves
+  only 2.08 -> 2.35 because most rollouts are short. Wave 2 (`all/late` to
+  isolate the depth lever, `premature/uniform` as the control) is running.
+  RECOMMENDATION IF DEPTH STILL FAILS AT EPOCH 2/4: skip both variants and
+  change the rollout policy — make rollouts follow the REMAINING TRUE
+  SOLUTION TRACE instead of sampling feasible actions uniformly at random.
+  Today the "continuation that occurred" at depth >= 1 is a coin flip among
+  feasible actions, which is precisely why every available negative can only
+  be a no-op. That is the root limitation, not the negative sampler.
