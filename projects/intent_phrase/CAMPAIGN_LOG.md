@@ -194,6 +194,11 @@ solution-following rollout policy; latent planning + detached decoder.
 - Planning cap1.0 d1: code_prior .115 (OOD .000, d4 .030) vs prior_propose .840 on SAME ckpt (best prior_propose yet; answer criterion within .01). codebook_ground collapsed to .010 on roll124 (was .890 on ecf16) -> codebook quality is strongly checkpoint-dependent.
 - Wide-K test launched (K=32/64 proposals + --prior-samples 64, gruenau1): does breadth + energy selection recover recall? Results: runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/eval-wideK/.
 
+
+### 2026-08-21 wide-K + ecf16 retrain (main session)
+- Wide-K (K=64 + prior-samples 64): true_next recall .715, planning d1 cap1.0 .215 (vs .115 at K=16) -> breadth helps but saturates; prior ranking is the ceiling.
+- Launched ecf16-retrain (gruenau1:0): decoder + K=64 prior retrained on ecf16 ckpt (codebook_ground .890 geometry) then bench + d1 planning; results in runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/ecf16-retrain/.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
