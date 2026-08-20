@@ -1079,3 +1079,26 @@ should be the one reported, with lr3e-4 as the second seed.
       (same status feasible_menu already has).
   Recommendation: (c). Note this is the SAME trap as feasible_menu being
   degenerate — a near-ceiling column cannot carry a comparative claim.
+- **CORRECTION to the looped-LM entry above.** That table came from the
+  worse-converged twin. The better one, `looped-med-lr1e3-s0` (COMPLETED, 30
+  epochs, val_loss .2287 vs .3008), is much stronger and is the row to
+  report:
+
+  | K loops | success | invalid | unparseable | tok-pos/ep |
+  |---|---|---|---|---|
+  | 1 | .000 | .877 | .399 | 1215 |
+  | 2 | .020 | .575 | .161 | 6004 |
+  | 4 | .545 | .097 | .011 | 83854 |
+  | 8 | **.730** | .050 | .004 | 216718 |
+  | 16 | .720 | .053 | .006 | 414389 |
+
+  So looping IS an effective test-time-compute strategy (.000 -> .730), not
+  the weak one .180 suggested. My "loses badly" framing was premature —
+  drawn from the worse seed before the better one finished.
+  What stands: looping SATURATES HARD (K=8 -> 16 buys nothing for 2x the
+  compute — a clean result in itself), and it still does not beat plain
+  depth: .730 at 217k tok-pos vs the fixed 12-layer LM's .81 at 29k greedy,
+  i.e. ~7.5x the compute for less accuracy, with ~7x fewer params.
+  Against the JEPA planner at depth 1 (.94 at 9.6k tok-pos): better accuracy
+  at ~1/23 the compute.
+  Report lr1e-3 as the headline looped row and lr3e-4 as the second seed.
