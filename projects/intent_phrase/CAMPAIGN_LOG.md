@@ -1254,3 +1254,54 @@ difficulty; probes v2; learned action prior via flow matching (agent
 instructed to first report why the codebook proposer failed — recall 1.0,
 planning .027 — and to say so if a flow prior cannot address the real
 failure mode).
+
+- **Provenance confirmed: we ARE on the official iGSM implementation.**
+  `src/textjepa/data/faithful.py` is a thin adapter over
+  `facebookresearch/iGSM` (MIT), vendored at `third_party/iGSM`. Problems,
+  prompt text, question, solution steps and answers all come from their
+  `IdGen`; our additions are interface-only (planning interface + batch
+  schema). Re-verified today: `scripts/validate_faithful.py 30` reports
+  **official-checker pass 30/30, answer consistency 30/30**. The paper's
+  headline environment is their generator, not a reimplementation.
+
+- **Owner challenge to `mean_prefix`, and it is probably right.** Since every
+  candidate sequence is rolled to the SAME depth, a wasted first step buys
+  one FEWER real step of progress, so the plan should end further from the
+  goal and ENDPOINT scoring ought to punish it unaided. The apparent
+  endpoint-blindness was plausibly an artefact of the RANDOM TAILS — a
+  wasteful root could draw lucky continuations while a clean root drew junk
+  — which fix #1 (energy-guided beam expansion) already removed. The two
+  changes were never separated.
+  ROUND LAUNCHED to settle it: the 2x2 {random tails, energy beam} x
+  {endpoint, mean_prefix} at depths 1 and 4, both interfaces, 200 episodes.
+  If endpoint no longer loses once expansion is energy-guided, REVERT the
+  default to `endpoint` and record that the averaging was unnecessary.
+  Also adding a third option `movement`: penalise steps whose imagined state
+  barely moves (an illegal action is a no-op, so waste is directly visible
+  geometrically) — no goal-distance assumption, so unlike averaging it does
+  not penalise necessary detours, which matters for Blocksworld/ALFWorld.
+  FRAMING (owner): step-efficiency should be ONE result, not the lens on
+  every experiment — nobody evaluates chain-of-thought on how fast it got
+  there. Success rate is the primary metric; "solves in fewer steps" is a
+  separate figure. Adopt this in the paper.
+  COROLLARY once distractors are on: the dominant failure becomes picking a
+  USELESS action, not wasting a step, so a length penalty should matter even
+  less. Another reason to expect `endpoint` to be sufficient.
+
+- **Gap in our diagnostics (owner):** we report the energy head's LEGALITY
+  separation by imagined depth (d0 .818, d1 .940, d2 .910, d3 .864, d4 .838,
+  d6 .791, d8 .734) but legality is not GOODNESS. Added: measure whether,
+  among actions that are all legal, lower energy actually means the action
+  ADVANCES the solution, at each imagined depth. Environment used only to
+  LABEL the diagnostic (evaluation-only symbolic state, labelled as such);
+  never a model input. This says whether the energy head can guide deep
+  search at all, independently of how we aggregate.
+
+- **Codebook proposer promoted to a first-class thread (owner):** simpler
+  than a learned density and therefore more defensible. Historically recall
+  1.0 with planning .027 — but the 08-20 diagnosis found menu-free episodes
+  die by EXHAUSTING PROPOSALS and giving up, and separately that the old
+  energy head was anti-feasible. Both would sink codebook planning while
+  leaving recall at 1.0. Today's fixes address both, so re-running
+  `codebook_ground` on a current checkpoint is the cheap first test and is
+  to be done BEFORE building any density model.
