@@ -1663,3 +1663,62 @@ set-readout negative.
 - Incidental fix: `scripts/analysis/adapters.py` had a pre-existing
   IndentationError (an uncommitted `lm_detach_state` insert at the wrong
   level) that made the whole analysis package unimportable. Fixed.
+
+## 2026-08-20 (night) — owner questions: four corrections and the OOD mechanism
+
+**1. COMPARABILITY PROBLEM, must be fixed before the paper.** `success`
+means two DIFFERENT things in our two headline tables. In the planner
+interfaces the model never writes anything — it SELECTS from an enumerated
+list and the environment writes the sentence and does the arithmetic;
+success = the query variable got defined; there is no answer string and no
+end-of-sequence decision. In the LM baseline the model must WRITE every
+phrase. That is why random scores .59 in one and ~.00 in the other, and the
+owner is right that a generating random policy could never emit
+"Answer: X" and stop. A budget change does not fix this.
+FIX: report BOTH families on ANSWER CORRECTNESS with the model producing the
+outcome — the code already supports it (`gen_outcome=model`,
+`success_answer_rate`; `plan_lm.py:170` requires `answer_correct is True or
+outcome_source == "env"`). Under that criterion random genuinely is 0.
+Report the budget curve rather than arguing for one cap.
+
+**2. Why OOD is EASIER — measured** (120 problems each, distractors off):
+
+| band | catalogue | necessary | **useless frac** | budget@4x |
+|---|---|---|---|---|
+| ID (op 3-15) | 11.1 | 5.74 | **.407** | 23.0 |
+| OOD (op 16-21) | 16.4 | 12.51 | **.181** | 50.0 |
+
+Bigger problems have more quantities but the solution uses a much LARGER
+SHARE of them: catalogue +48%, necessary +118%. So traps fall from 41% to
+18% — per decision the big problem is EASIER — and the budget scales with
+length too (23 -> 50). Longer chains do compound error over 12.5 steps vs
+5.74, but the two effects roughly cancel: random .59 -> .52, model .98 -> .96.
+**"Longer" is NOT "harder" here.** To make OOD genuinely harder, raise the
+TRAP FRACTION: keep the solution long AND enlarge the graph around it
+(problem size is controlled separately from solution length; the interface
+audit already hit useless_frac .547 by constraining necessary relative to
+catalogue). Test that as the new OOD band.
+
+**3. CORRECTION to my own recommendation: `prior_propose` IS a
+no-menu-at-all model and it is our strongest one.** It writes the phrase
+token by token from prompt+history; `_propose` grounds by EXACT TEXT MATCH
+against `env.fp.params` (all parameters, not feasible ones), which is only
+a text->object lookup for execution — the same grading the LM baseline gets.
+It never sees which actions are legal or even which exist. It scores **.620
+ID at cap 1.25 vs random .010**, and its top-4 contains a progress-making
+action for **96%** of states. So the ordering is: generative proposer >
+codebook (weaker AND needs the list) > flow (weaker still at matched cost).
+I was wrong to lump the generative head in with the two that failed; the
+defensible menu-free claim is stronger than I said.
+
+**4. The sampling collapse, precisely.** 16 samples at temperature 1.3
+decode to only ~1.6 DISTINCT valid actions per state because the model's
+next-phrase distribution is very peaked — sampling repeatedly returns the
+same one or two phrases, and oversampling to 64 yields more copies, not more
+variety. Reranking cannot help because the variety is destroyed BEFORE any
+selection rule sees the candidates. The lever is a higher sampling
+temperature plus a learned density used as a FILTER (not as a proposer) —
+which is the one role the flow model is genuinely suited to.
+
+**5. Beam width, for the record:** `max_expand=64` beams kept, `branch=4`
+continuations each. Coverage is wide; the failure is in scoring, not search.
