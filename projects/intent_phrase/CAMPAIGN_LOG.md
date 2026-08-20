@@ -1798,3 +1798,69 @@ compounding is no longer cancelled by the lower trap fraction.
 FRACTION/MULTIPLE of the number of legal actions, so bigger problems get
 proportionally MORE traps instead of fewer (measured today: useless fraction
 falls .407 -> .181 from ID to OOD). Fold into the interface work.
+
+## 2026-08-20 (night) — the "oracle scored 1.0 before" memory is a PROTOCOL CONFLATION
+
+Exhaustive search of the archive, all dated reports, HANDOFF/RESULTS, 85
+`latent_planner_oracle_goal/*/success` rows on disk, and the paper mirror.
+
+**Oracle-goal-distance planning was NEVER ~1.0.** Every stylized number:
+
+| protocol | D1 | D2 | D4 |
+|---|---|---|---|
+| latent oracle-goal, NON-privileged (`2026-08-04-intent-oracle-distance-depth-controls-v1`) | **.106** | .456 | .534 |
+| latent oracle-goal + candidate-privileged symbolic FUTURE feasible menu | .168 | .542 | **.756** (best ever) |
+| latent oracle-goal, geometry-only (`2026-08-03` rq3, 3 LRs) | .125-.190 strict | | |
+| latent oracle-goal (`2026-08-05` mechanism, 4 seeds) | .160-.210 strict | | |
+
+**The 1.0s in those same JSON files are DIFFERENT ROWS:**
+- `/oracle/success = 1.0` is **ExpertReplayPolicy**
+  (`observed_action_search.py:353`) — 1.0 by construction, printed next to
+  `random_policy .068` / `first_feasible .254` as the bounds pair.
+- `latent_planner_symbolic_distance` D1 = **1.0** is **exact symbolic graph
+  distance on exact environment states** (`search.py:288-293` refuses to run
+  without `simulator=symbolic`). Not latent at all — AND IT ALSO COLLAPSES:
+  1.0 -> .534 (D2) -> **.144 (D4)**.
+
+So **today's .860 at depth 1 is the BEST latent-oracle-distance depth-1
+number this project has ever recorded** — .106-.21 stylized. There is no
+regression. And the depth collapse is OLD and reproducible: it is present in
+stylized under an EXACT SYMBOLIC metric on EXACT states (1.0 -> .144), which
+independently supports today's conclusion that the problem is not drift and
+not search coverage.
+Historic stylized ~.91 numbers do exist (RESULTS.md finding 11,
+`disc_rank_k2` .91 strict / .985 slack-2) but that is a THIRD protocol: the
+learned ranking energy over the CURRENT FEASIBLE MENU.
+`RESULTS.md:168` gives the honest contemporaneous figure: oracle-goal
+planning **.655**; `RESULTS.md:47-60` has raw goal-distance planning at
+.150-.425 @optimal, noting it "fails on the unregularized space".
+
+**TWO FALSE SENTENCES WERE LIVE IN THE PAPER MIRROR — now corrected**
+(`2026-08-06-competitor-energy-baselines/REPORT.md:44,90,155` and
+`2026-08-07-negative-results-appendix/REPORT.md:396` claimed an "oracle-goal
+ceiling 1.000" / "100% success"). A correction note is inserted at the top of
+both, the false phrases are marked inline, and both are re-mirrored to
+`/vol/home-vol2/ml/laitenbf/TextJEPA-paper/reports/` and committed in both
+repos. These would have reached a reviewer.
+
+**The probe memory is also wrong, and the defect reproduces on stylized.**
+`2026-08-11-state-readout-controls` reported resolvedness MLP acc .939 /
+AUC .982 with a majority floor .781 and a shuffled-state control — i.e. it
+had majority-class and shuffled-state floors but **no action-only, no
+step-index, and no untrained-encoder control**. And both its targets were
+per-(state, candidate) BINARY questions, never the set-valued "which
+variables are resolved" question the memory attributes to them. Probes-v2
+re-ran the set readout ON STYLIZED: `resolved_set` best margin **-.035**
+against a step-index floor of .753; `frontier_set` best **+.010**. So the
+floor result is not a faithful-domain artefact — it reproduces on stylized,
+on the old 256-d encoders, trained and untrained. Nothing to regress from.
+
+**Undertraining is contradicted, rank it last.** The old stylized headline
+used DiscourseJEPA at **7.27M params**, d_state 256, **30,000 problems**,
+10 epochs (~300k presentations, ~9,375 updates) — a 12x SMALLER model on
+LESS data — and still only reached .106-.21 at depth 1. Today: 90.80M
+encoder, ~100k problems/epoch, .860 at depth 1. The gap runs the other way.
+
+**One genuine stylized->faithful loss does exist** and is already recorded:
+cycle-consistency feasibility is stylized-only (AUC .85 stylized vs .48 =
+chance on faithful). That is real — it is just not the loss remembered.
