@@ -1020,3 +1020,30 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   PLAN IF DEPTH STILL FAILS AT EPOCH 2/4: launch one arm with
   `cf_kind=premature, depth_bias=uniform`. Drop `resolved`, drop the depth
   bias. If that is still not enough, go to the rollout-policy change.
+
+## 2026-08-20 — real looped-LM baseline: looping saturates, and loses
+
+`looped-med-lr3e4-s0` COMPLETED (30 epochs, val_loss .3008). 200 episodes,
+iGSM-med ID, same free-generation protocol, REAL `eval_loops` (not the dead
+`looped_reread` substitute):
+
+| K loops | success | invalid | unparseable | tok-pos/ep |
+|---|---|---|---|---|
+| 1 | .000 | 1.000 | .920 | 1255 |
+| 2 | .000 | .692 | .197 | 4285 |
+| 4 | .115 | .341 | .025 | 26205 |
+| 8 | **.180** | .276 | .024 | 69360 |
+| 16 | .170 | .279 | .020 | 140233 |
+
+1. **Looping buys real accuracy and then saturates**: 1 -> 8 loops goes
+   .000 -> .180, and K=16 gives nothing back for 2x the compute.
+2. **It loses badly to the fixed-depth LM**: same lr, the ordinary 12-layer
+   model reaches .81 free-gen at 29k tok-pos greedy. The looped model at its
+   best is both worse AND ~2.4x more expensive.
+3. FAIR CAVEAT to state in the paper: the looped model has 12.83M params vs
+   90.80M — ~7x fewer. That was the deliberate design choice so extra loops
+   could not be confused with extra capacity. The honest reading is
+   "looping is not a substitute for depth here", not "looping is worthless".
+PENDING before this goes in the paper: the better-converged twin
+`looped-med-lr1e3-s0` (val .2287 vs .3008) is on its final epoch; its curve
+should be the one reported, with lr3e-4 as the second seed.
