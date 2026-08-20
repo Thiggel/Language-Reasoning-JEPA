@@ -923,3 +923,40 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   Epoch-0 rows (step-500 sanity checkpoint, NOT evidence): prior_propose
   d1/d4 = .62/.40, .61/.46, .60/.45; full_catalogue d1 .76 where backfilled.
   Depth still hurts at this stage, as expected this early.
+
+- **Epoch-2 depth-1 numbers (first non-sanity row):** `ecf16-prefix4-s0`
+  full_catalogue d1 **.980** (energy AUC .949/.984); `ecf16-prefix4-roll124-s0`
+  d1 **1.000** (.921/.982). The mature ecf16 baseline reaches .965 at d1, so
+  the prefix term costs nothing at depth 1 and the rollout arm has already
+  saturated it. Depth 4 still running — THAT is the number that decides the
+  question. Epoch-0 sanity row had prior_propose .62->.40 and .61->.46.
+
+- **Harder negatives built (commit 9d5dc3b), NOT launched** — no genuinely
+  free GPU (the `gruenau-gpus` helper reported gruenau11:3 FREE but direct
+  inspection showed 13.5GB held at 1% util by a foreign job; only Turing
+  RTX 6000s are actually free and bf16 is ~8x slower there).
+  **CORRECTION to my own proposal.** I suggested inserting an intent that is
+  feasible but not the one taken. That is NOT a clean label here: rollout
+  continuations are drawn UNIFORMLY AT RANDOM from `feasible_actions()`, so
+  at depth >= 1 a feasible-not-taken action is statistically indistinguishable
+  from the taken one — neither is better, the sampler just picked one.
+  Training to rank the taken one lower would be fitting a coin flip and would
+  drive the term back to 50%. Not built, correctly.
+  What was built instead: `rollout_counterfactual_k` already draws half its
+  negatives from ALREADY-RESOLVED variables — not literally legal (resolved
+  variables are excluded from `feasible_actions`, so they no-op too) but
+  *legal-looking*: the intent re-derives a fact the state already has, so it
+  reads as a sensible sentence. Labelled "legal-looking but pointless", not
+  "legal but useless", to avoid overclaiming.
+  THE PRINCIPLED ROUTE, noted for later: make the rollout follow the
+  REMAINING TRUE SOLUTION TRACE instead of random feasible actions. Then the
+  continuation that occurred is the actual solution and feasible alternatives
+  at each depth are genuinely off-path — the depth-0 anchor contrast extended
+  to depth >= 1. That is a rollout-policy change in the dataset, not a
+  sampler tweak.
+  Switches, both defaulting to current behaviour: `cf_kind: all|premature|
+  resolved` and `depth_bias: uniform|late` (mean insertion depth 2.079 ->
+  2.349). Smoke: all five variants start at chance (.403-.427), all
+  length-matched (asserted), grads reach encoder/predictor/energy head, and
+  the dataset change is purely additive — every pre-existing collated tensor
+  is bit-identical to snapshot c8115c9 on the same seed.
