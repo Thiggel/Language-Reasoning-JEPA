@@ -3,6 +3,8 @@
 # modulus 23, 6-12 variables).  Same model/losses/recipe as configs/flat_jepa.yaml;
 # only the data section differs.  Encoder is trained from scratch: no stylized
 # token LM exists to initialise from (the trained LMs are faithful-vocabulary).
+# warm start from a full flat-JEPA checkpoint (student+teacher+heads); null = off
+init_from_ckpt: null
 run_name: flat_jepa_stylized
 seed: 0
 device: cuda:0
@@ -27,6 +29,9 @@ data:
   invalid_counterfactual_unresolved_only: true
   invalid_counterfactual_resolved_k: 4
   rollout_counterfactual_k: 4
+  # rollout policy: probability a rollout step follows the reference
+  # solution instead of a uniformly random feasible action (0 = historical)
+  rollout_solution_prob: 0.0
 
 model:
   d_model: 768
@@ -67,7 +72,15 @@ objective:
   # cf_kind: all (current) | premature (easy control) | resolved (hard: legal-looking but pointless)
   # depth_bias: uniform | late (bias the wasted step toward the end of the path)
   energy_prefix_rank: {weight: 0.0, aggregate: mean_prefix, cf_kind: all, depth_bias: uniform}
-  intent_prior_lm: {weight: 1.0}
+  # energy ranking ON IMAGINED STATES: roll the predictor h steps under the
+  # observed actions, then rank the observed continuation below sampled
+  # catalogue counterfactuals at each imagined depth (opt-in; 0 = off).
+  # depth: max rollout depth (contrasts at imagined depths 1..depth-1);
+  # kcat: sampled catalogue counterfactuals per imagined state.
+  energy_imagined_rank: {weight: 0.0, depth: 4, kcat: 8}
+  # detach_state: train the proposal head on a stop-gradient state (and with an
+  # UNTIED output matrix), so this CE term reaches no encoder parameter at all.
+  intent_prior_lm: {weight: 1.0, detach_state: false}
 
 train:
   batch_size: 16
