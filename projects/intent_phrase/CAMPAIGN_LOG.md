@@ -1722,3 +1722,79 @@ which is the one role the flow model is genuinely suited to.
 
 **5. Beam width, for the record:** `max_expand=64` beams kept, `branch=4`
 continuations each. Coverage is wide; the failure is in scoring, not search.
+
+## 2026-08-20 (night) — owner: target architecture is latent planning + detached decoder
+
+**Model size, measured** (`FlatIntentJEPA` at `configs/flat_jepa.yaml`):
+
+| module | params | note |
+|---|---|---|
+| encoder | **90.80M** | 768 wide, 12 layers, 12 heads |
+| teacher | 90.80M | EMA copy, not gradient-trained |
+| predictor | 16.52M | |
+| observed_action_decoder | 12.66M | |
+| horizon_energy_head | 3.55M | |
+| total | 214.33M | distinct trained ~123.5M |
+
+**The encoder is exactly GPT2-small shaped and exactly the size of the LM
+baseline (90.87M)** — it is literally initialised from it. So the headline
+comparison is like-for-like; we are not testing a smaller model against
+GPT2-small. Record this in the paper.
+
+**`--scorer oracle_distance` IS NOT AN ORACLE** (owner challenged the depth
+collapse). `_goal_vector` completes the problem to build the TRUE solved
+state, then ENCODES it with our own model and ranks by L2 in the LEARNED
+LATENT SPACE. Right destination, broken ruler — and probes-v2 showed the
+representation cannot report WHICH variables are resolved (set readout at
+floor), only roughly how many. So that row measures the REPRESENTATION, not
+an upper bound on search. We have never measured the real upper bound.
+LAUNCHED: true symbolic oracle (remaining-necessary-steps computed from a
+cloned env; evaluation-only diagnostic, labelled) x true executed endpoints,
+depths 1/2/4/8, plus beam widths 8/64/256 to rule out narrowness with
+evidence. If it scores ~1.0 the search machinery is fine and 100% of the
+loss is representation + energy — a clean publishable decomposition. If not,
+the search procedure itself loses episodes and that is a bug hunt.
+
+**Owner memory to verify**: earlier STYLIZED experiments allegedly had
+oracle-distance planning at ~1.0 AND probes showing the state truly encodes
+variables and relations. Search launched across the archive, all dated
+reports, HANDOFF/RESULTS, run JSONs and the paper mirror. Instructed to
+guard against the likeliest false-memory source: old rows labelled
+`privileged_expert_replay_over_symbolic_current_feasible_menu` /
+`shared_symbolic_current_feasible_menu` — a 1.0 under EXPERT REPLAY or a
+SYMBOLIC MENU is a different protocol. Also to report the training amounts,
+since undertraining is a live hypothesis (today's cells are epoch 1-3 of 10).
+
+**OWNER DECISION — target architecture**: learned prior over action
+representations (codebook preferred, flow as fallback) + rollout ENTIRELY IN
+LATENT SPACE + energy selection + a DETACHED DECODER rendering planned
+action vectors to text only at execution. Model never sees a menu, a list or
+a feasibility signal. Detachment justified by today's measurement: the
+generative term is the biggest suppressor of the state geometry (.797 vs
+.938), so a decoder that backprops into the encoder pays that cost and a
+detached one does not.
+THE GATE, and the round is instructed to report it first and stop if it
+fails: can a decoder CONDITIONED ON THE PROBLEM CONTEXT exactly reconstruct
+held-out action phrases? Every previous catalogue-free proposer died at
+DECODING (parse rates .00/.03/.13; `codebook_free` re-measured today at
+exactly .000). Structural cause: compute phrases name THREE variables,
+0/1367 held-out phrases seen in 4000 problems, and the action embedding
+carries the ROLE but not the NAMES. The innovation to test is letting the
+decoder COPY names from the prompt (pointer / cross-attention over prompt
+tokens) so the action vector need only specify role and slots.
+Also flagged to that round: the same weight-tying trap the detach work hit —
+if the decoder shares any parameter with the encoder, detaching activations
+alone leaves the larger gradient flowing through the shared weights.
+
+**OWNER DECISION — success criterion**: the model must EMIT THE ANSWER
+EXPLICITLY. This is the only definition under which the planner and the LM
+are doing the same task, and under it a random policy is 0 at any budget.
+Adopt `success_answer_rate` with `gen_outcome=model` as the headline metric
+for BOTH families. Expected side effect: OOD becomes genuinely harder,
+because all ~12.5 steps must be right and the answer produced, so
+compounding is no longer cancelled by the lower trap fraction.
+
+**OWNER DECISION — trap count should scale**: define distractors as a
+FRACTION/MULTIPLE of the number of legal actions, so bigger problems get
+proportionally MORE traps instead of fewer (measured today: useless fraction
+falls .407 -> .181 from ID to OOD). Fold into the interface work.
