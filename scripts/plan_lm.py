@@ -151,8 +151,16 @@ def free_generation_eval(
                         )
                         n_value_match += int(ok)
                         if env.solved:
+                            # 2026-08-21 criterion: the emitted answer
+                            # sentence must also TERMINATE by the model's own
+                            # choice (a '.'-final token), not by exhausting
+                            # the outcome token cap.
+                            terminated = bool(gen_out) and vocab.id_to_token[
+                                gen_out[-1]
+                            ].endswith(".")
                             answer_correct = bool(
-                                ok and last_int(vocab.decode(gen_out))
+                                ok and terminated
+                                and last_int(vocab.decode(gen_out))
                                 == problem.answer
                             )
                 else:
