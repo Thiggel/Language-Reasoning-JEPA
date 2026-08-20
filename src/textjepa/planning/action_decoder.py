@@ -122,7 +122,13 @@ class ContextActionDecoder(nn.Module):
     def _logits(self, action: Tensor, context: Tensor, context_mask: Tensor,
                 inputs: Tensor) -> Tensor:
         T = inputs.shape[1]
-        h = inputs + self.pos[:, :T]
+        # The action code conditions EVERY decoder position, not only the
+        # cross-attention memory slot: as one of ~400 memory tokens it would
+        # be drowned out by the context and the ablation would be vacuous.
+        cond = self.act_proj(action).unsqueeze(1)
+        if not self.use_action:
+            cond = torch.zeros_like(cond)
+        h = inputs + self.pos[:, :T] + cond
         mask = torch.triu(
             torch.ones(T, T, dtype=torch.bool, device=inputs.device),
             diagonal=1,
