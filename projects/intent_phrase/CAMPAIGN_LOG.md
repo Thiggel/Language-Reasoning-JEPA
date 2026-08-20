@@ -960,3 +960,9 @@ GPUs were Turing-class where bf16 is ~8x slower (0.78 vs 0.10 s/problem, a
   length-matched (asserted), grads reach encoder/predictor/energy head, and
   the dataset change is purely additive — every pre-existing collated tensor
   is bit-identical to snapshot c8115c9 on the same seed.
+- OPERATIONAL NOTE: on Turing-class cards (Quadro RTX 6000, 24GB) bf16
+  autocast falls back to fp32, so the flat-JEPA recipe (~19GB on an L40)
+  OOMs there. Workaround: `train.microbatch_size=4` with gradient
+  accumulation to the same effective batch of 16 -> 17.2GB. Relevant because
+  the RTX 6000s are the cards most often actually free, and this is part of
+  why they are ~8x slower for us.
