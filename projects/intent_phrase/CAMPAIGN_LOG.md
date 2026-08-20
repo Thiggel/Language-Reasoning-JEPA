@@ -1102,3 +1102,26 @@ should be the one reported, with lr3e-4 as the second seed.
   Against the JEPA planner at depth 1 (.94 at 9.6k tok-pos): better accuracy
   at ~1/23 the compute.
   Report lr1e-3 as the headline looped row and lr3e-4 as the second seed.
+
+- **OOD does NOT solve the ceiling problem on `full_catalogue`.** Epoch-2
+  checkpoints, 100 episodes, OOD = 16-21 ops vs 3-15 in training:
+
+  | cell | ID d1 | OOD d1 | OOD invalid | OOD random |
+  |---|---|---|---|---|
+  | prefix4 | .980 | **.960** | .269 | .520 |
+  | prefix4-roll124 | 1.000 | **.940** | .279 | .520 |
+
+  The distribution shift costs depth 1 only 2-6 points. At .94-.96 there is
+  still no headroom for depth to show a gain, so OOD is NOT a strong enough
+  lever on this interface. Note random scores .520 here: `full_catalogue` is
+  intrinsically forgiving, which is why it saturates.
+  DECISION: `full_catalogue` joins `feasible_menu` as a SATURATED REFERENCE
+  COLUMN, in-distribution and OOD alike. It cannot carry the depth claim.
+  The depth claim rests on `prior_propose` (menu-free), where depth 1 was
+  .620 at epoch 0 — far from ceiling. OOD `prior_propose` is running.
+
+- `ecf16-prefix4-premature-s0` launched on gruenau9:2 (A100 80GB, verified
+  empty) from snapshot 9d5dc3b with `cf_kind=premature, depth_bias=uniform`
+  — the one lever the four-variant comparison supported. 0.08 s/problem,
+  `energy_prefix_acc` .49 at step 40. Its watcher evaluates depths 1 and 4 on
+  both interfaces, ID **and OOD**, every 2 epochs (depth 8 excluded, ~18 h).
