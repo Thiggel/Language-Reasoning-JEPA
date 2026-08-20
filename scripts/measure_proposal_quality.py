@@ -125,6 +125,7 @@ def _code_prior(planner, history, env, k, stats, prior, decoder, temperature,
     string.
     """
     state, ctx = planner._state(history)
+    ctx = ctx[-planner.code_prior_max_ctx:]
     gen = None
     if sample:
         gen = torch.Generator(device=state.device)
@@ -234,6 +235,7 @@ def main() -> None:
                     help="scripts/train_action_decoder.py artifact")
     ap.add_argument("--code-prior-temperature", type=float, default=1.0)
     ap.add_argument("--code-prior-sample", action="store_true")
+    ap.add_argument("--code-prior-max-ctx", type=int, default=768)
     ap.add_argument("--n-problems", type=int, default=100)
     ap.add_argument("--split-seed", type=int, default=2)
     ap.add_argument("--ks", type=int, nargs="+", default=[4, 8, 16])
@@ -287,6 +289,7 @@ def main() -> None:
     planner.action_decoder = action_decoder
     planner.code_prior_temperature = args.code_prior_temperature
     planner.code_prior_sample = bool(args.code_prior_sample)
+    planner.code_prior_max_ctx = args.code_prior_max_ctx
     if any(a in CODEBOOK_ARMS for a in args.arms):
         train_ds, _ = build_eval_dataset(cfg, vocab, args.codebook_problems,
                                          cfg["data"]["train_seed"])

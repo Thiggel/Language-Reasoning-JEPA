@@ -101,9 +101,11 @@ class FlatPlanner:
                  prior_top_k: int = 0, max_len: int = 4096,
                  flow_prior=None, flow_oversample: int = 64,
                  flow_temperature: float = 1.0, flow_diversity: bool = True,
+                 answer_emission: bool = True,
                  code_prior=None, action_decoder=None,
                  code_prior_temperature: float = 1.0,
                  code_prior_sample: bool = False,
+                 code_prior_max_ctx: int = 768,
                  generate_outcomes: bool | None = None,
                  counter: ComputeCounter | None = None):
         if candidate_interface not in CANDIDATE_INTERFACES:
@@ -174,6 +176,7 @@ class FlatPlanner:
         self.action_decoder = action_decoder
         self.code_prior_temperature = float(code_prior_temperature)
         self.code_prior_sample = bool(code_prior_sample)
+        self.code_prior_max_ctx = int(code_prior_max_ctx)
         if candidate_interface == "code_prior" and (
                 code_prior is None or action_decoder is None):
             raise RuntimeError(
@@ -186,6 +189,17 @@ class FlatPlanner:
         self.generate_outcomes = (
             candidate_interface == "autonomous" if generate_outcomes is None
             else bool(generate_outcomes))
+        # ANSWER-EMISSION SUCCESS CRITERION (2026-08-21, owner decision).
+        # Success under it requires that the MODEL explicitly emits the final
+        # answer: at the step that resolves the query, the token head greedily
+        # generates the outcome sentence itself (definition + arithmetic) from
+        # the history WITHOUT the environment's rendering of it, the sentence
+        # must terminate by the model's own choice (a '.'-final token within
+        # the token cap, not cap exhaustion), and its final integer must equal
+        # the true answer.  The environment's own outcome sentence is still
+        # appended afterwards (unless generate_outcomes), so the planning
+        # context is unchanged and env-side success is reported alongside.
+        self.answer_emission = bool(answer_emission)
         if candidate_interface in {"ldad_cycle", "flow_decode"} and model.observed_action_decoder is None:
             raise RuntimeError(f"{candidate_interface} needs observed_action_ldad=true")
 
@@ -316,6 +330,10 @@ class FlatPlanner:
         model wrote.
         """
         state, ctx = self._state(history)
+        # The decoder was trained on the LAST ``code_prior_max_ctx`` tokens of
+        # the history (``train_action_decoder.py --max-ctx``); feeding it a
+        # longer memory at planning time would be a train/test mismatch.
+        ctx = ctx[-self.code_prior_max_ctx:]
         k = self.prior_samples
         gen = None
         if self.code_prior_sample:
@@ -728,6 +746,22 @@ class FlatPlanner:
             energy = self._score(seqs, state, s0, code_of, hist_s, hist_a, d, **kw)
         return seqs, energy
 
+    # ----------------------------------------------- answer emission
+    @torch.no_grad()
+    def emit_answer(self, history: list[int]) -> dict:
+        """Greedily generate the final outcome sentence from ``history``
+        (which ends with the solving intent phrase; the environment's
+        rendering of the outcome is NOT in the context).  Returns the emitted
+        text, its final integer, and whether generation terminated by the
+        model's own choice (sentence-final '.' token) rather than by the
+        token cap."""
+        gen_out = self._decode_sentence(history, self.outcome_token_cap,
+                                        greedy=True, gen=None)
+        terminated = bool(gen_out) and self.vocab.id_to_token[gen_out[-1]].endswith(".")
+        text = self.vocab.decode(gen_out).strip()
+        return {"tokens": gen_out, "text": text,
+                "value": _last_int(text), "terminated": terminated}
+
     # ------------------------------------------------------------ episode
     @torch.no_grad()
     def plan_episode(self, fp, seed: int = 0) -> dict:
@@ -749,6 +783,9 @@ class FlatPlanner:
         autonomous = self.generate_outcomes
         value_match = n_valid = 0
         answer_correct = None
+        answer_emitted = None
+        gen_terminated = None
+        no_proposal = False
         hist_s: list[torch.Tensor] = []
         hist_a: list[torch.Tensor] = []
         while not env.solved and steps < cap:
@@ -767,6 +804,7 @@ class FlatPlanner:
                 roots = self._roots(env, history, attempted, rng, stats)
             if not roots:
                 stats["n_no_proposal"] += 1
+                no_proposal = True
                 break
             catalogue = [q for q in fp.action_order]
             pool_actions = (roots if self.candidate_interface in PROPOSER_INTERFACES
@@ -852,15 +890,29 @@ class FlatPlanner:
                 true_outcome = env.step(q)
                 attempted = set(env.resolved)
             if autonomous:
-                gen_out = self._decode_sentence(history, self.outcome_token_cap, greedy=True, gen=None)
+                emitted = self.emit_answer(history)
+                gen_out = emitted["tokens"]
                 history = history + gen_out
                 if not invalid:
                     n_valid += 1
-                    ok = _last_int(self.vocab.decode(gen_out)) == _last_int(true_outcome)
+                    ok = emitted["value"] == _last_int(true_outcome)
                     value_match += int(ok)
                     if env.solved:
-                        answer_correct = bool(ok and _last_int(self.vocab.decode(gen_out)) == fp.answer)
+                        answer_emitted = emitted["value"]
+                        gen_terminated = emitted["terminated"]
+                        answer_correct = bool(
+                            ok and emitted["terminated"]
+                            and emitted["value"] == fp.answer)
             else:
+                if self.answer_emission and env.solved and not invalid:
+                    # ANSWER-EMISSION CRITERION: the model itself writes the
+                    # final outcome sentence (the environment's rendering is
+                    # not yet in the context) and must state the answer.
+                    emitted = self.emit_answer(history)
+                    answer_emitted = emitted["value"]
+                    gen_terminated = emitted["terminated"]
+                    answer_correct = bool(
+                        emitted["terminated"] and emitted["value"] == fp.answer)
                 history = history + self.vocab.encode(true_outcome)
             st, _ = self._state(history)
             hist_s.append(st)
@@ -869,17 +921,34 @@ class FlatPlanner:
             "n_distractor": n_distr, "n_invalid": n_invalid,
             "solved_at": steps if env.solved else None,
             "answer_correct": answer_correct,
+            "answer_emitted": answer_emitted,
+            "gen_terminated": gen_terminated,
+            "success_answer": bool(env.solved) and answer_correct is True,
+            "stopped_by": ("solved" if env.solved
+                           else "no_proposal" if no_proposal else "budget"),
             "value_match": value_match, "valid_steps": n_valid,
             "stats": stats,
         }
 
 
 def _reference_episode(fp, policy: str, menu_free: bool, cap_mult: float,
-                       rng: random.Random, mask: bool = True) -> dict:
+                       rng: random.Random, mask: bool = True,
+                       emitter: "FlatPlanner | None" = None) -> dict:
+    """Reference action policy (random / first).  When ``emitter`` is given
+    the SAME answer-emission criterion is applied: at the solving step the
+    model's token head must generate the final outcome sentence (the
+    environment's rendering is not yet in the token context) and state the
+    correct answer -- so the reference rows are graded exactly like the
+    planner rather than by the env-side solved bit alone."""
     env = fp.make_env()
     cap = int(math.ceil(cap_mult * len(fp.necessary)))
     steps = n_d = n_inv = 0
     attempted: set = set()
+    answer_correct = None
+    answer_emitted = None
+    gen_terminated = None
+    history = ([t for s in fp.prompt_sentences for t in emitter.vocab.encode(s)]
+               if emitter is not None else None)
     while not env.solved and steps < cap:
         if menu_free:
             cands = [q for q in fp.action_order if not (mask and q in attempted)]
@@ -889,17 +958,32 @@ def _reference_episode(fp, policy: str, menu_free: bool, cap_mult: float,
             break
         q = rng.choice(cands) if policy == "random" else cands[0]
         n_d += int(q not in fp.necessary)
+        if history is not None:
+            history = history + emitter.vocab.encode(env.action_text(q))
         if menu_free:
             invalid = q not in env.feasible_actions()
             n_inv += int(invalid)
-            env.step_or_invalid(q)
+            outcome = env.step_or_invalid(q)
             attempted = attempted | {q} if invalid else set(env.resolved)
         else:
-            env.step(q)
+            invalid = False
+            outcome = env.step(q)
+        if history is not None:
+            if env.solved and not invalid:
+                emitted = emitter.emit_answer(history)
+                answer_emitted = emitted["value"]
+                gen_terminated = emitted["terminated"]
+                answer_correct = bool(
+                    emitted["terminated"] and emitted["value"] == fp.answer)
+            history = history + emitter.vocab.encode(outcome)
         steps += 1
     return {"solved": bool(env.solved), "steps": steps, "necessary": len(fp.necessary),
             "n_distractor": n_d, "n_invalid": n_inv,
-            "solved_at": steps if env.solved else None}
+            "solved_at": steps if env.solved else None,
+            "answer_correct": answer_correct,
+            "answer_emitted": answer_emitted,
+            "gen_terminated": gen_terminated,
+            "success_answer": bool(env.solved) and answer_correct is True}
 
 
 def summarize(episodes: list[dict]) -> dict:
@@ -943,6 +1027,7 @@ def summarize(episodes: list[dict]) -> dict:
         slots = sum(s["imagined_slots"] for s in st)
         if slots:
             out["imagined_invalid_rate"] = sum(s["imagined_invalid"] for s in st) / slots
+    out["success_env"] = out["success"]
     if any(e.get("answer_correct") is not None for e in episodes):
         out["success_answer_rate"] = sum(bool(e.get("answer_correct")) for e in episodes) / n
         vs = sum(e.get("valid_steps", 0) for e in episodes)
@@ -958,8 +1043,9 @@ def evaluate_flat_planning(planner: FlatPlanner, dataset, n_episodes: int,
     for i in range(n_episodes):
         fp, _ = dataset.problem(i)
         planned.append(planner.plan_episode(fp, seed=seed + i))
-        rand_.append(_reference_episode(fp, "random", menu_free, planner.cap_mult, rng, planner.mask_attempted))
-        first_.append(_reference_episode(fp, "first", menu_free, planner.cap_mult, rng, planner.mask_attempted))
+        emitter = planner if planner.answer_emission else None
+        rand_.append(_reference_episode(fp, "random", menu_free, planner.cap_mult, rng, planner.mask_attempted, emitter=emitter))
+        first_.append(_reference_episode(fp, "first", menu_free, planner.cap_mult, rng, planner.mask_attempted, emitter=emitter))
         if log_every and (i + 1) % log_every == 0:
             sr = sum(e["solved"] for e in planned) / len(planned)
             print(f"[ep {i+1}/{n_episodes}] success={sr:.3f}", flush=True)

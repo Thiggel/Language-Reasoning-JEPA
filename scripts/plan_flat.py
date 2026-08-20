@@ -55,17 +55,6 @@ def build_eval_dataset(cfg, vocab, size: int, seed: int, max_op=None,
     generator's own knobs, with ``op_lo/op_hi`` reinterpreted as the
     necessary-steps range so the same CLI drives both.
     """
-    code_prior = action_decoder = None
-    if args.code_prior is not None or args.action_decoder is not None:
-        if not (args.code_prior and args.action_decoder):
-            raise SystemExit(
-                "--code-prior and --action-decoder must be given together")
-        from textjepa.planning.action_decoder import ContextActionDecoder
-        from textjepa.planning.code_prior import CodePrior
-        code_prior = CodePrior.load(
-            args.code_prior, map_location=device).to(device).eval()
-        action_decoder = ContextActionDecoder.load(
-            args.action_decoder, map_location=device).to(device).eval()
     dc = cfg["data"]
     if dc.get("name", "faithful") == "stylized":
         steps = list(dc["steps_range"])
@@ -166,6 +155,8 @@ def main() -> None:
                     help="path to a trained ContextActionDecoder "
                          "(scripts/train_action_decoder.py)")
     ap.add_argument("--code-prior-temperature", type=float, default=1.0)
+    ap.add_argument("--code-prior-max-ctx", type=int, default=768,
+                    help="must match train_action_decoder.py --max-ctx")
     ap.add_argument("--code-prior-sample", action="store_true",
                     help="sample codes from p(code | state) instead of top-K")
     ap.add_argument("--generate-outcomes", dest="generate_outcomes",
@@ -173,6 +164,14 @@ def main() -> None:
                     help="model writes the outcome sentence (and hence the "
                          "answer) instead of the environment; implied by "
                          "--interface autonomous")
+    ap.add_argument("--no-answer-emission", action="store_true",
+                    help="skip the answer-emission success criterion (2026-08-21): by "
+                         "default, at the solving step the model's token head generates "
+                         "the final outcome sentence itself (before the env's rendering "
+                         "enters the context); success_answer requires that generation "
+                         "terminates by the model's own choice ('.'-final token) AND its "
+                         "final integer equals the true answer.  Applied identically to "
+                         "the random / first-feasible reference rows")
     ap.add_argument("--precision", default="bf16", choices=["bf16", "fp32"])
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -210,9 +209,11 @@ def main() -> None:
         flow_prior=flow_prior, flow_oversample=args.flow_oversample,
         flow_temperature=args.flow_temperature,
         flow_diversity=not args.flow_no_diversity,
+        answer_emission=not args.no_answer_emission,
         code_prior=code_prior, action_decoder=action_decoder,
         code_prior_temperature=args.code_prior_temperature,
         code_prior_sample=args.code_prior_sample,
+        code_prior_max_ctx=args.code_prior_max_ctx,
         generate_outcomes=args.generate_outcomes,
     )
     if args.interface == "codebook_ground":
@@ -246,6 +247,14 @@ def main() -> None:
             else "beam guided by an ORACLE diagnostic scorer/state-source"),
         "caps": caps,
         "oracle_future_actions": False, "budget": "none (runaway cap only)",
+        "answer_emission": not args.no_answer_emission,
+        "success_criterion": (
+            "success_answer: env solved within cap AND the model itself emitted "
+            "the final outcome sentence (greedy decode from history ending in the "
+            "solving intent phrase; env rendering not in context), properly "
+            "terminated ('.'-final token, not token-cap exhaustion), with final "
+            "integer == true answer.  success_env is the old env-side criterion."
+            if not args.no_answer_emission else "success_env only (legacy)"),
         "evidence_label": ("CANDIDATE-PRIVILEGED ORACLE DIAGNOSTIC "
             f"(scorer={args.scorer}, endpoints={args.endpoints}) -- NOT a headline row; "
             if planner.oracle_diagnostic else "") + (
