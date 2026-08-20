@@ -1047,3 +1047,35 @@ iGSM-med ID, same free-generation protocol, REAL `eval_loops` (not the dead
 PENDING before this goes in the paper: the better-converged twin
 `looped-med-lr1e3-s0` (val .2287 vs .3008) is on its final epoch; its curve
 should be the one reported, with lr3e-4 as the second seed.
+
+- **The depth COLLAPSE is gone; depth PARITY is where we are.** Epoch-0
+  backfill complete, epoch-2 depth-4 still running (running means, NOT
+  final):
+
+  | cell | epoch | interface | d1 | d4 |
+  |---|---|---|---|---|
+  | prefix4 | 0 | full_catalogue | .770 | .650 |
+  | prefix4 | 0 | prior_propose | .620 | .400 |
+  | prefix4-roll124 | 0 | prior_propose | .610 | .460 |
+  | prefix4 | 2 | full_catalogue | **.980** | .967 (30/100 eps) |
+  | prefix4-roll124 | 2 | full_catalogue | **1.000** | .860 (50/100 eps) |
+
+  At epoch 0 depth clearly hurt (.770 -> .650, a .12 gap). At epoch 2 depth 4
+  runs in the .86-.97 band against a d1 reference of .98-1.00. So the
+  collapse the whole round was built to fix is gone — but depth 4 is at
+  PARITY, not ABOVE, and "depth helps" is the claim we actually need.
+  Sampling noise is still large (30 and 50 episodes; each episode moves a
+  running mean 2-3 points). No conclusion until both finish.
+
+- **METHODOLOGICAL PROBLEM, decide before epoch 4: depth 1 is at the
+  ceiling.** .980/1.000 on `full_catalogue` leaves no headroom for depth to
+  demonstrate a gain — a deeper search cannot beat a shallow one that
+  already solves everything. Options:
+  (a) rest the depth claim on `prior_propose`, which is far from ceiling
+      (d1 .62 at epoch 0);
+  (b) evaluate on a HARDER distribution — the OOD band, or faithful hard21 —
+      where depth 1 is not saturated;
+  (c) both, with full_catalogue reported as a saturated reference column
+      (same status feasible_menu already has).
+  Recommendation: (c). Note this is the SAME trap as feasible_menu being
+  degenerate — a near-ceiling column cannot carry a comparative claim.
