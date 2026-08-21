@@ -210,6 +210,12 @@ solution-following rollout policy; latent planning + detached decoder.
 - Ladder (all cap1.0 d1, 200 eps, answer-criterion equal): K=16 .115 -> wide-K64 .215 (cap1.25 .345, BEST) -> ecf16-geometry retrain .215 (geometry refuted) -> capacity/epochs flat (~.72 top4) -> K=32 coarse codes top4 .830 BUT decode ambiguity drops true_next to .555 and planning to .080. K-axis is a predictability-vs-ambiguity trade-off with no good point.
 - DIAGNOSIS: MLP prior on pooled state vs token head reading full context (.96 recall). Same gap the decoder ablation exposed (context carries the names). NEXT: context-conditioned code prior (cross-attention over prompt tokens), agent launched.
 
+
+### 2026-08-21 imagined-energy finished; combo launched (main session)
+- imagined-ecf16-ft-s0 COMPLETED: d1 NEW BESTS full .820 / prior .845 cap1.0 (.900/.890 cap1.25) but depth still non-monotone (d2 .525/.570, d4 .285/.440). After-probe: progress AUC .809/.667/.653/.650 vs baseline .84/.70/.62/.61 -> decay flattened, level still ~.65. Cause: its imagined rollouts still stepped RANDOM-feasible, so the term mostly re-learned legality (its own acc .997 notwithstanding).
+- COMBO cell combo-imgsol-s0 launched (gruenau11:3): energy_imagined_rank w8 + rollout_solution_prob 0.5, warm-start ecf16 — the two depth fixes are complementary; this is the decisive depth bet. solp050/solp100 fine-tunes at ep9+ on same host.
+- K=32 planning .080 (worse): codebook K-axis definitively closed.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
