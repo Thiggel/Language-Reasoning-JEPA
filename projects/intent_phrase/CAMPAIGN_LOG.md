@@ -222,6 +222,13 @@ solution-following rollout policy; latent planning + detached decoder.
 - Biggest remaining leak: 39% of decoded proposals fail to parse (decoder trained only on-path). New --offpath-prob in train_action_decoder (commit after 001c3ca): cache walks step onto random feasible actions with prob p; self-supervised.
 - offpath-v1 chain launched (gruenau12:4): offpath 0.3 cache -> retrain decoder + ctx prior -> bench -> d1 plan. Results: runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/offpath-v1/.
 
+
+### 2026-08-21 documentation pass (main session)
+- Three dated reports written and mirrored to the paper repo: research/reports/intent_phrase/2026-08-21-true-oracle-ladder/ (full ladder incl. the four-ruler decomposition table and beam-width control; oracle round 30/31 cells done, lat-true d4/d8 rows partial n=25-60 and labeled), 2026-08-21-imagined-energy/ (root causes A+B, fix-A-alone results, combo decision rule), 2026-08-21-codebook-autonomous/ (gate ablation, six-step planning ladder, coverage decision frame).
+- offpath-v1 status: decoder gate on off-path cache PASSED .997 exact/.995 novel; ctx-prior retrain hit two infra bugs, both fixed+committed (disable fused MHA fast path in train_code_prior.py -- illegal memory access on context batches; batch 16 vs OOM from 4x longer off-path histories); attempt 3 running on gruenau12:4 with bench+plan chained.
+- flat-lminit-frozen-s0 (frozen-encoder ablation) DIED ep1 step 11280 of the pre-fix fd bug; ckpts intact; not yet relaunched (lower priority; needs a free ~22GB GPU; continuation recipe = same as ecf16-cont with encoder_mode frozen).
+- oracle ladder extra finding: even sym-true prior_propose declines .945->.830 with depth (longer committed prefixes between re-plans amplify proposal-dead states) -- proposer effect, not search.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
