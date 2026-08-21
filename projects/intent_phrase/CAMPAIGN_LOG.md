@@ -205,6 +205,11 @@ solution-following rollout policy; latent planning + detached decoder.
 - Prior capacity sweep launched on ecf16 pair cache (K 32/64/128, hidden 512/1024, layers 2/3, ep 8/16): runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/prior-sweep/.
 - Flagship flat-lminit-ecf16-s0 DIED ep3 step 22120 of the PRE-FIX fd bug (launched from pre-fix snapshot); best/last ckpts + most final evals intact; CONTINUATION flat-lminit-ecf16-cont-s0 running on gruenau7:0 from last.pt on fixed code (also the longer-training test).
 
+
+### 2026-08-21 codebook ladder complete; K-axis exhausted (main session)
+- Ladder (all cap1.0 d1, 200 eps, answer-criterion equal): K=16 .115 -> wide-K64 .215 (cap1.25 .345, BEST) -> ecf16-geometry retrain .215 (geometry refuted) -> capacity/epochs flat (~.72 top4) -> K=32 coarse codes top4 .830 BUT decode ambiguity drops true_next to .555 and planning to .080. K-axis is a predictability-vs-ambiguity trade-off with no good point.
+- DIAGNOSIS: MLP prior on pooled state vs token head reading full context (.96 recall). Same gap the decoder ablation exposed (context carries the names). NEXT: context-conditioned code prior (cross-attention over prompt tokens), agent launched.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
