@@ -229,6 +229,11 @@ solution-following rollout policy; latent planning + detached decoder.
 - flat-lminit-frozen-s0 (frozen-encoder ablation) DIED ep1 step 11280 of the pre-fix fd bug; ckpts intact; not yet relaunched (lower priority; needs a free ~22GB GPU; continuation recipe = same as ecf16-cont with encoder_mode frozen).
 - oracle ladder extra finding: even sym-true prior_propose declines .945->.830 with depth (longer committed prefixes between re-plans amplify proposal-dead states) -- proposer effect, not search.
 
+
+### 2026-08-21 offpath result + union round (main session)
+- offpath-v1 COMPLETED: autonomous codebook planning .340 cap1.0 / .480 cap1.25 / .565 cap1.5 (ladder .115->.215->.285->.340); proposal feas recall .961, true_next .779 at K=64. Off-path decoder held its gate (.997).
+- union-prior launched (gruenau12:4): ctx prior trained on UNION of on-path+off-path caches (50589 pairs, off-path val), larger ctx d512/l3, 8 epochs, with the off-path decoder; then bench + d1 plan. Target: recover on-path top4 while keeping off-path gains.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
