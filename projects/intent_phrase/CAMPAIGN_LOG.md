@@ -216,6 +216,12 @@ solution-following rollout policy; latent planning + detached decoder.
 - COMBO cell combo-imgsol-s0 launched (gruenau11:3): energy_imagined_rank w8 + rollout_solution_prob 0.5, warm-start ecf16 — the two depth fixes are complementary; this is the decisive depth bet. solp050/solp100 fine-tunes at ep9+ on same host.
 - K=32 planning .080 (worse): codebook K-axis definitively closed.
 
+
+### 2026-08-21 context prior + off-path round (main session)
+- CONTEXT-CONDITIONED PRIOR (commit 001c3ca) delivered the biggest codebook jump: top4 .720->.850, true_next .717->.766, planning d1 .285 cap1.0 / .395 cap1.25 (ladder .115->.215->.285). Still short of token head .840.
+- Biggest remaining leak: 39% of decoded proposals fail to parse (decoder trained only on-path). New --offpath-prob in train_action_decoder (commit after 001c3ca): cache walks step onto random feasible actions with prob p; self-supervised.
+- offpath-v1 chain launched (gruenau12:4): offpath 0.3 cache -> retrain decoder + ctx prior -> bench -> d1 plan. Results: runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/offpath-v1/.
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
