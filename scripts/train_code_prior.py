@@ -24,6 +24,14 @@ import time
 from pathlib import Path
 
 import torch
+
+# The fused _transformer_encoder_layer_fwd fast path crashes with an illegal
+# memory access on some frozen-encoder context batches (gruenau12, 2026-08-21);
+# the unfused path is correct and only slightly slower.
+try:
+    torch.backends.mha.set_fastpath_enabled(False)
+except AttributeError:
+    pass
 from torch.nn.functional import cross_entropy as nn_ce
 
 from textjepa.planning.code_prior import CodePrior, CodePriorConfig
