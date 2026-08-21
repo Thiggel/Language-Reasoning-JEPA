@@ -199,6 +199,12 @@ solution-following rollout policy; latent planning + detached decoder.
 - Wide-K (K=64 + prior-samples 64): true_next recall .715, planning d1 cap1.0 .215 (vs .115 at K=16) -> breadth helps but saturates; prior ranking is the ceiling.
 - Launched ecf16-retrain (gruenau1:0): decoder + K=64 prior retrained on ecf16 ckpt (codebook_ground .890 geometry) then bench + d1 planning; results in runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/ecf16-retrain/.
 
+
+### 2026-08-21 codebook prior: geometry refuted, capacity sweep (main session)
+- ecf16 retrain: recall .717 K=64 (same as roll124 .715), planning d1 cap1.0 .215 / cap1.25 .345 -> checkpoint geometry is NOT the lever; the prior model itself is (val_top1 .378, overfits). Fronts: architecture PROVEN (.998 gate), prior = the open research gap.
+- Prior capacity sweep launched on ecf16 pair cache (K 32/64/128, hidden 512/1024, layers 2/3, ep 8/16): runs/autonomy/intent_phrase/2026-08-21-code-prior-v1/prior-sweep/.
+- Flagship flat-lminit-ecf16-s0 DIED ep3 step 22120 of the PRE-FIX fd bug (launched from pre-fix snapshot); best/last ckpts + most final evals intact; CONTINUATION flat-lminit-ecf16-cont-s0 running on gruenau7:0 from last.pt on fixed code (also the longer-training test).
+
 ## ARCHIVED: 2026-08-07 .. 2026-08-16 (full text in a dated report)
 
 Everything from those ten days now lives verbatim in
