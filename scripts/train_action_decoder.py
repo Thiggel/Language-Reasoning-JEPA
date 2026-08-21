@@ -49,24 +49,35 @@ ARMS = ("full", "no_action", "no_context", "shuffled_action")
 
 @torch.no_grad()
 def cache_pairs(planner: FlatPlanner, dataset, n_problems: int, vocab,
-                max_phrase: int):
+                max_phrase: int, offpath_prob: float = 0.0, seed: int = 0):
     """(history tokens, action code, phrase tokens) along solution traces.
 
     Identical trace walk to ``train_flow_prior.cache_pairs``.  Context hidden
     states are NOT cached (too large); they are recomputed in batches from the
     cached history token ids, which is exact.
     """
+    # offpath_prob: probability of stepping onto a random feasible action
+    # instead of the reference solution, so the decoder (and prior) see the
+    # off-path states that planning actually visits. The pair label is still
+    # just the action that was taken -- no symbolic supervision.
+    rng = random.Random(seed)
     hist, codes, phrases, texts = [], [], [], []
     for i in range(n_problems):
         fp = dataset.problem(i)[0]
         env = fp.make_env()
         history = [t for s in fp.prompt_sentences for t in vocab.encode(s)]
-        while not env.solved:
+        step_cap = 4 * max(1, len(fp.necessary))
+        steps = 0
+        while not env.solved and steps < step_cap:
+            steps += 1
             feasible = env.feasible_actions()
             todo = [q for q in feasible if q in fp.necessary]
             if not todo:
                 break
-            q = todo[0]
+            if offpath_prob > 0.0 and rng.random() < offpath_prob:
+                q = feasible[rng.randrange(len(feasible))]
+            else:
+                q = todo[0]
             text = env.action_text(q)
             toks = vocab.encode(text)
             if len(toks) + 1 > max_phrase:
@@ -239,6 +250,7 @@ def main() -> None:
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--cache", default=None)
+    ap.add_argument("--offpath-prob", type=float, default=0.0)
     args = ap.parse_args()
 
     seed_everything(args.seed)
@@ -260,9 +272,12 @@ def main() -> None:
         va_ds, prov = build_eval_dataset(cfg, vocab, args.n_val_problems, 2,
                                          op_lo=args.op_lo, op_hi=args.op_hi)
         cache_tr = cache_pairs(planner, tr_ds, args.n_problems, vocab,
-                               args.max_phrase)
+                               args.max_phrase,
+                               offpath_prob=args.offpath_prob, seed=args.seed)
         cache_va = cache_pairs(planner, va_ds, args.n_val_problems, vocab,
-                               args.max_phrase)
+                               args.max_phrase,
+                               offpath_prob=args.offpath_prob,
+                               seed=args.seed + 1)
         print(f"cached {len(cache_tr[0])} train / {len(cache_va[0])} val "
               f"pairs in {time.time()-t0:.0f}s", flush=True)
         if cache_path is not None:
