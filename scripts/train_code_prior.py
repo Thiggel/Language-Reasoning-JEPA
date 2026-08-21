@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 import torch
+from torch.nn.functional import cross_entropy as nn_ce
 
 from textjepa.planning.code_prior import CodePrior, CodePriorConfig
 from textjepa.planning.flat_search import FlatPlanner
@@ -32,7 +33,8 @@ from textjepa.utils import seed_everything
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from plan_flat import build_eval_dataset, load_flat_run  # noqa: E402
-from train_action_decoder import cache_pairs  # noqa: E402
+from train_action_decoder import (cache_pairs, context_hiddens,  # noqa: E402
+                                  pad_batch)
 
 
 @torch.no_grad()
@@ -62,6 +64,16 @@ def main() -> None:
     ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--no-residual", action="store_true")
+    ap.add_argument("--context", action="store_true",
+                    help="context-conditioned prior: cross-attend from the "
+                         "state over the frozen context hidden states "
+                         "(recomputed per batch from the cached history "
+                         "token ids, as the decoder does). Default off = "
+                         "the original pooled-state MLP prior.")
+    ap.add_argument("--ctx-d-model", type=int, default=384)
+    ap.add_argument("--ctx-layers", type=int, default=2)
+    ap.add_argument("--ctx-heads", type=int, default=6)
+    ap.add_argument("--max-ctx", type=int, default=768)
     ap.add_argument("--max-phrase", type=int, default=24)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--seed", type=int, default=0)
@@ -106,7 +118,9 @@ def main() -> None:
 
     prior = CodePrior(CodePriorConfig(
         dim=s_tr.shape[1], n_codes=args.n_codes, hidden=args.hidden,
-        n_layers=args.n_layers, residual=not args.no_residual))
+        n_layers=args.n_layers, residual=not args.no_residual,
+        use_context=args.context, ctx_d_model=args.ctx_d_model,
+        ctx_layers=args.ctx_layers, ctx_heads=args.ctx_heads))
     prior.fit_scaling(a_tr, s_tr)
     prior.init_codebook(a_tr, generator=torch.Generator().manual_seed(args.seed))
     prior = prior.to(device)
@@ -117,6 +131,15 @@ def main() -> None:
     N = len(s_tr)
     rng = random.Random(args.seed)
     log = []
+
+    def ctx_for(hist_all, idx_list):
+        """Frozen context hidden states for a batch, recomputed exactly as
+        the decoder's training does (cached token ids -> model.encode)."""
+        toks, mask, _ = pad_batch(
+            [hist_all[i] for i in idx_list], [[] for _ in idx_list],
+            vocab.pad_id, args.max_ctx, 1, device)
+        return context_hiddens(model, toks, mask), mask
+
     for ep in range(args.epochs):
         prior.train()
         order = list(range(N))
@@ -124,9 +147,15 @@ def main() -> None:
         tot = {"loss": 0.0, "ce": 0.0, "recon": 0.0}
         nb = 0
         for s in range(0, N, args.batch_size):
-            idx = torch.tensor(order[s:s + args.batch_size], device=device)
+            ii = order[s:s + args.batch_size]
+            idx = torch.tensor(ii, device=device)
             prior.ema_update(a_tr[idx])
-            out = prior.loss(s_tr[idx], a_tr[idx])
+            if args.context:
+                ctx, cmask = ctx_for(h_tr, ii)
+                out = prior.loss(s_tr[idx], a_tr[idx], ctx=ctx,
+                                 ctx_mask=cmask)
+            else:
+                out = prior.loss(s_tr[idx], a_tr[idx])
             opt.zero_grad(set_to_none=True)
             out["loss"].backward()
             opt.step()
@@ -136,9 +165,18 @@ def main() -> None:
             nb += 1
         prior.eval()
         with torch.no_grad():
-            v = prior.loss(s_va, a_va)
             idx = prior.quantize(a_va)
-            lg = prior.logits(s_va)
+            if args.context:
+                lgs, ces = [], []
+                for s in range(0, len(s_va), args.batch_size):
+                    ii = list(range(s, min(s + args.batch_size, len(s_va))))
+                    ctx, cmask = ctx_for(h_va, ii)
+                    lgs.append(prior.logits(s_va[ii], ctx, cmask))
+                lg = torch.cat(lgs)
+                v = {"ce": nn_ce(lg, idx)}
+            else:
+                v = prior.loss(s_va, a_va)
+                lg = prior.logits(s_va)
             top1 = float((lg.argmax(-1) == idx).float().mean())
             top4 = float((lg.topk(4, -1).indices == idx.unsqueeze(1))
                          .any(-1).float().mean())
@@ -156,7 +194,8 @@ def main() -> None:
     prior.cpu().save(str(out))
     Path(str(out) + ".json").write_text(json.dumps(
         {"ckpt": args.ckpt, "n_codes": args.n_codes,
-         "residual": not args.no_residual, "history": log,
+         "residual": not args.no_residual, "context": bool(args.context),
+         "history": log,
          "final": log[-1] if log else None}, indent=2))
     print(json.dumps(log[-1] if log else {}))
 

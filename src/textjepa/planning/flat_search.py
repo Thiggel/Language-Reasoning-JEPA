@@ -342,7 +342,8 @@ class FlatPlanner:
         _, vecs = self.code_prior.propose(
             state.float().unsqueeze(0), k,
             temperature=self.code_prior_temperature,
-            sample=self.code_prior_sample, generator=gen)
+            sample=self.code_prior_sample, generator=gen,
+            ctx=ctx.float().unsqueeze(0))
         ctx_rep = ctx.unsqueeze(0).expand(k, -1, -1).float()
         mask = torch.zeros(k, ctx.shape[0], dtype=torch.bool,
                            device=ctx.device)

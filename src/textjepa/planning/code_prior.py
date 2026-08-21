@@ -52,6 +52,15 @@ class CodePriorConfig:
     ema_decay: float = 0.99
     # Weight of the residual head; see ``dequantize``.
     residual: bool = True
+    # Context-conditioned code ranking: cross-attend from the pooled state
+    # (one query) over the frozen encoder's context hidden states, exactly
+    # the pattern that fixed the detached decoder (entity names live in the
+    # prompt, not in the pooled state).  Default off = the original MLP
+    # prior; old checkpoints load unchanged.
+    use_context: bool = False
+    ctx_d_model: int = 384
+    ctx_layers: int = 2
+    ctx_heads: int = 6
 
 
 class CodePrior(nn.Module):
@@ -92,6 +101,23 @@ class CodePrior(nn.Module):
         if self.residual_head is not None:
             nn.init.zeros_(self.residual_head[-1].weight)
             nn.init.zeros_(self.residual_head[-1].bias)
+        # Context branch (see CodePriorConfig.use_context).  Mirrors the
+        # detached decoder: LayerNorm+Linear projections, a small
+        # TransformerDecoder whose single query is the state, memory is the
+        # projected context tokens.
+        if cfg.use_context:
+            dm = cfg.ctx_d_model
+            self.s_proj = nn.Sequential(nn.LayerNorm(d), nn.Linear(d, dm))
+            self.ctx_proj = nn.Sequential(nn.LayerNorm(d), nn.Linear(d, dm))
+            layer = nn.TransformerDecoderLayer(
+                dm, cfg.ctx_heads, dm * 4, dropout=0.0, activation="gelu",
+                batch_first=True, norm_first=True)
+            self.ctx_dec = nn.TransformerDecoder(
+                layer, cfg.ctx_layers, norm=nn.LayerNorm(dm))
+            self.ctx_logit_head = nn.Linear(dm, K)
+        else:
+            self.s_proj = self.ctx_proj = None
+            self.ctx_dec = self.ctx_logit_head = None
 
     # ------------------------------------------------------------ scaling
     @torch.no_grad()
@@ -151,8 +177,26 @@ class CodePrior(nn.Module):
             self.code_sum[live] / self.cluster_size[live].unsqueeze(1))
 
     # -------------------------------------------------------------- prior
-    def logits(self, states: Tensor) -> Tensor:
-        """p(code | state) logits [B, K]."""
+    def logits(self, states: Tensor, ctx: Tensor | None = None,
+               ctx_mask: Tensor | None = None) -> Tensor:
+        """p(code | state[, context]) logits [B, K].
+
+        ``ctx`` [B, L, d] are frozen encoder hidden states over the prompt
+        history, ``ctx_mask`` [B, L] is True at PAD positions.  A
+        non-context prior silently ignores both, so call sites can always
+        pass them.
+        """
+        if self.cfg.use_context:
+            if ctx is None:
+                raise ValueError("this CodePrior is context-conditioned; "
+                                 "pass ctx (and ctx_mask)")
+            if ctx_mask is None:
+                ctx_mask = torch.zeros(ctx.shape[0], ctx.shape[1],
+                                       dtype=torch.bool, device=ctx.device)
+            q = self.s_proj(states).unsqueeze(1)
+            mem = self.ctx_proj(ctx)
+            out = self.ctx_dec(q, mem, memory_key_padding_mask=ctx_mask)
+            return self.ctx_logit_head(out[:, 0])
         return self.logit_head(self.trunk(self._ws(states)))
 
     def dequantize(self, states: Tensor, idx: Tensor) -> Tensor:
@@ -168,10 +212,13 @@ class CodePrior(nn.Module):
             base = base + self.residual_head(h)
         return base * self.a_std + self.a_mean
 
-    def loss(self, states: Tensor, actions: Tensor) -> dict[str, Tensor]:
+    def loss(self, states: Tensor, actions: Tensor,
+             ctx: Tensor | None = None,
+             ctx_mask: Tensor | None = None) -> dict[str, Tensor]:
         """CE on the prior + reconstruction of the observed action vector."""
         idx = self.quantize(actions)
-        ce = nn.functional.cross_entropy(self.logits(states), idx)
+        ce = nn.functional.cross_entropy(self.logits(states, ctx, ctx_mask),
+                                         idx)
         out = {"ce": ce, "loss": ce}
         if self.residual_head is not None:
             rec = nn.functional.mse_loss(
@@ -183,7 +230,9 @@ class CodePrior(nn.Module):
     @torch.no_grad()
     def propose(self, states: Tensor, k: int, temperature: float = 1.0,
                 sample: bool = False,
-                generator: torch.Generator | None = None
+                generator: torch.Generator | None = None,
+                ctx: Tensor | None = None,
+                ctx_mask: Tensor | None = None
                 ) -> tuple[Tensor, Tensor]:
         """Top-``k`` (or sampled) code indices and their action vectors.
 
@@ -191,7 +240,7 @@ class CodePrior(nn.Module):
         distinct BY CONSTRUCTION -- that is the property the generative
         proposer lacks.
         """
-        lg = self.logits(states) / max(temperature, 1e-6)
+        lg = self.logits(states, ctx, ctx_mask) / max(temperature, 1e-6)
         if sample:
             probs = lg.softmax(-1)
             idx = torch.multinomial(probs, k, replacement=False,

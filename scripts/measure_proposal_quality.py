@@ -132,7 +132,7 @@ def _code_prior(planner, history, env, k, stats, prior, decoder, temperature,
         gen.manual_seed(int(rng_seed))
     idx, vecs = prior.propose(state.float().unsqueeze(0), k,
                               temperature=temperature, sample=sample,
-                              generator=gen)
+                              generator=gen, ctx=ctx.float().unsqueeze(0))
     vecs = vecs[0].to(ctx.dtype)
     ctx_rep = ctx.unsqueeze(0).expand(k, -1, -1).float()
     mask = torch.zeros(k, ctx.shape[0], dtype=torch.bool, device=ctx.device)
