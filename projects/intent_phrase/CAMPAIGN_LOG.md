@@ -2426,3 +2426,24 @@ from training_complete.json + eval rc (fixes the false-FAILED labeling flaw):
 - `p16-late` — depth_bias=late (junk step biased deep, targets d4)
 - `p16-resolved` — cf_kind=resolved (harder negatives)
 ETA ~16h/cell; read results tomorrow morning.
+
+## 2026-08-24 (later) — round moved to Alex rtxpro6k; 5th cell added
+
+Grünau round superseded: p16-resolved OOM'd on gruenau1's 22GB RTX 6000
+(needs ~24GB); relaunched on gruenau7 A6000s, then the whole round was
+re-submitted to Alex (`sbatch --partition=rtxpro6k,a100`), where all cells
+started within 30s on one RTX PRO 6000 Blackwell node at 3.06x V100
+throughput (s_per_problem .176 vs .538) -> ETA ~5-6h. All 4 Grünau cells
+killed (state=CANCELLED-superseded-by-alex). Alex staging in
+`~/textjepa-0824` on the HPC home because the atuin group volume is over its
+FILE-COUNT quota (573K/500K files) — needs cleanup. Alex does not share the
+FS; a watcher on gruenau1 pulls each cell's last.pt every ~90 min, evals
+full_catalogue d2/d4 (100 eps) on the freed V100s into `watch_curve.jsonl`,
+and rsyncs everything back to `alex-final/` when the round completes.
+
+NEW 5th cell `p16-rollpred` (`objective.latent_rollout_pred.weight=1.0`,
+ks=[1,2,4]): the predictor currently has ZERO multi-step supervision (only
+1-step latent_pred); prefix rank constrains multi-step imagined states only
+through the energy. Latent drift over deep rollouts is the prime suspect for
+the remaining d2->d4 drop (.632->.169), and this knob is the most direct,
+already-implemented, self-supervised counter.
