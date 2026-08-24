@@ -2447,3 +2447,26 @@ ks=[1,2,4]): the predictor currently has ZERO multi-step supervision (only
 through the energy. Latent drift over deep rollouts is the prime suspect for
 the remaining d2->d4 drop (.632->.169), and this knob is the most direct,
 already-implemented, self-supervised counter.
+
+## 2026-08-24 (evening) — trajectory-diversity find; fresh-data cells launched
+
+Found: the trajectory RNG is seeded per problem index (`{seed}:{index}:t`), so
+every epoch replays the IDENTICAL solution ordering per problem — one ordering
+per problem, ever. Likely explains "train longer hurts" (verbatim replay =
+ordering overfit) and the deep-beam blind spot (valid unobserved orderings
+produce unfamiliar encoded states, since states encode rendered step text).
+Owner decision: no cross-ordering alignment loss for now (feels too symbolic);
+fix via data diversity instead.
+
+Launched on Alex (warm-start prefix16, energy_prefix_rank 16, same protocol as
+prefix-combo round): `p16-freshdata` (data.train_size=1M, train.epochs=1 —
+every trajectory unique, same compute shape as 10x100k) and
+`p16-freshdata-rollpred` (+ latent_rollout_pred.weight=1.0). ~9h train + eval.
+
+Diagnostics so far (all on prefix16 ckpt, eval-only): d4 drop is STATE DRIFT,
+not energy (oracle LN-L1 ruler also fails at d4: .173 vs energy .169; d2 .367
+vs energy .632 — energy BEATS oracle distance at d2); not search budget
+(expand-256 at d4: .143); proposer collapse not fixable by sampling wider/hotter
+(recall stuck ~.89-.90, env worse). MPC replans every step (D2 dead). Running:
+A1 exposure-bias knockout (--endpoints true + oracle ln_l1, d1-d8), D1
+aggregation sweep (endpoint/movement), oracle-d8, expand256-d8.
