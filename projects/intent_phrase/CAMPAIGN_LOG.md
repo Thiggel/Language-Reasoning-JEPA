@@ -2470,3 +2470,20 @@ vs energy .632 — energy BEATS oracle distance at d2); not search budget
 (recall stuck ~.89-.90, env worse). MPC replans every step (D2 dead). Running:
 A1 exposure-bias knockout (--endpoints true + oracle ln_l1, d1-d8), D1
 aggregation sweep (endpoint/movement), oracle-d8, expand256-d8.
+
+## 2026-08-24 (night) — ROUND VERDICT: exposure bias confirmed with a causal fingerprint
+
+prefix-combo final (full_catalogue exact-necessary, 200 eps, d1/d2/d4/d8):
+control .813/.636/.192/.197 (= baseline: extra compute changes nothing);
+hindsight .825/.646/.200/.194 (no gain — obsoleted by prefix rank);
+late .834/.635/.280/.206; resolved .809/.577/.265/.176;
+ROLLPRED .803/.677/.305/.155 — near-doubles d4, best d2, and its gains stop
+EXACTLY at its supervised horizon (ks=[1,2,4] -> gains at d2/d4, none at d8).
+Causal fingerprint: depth drop = predictor exposure bias; supervising k-step
+rollouts fixes exactly the depths supervised. late = smaller independent
+energy-side gain, only cell nudging d8. Proposer env ceiling (~.57 at d2)
+unchanged in every cell — separate prior-coverage problem.
+
+Launched: p16-rollpred-k8 (ks=[1,2,4,8] — prediction: gain moves to d8) and
+p16-rollpred-late (stack predictor+energy fixes). Queued behind the running
+freshdata pair. Plan JSONs synced to prefix-combo-v1/alex-final/.
