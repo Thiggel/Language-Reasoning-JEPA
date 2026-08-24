@@ -2404,3 +2404,25 @@ deserves a proper head-to-head.
 ACTION NEEDED (not done): `job.sh` in that round sets `state` from the training
 rc alone, so a clean run with a noisy exit path is labelled FAILED while a run
 whose EVAL stage dies is labelled COMPLETED. Both directions are wrong.
+
+## 2026-08-24 — prefix rank largely solves d2; combo round launched
+
+Full depth ladder of the completed `ecf16-prefix16-s0` (300 eps, energy scorer,
+exact-necessary): full_catalogue **.817/.632/.169/.194** at d1/d2/d4/d8 (env
+1.00/.97/.85/.74). The d1->d2 drop that no geometry term closed (best .66->.27)
+is largely closed by `energy_prefix_rank.weight=16` at full schedule: **d2 .632**.
+The open problem moves to d2->d4 (.632->.169, distractor rate .17->.36).
+Separate failure on `prior_propose`: exactness stays ~.9 at ALL depths but env
+success falls (.923->.587 at d2) via proposal recall (.976->.908) — a proposer
+coverage problem, not an energy-ranking problem.
+
+Committed + snapshotted the geometry/metric work (d5f2d81). Launched
+`2026-08-24-prefix-combo-v1` on gruenau1 (3 GPUs + 1 chained), all warm-started
+from prefix16 last.pt, 6 epochs, prefix_rank kept at 16, eval (d1/2/4/8 x
+full_catalogue/prior_propose, 200 eps) baked into job.sh; state now derived
+from training_complete.json + eval rc (fixes the false-FAILED labeling flaw):
+- `p16-longer` — control (warm-start effect only)
+- `p16-hindsight` — + hindsight_monotone 1.0 (geometry winner)
+- `p16-late` — depth_bias=late (junk step biased deep, targets d4)
+- `p16-resolved` — cf_kind=resolved (harder negatives)
+ETA ~16h/cell; read results tomorrow morning.
