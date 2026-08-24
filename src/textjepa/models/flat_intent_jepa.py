@@ -125,14 +125,6 @@ class FlatIntentJEPA(nn.Module):
         self.latent_rollout_ks = tuple(sorted({int(k) for k in latent_rollout_ks}))
         if self.latent_rollout_ks and min(self.latent_rollout_ks) < 1:
             raise ValueError("latent_rollout_ks must be >= 1")
-        if self.latent_rollout_ks and predictor_kind != "mlp":
-            raise NotImplementedError(
-                "latent_rollout_pred currently supports predictor_kind=mlp only"
-            )
-        if self.energy_prefix_rank and predictor_kind != "mlp":
-            raise NotImplementedError(
-                "energy_prefix_rank currently supports predictor_kind=mlp only"
-            )
         self.init_from_lm = init_from_lm
         self.encoder = DecoderLM(
             vocab_size=vocab_size, pad_id=pad_id, d_model=d_model,
@@ -473,10 +465,36 @@ class FlatIntentJEPA(nn.Module):
         codes = torch.stack([pad_a[:, j:j + T] for j in range(kmax)], 2)
         steps = torch.stack([pad_m[:, j:j + T] for j in range(kmax)], 2)
         valid = steps.cumprod(-1)  # [B, T, kmax]: all of a_t..a_{t+k-1} exist
+        hist_s = hist_a = None
+        if self.predictor_kind == "causal":
+            # Per-anchor teacher-forced histories: for anchor t the causal
+            # predictor grounds on the REAL prefix s_0..s_t / a_0..a_{t-1}.
+            # Positions past t are masked to a stalled no-op prefix (anchor
+            # state, zero action), mirroring ``_histories``.
+            t_idx = torch.arange(T, device=prev_states.device)
+            keep_s = t_idx.view(1, T, 1) >= t_idx.view(1, 1, T)   # j <= t
+            hist_s = torch.where(
+                keep_s.unsqueeze(-1),
+                prev_states.unsqueeze(1).expand(B, T, T, D),
+                prev_states.unsqueeze(2).expand(B, T, T, D),
+            ).reshape(B * T, T, D)
+            keep_a = t_idx.view(1, T, 1) > t_idx.view(1, 1, T)    # j < t
+            hist_a = torch.where(
+                keep_a.unsqueeze(-1),
+                actions.unsqueeze(1).expand(B, T, T, D),
+                torch.zeros(1, 1, 1, D, dtype=actions.dtype,
+                            device=actions.device),
+            ).reshape(B * T, T, D)
+            # keep only a_0..a_{t-1}: drop the last slot, which is never a
+            # valid past action for any anchor (a_{T-1} belongs to the future
+            # of every anchor except t=T-1, whose own slot is zeroed anyway).
+            hist_a = hist_a[:, : T - 1]
+            hist_s = hist_s[:, : T]
         _, prefixes = self.imagine(
             prev_states.reshape(B * T, D),
             codes.reshape(B * T, kmax, D),
             steps.reshape(B * T, kmax) > 0,
+            hist_s, hist_a,
             return_prefixes=True,
         )
         prefixes = prefixes.reshape(B, T, kmax + 1, D)
@@ -639,10 +657,21 @@ class FlatIntentJEPA(nn.Module):
                 # one-step imagination from every imagined prefix (Markov
                 # call; for the causal predictor option this is the Markov
                 # approximation of the depth contrast).
-                exec_next = self.predictor(pre, codes)  # [N, H, D]
-                cf_next = self.predictor(
-                    pre.unsqueeze(2).expand(-1, -1, Kc, -1), cf_codes
-                )  # [N, H, Kc, D]
+                if self.predictor_kind == "causal":
+                    Dm = pre.shape[-1]
+                    exec_next = self.predictor(
+                        pre.reshape(-1, Dm), codes[:, :Hh].reshape(-1, Dm)
+                    ).reshape(N, Hh, Dm)
+                    cf_next = self.predictor(
+                        pre.unsqueeze(2).expand(-1, -1, Kc, -1)
+                        .reshape(-1, Dm),
+                        cf_codes.reshape(-1, Dm),
+                    ).reshape(N, Hh, Kc, Dm)
+                else:
+                    exec_next = self.predictor(pre, codes)  # [N, H, D]
+                    cf_next = self.predictor(
+                        pre.unsqueeze(2).expand(-1, -1, Kc, -1), cf_codes
+                    )  # [N, H, Kc, D]
                 root_h = root.unsqueeze(1).expand(-1, Hh, -1)
                 init_h = initial.unsqueeze(1).expand(-1, Hh, -1)
                 e_exec_d = self.energy(root_h, exec_next, init_h, 1)  # [N, H]
@@ -681,14 +710,20 @@ class FlatIntentJEPA(nn.Module):
 
         # ---- PARTIAL-TRAJECTORY (prefix) ranking ---------------------------
         if self.energy_prefix_rank and "ga_roll_cf" in batch:
+            if self.predictor_kind == "causal":
+                hist_s_n = hist_s.repeat_interleave(C * R, 0)
+                hist_a_n = hist_a.repeat_interleave(C * R, 0)
+            else:
+                hist_s_n = hist_a_n = None
             self._prefix_rank(
                 out, batch, cat_vecs, root, initial, codes, flat_mask,
-                prefixes, act_mask, rv, B, C, R, Hh,
+                prefixes, act_mask, rv, B, C, R, Hh, hist_s_n, hist_a_n,
             )
 
     # ------------------------------------------------- prefix (path) rank
     def _prefix_rank(self, out, batch, cat_vecs, root, initial, codes,
-                     flat_mask, prefixes, act_mask, rv, B, C, R, Hh) -> None:
+                     flat_mask, prefixes, act_mask, rv, B, C, R, Hh,
+                     hist_s_n=None, hist_a_n=None) -> None:
         """Rank whole imagined PATHS, not just their endpoints.
 
         The observed continuation of a rollout is the action sequence that
@@ -795,6 +830,8 @@ class FlatIntentJEPA(nn.Module):
         root_k = root.unsqueeze(1).expand(N, Kc, D).reshape(M, D)
         _, cf_pre = self.imagine(
             root_k, seq.reshape(M, L, D), msk.reshape(M, L),
+            hist_s_n.repeat_interleave(Kc, 0) if hist_s_n is not None else None,
+            hist_a_n.repeat_interleave(Kc, 0) if hist_a_n is not None else None,
             return_prefixes=True,
         )
         depths_l = torch.arange(1, L + 1, device=device, dtype=root.dtype)
