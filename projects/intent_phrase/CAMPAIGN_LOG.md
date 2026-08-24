@@ -2487,3 +2487,22 @@ unchanged in every cell — separate prior-coverage problem.
 Launched: p16-rollpred-k8 (ks=[1,2,4,8] — prediction: gain moves to d8) and
 p16-rollpred-late (stack predictor+energy fixes). Queued behind the running
 freshdata pair. Plan JSONs synced to prefix-combo-v1/alex-final/.
+
+## 2026-08-24 (late) — B1 + C1 built and launched; full board saturated
+
+B1: `energy_prefix_rank.n_insert` (multi-insert counterfactual paths — waste
+2-3 steps instead of 1, covering deep-beam-divergent negatives). C1:
+`plan_flat --root-agg mean` (first action chosen by MEAN energy of each
+root's surviving beams instead of its luckiest rollout — variance reduction
+against the winner's curse). Committed 2863250, tests green (4+7).
+
+Board: rtxpro6k node saturated with 8 training cells (freshdata,
+freshdata-rollpred, p16-rollpred-k8, fresh-rollpred-k8, fresh-rollpred-late,
+fresh-solprob, fresh-horizon, fresh-causal-rollpred); a100 partition:
+fresh-insert2 / fresh-insert3 / fresh-insert2-rollpred-k8 pending. Grünau:
+A1 knockout (endpoints=true oracle d1-8), D1 aggregation sweep, C1 root-agg
+evals (d2/d4/d8), rendering-noise + drift-curve measurement all running.
+Smoke signal from the noise measurement (3 problems): rendering spread =
+~49% of per-step state movement; 1-step predictor error only 1.9x that
+floor — temp-variable-name randomness in step rendering may be a large
+irreducible noise source (A2). Full 50-problem run in flight.
