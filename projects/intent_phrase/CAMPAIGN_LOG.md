@@ -2094,3 +2094,313 @@ encoder, ~100k problems/epoch, .860 at depth 1. The gap runs the other way.
 **One genuine stylized->faithful loss does exist** and is already recorded:
 cycle-consistency feasibility is stylized-only (AUC .85 stylized vs .48 =
 chance on faithful). That is real — it is just not the loss remembered.
+- union-prior first launch FAILED instantly: ctx_heads default 6 does not divide ctx-d-model 512 (MultiheadAttention assert). Relaunched 2026-08-21 ~a.m. with --ctx-heads 8, same cell dir, gruenau12:4.
+- union-prior COMPLETED (relaunch, gruenau12:4, ~68 min). Prior on off-path val: top1 .416 / top4 .688 (ctx-only .285/.395; off-path .340/.480) — union beats both, no on-path/off-path tradeoff.
+  Proposal quality (no menu shown; feasible set for measurement only), K=64: recall_feasible .957, recall_necessary .838, recall_true_next .797, parse .598, 0 states with no proposal.
+  Depth-1 planning, 200 episodes: env success **.745**, answer-emission success **.695**, exact-necessary .477, no-proposal episodes .110.
+  Ladder: eval-k32 .215 -> ecf16-retrain/wideK .47 -> ctx-prior .59 -> offpath .72 -> **union .745** (answer .19 -> .42 -> .52 -> .63 -> **.695**).
+  Bounds this cell: random .595 env/.280 answer, first-feasible .430/.195 — planner clears both decisively on the answer criterion.
+  Next: union prior is the new default proposal interface; take it to depth 2.
+- Depth-2 round launched with the union prior + off-path decoder (200 episodes, branch 4, prior-samples 64, cap-mult 4.0): `union-d2` (endpoints=imagined, the real oracle-free system, gruenau12:5) and `union-d2-trueend` (endpoints=true, DIAGNOSTIC — candidates executed in an env clone and the REAL state encoded, gruenau12:6). Compare both against union d1 .745 env/.695 answer: if imagined-d2 collapses but true-end-d2 does not, the depth failure is in imagined rollout endpoints, not search or the prior.
+- Depth-2 round COMPLETED. Both cells fall below union d1 (.745 env / .695 answer), and the ordering is INVERTED vs the standing "imagined rollouts drift" hypothesis:
+  | cell | env success | answer | exact-necessary | invalid-action | no-proposal eps |
+  |---|---|---|---|---|---|
+  | union d1 (imagined) | .745 | .695 | .477 | .395 | .110 |
+  | union-d2 (imagined, real system) | .640 | .550 | .406 | .539 | .120 |
+  | union-d2-trueend (DIAGNOSTIC, env-executed real states) | **.465** | **.285** | .043 | .610 | .170 |
+  Proposal metrics are ~identical across all three (recall .642-.664, parse ~.50), so the code prior is NOT the cause of depth collapse.
+  **Giving the search TRUE encoded endpoints makes it strictly worse** — .465 env is BELOW the random-policy bound (.595) and .285 answer barely clears random (.265). The privileged diagnostic losing to the oracle-free system rules out imagined-rollout drift as the depth-collapse mechanism.
+  Mechanism confirmed in code: the counterfactual energy head is trained in `discourse_jepa.py:_geo_rank/_energy_cf_feasibility` on `out.preds` — PREDICTOR OUTPUTS only. It has never seen encoder-produced latents in its candidate slot, so true encoded states are off-distribution for it. Depth collapse is an ENERGY-HEAD calibration failure, not a rollout-fidelity failure.
+  Caveat for writeup: `endpoints=true` is candidate-privileged (executes candidates in an env clone) and must be labeled as such; it is used here only as a diagnostic, never as a system.
+  Next candidates: (a) train the energy head with encoder-produced states mixed into the candidate slot so imagined/true are interchangeable; (b) depth-2 ranking accuracy probe to measure energy mis-ranking directly rather than through end-task success.
+
+### 2026-08-21 monotonicity measurement — the oracle_distance scorer was measuring in the wrong space
+
+`scripts/measure_energy_monotonicity.py` (new), 200 val problems, ecf16-s0. Walks the ground-truth
+solution, encodes every prefix, and ranks every feasible action at every true state. No planner,
+no generation. ORACLE DIAGNOSTIC (goal + feasible sets from the env); measurement only.
+
+**Root cause: predicted and encoded states are on different scales.** `latent_pred` uses
+`norm_targets: true`, and `objectives/base.latent_distance` LayerNorms BOTH sides — so the predictor
+is trained to match the encoder only up to LayerNorm, and raw scale/offset is unconstrained.
+Measured: encoder state norm **66.6**, predicted state norm **147.8** (ratio **2.22x**).
+But `flat_search._score` scores `oracle_distance` with RAW L2 (`(endpoint-goal).norm(dim=-1)`).
+
+| statistic (200 problems) | raw L2 (what the scorer uses) | LN-L1 (the space the predictor is trained in) |
+|---|---|---|
+| true next action ranked top1 by distance | **.109** | **.822** |
+| distance-argmin is a necessary action | **.185** | **.898** |
+| predicted endpoint closer to goal than current state | **.000** | **.896** |
+| descend_frac along true trajectory | .793 | .789 |
+| Kendall tau of goal distance vs step index | -.799 | -.790 |
+
+- **Monotonicity is NOT the problem.** The goal potential decreases at ~79% of steps with tau ~-.79
+  in BOTH metrics. Hypothesis (i) "the potential is not monotone" is rejected.
+- **The raw-L2 numbers land where the planner's oracle-distance arm lands**: argmin-is-necessary
+  .185 here vs exact-necessary **.183** for `d1-full-lat-imag`. CAVEAT: these are DIFFERENT
+  checkpoints (measurement on `_ckpt_snapshots/ecf16-s0-best-2026-08-20.pt`; the ladder on
+  `2026-08-20-aggregate-ablation-v1/ckpt.pt`, md5s differ), so the numerical agreement is
+  suggestive, not a reproduction. A within-checkpoint re-run is queued.
+- **The learned energy head is fine at depth 1**: true-action top1 **.872**, argmin-is-necessary
+  **.951**, percentile .077. It is an MLP over raw vectors, so it absorbs the scale offset; the
+  distance scorer cannot.
+- **This also explains `endpoints=true` being worst** (union-d2-trueend .465). The energy head is
+  trained on PREDICTED endpoints (norm ~148); feeding it ENCODER states (norm ~67) is a 2.2x
+  off-distribution shift in its candidate slot.
+
+**Consequence for the record:** every `oracle_distance` row in
+`2026-08-20-true-oracle-upper-bound` (the "latent oracle-goal ruler is blunt / collapses with depth"
+conclusion) is contaminated by this metric bug and must be re-run in LN-L1 before being cited.
+The `symbolic_oracle` and `energy` rows are unaffected.
+
+**Actions taken (2026-08-21, same session):**
+- `flat_search.goal_distance()` + `plan_flat --distance-metric raw|ln_l1` added (default `raw`
+  preserves old behaviour). Round `2026-08-21-lnl1-ladder-v1` re-runs the oracle-distance ladder
+  d1/d2/d4/d8 in LN-L1 on the ladder's own checkpoint (`2026-08-20-aggregate-ablation-v1/ckpt.pt`),
+  same protocol as the raw rows (full_catalogue, max-expand 64, 200 episodes).
+  NOTE: runs from the LIVE tree, the metric fix is not committed/snapshotted yet.
+- Ported into the flat training path (all weight 0.0 by default, all ADD NO PARAMETERS so warm
+  start stays strict): `objective.straighten` (TemporalStraightening),
+  `objective.monotone` (GoalMonotonicity, label_free -- reads no necessary/distractor annotation),
+  and a NEW `objective.energy_monotone` (`EnergyMonotonicity`, geometry.py): from one fixed root
+  s_0, E(s_0, s_t, s_0, t) must fall as t grows. That is the cross-time constraint the survey
+  confirmed does not exist anywhere -- every other Energy term compares only within one anchor,
+  horizon and root. Also fixed `GoalMonotonicity(label_free=True)` touching `batch["necessary"]`,
+  a key the flat pipeline never provides.
+  CPU smoke (`runs/smoke_geo`) confirms all three produce gradients into the expected modules
+  (energy_monotone reaches horizon_energy_head).
+- Round `2026-08-21-geometry-sweep-v1` queued, 6 cells, each warm-started from the ecf16 run's
+  `last.pt` and trained 6 more epochs, so every cell is also a train-longer arm:
+  `longer` (control), `rawpred` (`latent_pred/counterfactual_state.norm_targets=false` -- the direct
+  fix for the 2.2x scale gap, needs no new code), `straighten`, `monotone`, `energymono`,
+  `rawpred-energymono`.
+- Both rounds run behind a GPU-polling queue (`queue.sh`) because Gruenau was at 0/34 free GPUs;
+  it dispatches one cell per genuinely idle GPU (VRAM <1.5GB AND util <10%).
+
+**CORRECTED ORACLE LADDER (`2026-08-21-lnl1-ladder-v1`), same protocol and same
+checkpoint as the raw rows** (full_catalogue, max-expand 64, 200 episodes,
+`2026-08-20-aggregate-ablation-v1/ckpt.pt`). Runs from the LIVE tree; snapshot
+before quoting as a headline.
+
+| depth | raw L2 env / exact (2026-08-20) | LN-L1 env / exact (corrected) |
+|---|---|---|
+| 1 | .955 / .183 | **1.000 / .610** |
+| 2 | .915 / .164 | **.985 / .371** |
+| 4 | .920 / .038 | **.990 / .303** |
+| 8 | .890 / .011 | **.980 / .352** |
+
+Mean steps fall from 11.3-14.3 to 7.4-9.0. **The "latent oracle-goal ruler is
+blunt and collapses with depth" result was a metric artifact.** Under raw L2
+exact-necessary fell monotonically and catastrophically, 16x from d1 to d8
+(.183 -> .011). Under LN-L1 it drops from d1 to d2 (.610 -> .371) and then
+FLATTENS: .303 at d4, **.352 at d8** -- d8 is BETTER than d4, so there is no
+depth collapse at all beyond depth 2, only a one-step drop. Env success is
+.980-1.000 at every depth. What remains to explain is the single d1->d2 step,
+not a collapse.
+
+Docs: `docs/latent_metric_spaces.md` (durable rule).
+Report: `research/reports/intent_phrase/2026-08-21-energy-geometry/REPORT.md`.
+
+**Second sweep queued** (`2026-08-21-geometry-sweep-v1/cells2.txt`):
+`quasimetric` (energy as a Metric-Residual-Network distance to a GoalHead
+prediction -- triangle inequality by construction; adds params, needs
+`init_allow_missing=true`), `hindsight` (goal relabeled to a random observed
+future state, O(T^2) constraints instead of O(T)), plus
+`quasimetric-energymono` and `hindsight-rawpred`. Both smoke-tested; hindsight
+gradient flow verified 20/20 at realistic shapes after its grad-norm report
+read zero on a 2-example CPU microbatch.
+
+
+**Warm-start fix (2026-08-21)**: the `quasimetric` cell failed immediately —
+`init_allow_missing` only tolerated MISSING keys, but replacing the energy head
+also makes the OLD head's keys UNEXPECTED
+(`init_from_ckpt mismatch: unexpected=[horizon_energy_head.net...]`).
+`train_flat_jepa.py` now filters incoming checkpoint keys the current config
+does not use (name or shape mismatch) and reports both lists. Verified
+directly: an `mlp`-head checkpoint loads into a `quasimetric`-head model with 6
+keys dropped, 18 missing (all the new head's goal/phi/psi), 0 unexpected.
+Cell requeued via `queue3_chained.sh`, which waits for `queue2.sh` to exit so
+two pollers never grab the same GPU.
+
+**Verification (2026-08-21)**: every test file that touches the changed modules
+(`flat_search`, `plan_flat`, `objectives.geometry`, `HorizonEnergyHead`,
+`FlatIntentJEPA`, `train_flat_jepa`) passes — **107 tests, 0 failures**:
+`test_energy_cf_feasibility` + `test_energy_prefix_rank` +
+`test_flat_sentence_jepa` (18 passed, 8m28s), and
+`test_symbolic_oracle_scorer` + `test_code_prior_interface` + `test_model` +
+`test_flow_prior` (89 passed, 39m14s). `test_symbolic_oracle_scorer` is the
+load-bearing one: it exercises the same `flat_search._score` path where the
+distance computation changed. The `raw` default is therefore confirmed
+behaviour-preserving.
+
+### 2026-08-22 geometry sweep evaluated (`2026-08-22-geometry-eval-v1`)
+
+Five cells, each warm-started from the crashed ecf16 `last.pt` and trained 6
+more epochs (so all are also train-longer arms). Metric diagnostic = 200 val
+problems; planning = full_catalogue + oracle_distance, 200 episodes
+(CANDIDATE-PRIVILEGED MENU + ORACLE GOAL — diagnostic, never a headline).
+
+| cell | enc norm | pred norm | ratio | nec@raw | nec@LN | ln_d1 env/exact | ln_d2 env/exact |
+|---|---|---|---|---|---|---|---|
+| `longer` (control) | 56.5 | 115.4 | 2.04 | .409 | .763 | 1.00 / .41 | .94 / .10 |
+| `rawpred` | 26.9 | 25.6 | **0.95** | .553 | .603 | .92 / .20 | **.56 / .00** |
+| `hindsight` | 110.2 | 132.3 | 1.20 | .164 | **.920** | **.99 / .66** | **.94 / .27** |
+| `hindsight-rawpred` | 26.5 | 25.7 | **0.97** | .595 | .646 | .95 / .20 | .66 / .00 |
+| `quasimetric-energymono` | 107.5 | 148.0 | 1.38 | .149 | **.922** | **.99 / .65** | .94 / .14 |
+
+**1. `norm_targets=false` works as advertised and is still the wrong choice.**
+It closes the scale gap exactly (ratio 2.04 -> 0.95) and, as predicted, that
+lifts the RAW-metric ranking (nec .409 -> .553). But it *degrades* the
+representation: LN-space ranking falls BELOW the control (.603 vs .763) and
+depth-2 planning collapses (env .94 -> **.56**, exact .10 -> **.00**). VICReg
+val was already elevated in exactly these two cells (.494/.503 vs .346/.348),
+i.e. the anti-collapse term was visibly working harder. **Answer to "LayerNorm
+at scoring, or train without it?": LayerNorm at scoring. Do not train without
+it.**
+
+**2. `hindsight` is the best cell, and it beats the pre-sweep checkpoint.**
+nec@LN **.920** and d1 exact **.66**, against .898/.610 for the original ecf16
+and .763/.41 for the train-longer control. Hindsight relabeling is the single
+most effective addition tested.
+
+**3. `quasimetric-energymono` matches it at d1** (.922 / .65) but is weaker at
+d2 (.14 vs .27).
+
+CORRECTION (2026-08-23): I earlier read its `energy_monotone` val hinge of
+0.0000 as the quasimetric head satisfying monotonicity STRUCTURALLY. That
+inference is wrong. In that cell the penalty was ACTIVE (weight 1.0), and the
+plain-MLP `energymono` cell also reaches exactly 0.0000 — so the reading shows
+only that the loss does its job, with either head. The standalone `quasimetric`
+cell reads 0.0000 too, but there the weight is 0, the model flag is off, the
+extras are absent and the objective returns a constant zero: a NO-OP, not
+evidence. The structural claim is untested by these numbers. The statistic that
+would actually test it is `energy_tau_vs_index` from
+`measure_energy_monotonicity.py` on the standalone `quasimetric` cell (loss
+never applied) versus `longer`; that eval is queued.
+
+**4. Training longer alone HURTS.** The `longer` control went from the original
+ecf16's nec@LN .898 / d1 exact .610 down to **.763 / .41** over 6 further
+epochs. More steps is not the missing ingredient; it is mildly harmful on this
+metric. That retires the train-longer hypothesis.
+
+**5. The d1 -> d2 drop survives everything.** Best cell still falls .66 -> .27.
+No geometry term tested closes it. This is now the single open question.
+
+### 2026-08-23 geometry eval, 8 of 10 cells (planning rows CANDIDATE-PRIVILEGED)
+
+| cell | pred/enc | nec@LN | top1@LN | E_tau | descend@LN | ln_d1 env/exact | ln_d2 env/exact |
+|---|---|---|---|---|---|---|---|
+| `longer` (control) | 2.04 | .763 | .698 | **-.579** | .704 | 1.00 / .41 | .94 / .10 |
+| `straighten` | 1.23 | .920 | .829 | -.562 | **1.000** | .99 / **.68** | .94 / **.04** |
+| `hindsight` | 1.20 | .920 | **.853** | -.404 | .748 | .99 / .66 | .94 / **.27** |
+| `quasimetric` | 1.38 | .916 | .848 | **-.214** | .686 | .98 / .66 | .91 / .16 |
+| `quasimetric-energymono` | 1.38 | **.922** | .851 | -.305 | .679 | .99 / .65 | .94 / .14 |
+| `rawpred` | 0.95 | .603 | .525 | -.440 | .667 | .92 / .20 | .56 / .00 |
+| `hindsight-rawpred` | 0.97 | .646 | .550 | -.418 | .808 | .95 / .20 | .66 / .00 |
+
+**1. The quasimetric structural claim is REFUTED.** `energy_tau_vs_index` on
+the standalone `quasimetric` cell — where `energy_monotone` was NEVER applied —
+is **-.214**, markedly LESS monotone than the plain-MLP control's **-.579**.
+The Metric-Residual parameterization does not buy monotone energy for free; it
+is worse than the unstructured head. (This is the test that replaces the
+0.0000-hinge misreading corrected above.)
+
+**2. Perfect distance monotonicity does NOT help depth — it hurts it.**
+`straighten` achieves `descend_frac` **1.000** (vs .704 control): the goal
+potential decreases at EVERY step of every trajectory. It also gives the best
+depth-1 exact-necessary (**.68**). Yet its depth-2 exact-necessary is the worst
+of any non-collapsed cell (**.04**, below the .10 control). Straightening also
+drove VICReg val to .583, the highest of any cell.
+
+**3. Energy monotonicity is ANTI-correlated with planning quality here.** The
+control has the most monotone energy (E_tau -.579) and the worst d1 planning
+(.41); the best planners (`hindsight` -.404, `quasimetric` -.214) are the least
+monotone. Together with (2), the monotonicity hypothesis is now doubly
+refuted: neither distance-monotonicity nor energy-monotonicity predicts
+planning quality, and the one intervention that maximized distance
+monotonicity made depth-2 worse.
+
+**4. `hindsight` remains the best overall cell** — uniquely holding depth 2
+(.27 vs .04-.16 for everything else) while matching the field at depth 1.
+
+**5. The d1 -> d2 drop is universal.** Every cell falls (best .66 -> .27). No
+geometry term tested closes it.
+
+### 2026-08-23 geometry sweep COMPLETE — all 10 cells (planning CANDIDATE-PRIVILEGED)
+
+| cell | pred/enc | nec@LN | top1@LN | E_tau | descend | ln_d1 | ln_d2 |
+|---|---|---|---|---|---|---|---|
+| `longer` (control) | 2.04 | .763 | .698 | -.579 | .704 | 1.00/.41 | .94/.10 |
+| `straighten` | 1.23 | .920 | .829 | -.562 | **1.000** | .99/**.68** | .94/**.04** |
+| `monotone` | 2.26 | .895 | .825 | -.544 | .815 | .99/.61 | .94/.17 |
+| `energymono` | 1.75 | .905 | .830 | **-.652** | .693 | 1.00/.64 | .91/.06 |
+| `hindsight` | 1.20 | .920 | **.853** | -.404 | .748 | .99/.66 | .94/**.27** |
+| `quasimetric` | 1.38 | .916 | .848 | -.214 | .686 | .98/.66 | .91/.16 |
+| `quasimetric-energymono` | 1.38 | **.922** | .851 | -.305 | .679 | .99/.65 | .94/.14 |
+| `rawpred` | 0.95 | .603 | .525 | -.440 | .667 | .92/.20 | .56/.00 |
+| `hindsight-rawpred` | 0.97 | .646 | .550 | -.418 | .808 | .95/.20 | .66/.00 |
+| `rawpred-energymono` | 0.95 | .607 | .526 | -.451 | .677 | .91/.18 | .62/.00 |
+
+**Every geometry term beats the control at depth 1** (.61-.68 vs .41) and every
+one lifts nec@LN (.895-.922 vs .763). The additions work; the control is the
+weakest healthy cell. But at depth 2 only `hindsight` (.27) clearly beats the
+control (.10) — `straighten` (.04) and `energymono` (.06) are WORSE.
+
+**Monotonicity does not explain planning.** Across the 7 healthy cells
+(excluding the 3 collapsed raw-target ones):
+- `descend_frac` vs d1 exact **r=+.26**, vs d2 exact **r=-.30**
+- `E_tau` vs d1 exact **r=+.38**, vs d2 exact **r=+.53** (LESS monotone energy
+  goes with BETTER planning; the sign is the wrong way round for the
+  hypothesis)
+`straighten` reaches PERFECT distance monotonicity (descend 1.000) and has the
+worst healthy d2 (.04). `energymono` has the MOST monotone energy (-.652) and
+the second-worst d2 (.06). Neither n=7 correlation is significant, but nothing
+here supports monotonicity as the mechanism, and the two cells that maximized
+it are the two that lost depth 2.
+
+**All three `rawpred` cells collapse identically** (d2 exact .00, env .56-.66)
+while having the only closed norm ratios (0.95-0.97). Adding `energy_monotone`
+does not rescue it. Confirms: fix the metric at scoring time, never retrain
+without LayerNorm targets.
+
+**Verdict: `hindsight` is the recipe change to keep.** Best top1@LN (.853),
+tied-best nec@LN, and the only cell that holds depth 2. Everything else either
+matches at d1 and loses d2, or degrades outright.
+
+**Open question unchanged**: the universal d1 -> d2 drop (best .66 -> .27).
+
+### 2026-08-24 monitor alert: `2026-08-20-prefix-energy-v1/ecf16-prefix16-s0` FAILED — mislabelled
+
+**The cell did not fail. Its results are complete and usable.** Training ran the
+FULL 10-epoch schedule (`[ep 9 step 62480]`, `training_complete.json`:
+`status=completed, steps=62500, best_val_total=1.4047`), wrote `best.pt` and
+`last.pt`, and every eval artifact was produced: 15 plan JSONs + `probe_auc` in
+`final_id`, 6 in `final_ood`.
+
+The `FAILED` label comes from `job.sh` recording `rc` of the TRAINING process
+(`exit_code=1`), which is evaluated BEFORE the eval stage and is the only thing
+that sets `state`. `stderr.log` is **2 lines long and contains only the
+`enable_nested_tensor` warning** — no traceback, no OOM, no signal (a signal
+would give 128+n, and `timeout` would give 124). So the nonzero exit happened
+on the interpreter's exit path AFTER `training_complete.json` was written;
+most likely dataloader-worker teardown with `num_workers=6`. Not a training
+failure, and nothing to re-run.
+
+Headline numbers from it (scorer=energy, so UNAFFECTED by the LN-L1 metric bug;
+300 episodes; `full_catalogue`/`feasible_menu` are CANDIDATE-PRIVILEGED menus):
+
+| interface | d1 | d2 | d4 | d8 | d16 |
+|---|---|---|---|---|---|
+| `feasible_menu` env/exact | 1.000/.830 | 1.000/.750 | .980/.269 | .973/.240 | .983/.237 |
+| `full_catalogue` env/exact | 1.000/.817 | .970/.632 | .850/.169 | .740/.194 | .707/.222 |
+| `prior_propose` env/exact | .923/.906 | .587/.915 | .467/.893 | .440/.871 | .440/.879 |
+
+Note this is a full-schedule (62.5k step) run, i.e. the schedule ecf16 never
+reached — and its d1 exact-necessary (.817-.830 on menus) is far above anything
+in the geometry sweep. Recipe differs (`energy_prefix_rank.weight=16`), so it
+is not a clean comparison, but it is the strongest d1 number on record and
+deserves a proper head-to-head.
+
+ACTION NEEDED (not done): `job.sh` in that round sets `state` from the training
+rc alone, so a clean run with a noisy exit path is labelled FAILED while a run
+whose EVAL stage dies is labelled COMPLETED. Both directions are wrong.

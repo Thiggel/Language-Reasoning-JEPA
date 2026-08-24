@@ -71,6 +71,24 @@ PROPOSER_INTERFACES = ("prior_propose", "autonomous", "flow_rerank",
                        "flow_decode", "code_prior")
 
 
+def goal_distance(endpoint, goal, metric: str = "raw"):
+    """Distance from candidate endpoints [N,D] to the encoded goal [D].
+
+    ``raw`` is plain L2.  It is WRONG for imagined endpoints: latent_pred
+    trains the predictor against LayerNorm-ed targets, so predicted states
+    match the encoder only up to LayerNorm and sit at ~2.2x the encoder's raw
+    norm.  ``ln_l1`` measures in that equivalence class (the same LN-L1 used
+    by objectives/geometry.goal_distances) and is the correct default for any
+    comparison that mixes predicted and encoded states.
+    """
+    if metric == "raw":
+        return (endpoint - goal.unsqueeze(0)).norm(dim=-1)
+    if metric == "ln_l1":
+        ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
+        return (ln(endpoint) - ln(goal).unsqueeze(0)).abs().mean(-1)
+    raise ValueError(f"unknown distance metric: {metric}")
+
+
 def _percentile(vals: list, q: float) -> float:
     if not vals:
         return float("nan")
@@ -92,6 +110,7 @@ class FlatPlanner:
                  expansion: str = "beam", movement_weight: float = 1.0,
                  beam_diagnostics: bool = True,
                  scorer: str = "energy",
+                 distance_metric: str = "raw",
                  endpoints: str = "imagined",
                  cap_mult: float = 4.0, mask_attempted: bool = True,
                  prior_samples: int = 16, prior_top_p: float = 0.95,
@@ -135,6 +154,9 @@ class FlatPlanner:
         # headline): `scorer=oracle_distance` ranks by latent distance to the
         # encoded TRUE solved state, `endpoints=true` executes each candidate
         # sequence in a copy of the environment and encodes the REAL state.
+        if distance_metric not in {"raw", "ln_l1"}:
+            raise ValueError(f"unknown distance metric: {distance_metric}")
+        self.distance_metric = distance_metric
         if scorer not in {"energy", "oracle_distance", "symbolic_oracle"}:
             raise ValueError(f"unknown scorer {scorer!r}")
         if endpoints not in {"imagined", "true"}:
@@ -684,7 +706,8 @@ class FlatPlanner:
         if src == "true":
             endpoint = self._true_endpoints(seqs, env, history)
         if self.scorer == "oracle_distance" or _force_oracle:
-            return (endpoint.float() - goal.float().unsqueeze(0)).norm(dim=-1)
+            return goal_distance(endpoint.float(), goal.float(),
+                                 self.distance_metric)
         init = s0.unsqueeze(0).expand(n, -1)
         if self.aggregate == "endpoint" or src == "true" or depth == 1:
             self.counter.bump("energy_forwards", n)

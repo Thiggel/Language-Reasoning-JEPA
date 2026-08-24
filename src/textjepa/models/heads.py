@@ -216,6 +216,68 @@ class GoalHead(nn.Module):
         return self.net(initial)
 
 
+class QuasimetricEnergyHead(nn.Module):
+    """Energy as a learned QUASIMETRIC distance to a predicted goal.
+
+    The default :class:`HorizonEnergyHead` is an unstructured MLP over
+    ``concat[root, endpoint, initial, horizon]``.  Nothing in it forces the
+    energy at depth ``h`` to compose coherently with the energy at depth
+    ``h+1``, which is exactly why energies reached from different roots and
+    depths are not on a common ruler.
+
+    This head instead parameterizes the energy as a quasimetric distance from
+    the endpoint to a goal predicted from the initial state:
+
+        E(endpoint, initial) = d_q(endpoint, G(initial))
+
+    with ``G`` a :class:`GoalHead` and ``d_q`` a Metric Residual Network
+    (Liu et al., 2023):
+
+        d_q(x, y) = ||phi(x) - phi(y)||_2 + max_i relu(psi(y)_i - psi(x)_i)
+
+    The first term is a symmetric metric, the second an asymmetric
+    quasimetric; their sum is non-negative and obeys the triangle inequality
+    BY CONSTRUCTION.  Coherent descent is therefore structural rather than
+    penalized -- no extra loss term has to hold it up.
+
+    ``root`` and ``horizon`` are accepted for signature compatibility and
+    deliberately ignored: the whole point is that this is a state potential,
+    one ruler for every depth.  The goal head is trained implicitly by the
+    ranking terms (the executed continuation must score below its
+    counterfactuals) and, when enabled, by ``energy_monotone``.
+    """
+
+    def __init__(
+        self, d_state: int, hidden_mult: int = 2, proj_dim: int | None = None
+    ):
+        super().__init__()
+        p = proj_dim or d_state
+        self.goal = GoalHead(d_state, hidden_mult)
+        self.phi = nn.Sequential(
+            nn.LayerNorm(d_state), mlp([d_state, d_state * hidden_mult], p)
+        )
+        self.psi = nn.Sequential(
+            nn.LayerNorm(d_state), mlp([d_state, d_state * hidden_mult], p)
+        )
+        # signature compatibility with HorizonEnergyHead
+        self.use_horizon = False
+
+    def forward(
+        self,
+        root: torch.Tensor,
+        endpoint: torch.Tensor,
+        initial: torch.Tensor,
+        horizon: torch.Tensor | float | int = 1,
+    ) -> torch.Tensor:
+        while initial.dim() < endpoint.dim():
+            initial = initial.unsqueeze(-2)
+        initial = initial.expand_as(endpoint)
+        g = self.goal(initial)
+        sym = (self.phi(endpoint) - self.phi(g)).norm(dim=-1)
+        asym = torch.relu(self.psi(g) - self.psi(endpoint)).max(dim=-1).values
+        return sym + asym
+
+
 class TransitionEnergyHead(nn.Module):
     """Lower-is-better Energy of a predicted state transition."""
 

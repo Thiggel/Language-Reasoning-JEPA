@@ -2,6 +2,9 @@
 # scripts/train_flat_jepa.py, which fails loudly on unread keys.
 # warm start from a full flat-JEPA checkpoint (student+teacher+heads); null = off
 init_from_ckpt: null
+# allow warm start when new flags ADD modules (e.g. the quasimetric energy
+# head); those parameters start fresh.  Unexpected keys still fail.
+init_allow_missing: false
 run_name: flat_jepa
 seed: 0
 device: cuda:0
@@ -50,6 +53,11 @@ model:
   predictor_residual: true
   predictor_heads: 8
   energy_hidden_mult: 2
+  # mlp = unstructured MLP energy (frozen recipe).  quasimetric = energy as a
+  # Metric-Residual-Network distance to a predicted goal, so non-negativity
+  # and the triangle inequality hold BY CONSTRUCTION and every depth shares
+  # one ruler.  Adds parameters -> needs init_allow_missing when warm starting.
+  energy_head_kind: mlp
   geo_horizon_input: false  # horizon-blind endpoint Energy (frozen recipe)
   observed_action_ldad: true
   ldad_max_len: 16
@@ -80,6 +88,23 @@ objective:
   # depth: max rollout depth (contrasts at imagined depths 1..depth-1);
   # kcat: sampled catalogue counterfactuals per imagined state.
   energy_imagined_rank: {weight: 0.0, depth: 4, kcat: 8}
+  # --- trajectory geometry (all off by default; 0 = no behaviour change) ---
+  # straighten: align consecutive latent velocities so Euclidean latent
+  # distance approximates minimum-step distance (label-free).
+  straighten: {weight: 0.0}
+  # monotone: every observed step must reduce the LN-L1 distance to the
+  # trace-terminal EMA state.  label_free -- reads no necessary/distractor
+  # annotation.
+  monotone: {weight: 0.0, margin: 0.02}
+  # energy_monotone: the MISSING cross-time constraint.  From one fixed root
+  # s_0, E(s_0, s_t, s_0, t) must fall as t grows, putting energies at
+  # different depths on a common ruler.  Every other Energy term compares only
+  # within a single anchor/horizon.
+  energy_monotone: {weight: 0.0, margin: 0.05}
+  # hindsight_monotone: the same monotonicity constraint, but with the goal
+  # relabeled to a RANDOM observed future state instead of only the terminal
+  # one -- O(T^2) self-supervised constraints per trajectory instead of O(T).
+  hindsight_monotone: {weight: 0.0, margin: 0.02, n_goals: 2}
   # detach_state: train the proposal head on a stop-gradient state (and with an
   # UNTIED output matrix), so this CE term reaches no encoder parameter at all.
   intent_prior_lm: {weight: 1.0, detach_state: false}

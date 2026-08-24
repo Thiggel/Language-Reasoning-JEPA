@@ -111,6 +111,12 @@ def main() -> None:
                          "number of necessary-and-unresolved actions left after executing the "
                          "candidate in a CLONE of the env (correct goal, EXACT ruler) -- this is "
                          "the genuine upper bound on the search procedure")
+    ap.add_argument("--distance-metric", default="raw", choices=["raw", "ln_l1"],
+                    help="metric for scorer=oracle_distance.  raw = plain L2 "
+                         "(historical; WRONG when endpoints are imagined, since "
+                         "latent_pred only matches the encoder up to LayerNorm "
+                         "and predicted states sit at ~2.2x the encoder norm). "
+                         "ln_l1 = LN-L1, the space the predictor is trained in")
     ap.add_argument("--endpoints", default="imagined", choices=["imagined", "true"],
                     help="DIAGNOSTIC: true = execute candidates in a copy of the env and encode the REAL state")
     ap.add_argument("--branch", type=int, default=4,
@@ -201,7 +207,8 @@ def main() -> None:
     planner = FlatPlanner(
         model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand, branch=args.branch, aggregate=args.aggregate,
         expansion=args.expansion, movement_weight=args.movement_weight,
-        beam_diagnostics=not args.no_beam_diagnostics, scorer=args.scorer, endpoints=args.endpoints,
+        beam_diagnostics=not args.no_beam_diagnostics, scorer=args.scorer,
+        distance_metric=args.distance_metric, endpoints=args.endpoints,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
         prior_samples=args.prior_samples, prior_top_p=args.prior_top_p,
         prior_temperature=args.prior_temperature, prior_top_k=args.prior_top_k,
@@ -227,6 +234,7 @@ def main() -> None:
         results = evaluate_flat_planning(planner, dataset, args.n_episodes, seed=args.seed)
     results["protocol"] = {
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
+        "distance_metric": args.distance_metric,
         "max_expand": args.max_expand, "branch": args.branch,
         "cap_mult": args.cap_mult,
         "flow_prior": args.flow_prior,

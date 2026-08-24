@@ -36,7 +36,7 @@ from torch import nn
 from textjepa.data.flat_stream import build_block_attention
 from textjepa.models.delta_decoder import ObservedActionDecoder
 from textjepa.models.ema import EMATeacher
-from textjepa.models.heads import HorizonEnergyHead
+from textjepa.models.heads import HorizonEnergyHead, QuasimetricEnergyHead
 from textjepa.models.lm_baseline import DecoderLM
 from textjepa.models.outputs import JEPAOutputs
 from textjepa.models.predictor import (
@@ -80,6 +80,8 @@ class FlatIntentJEPA(nn.Module):
         energy_imagined_kcat: int = 8,
         energy_prefix_cf_kind: str = "all",     # all | premature | resolved
         energy_prefix_depth_bias: str = "uniform",  # uniform | late
+        energy_head_kind: str = "mlp",  # mlp | quasimetric
+        energy_monotone: bool = False,
         value_detach: bool = False,
         teacher_chunk: int = 96,
         lm_loss_on: str = "all_solution",
@@ -115,6 +117,7 @@ class FlatIntentJEPA(nn.Module):
         self.energy_prefix_cf_kind = energy_prefix_cf_kind
         self.energy_prefix_depth_bias = energy_prefix_depth_bias
         self.energy_cf_scope = energy_cf_scope
+        self.energy_monotone = bool(energy_monotone)
         self.value_detach = bool(value_detach)
         self.teacher_chunk = int(teacher_chunk)
         self.lm_loss_on = lm_loss_on
@@ -167,10 +170,20 @@ class FlatIntentJEPA(nn.Module):
                 d_model, d_model, n_layers=predictor_layers,
                 n_heads=predictor_heads, residual=predictor_residual,
             )
-        self.horizon_energy_head = HorizonEnergyHead(
-            d_model, hidden_mult=energy_hidden_mult,
-            use_horizon=geo_horizon_input,
-        )
+        if energy_head_kind not in {"mlp", "quasimetric"}:
+            raise ValueError(f"unknown energy_head_kind: {energy_head_kind}")
+        self.energy_head_kind = energy_head_kind
+        if energy_head_kind == "quasimetric":
+            # structured state potential: d_q(endpoint, G(initial)); root and
+            # horizon are ignored on purpose (one ruler for every depth)
+            self.horizon_energy_head = QuasimetricEnergyHead(
+                d_model, hidden_mult=energy_hidden_mult,
+            )
+        else:
+            self.horizon_energy_head = HorizonEnergyHead(
+                d_model, hidden_mult=energy_hidden_mult,
+                use_horizon=geo_horizon_input,
+            )
         self.observed_action_decoder = (
             ObservedActionDecoder(d_model, vocab_size, ldad_max_len)
             if observed_action_ldad else None
@@ -315,6 +328,15 @@ class FlatIntentJEPA(nn.Module):
         if self.latent_rollout_ks:
             self._latent_rollout(
                 extras, prev_states, actions, step_states_t, step_mask
+            )
+        if self.energy_monotone:
+            # cross-time Energy trace from ONE fixed root: [B, T]
+            root_m = s0.unsqueeze(1).expand(-1, T, -1)
+            hz = torch.arange(
+                1, T + 1, device=device, dtype=s0.dtype
+            ).view(1, T).expand(B, T)
+            extras["energy_monotone"] = self.energy(
+                root_m, step_states, s0, hz
             )
         extras["s0_tgt"] = s0_t
         extras["prev_states_tgt"] = torch.cat(

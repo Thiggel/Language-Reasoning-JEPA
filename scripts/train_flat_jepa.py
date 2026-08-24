@@ -37,13 +37,17 @@ from textjepa.objectives import (
     CounterfactualStatePrediction,
     EnergyCFFeasibilityRank,
     EnergyImaginedRank,
+    EnergyMonotonicity,
+    HindsightGoalMonotonicity,
     EnergyPrefixRank,
     GeoAdvantageRegression,
     GeoHorizonRank,
+    GoalMonotonicity,
     IntentPriorLM,
     LatentPrediction,
     LatentRolloutPrediction,
     ObservedActionLDAD,
+    TemporalStraightening,
     VICReg,
 )
 from textjepa.training.loggers import MetricLogger
@@ -110,6 +114,14 @@ def build_objective(oc) -> CompositeObjective:
         "energy_prefix_rank": EnergyPrefixRank(oc.energy_prefix_rank.aggregate),
         "energy_imagined_rank": EnergyImaginedRank(),
         "intent_prior_lm": IntentPriorLM(),
+        # trajectory-geometry regularizers (all default to weight 0.0)
+        "straighten": TemporalStraightening(),
+        "monotone": GoalMonotonicity(margin=oc.monotone.margin, label_free=True),
+        "energy_monotone": EnergyMonotonicity(margin=oc.energy_monotone.margin),
+        "hindsight_monotone": HindsightGoalMonotonicity(
+            margin=oc.hindsight_monotone.margin,
+            n_goals=int(oc.hindsight_monotone.n_goals),
+        ),
     }
     weights = {name: float(getattr(oc, name).weight) for name in objs}
     return CompositeObjective(objs, weights)
@@ -229,16 +241,37 @@ def main(cfg: DictConfig) -> None:
         energy_imagined_kcat=int(c.objective.energy_imagined_rank.kcat),
         energy_prefix_cf_kind=c.objective.energy_prefix_rank.cf_kind,
         energy_prefix_depth_bias=c.objective.energy_prefix_rank.depth_bias,
+        energy_monotone=float(c.objective.energy_monotone.weight) > 0.0,
         lm_detach_state=bool(c.objective.intent_prior_lm.detach_state),
         **c.model.as_dict()
     ).to(device)
     _ = c.objective.latent_rollout_pred.ks
+    allow_missing = bool(c.init_allow_missing)  # read unconditionally
     init_ckpt = c.get("init_from_ckpt")
     if init_ckpt:
         # Warm start from a full flat-JEPA checkpoint (student + EMA teacher
-        # + heads).  New config flags add no parameters, so strict load.
+        # + heads).  Most flags add no parameters, so the load is strict.
+        # ``init_allow_missing`` is required for flags that ADD or REPLACE
+        # modules -- e.g. model.energy_head_kind=quasimetric swaps the energy
+        # head, which makes the OLD head's keys "unexpected" and the new
+        # head's keys "missing" at the same time.  With the flag on, both are
+        # tolerated and reported; the replaced parameters start fresh.
         state = torch.load(init_ckpt, map_location="cpu")
-        missing, unexpected = model.load_state_dict(state["model"], strict=False)
+        sd = state["model"]
+        if allow_missing:
+            own = model.state_dict()
+            dropped = [k for k in sd
+                       if k not in own or own[k].shape != sd[k].shape]
+            if dropped:
+                print(f"warm start: dropping {len(dropped)} checkpoint keys "
+                      f"that this config does not use (e.g. {dropped[:3]})")
+                sd = {k: v for k, v in sd.items() if k not in set(dropped)}
+        missing, unexpected = model.load_state_dict(sd, strict=False)
+        if allow_missing:
+            if missing:
+                print(f"warm start: {len(missing)} freshly-initialised "
+                      f"parameters (e.g. {missing[:3]})")
+            missing, unexpected = [], []
         if missing or unexpected:
             raise RuntimeError(
                 f"init_from_ckpt mismatch: missing={missing} unexpected={unexpected}"

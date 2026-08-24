@@ -38,7 +38,12 @@ from textjepa.objectives.value import (
     ActionDecode, ActionKL, GoalAdvantageDistill, ValueDistill, ValueRegression,
 )
 from textjepa.objectives.chunk_pred import ChunkPrediction, SlotAnchor
-from textjepa.objectives.geometry import GoalMonotonicity, TemporalStraightening
+from textjepa.objectives.geometry import (
+    EnergyMonotonicity,
+    HindsightGoalMonotonicity,
+    GoalMonotonicity,
+    TemporalStraightening,
+)
 from textjepa.objectives.ranking import (
     ActionRanking,
     CostRanking,
@@ -150,6 +155,8 @@ __all__ = [
     "GoalAdvantageDistill",
     "ActionKL",
     "ActionDecode",
+    "EnergyMonotonicity",
+    "HindsightGoalMonotonicity",
     "GoalMonotonicity",
     "TemporalStraightening",
     "Objective",

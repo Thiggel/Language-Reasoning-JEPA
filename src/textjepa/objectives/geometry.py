@@ -46,6 +46,75 @@ def goal_distances(out) -> torch.Tensor:
     return (ln(_all_states(out)) - ln(goal).unsqueeze(1)).abs().mean(-1)
 
 
+class HindsightGoalMonotonicity(Objective):
+    """GoalMonotonicity with the goal RELABELED to a random observed future.
+
+    :class:`GoalMonotonicity` uses one goal per trajectory -- the terminal
+    state -- so it supplies O(T) constraints and only ever describes
+    "distance to done".  Hindsight relabeling (Andrychowicz et al., 2017)
+    instead treats ANY observed future state ``s_j`` as a goal for the prefix
+    before it: the trajectory demonstrably reached ``s_j``, so ``s_t -> s_j``
+    is a true reachable-in-(j-t)-steps pair that needs no extra data and no
+    symbolic label.  That turns the same trajectories into O(T^2) constraints
+    and shapes the whole metric rather than one direction in it.
+
+    Steps at or after the sampled goal index are masked out -- after reaching
+    ``s_j`` there is nothing left to say about approaching it.
+    """
+
+    def __init__(self, margin: float = 0.02, n_goals: int = 2):
+        super().__init__()
+        self.margin = margin
+        self.n_goals = int(n_goals)
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        states = _all_states(out)  # [B, T+1, D]
+        tgt = out.extras.get("geo_states_tgt", out.step_states_tgt)  # [B,T,D]
+        mask = out.step_mask.float()
+        B, T = mask.shape
+        device = states.device
+        ln = lambda x: F.layer_norm(x, x.shape[-1:])
+        lens = mask.sum(1).clamp(min=1)
+        bidx = torch.arange(B, device=device)
+        steps = torch.arange(T, device=device).unsqueeze(0)
+        total = states.new_zeros(())
+        for _ in range(max(self.n_goals, 1)):
+            # uniform goal index among this trajectory's real steps
+            j = (torch.rand(B, device=device) * lens).long().clamp(max=T - 1)
+            goal = tgt[bidx, j]                                   # [B, D]
+            d = (ln(states) - ln(goal).unsqueeze(1)).abs().mean(-1)  # [B,T+1]
+            delta = d[:, 1:] - d[:, :-1]                           # [B, T]
+            valid = mask * (steps <= j.unsqueeze(1)).float()
+            total = total + masked_mean(F.relu(delta + self.margin), valid)
+        return total / max(self.n_goals, 1)
+
+
+class EnergyMonotonicity(Objective):
+    """The Energy of the observed trajectory must DECREASE step by step.
+
+    Every existing Energy term compares candidates that share an identical
+    root, initial state and horizon, so nothing ties energies at different
+    timesteps to a common scale.  This is the missing cross-time constraint:
+    from the single fixed root s_0, E(s_0, s_t, s_0, t) is required to fall as
+    t grows, which puts every depth on one ruler.
+
+    Self-supervised: it reads only the order of the observed trajectory, never
+    a step count, a necessary/distractor annotation or any symbolic label.
+    """
+
+    def __init__(self, margin: float = 0.05):
+        super().__init__()
+        self.margin = margin
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        e = out.extras.get("energy_monotone")
+        if e is None:
+            return out.s0.new_zeros(())
+        delta = e[:, 1:] - e[:, :-1]  # want < 0
+        return masked_mean(F.relu(delta + self.margin),
+                           out.step_mask[:, 1:].float())
+
+
 class TemporalStraightening(Objective):
     def forward(self, out, batch: dict) -> torch.Tensor:
         cos, mask = velocity_cosines(out)
@@ -69,8 +138,10 @@ class GoalMonotonicity(Objective):
     def forward(self, out, batch: dict) -> torch.Tensor:
         d = goal_distances(out)  # [B, T+1]
         delta = d[:, 1:] - d[:, :-1]  # <0 means the step moved toward goal
+        # label_free must not touch batch["necessary"] at all -- the flat
+        # pipeline does not even provide that key.
         nec = (
-            torch.ones_like(batch["necessary"], dtype=torch.float)
+            torch.ones_like(delta)
             if self.label_free
             else batch["necessary"].float()
         )
