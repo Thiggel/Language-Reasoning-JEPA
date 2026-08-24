@@ -100,6 +100,8 @@ def main() -> None:
                     help="skip the ORACLE beam-vs-depth-1 measurement (goal vector + 3 extra "
                          "scoring passes per step).  Plans are bit-identical, several times faster; "
                          "beam_closer_to_goal_than_d1_frac is then not reported")
+    ap.add_argument("--root-agg", default="best", choices=["best", "mean"],
+                help="first-action choice at depth>1: best = argmin rollout (historical); mean = argmin over MEAN energy of each root's surviving beams (variance reduction against the winner's curse)")
     ap.add_argument("--movement-weight", type=float, default=1.0,
                     help="aggregate=movement: weight of the no-movement penalty, in units "
                          "of the candidate-batch std of the endpoint energy")
@@ -207,6 +209,7 @@ def main() -> None:
     planner = FlatPlanner(
         model, vocab, device, lookahead=args.lookahead, max_expand=args.max_expand, branch=args.branch, aggregate=args.aggregate,
         expansion=args.expansion, movement_weight=args.movement_weight,
+        root_agg=args.root_agg,
         beam_diagnostics=not args.no_beam_diagnostics, scorer=args.scorer,
         distance_metric=args.distance_metric, endpoints=args.endpoints,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
@@ -236,6 +239,7 @@ def main() -> None:
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
         "distance_metric": args.distance_metric,
         "max_expand": args.max_expand, "branch": args.branch,
+        "root_agg": args.root_agg,
         "cap_mult": args.cap_mult,
         "flow_prior": args.flow_prior,
         "code_prior": args.code_prior,

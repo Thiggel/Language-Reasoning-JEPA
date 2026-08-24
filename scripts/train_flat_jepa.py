@@ -241,6 +241,7 @@ def main(cfg: DictConfig) -> None:
         energy_imagined_kcat=int(c.objective.energy_imagined_rank.kcat),
         energy_prefix_cf_kind=c.objective.energy_prefix_rank.cf_kind,
         energy_prefix_depth_bias=c.objective.energy_prefix_rank.depth_bias,
+        energy_prefix_n_insert=int(c.objective.energy_prefix_rank.n_insert),
         energy_monotone=float(c.objective.energy_monotone.weight) > 0.0,
         lm_detach_state=bool(c.objective.intent_prior_lm.detach_state),
         **c.model.as_dict()

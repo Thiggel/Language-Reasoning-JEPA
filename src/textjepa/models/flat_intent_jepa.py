@@ -80,6 +80,7 @@ class FlatIntentJEPA(nn.Module):
         energy_imagined_kcat: int = 8,
         energy_prefix_cf_kind: str = "all",     # all | premature | resolved
         energy_prefix_depth_bias: str = "uniform",  # uniform | late
+        energy_prefix_n_insert: int = 1,
         energy_head_kind: str = "mlp",  # mlp | quasimetric
         energy_monotone: bool = False,
         value_detach: bool = False,
@@ -116,6 +117,7 @@ class FlatIntentJEPA(nn.Module):
             )
         self.energy_prefix_cf_kind = energy_prefix_cf_kind
         self.energy_prefix_depth_bias = energy_prefix_depth_bias
+        self.energy_prefix_n_insert = max(1, int(energy_prefix_n_insert))
         self.energy_cf_scope = energy_cf_scope
         self.energy_monotone = bool(energy_monotone)
         self.value_detach = bool(value_detach)
@@ -820,6 +822,34 @@ class FlatIntentJEPA(nn.Module):
         msk = msk.scatter(
             2, j.unsqueeze(-1), torch.ones_like(j.unsqueeze(-1), dtype=msk.dtype)
         )
+        # ---- OPTIONAL EXTRA INSERTIONS (harder negatives) -----------------
+        # ``energy_prefix_n_insert`` > 1 wastes several steps per
+        # counterfactual path instead of one: each extra insertion shifts the
+        # suffix right (dropping one more true action at the tail) and
+        # scatters a fresh infeasible intent at a freshly sampled depth.
+        # Deep beam candidates differ from the observed path in many steps;
+        # single-insert negatives never cover that regime.
+        for _extra in range(1, self.energy_prefix_n_insert):
+            j_i = torch.multinomial(
+                probs.reshape(N * Kc, Hh), 1
+            ).reshape(N, Kc).clamp(max=L - 1)
+            pick_i = cf.permute(0, 2, 1).gather(
+                2, j_i.unsqueeze(-1)).squeeze(-1)
+            cf_vec_i = cat_vecs[b_of_n.unsqueeze(1), pick_i]
+            pos = ar.expand(N, Kc, L)
+            shift_src = (pos - 1).clamp(min=0)
+            seq_shift = seq.gather(
+                2, shift_src.unsqueeze(-1).expand(N, Kc, L, D))
+            msk_shift = msk.gather(2, shift_src)
+            take_new = pos >= j_i.unsqueeze(-1)
+            seq = torch.where(take_new.unsqueeze(-1), seq_shift, seq)
+            msk = torch.where(take_new, msk_shift, msk)
+            seq = seq.scatter(
+                2, j_i.view(N, Kc, 1, 1).expand(N, Kc, 1, D),
+                cf_vec_i.unsqueeze(2))
+            msk = msk.scatter(
+                2, j_i.unsqueeze(-1),
+                torch.ones_like(j_i.unsqueeze(-1), dtype=msk.dtype))
         # padded rows have spare slots after the true actions; truncate so the
         # counterfactual path never buys back the step it wasted.
         n_obs = flat_mask.sum(-1, keepdim=True).unsqueeze(-1)   # [N, 1, 1]

@@ -108,6 +108,7 @@ class FlatPlanner:
                  max_expand: int = 64, candidate_interface: str = "feasible_menu",
                  branch: int = 4, aggregate: str = "mean_prefix",
                  expansion: str = "beam", movement_weight: float = 1.0,
+                 root_agg: str = "best",
                  beam_diagnostics: bool = True,
                  scorer: str = "energy",
                  distance_metric: str = "raw",
@@ -144,6 +145,9 @@ class FlatPlanner:
         # uniformly from the pool); ``beam`` is the energy-guided expansion.
         self.expansion = expansion
         self.movement_weight = float(movement_weight)
+        if root_agg not in {"best", "mean"}:
+            raise ValueError(f"unknown root_agg {root_agg!r}")
+        self.root_agg = root_agg
         # The depth>1 "does the beam offer options closer to the solved state
         # than depth 1 would" MEASUREMENT needs an ORACLE goal vector (a full
         # re-encode of a completed trajectory at every step) plus three extra
@@ -880,7 +884,24 @@ class FlatPlanner:
                                        goal=goal, _force_oracle=True)
                     stats["beam_slots"] += int(dall.numel())
                     stats["beam_better_than_d1"] += int((dall < dist1).sum().item())
-            best = seqs[int(energy.argmin().item())]
+            if self.root_agg == "mean" and len(seqs) > 1:
+                # VARIANCE-REDUCED first-action choice (anti winner's-curse):
+                # a root is scored by the MEAN energy of all its surviving
+                # beams instead of its single luckiest continuation.  Selecting
+                # an argmin over noisy scores systematically favours positive
+                # score errors; averaging over continuations shrinks that
+                # selection noise where it grows fastest (deep lookahead).
+                groups: dict = {}
+                for s_i, e_i in zip(seqs, energy.tolist()):
+                    groups.setdefault(s_i[0], []).append((e_i, s_i))
+                best_root, best_mean = None, float("inf")
+                for r_key, lst in groups.items():
+                    m_val = sum(e for e, _ in lst) / len(lst)
+                    if m_val < best_mean:
+                        best_mean, best_root = m_val, r_key
+                best = min(groups[best_root])[1]
+            else:
+                best = seqs[int(energy.argmin().item())]
             q = best[0]
             if len(best) > 1:
                 # Diagnostic only (oracle used for MEASUREMENT): would the

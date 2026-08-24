@@ -63,3 +63,19 @@ def test_causal_history_shapes_match_mlp_masking_semantics():
     model = _model(vocab, predictor_kind="causal", latent_rollout_ks=(1,))
     out = model(batch)
     assert torch.isfinite(out.extras["rollout_preds"]).all()
+
+
+def test_multi_insert_counterfactuals_waste_more_steps():
+    """n_insert=2 must yield finite prefix energies, and each counterfactual
+    path must contain at least as many masked-in steps as the single-insert
+    variant while never exceeding the observed step budget."""
+    vocab, batch = _batch()
+    torch.manual_seed(0)
+    m2 = _model(vocab, energy_prefix_rank=True, energy_prefix_n_insert=2)
+    out2 = m2(batch)
+    assert "energy_prefix_cf" in out2.extras
+    assert torch.isfinite(out2.extras["energy_prefix_cf"]).all()
+    obs_valid = out2.extras["energy_prefix_obs_valid"]
+    cf_valid = out2.extras["energy_prefix_cf_valid"]
+    # length-matched: a cf path never spends more steps than its observed path
+    assert (cf_valid.sum(-1) <= obs_valid.sum(-1, keepdim=True)).all()

@@ -81,7 +81,7 @@ objective:
   # trajectory, not only its endpoint (opt-in; 0 = off, no behaviour change)
   # cf_kind: all (current) | premature (easy control) | resolved (hard: legal-looking but pointless)
   # depth_bias: uniform | late (bias the wasted step toward the end of the path)
-  energy_prefix_rank: {weight: 0.0, aggregate: mean_prefix, cf_kind: all, depth_bias: uniform}
+  energy_prefix_rank: {weight: 0.0, aggregate: mean_prefix, cf_kind: all, depth_bias: uniform, n_insert: 1}
   # energy ranking ON IMAGINED STATES: roll the predictor h steps under the
   # observed actions, then rank the observed continuation below sampled
   # catalogue counterfactuals at each imagined depth (opt-in; 0 = off).
