@@ -2562,3 +2562,4 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
 - Cells: scr-base, scr-rollpred-k4, scr-solprob (4103451-53, running), scr-causal, scr-causal-rollpred-k4 (fp32, 4103483-84). First boards expected ~3-4h per cell.
 - Ops trap logged twice today: sed-emptied line inside a backslash-continuation silently turns the rest of the command into standalone shell lines (scr wave failed once in 22s; blank line must be DELETED, then bash -n).
 - Pending design: encoded-state energy head (owner idea) to test whether encoder space supports learned long-range valuation where LN-L1 fails.
+- Alex evidence synced back: all cell/watch/final JSONs mirrored to runs/autonomy/intent_phrase/2026-08-25-alex-results/ (255 JSONs; Alex FS is not shared — this mirror is the durable copy).
