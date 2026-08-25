@@ -2506,3 +2506,24 @@ Smoke signal from the noise measurement (3 problems): rendering spread =
 ~49% of per-step state movement; 1-step predictor error only 1.9x that
 floor — temp-variable-name randomness in step rendering may be a large
 irreducible noise source (A2). Full 50-problem run in flight.
+
+## 2026-08-25 (morning) — overnight board read out: solprob is the headline; C1/D1 dead; A1 knockout says the planner lives on the predicted manifold
+
+All 12 finished Alex cells + all Grünau diagnostic lanes collected (fc = full_catalogue, 200 eps, metrics exact / answer / success at d1/2/4/8).
+
+**Winner: `fresh-solprob`** (rollout_solution_prob>0 — energy candidate rollouts follow solution trajectories — plus the 1M-fresh-data protocol):
+fc success 1.00/.95/.92/.815, answer .945/.835/.710/.590, exact .835/.653/.304/.172.
+That is the best depth profile any cell has ever posted: d4 success .92 (baseline .85), d8 success .815 (baseline .74), and answer at d8 nearly doubles the field (.59 vs ~.42-.47 elsewhere). Depth "drop" in success terms is now 1.00→.815 over d1→d8.
+
+Other cells: `fresh-horizon` (B2) solid second (answer d8 .42); `p16-freshdata` (1M data alone) does NOT fix depth (answer d4 .54) — fresh data helps but is not the mechanism; rollpred variants reconfirm the mid-depth exposure-bias gains (exact d4 ~.24-.31) without reaching solprob's success profile; `p16-late` still best exact-d8 (.206).
+
+**Diagnostics (all on the prefix16 ckpt, eval-only):**
+- A1 knockout (`--endpoints true` + oracle distance): WORSE than imagined endpoints (d2 success .695 vs .995 imagined; exact .000). With pred/enc norm ratio 2.35, encoded REAL states are off-manifold for the ruler — the planner's geometry is self-consistent on the predicted manifold even as it drifts from the encoder manifold. So "ground on real states at eval time" is not a fix; training-side grounding (rollpred/causal) is the right lever.
+- A2 noise (50 problems): render spread LN-L1 .168 = 49% of per-step movement .339; 1-step pred err .312 = 1.86× the noise floor; drift k=1..8: .31→.61. Rendering noise is a real, sizable floor — temp-name canonicalization remains a candidate fix.
+- C1 root-agg mean: worse at every depth (d4 exact .096 vs .169). Winner's curse is NOT the bottleneck. Dead.
+- D1 aggregate endpoint/movement: both far worse than mean_prefix. Dead.
+- Proposer lane unchanged: prior_propose answer stuck ~.55-.62 at d2 for every cell — proposer coverage is the independent second bottleneck, still needs the training-side off-path fix.
+
+Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 / fresh-insert2-rollpred-k8 (a100), p16-rollpred-late.
+
+**Planned next: combo round** — solprob + rollpred-k8 + late (+ horizon variant) on the fresh-data protocol; drift curve on a rollpred ckpt; then the proposer-coverage training fix.
