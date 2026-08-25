@@ -2544,3 +2544,4 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
 - Submit-line recovery: fresh-solprob also carried latent_rollout_pred weight 1.0 — the overnight winner is solprob+rollpred, not solprob alone.
 - New round (canonical rendering, snapshot 73eec47, warm-start prefix16, 1M×1 fresh data): canon-base, canon-solprob, canon-solprob-k8, canon-solprob-k8-late, canon-solprob-horizon, canon-solprob-insert2. Jobs 4101909-14, rtxpro6k/a100.
 - p16-rollpred-late was CANCELLED at 10min on 08-24 (not a result); superseded by fresh-rollpred-late.
+- Intermediate-signal watchers: 3 a40 jobs (4101976-78, alex_watch.sbatch) eval each canon cell's last.pt (fc d2+d4, 100 eps, canonical snapshot) every ~15min-cycle while training runs; results land in runs/<cell>/watch/t<HHMM>_d<D>.json. First curve points expected ~2-3h into training.
