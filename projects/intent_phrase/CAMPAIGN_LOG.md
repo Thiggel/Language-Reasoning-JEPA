@@ -2545,3 +2545,6 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
 - New round (canonical rendering, snapshot 73eec47, warm-start prefix16, 1M×1 fresh data): canon-base, canon-solprob, canon-solprob-k8, canon-solprob-k8-late, canon-solprob-horizon, canon-solprob-insert2. Jobs 4101909-14, rtxpro6k/a100.
 - p16-rollpred-late was CANCELLED at 10min on 08-24 (not a result); superseded by fresh-rollpred-late.
 - Intermediate-signal watchers: 3 a40 jobs (4101976-78, alex_watch.sbatch) eval each canon cell's last.pt (fc d2+d4, 100 eps, canonical snapshot) every ~15min-cycle while training runs; results land in runs/<cell>/watch/t<HHMM>_d<D>.json. First curve points expected ~2-3h into training.
+
+## 2026-08-25 (evening) — micro render-avg A/B: noise theory supported at d2
+- Paired 30-problem trueend-oracle test, same episodes: d1 identical (1.000/.900 both arms — control passes). d2: 1-render .733 solve/.333 answer → 4-render-averaged .833/.500. Halving ruler noise recovers ~1/3 of the d1→d2 cliff; canonical rendering (zero noise) expected to recover more. 30 eps → ±9%; 200-ep confirmation (lane E3) in flight, micro d4 arm still running.
