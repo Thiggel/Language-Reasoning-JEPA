@@ -2554,3 +2554,11 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
 - E1 endpoint-only aggregation (trueend d2, ep190): success .695 = baseline .695 → aggregation NOT the culprit. E2 expand256 (ep170): .676 ≈ baseline → width/winner's-curse NOT the fix. Rendering noise stands as the dominant explained factor (micro ravg d2 .733→.833 paired).
 - fresh-insert cells final (legacy): insert2 d4 exact .324 (field best), answer .670/.475 at d4/d8 — modest add; insert3 worse across the board (too-easy counterfactuals); insert2+rollpred-k8 no synergy. n_insert=2 worth carrying, not transformative.
 - canon-solprob + canon-solprob-k8 died at 90s with NODE_FAIL (bad node) — resubmitted as 4102919/4102920.
+
+## 2026-08-25 (night) — pivot: from-scratch fast round; causal NaN = bf16 bug (fp32 clean)
+- Owner call: warm-starting from prefix16 (legacy-noise encoder) contaminates conclusions and curves are flat after ~15% → cancelled the whole canon wave + watchers + slow legacy lanes (kept: E3 ravg-d2 200ep confirmation, noise-canon drift job).
+- New protocol (alex_cell5.sbatch): FROM SCRATCH (LM init only, no prefix16 warm start), canonical rendering, data.train_size=250000 (~2h Blackwell), eval fc d2/d4/d8 100 eps.
+- Causal-NaN diagnosis via paired 2k-problem probes: bf16 → nan from step ~0; fp32 → clean. Bf16 numerics bug in the causal path (suspect fully-masked attention rows); workaround = train causal in fp32 (fits in 96GB Blackwell), proper fix later.
+- Cells: scr-base, scr-rollpred-k4, scr-solprob (4103451-53, running), scr-causal, scr-causal-rollpred-k4 (fp32, 4103483-84). First boards expected ~3-4h per cell.
+- Ops trap logged twice today: sed-emptied line inside a backslash-continuation silently turns the rest of the command into standalone shell lines (scr wave failed once in 22s; blank line must be DELETED, then bash -n).
+- Pending design: encoded-state energy head (owner idea) to test whether encoder space supports learned long-range valuation where LN-L1 fails.
