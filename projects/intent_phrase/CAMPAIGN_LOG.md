@@ -2527,3 +2527,9 @@ Other cells: `fresh-horizon` (B2) solid second (answer d8 .42); `p16-freshdata` 
 Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 / fresh-insert2-rollpred-k8 (a100), p16-rollpred-late.
 
 **Planned next: combo round** — solprob + rollpred-k8 + late (+ horizon variant) on the fresh-data protocol; drift curve on a rollpred ckpt; then the proposer-coverage training fix.
+
+## 2026-08-25 (midday) — search code certified; rendering-noise theory of the depth cliff; knockout lanes launched
+- Symbolic-oracle ladder (2026-08-20) re-read: same beam/MPC code with a perfect scorer = 1.00 at d1/2/4/8 → search implementation exonerated. True-state + LN-L1 ruler ladder pooled: 1.00/.69/.62-.72/.64 — cliff at d2, flat after (no real recovery).
+- Working theory (owner's): rendering noise (random temp names, spread ≈ 1/2 step) makes each action's future multimodal; mean-seeking regression blurs the predictor (drift), and at eval the same jitter contaminates every encoded-state distance. d1 survives because sibling comparisons share prefixes and have big margins; d≥2 compares across branches where nothing cancels.
+- New eval-only knockout: `plan_flat --true-render-avg K` (commit 4cb9095) — average encodings of K re-renders of each REAL endpoint + goal, halving ruler noise at K=4. Lanes E3/E4 (trueend-ravg4-d2/d4, 200 eps) on gruenau2 GPUs 1/2. Also running: E1 endpoint-only aggregation trueend d2/d4, E2 width-256 trueend d2 + imagined endpoint-agg (gruenau1), trueend-d8 (g7).
+- Predictions: noise theory → ravg4 lifts d2 well above .69; aggregation theory → endpoint-only lifts it; winner's-curse/width → expand256 drops it.
