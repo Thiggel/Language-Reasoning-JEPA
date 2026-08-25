@@ -119,6 +119,10 @@ def main() -> None:
                          "latent_pred only matches the encoder up to LayerNorm "
                          "and predicted states sit at ~2.2x the encoder norm). "
                          "ln_l1 = LN-L1, the space the predictor is trained in")
+    ap.add_argument("--true-render-avg", type=int, default=1,
+                    help="DIAGNOSTIC (endpoints=true): re-render each real endpoint K times "
+                         "with perturbed global RNG and average the encodings, knocking out "
+                         "rendering noise from the distance ruler")
     ap.add_argument("--endpoints", default="imagined", choices=["imagined", "true"],
                     help="DIAGNOSTIC: true = execute candidates in a copy of the env and encode the REAL state")
     ap.add_argument("--branch", type=int, default=4,
@@ -212,6 +216,7 @@ def main() -> None:
         root_agg=args.root_agg,
         beam_diagnostics=not args.no_beam_diagnostics, scorer=args.scorer,
         distance_metric=args.distance_metric, endpoints=args.endpoints,
+        true_render_avg=args.true_render_avg,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
         prior_samples=args.prior_samples, prior_top_p=args.prior_top_p,
         prior_temperature=args.prior_temperature, prior_top_k=args.prior_top_k,
@@ -251,6 +256,7 @@ def main() -> None:
         "flow_oversample": args.flow_oversample if args.flow_prior else None,
         "flow_diversity": (not args.flow_no_diversity) if args.flow_prior else None,
         "aggregate": args.aggregate, "scorer": args.scorer, "endpoints": args.endpoints,
+        "true_render_avg": args.true_render_avg,
         "movement_weight": args.movement_weight if args.aggregate == "movement" else None,
         "beam_diagnostics": not args.no_beam_diagnostics,
         "expansion": (

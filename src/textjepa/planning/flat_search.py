@@ -113,6 +113,7 @@ class FlatPlanner:
                  scorer: str = "energy",
                  distance_metric: str = "raw",
                  endpoints: str = "imagined",
+                 true_render_avg: int = 1,
                  cap_mult: float = 4.0, mask_attempted: bool = True,
                  prior_samples: int = 16, prior_top_p: float = 0.95,
                  prior_temperature: float = 1.3, prior_greedy: int = 1,
@@ -167,6 +168,7 @@ class FlatPlanner:
             raise ValueError(f"unknown endpoints {endpoints!r}")
         self.scorer = scorer
         self.endpoints = endpoints
+        self.true_render_avg = max(1, int(true_render_avg))
         self.oracle_diagnostic = (scorer != "energy" or endpoints != "imagined")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
@@ -606,24 +608,38 @@ class FlatPlanner:
         probe = env.clone()
         hist = list(history)
         guard = 0
+        acts = []
         while not probe.solved and guard < 64:
             feas = probe.feasible_actions()
             if not feas:
                 break
             nxt = [q for q in feas if q in env.fp.necessary] or list(feas)
             q = sorted(nxt)[0]
+            acts.append(q)
             hist = hist + self.vocab.encode(probe.action_text(q))
             hist = hist + self.vocab.encode(probe.step(q))
             guard += 1
+        if self.true_render_avg > 1:
+            variants = [hist] + [
+                self._replay(env, history, acts, 7919 * r + 13)
+                for r in range(1, self.true_render_avg)
+            ]
+            return self._encode_batch(variants).mean(0), bool(probe.solved)
         return self._encode_batch([hist])[0], bool(probe.solved)
 
-    @torch.no_grad()
-    def _true_endpoints(self, seqs: list[list], env, history: list[int]):
-        """ORACLE: execute each candidate sequence in a copy of the env
-        (illegal actions are no-ops, as for the real executor) and encode the
-        resulting REAL state."""
-        hists = []
-        for seq in seqs:
+    def _replay(self, env, history: list[int], seq: list, salt=None):
+        """Re-execute ``seq`` from a fresh env clone; with ``salt`` set, under
+        a perturbed global RNG so the environment's step text is re-rendered
+        (temporary variable names are drawn from the global RNG).  RNG state
+        is restored.  ``salt=None`` uses the ambient RNG stream, matching the
+        historical single-render behavior."""
+        import random as _random
+        import numpy as _np
+        if salt is not None:
+            py, nps = _random.getstate(), _np.random.get_state()
+            _random.seed(salt)
+            _np.random.seed(salt % (2 ** 31))
+        try:
             probe = env.clone()
             hist = list(history)
             for a in seq:
@@ -631,8 +647,26 @@ class FlatPlanner:
                     continue
                 hist = hist + self.vocab.encode(probe.action_text(a))
                 hist = hist + self.vocab.encode(probe.step_or_invalid(a))
-            hists.append(hist)
-        return self._encode_batch(hists)
+            return hist
+        finally:
+            if salt is not None:
+                _random.setstate(py)
+                _np.random.set_state(nps)
+
+    @torch.no_grad()
+    def _true_endpoints(self, seqs: list[list], env, history: list[int]):
+        """ORACLE: execute each candidate sequence in a copy of the env
+        (illegal actions are no-ops, as for the real executor) and encode the
+        resulting REAL state."""
+        R = self.true_render_avg
+        hists = []
+        for seq in seqs:
+            for r in range(R):
+                hists.append(self._replay(env, history, seq, None if r == 0 else 7919 * r + 13))
+        out = self._encode_batch(hists)
+        if R > 1:
+            out = out.view(len(seqs), R, -1).mean(1)
+        return out
 
     def _symbolic_scores(self, seqs: list[list], env) -> torch.Tensor:
         """CANDIDATE-PRIVILEGED ORACLE DIAGNOSTIC (evaluation only; never a
