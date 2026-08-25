@@ -2548,3 +2548,9 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
 
 ## 2026-08-25 (evening) — micro render-avg A/B: noise theory supported at d2
 - Paired 30-problem trueend-oracle test, same episodes: d1 identical (1.000/.900 both arms — control passes). d2: 1-render .733 solve/.333 answer → 4-render-averaged .833/.500. Halving ruler noise recovers ~1/3 of the d1→d2 cliff; canonical rendering (zero noise) expected to recover more. 30 eps → ±9%; 200-ep confirmation (lane E3) in flight, micro d4 arm still running.
+
+## 2026-08-25 (late evening) — big news: canonical rendering alone is a large win; knockouts close culprits (1)+(2); insert2 modest
+- Watcher curves (100-ep fc, canonical eval): even canon-base (canonicalization ONLY, no solprob/rollpred) sits at d4 success ~.85-.92 / answer ~.6-.68 from the FIRST checkpoint — vs legacy analogue p16-freshdata final d4 .795/.54. canon-solprob-insert2 currently best: d4 success .95 / answer .80 (latest points). Curves are near-flat after ~10-20% of training → most of the gain arrives very early; long-tail training adds little (informs future round lengths).
+- E1 endpoint-only aggregation (trueend d2, ep190): success .695 = baseline .695 → aggregation NOT the culprit. E2 expand256 (ep170): .676 ≈ baseline → width/winner's-curse NOT the fix. Rendering noise stands as the dominant explained factor (micro ravg d2 .733→.833 paired).
+- fresh-insert cells final (legacy): insert2 d4 exact .324 (field best), answer .670/.475 at d4/d8 — modest add; insert3 worse across the board (too-easy counterfactuals); insert2+rollpred-k8 no synergy. n_insert=2 worth carrying, not transformative.
+- canon-solprob + canon-solprob-k8 died at 90s with NODE_FAIL (bad node) — resubmitted as 4102919/4102920.
