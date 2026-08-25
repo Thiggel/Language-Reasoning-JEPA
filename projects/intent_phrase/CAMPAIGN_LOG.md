@@ -2538,3 +2538,9 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
 - Root cause of render noise: reference renderer get_symbol() with symbol_method='rand' draws temp variable names from the process-global RNG. The renderer already ships a deterministic 'seq' mode; FaithfulEnv now forces it on its render copy (p2), so a trajectory always renders as the same text. Commit 73eec471211f39bd4834aeaae7b674dee312208d; regression tests in tests/test_canonical_rendering.py; TEXTJEPA_LEGACY_RENDER=1 reproduces the historical noisy rendering.
 - Scope: all step rendering (training trajectories, counterfactuals, planning eval). Problem statements untouched — that randomness is problem identity, not label noise.
 - OPS RULE: new training cells inherit canonical rendering automatically. Evaluating LEGACY-trained checkpoints must set TEXTJEPA_LEGACY_RENDER=1 (their encoders saw noisy renders). In-flight knockout lanes run from pre-canonical snapshots — unaffected.
+
+## 2026-08-25 (afternoon-2) — canonical combo round submitted; NaN causal cell killed
+- fresh-causal-rollpred had NaN grads FROM STEP 0 on Alex (grad-norm probe: encoder=nan for energy_prefix_rank at init; ran 14h on garbage) — killed (4097954). Causal predictor needs a numerics debug (suspect fp16/compile in the causal history path) before resubmission; local CPU tests pass.
+- Submit-line recovery: fresh-solprob also carried latent_rollout_pred weight 1.0 — the overnight winner is solprob+rollpred, not solprob alone.
+- New round (canonical rendering, snapshot 73eec47, warm-start prefix16, 1M×1 fresh data): canon-base, canon-solprob, canon-solprob-k8, canon-solprob-k8-late, canon-solprob-horizon, canon-solprob-insert2. Jobs 4101909-14, rtxpro6k/a100.
+- p16-rollpred-late was CANCELLED at 10min on 08-24 (not a result); superseded by fresh-rollpred-late.
