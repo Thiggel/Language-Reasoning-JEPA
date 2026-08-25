@@ -14,6 +14,7 @@ official checker ``tools.tools_test.true_correct``
 
 from __future__ import annotations
 
+import os
 import random
 import sys
 from pathlib import Path
@@ -176,6 +177,14 @@ class FaithfulEnv:
             from math_gen.problem_gen import feasible_symbols
 
             p2.symbols = copy.deepcopy(feasible_symbols)
+            # Canonical step rendering (2026-08-25): temporary variable
+            # names are assigned sequentially instead of drawn from the
+            # process-global RNG, so a given trajectory always renders as
+            # the same text.  The 'rand' naming gave the encoder targets a
+            # measured LN-L1 spread of ~half a solution step — pure label
+            # noise.  Set TEXTJEPA_LEGACY_RENDER=1 to reproduce old runs.
+            if not os.environ.get("TEXTJEPA_LEGACY_RENDER"):
+                p2.symbol_method = "seq"
             self.p2 = p2
 
     @property
