@@ -83,6 +83,8 @@ class FlatIntentJEPA(nn.Module):
         energy_prefix_n_insert: int = 1,
         energy_head_kind: str = "mlp",  # mlp | quasimetric
         energy_monotone: bool = False,
+        hindsight_long_horizon_rank: bool = False,
+        mismatched_goal_rank: bool = False,
         value_detach: bool = False,
         teacher_chunk: int = 96,
         lm_loss_on: str = "all_solution",
@@ -120,6 +122,8 @@ class FlatIntentJEPA(nn.Module):
         self.energy_prefix_n_insert = max(1, int(energy_prefix_n_insert))
         self.energy_cf_scope = energy_cf_scope
         self.energy_monotone = bool(energy_monotone)
+        self.hindsight_long_horizon_rank = bool(hindsight_long_horizon_rank)
+        self.mismatched_goal_rank = bool(mismatched_goal_rank)
         self.value_detach = bool(value_detach)
         self.teacher_chunk = int(teacher_chunk)
         self.lm_loss_on = lm_loss_on
@@ -332,6 +336,21 @@ class FlatIntentJEPA(nn.Module):
             extras["energy_monotone"] = self.energy(
                 root_m, step_states, s0, hz
             )
+        if self.mismatched_goal_rank and B > 1:
+            # GOAL-READING contrast: identical (root, endpoint) pairs, only
+            # the goal/initial slot differs -- the own prompt state vs.
+            # another problem's (batch rolled by one).  The paired ranking
+            # loss (``MismatchedGoalRank``) forces the Energy head to READ
+            # the goal input instead of scoring progress-shaped states
+            # goal-blind.  Real encoded transitions at EVERY depth.
+            s0_mis = torch.roll(s0, 1, dims=0)
+            g_prev, g_step = prev_states, step_states
+            g_own, g_mis = s0, s0_mis
+            if self.value_detach:
+                g_prev, g_step = prev_states.detach(), step_states.detach()
+                g_own, g_mis = s0.detach(), s0_mis.detach()
+            extras["energy_goal_own"] = self.energy(g_prev, g_step, g_own, 1)
+            extras["energy_goal_mis"] = self.energy(g_prev, g_step, g_mis, 1)
         extras["s0_tgt"] = s0_t
         extras["prev_states_tgt"] = torch.cat(
             [s0_t.unsqueeze(1), step_states_t[:, :-1]], dim=1
@@ -721,6 +740,70 @@ class FlatIntentJEPA(nn.Module):
                 out, batch, cat_vecs, root, initial, codes, flat_mask,
                 prefixes, act_mask, rv, B, C, R, Hh, hist_s_n, hist_a_n,
             )
+
+        # ---- hindsight long-horizon endpoint ranking -----------------------
+        if self.hindsight_long_horizon_rank and "ga_hl_act" in batch:
+            self._hindsight_long_rank(
+                out, batch, cat_vecs, s_anchor, goal, t, valid_b,
+                hist_s, hist_a,
+            )
+
+    # ---------------------------------------- hindsight long-horizon rank
+    def _hindsight_long_rank(self, out, batch, cat_vecs, s_anchor, goal, t,
+                             valid_b, hist_s=None, hist_a=None) -> None:
+        """Long-horizon endpoint ranking against the HINDSIGHT goal.
+
+        From the anchor state s_t the predictor imagines (a) the OBSERVED
+        continuation a_t..a_{t+h-1} and (b) random feasible same-length
+        rollouts from the dataset (``ga_hl_act``), with h drawn uniformly up
+        to the FULL remaining trajectory length -- not the geo_rank_horizons
+        cap, which concentrates every other contrast near the terminal.  The
+        Energy's goal/initial slot is the trajectory's own achieved terminal
+        (teacher-encoded), i.e. hindsight relabeling: the trajectory
+        demonstrably reached it, so no symbolic label is read.  Loss
+        (``HindsightLongHorizonRank``): the observed continuation's endpoint
+        must get lower energy than the random walks' endpoints.
+        """
+        actions, step_mask = out.actions, out.step_mask
+        B, T, D = actions.shape
+        device = actions.device
+        bidx = torch.arange(B, device=device)
+        h = batch["ga_hl_h"].clamp(min=1)                      # [B]
+        hl_valid = (batch["ga_hl_h"] > 0) & valid_b            # [B]
+        Hl = max(int(h.max().item()), 1)
+        ar = torch.arange(Hl, device=device).view(1, Hl)
+        idx = (t.unsqueeze(1) + ar).clamp(max=T - 1)
+        obs_codes = actions[bidx.unsqueeze(1), idx]            # [B, Hl, D]
+        obs_mask = (
+            (ar < h.unsqueeze(1)) & step_mask.gather(1, idx)
+            & hl_valid.unsqueeze(1)
+        )
+        pos_end = self.imagine(s_anchor, obs_codes, obs_mask, hist_s, hist_a)
+        neg = batch["ga_hl_act"]                               # [B, Rl, Hn]
+        neg_mask = batch["ga_hl_act_mask"] & hl_valid.view(B, 1, 1)
+        Rl, Hn = neg.shape[1], neg.shape[2]
+        neg_codes = cat_vecs[bidx.view(B, 1, 1), neg]          # [B, Rl, Hn, D]
+        neg_end = self.imagine(
+            s_anchor.repeat_interleave(Rl, 0),
+            neg_codes.reshape(B * Rl, Hn, D),
+            neg_mask.reshape(B * Rl, Hn),
+            hist_s.repeat_interleave(Rl, 0) if hist_s is not None else None,
+            hist_a.repeat_interleave(Rl, 0) if hist_a is not None else None,
+        ).reshape(B, Rl, D)
+        hz = h.to(s_anchor.dtype)
+        e_root, e_pos, e_neg = s_anchor, pos_end, neg_end
+        if self.value_detach:
+            e_root, e_pos, e_neg = (
+                s_anchor.detach(), pos_end.detach(), neg_end.detach()
+            )
+        out.extras["energy_hl_obs"] = self.energy(e_root, e_pos, goal, hz)
+        out.extras["energy_hl_neg"] = self.energy(
+            e_root.unsqueeze(1).expand(-1, Rl, -1), e_neg, goal,
+            hz.unsqueeze(1),
+        )
+        out.extras["energy_hl_valid"] = (
+            neg_mask.any(-1) & obs_mask.any(-1).unsqueeze(1)
+        )
 
     # ------------------------------------------------- prefix (path) rank
     def _prefix_rank(self, out, batch, cat_vecs, root, initial, codes,

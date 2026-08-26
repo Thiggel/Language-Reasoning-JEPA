@@ -43,7 +43,9 @@ from textjepa.objectives import (
     GeoAdvantageRegression,
     GeoHorizonRank,
     GoalMonotonicity,
+    HindsightLongHorizonRank,
     IntentPriorLM,
+    MismatchedGoalRank,
     LatentPrediction,
     LatentRolloutPrediction,
     ObservedActionLDAD,
@@ -122,8 +124,16 @@ def build_objective(oc) -> CompositeObjective:
             margin=oc.hindsight_monotone.margin,
             n_goals=int(oc.hindsight_monotone.n_goals),
         ),
+        # depth-cliff fixes (opt-in; the config sections may be entirely
+        # absent from older configs -> weight 0.0, exactly no behaviour)
+        "hindsight_long_horizon_rank": HindsightLongHorizonRank(),
+        "mismatched_goal_rank": MismatchedGoalRank(),
     }
-    weights = {name: float(getattr(oc, name).weight) for name in objs}
+    optional = {"hindsight_long_horizon_rank", "mismatched_goal_rank"}
+    weights = {}
+    for name in objs:
+        sub = oc.get(name) if name in optional else getattr(oc, name)
+        weights[name] = float(sub.weight) if sub is not None else 0.0
     return CompositeObjective(objs, weights)
 
 
@@ -134,7 +144,8 @@ def build_vocab_for(dc):
     return cached_faithful_vocab(dc.vocab_max_op, dc.vocab_max_edge)
 
 
-def build_data(dc, vocab, split: str, lm_loss_on: str, size=None):
+def build_data(dc, vocab, split: str, lm_loss_on: str, size=None,
+               hindsight_rollout: bool = False, hindsight_max=None):
     n = size if size is not None else (
         dc.train_size if split == "train" else dc.val_size)
     seed = dc.train_seed if split == "train" else dc.val_seed
@@ -159,6 +170,9 @@ def build_data(dc, vocab, split: str, lm_loss_on: str, size=None):
                 dc.invalid_counterfactual_resolved_k),
             rollout_counterfactual_k=dc.rollout_counterfactual_k,
             rollout_solution_prob=dc.get('rollout_solution_prob', 0.0),
+            depth_uniform_anchors=dc.get('depth_uniform_anchors', False),
+            hindsight_long_rollout=hindsight_rollout,
+            hindsight_long_max=hindsight_max,
             all_action_supervision=True,
         )
         return FlatIntentStreamDataset(
@@ -177,6 +191,9 @@ def build_data(dc, vocab, split: str, lm_loss_on: str, size=None):
         invalid_counterfactual_resolved_k=dc.invalid_counterfactual_resolved_k,
         rollout_counterfactual_k=dc.rollout_counterfactual_k,
         rollout_solution_prob=dc.get('rollout_solution_prob', 0.0),
+        depth_uniform_anchors=dc.get('depth_uniform_anchors', False),
+        hindsight_long_rollout=hindsight_rollout,
+        hindsight_long_max=hindsight_max,
         all_action_supervision=True,
         necessary_range=tuple(dc.necessary_range) if dc.necessary_range else (None, None),
     )
@@ -232,6 +249,14 @@ def main(cfg: DictConfig) -> None:
         list(c.objective.latent_rollout_pred.ks)
         if float(c.objective.latent_rollout_pred.weight) > 0.0 else []
     )
+    # depth-cliff fixes (opt-in; sections absent from older configs -> off).
+    # One switch each: the objective weight drives the model flag AND (for
+    # the hindsight term) the dataset's long-rollout generation.
+    hl_cfg = c.objective.get("hindsight_long_horizon_rank")
+    hl_on = hl_cfg is not None and float(hl_cfg.weight) > 0.0
+    hl_max = hl_cfg.get("max_h") if hl_cfg is not None else None
+    mg_cfg = c.objective.get("mismatched_goal_rank")
+    mg_on = mg_cfg is not None and float(mg_cfg.weight) > 0.0
     model = FlatIntentJEPA(
         vocab_size=len(vocab), pad_id=vocab.pad_id,
         latent_rollout_ks=rollout_ks,
@@ -243,6 +268,8 @@ def main(cfg: DictConfig) -> None:
         energy_prefix_depth_bias=c.objective.energy_prefix_rank.depth_bias,
         energy_prefix_n_insert=int(c.objective.energy_prefix_rank.n_insert),
         energy_monotone=float(c.objective.energy_monotone.weight) > 0.0,
+        hindsight_long_horizon_rank=hl_on,
+        mismatched_goal_rank=mg_on,
         lm_detach_state=bool(c.objective.intent_prior_lm.detach_state),
         **c.model.as_dict()
     ).to(device)
@@ -280,8 +307,10 @@ def main(cfg: DictConfig) -> None:
         print(f"warm-started from {init_ckpt} (epoch {state.get('epoch')}, step {state.get('step')})")
     objective = build_objective(c.objective)
     lm_loss_on = c.model.lm_loss_on
-    train_ds = build_data(c.data, vocab, "train", lm_loss_on)
-    val_ds = build_data(c.data, vocab, "val", lm_loss_on)
+    train_ds = build_data(c.data, vocab, "train", lm_loss_on,
+                          hindsight_rollout=hl_on, hindsight_max=hl_max)
+    val_ds = build_data(c.data, vocab, "val", lm_loss_on,
+                        hindsight_rollout=hl_on, hindsight_max=hl_max)
     coll = partial(collate_flat, pad_id=vocab.pad_id)
     tc = c.train
     micro = int(tc.microbatch_size)

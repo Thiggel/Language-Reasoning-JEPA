@@ -154,6 +154,14 @@ class FlatIntentStreamDataset(Dataset):
                 ga_roll_cf=roll_cf,
                 ga_roll_cf_kind=roll_cf_kind,
             )
+            if "ga_hl_actions" in item:
+                # hindsight long-horizon negatives: catalogue indices of the
+                # random feasible rollout actions from the anchor state
+                out["ga_hl_h"] = int(item["ga_hl_h"])
+                out["ga_hl_act"] = [
+                    [cat_index[tuple(a)] for a in seq]
+                    for seq in item["ga_hl_actions"]
+                ]
         return out
 
 
@@ -298,6 +306,24 @@ def collate_flat(batch: list[dict], pad_id: int) -> dict:
             ga_roll_cf_kind=roll_cf_kind,
             ga_requested_horizon=horizon,
         )
+    hl_items = [b for b in batch if "ga_hl_act" in b]
+    if hl_items:
+        Rl = max(len(b["ga_hl_act"]) for b in hl_items)
+        Hl = max(
+            (len(seq) for b in hl_items for seq in b["ga_hl_act"]), default=1
+        )
+        hl_act = torch.zeros((B, Rl, max(Hl, 1)), dtype=torch.long)
+        hl_mask = torch.zeros((B, Rl, max(Hl, 1)), dtype=torch.bool)
+        hl_h = torch.zeros(B, dtype=torch.long)
+        for i, b in enumerate(batch):
+            if "ga_hl_act" not in b:
+                continue
+            hl_h[i] = b["ga_hl_h"]
+            for r, seq in enumerate(b["ga_hl_act"]):
+                if seq:
+                    hl_act[i, r, : len(seq)] = torch.tensor(seq)
+                    hl_mask[i, r, : len(seq)] = True
+        out.update(ga_hl_act=hl_act, ga_hl_act_mask=hl_mask, ga_hl_h=hl_h)
     return out
 
 

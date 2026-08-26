@@ -280,6 +280,9 @@ class FaithfulDataset(Dataset):
         invalid_counterfactual_resolved_k: int = 0,
         rollout_counterfactual_k: int = 0,
         rollout_solution_prob: float = 0.0,
+        depth_uniform_anchors: bool = False,
+        hindsight_long_rollout: bool = False,
+        hindsight_long_max=None,
         macro_alt_k: int = 0,
         macro_alt_horizon: int = 3,
         all_action_supervision: bool = False,
@@ -359,6 +362,24 @@ class FaithfulDataset(Dataset):
                 f"rollout_solution_prob must be in [0, 1]: "
                 f"{self.rollout_solution_prob}"
             )
+        # ANCHOR DEPTH: sample the ranking anchor's steps-to-go uniformly up
+        # to the generator's cap instead of uniformly over trace positions.
+        # Uniform-over-t makes large steps-to-go rare across the dataset
+        # (only long traces can produce them); this flag makes far-from-goal
+        # ranking contrasts as frequent as near-goal ones.  Off = historical
+        # behaviour, bit-identical (same single RNG draw either way).
+        self.depth_uniform_anchors = bool(depth_uniform_anchors)
+        # HINDSIGHT LONG-HORIZON negatives: additionally emit
+        # ``geo_rank_rollouts`` random FEASIBLE rollouts from the anchor
+        # state with a horizon drawn uniformly up to the FULL remaining
+        # trajectory length (optionally capped by ``hindsight_long_max``),
+        # for the hindsight_long_horizon_rank objective.  Isolated RNG
+        # stream: enabling it changes no other field.
+        self.hindsight_long_rollout = bool(hindsight_long_rollout)
+        self.hindsight_long_max = (
+            None if hindsight_long_max is None
+            else max(1, int(hindsight_long_max))
+        )
         self.macro_alt_k = max(0, int(macro_alt_k))
         self.macro_alt_horizon = max(1, int(macro_alt_horizon))
         self.all_action_supervision = bool(all_action_supervision)
@@ -462,7 +483,15 @@ class FaithfulDataset(Dataset):
         prompt = [self.vocab.encode(s) for s in fp.prompt_sentences]
         ga = {}
         if self.geo_rank_k and len(trace) > 1:
-            t_star = rng.randrange(len(trace))
+            if self.depth_uniform_anchors:
+                # Steps-to-go uniform up to the generator cap; the clamp
+                # piles the excess on the trajectory start, the farthest
+                # state this trace has (see __init__).
+                cap = self.op_range[1] + self.max_distractors
+                d = 1 + rng.randrange(max(cap, 1))
+                t_star = len(trace) - min(d, len(trace))
+            else:
+                t_star = rng.randrange(len(trace))
             env2 = FaithfulEnv(fp)
             for q in trace[:t_star]:
                 env2.step(q)
@@ -629,6 +658,33 @@ class FaithfulDataset(Dataset):
                     if self.rollout_counterfactual_k:
                         ga["ga_rollout_cf_actions"] = rollout_cf_actions
                         ga["ga_rollout_cf_kinds"] = rollout_cf_kinds
+        # HINDSIGHT LONG-HORIZON negatives (see __init__): random feasible
+        # rollouts from the anchor state, horizon h uniform up to the full
+        # remaining trajectory length.  Isolated RNG stream.
+        if self.hindsight_long_rollout and ga:
+            hl_rng = random.Random(f"{self.seed}:{index}:hl")
+            cap = len(trace) - t_star
+            if self.hindsight_long_max is not None:
+                cap = min(cap, self.hindsight_long_max)
+            h = 1 + hl_rng.randrange(max(cap, 1))
+            hl_actions = []
+            for _ in range(self.geo_rank_rollouts):
+                roll_env = env2.clone()
+                seq = []
+                for _depth in range(h):
+                    if roll_env.solved:
+                        break
+                    feasible = roll_env.feasible_actions()
+                    if not feasible:
+                        break
+                    nxt = feasible[hl_rng.randrange(len(feasible))]
+                    seq.append(
+                        self.vocab.encode(roll_env.action_text(nxt))
+                    )
+                    roll_env.step(nxt)
+                hl_actions.append(seq)
+            ga["ga_hl_h"] = h
+            ga["ga_hl_actions"] = hl_actions
         # Grounding falsifier (named negative control): permute the
         # correspondence between on-trajectory action phrases and their
         # rendered transitions.  Drawn last, after all other randomness, to

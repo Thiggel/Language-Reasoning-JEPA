@@ -114,3 +114,60 @@ class EnergyImaginedRank(Objective):
             )
             out.extras["diag_energy_img_pairs"] = valid.sum().float()
         return masked_mean(pair_loss, valid.float())
+
+
+class HindsightLongHorizonRank(Objective):
+    """Long-horizon hindsight endpoint ranking.
+
+    See :meth:`FlatIntentJEPA._hindsight_long_rank`: from an anchor state the
+    predictor imagines the OBSERVED continuation and random feasible
+    same-length rollouts, with the horizon drawn uniformly up to the FULL
+    remaining trajectory length (not the geo_rank_horizons cap) and the
+    trajectory's own achieved terminal (hindsight) in the Energy's goal
+    slot.  Loss = softplus(E_obs - E_neg) over valid pairs: the endpoint of
+    the continuation that actually occurred must have lower energy.  Label =
+    which continuation occurred; no symbolic quantity is read.
+    """
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        e_obs = out.extras.get("energy_hl_obs")
+        if e_obs is None:
+            return out.step_states.sum() * 0.0
+        e_neg = out.extras["energy_hl_neg"]      # [B, R]
+        valid = out.extras["energy_hl_valid"]    # [B, R]
+        pair_loss = F.softplus(e_obs.unsqueeze(-1) - e_neg)
+        with torch.no_grad():
+            ordered = (e_obs.unsqueeze(-1) < e_neg) & valid
+            out.extras["diag_energy_hl_acc"] = (
+                ordered.sum().float() / valid.sum().clamp(min=1)
+            )
+            out.extras["diag_energy_hl_pairs"] = valid.sum().float()
+        return masked_mean(pair_loss, valid.float())
+
+
+class MismatchedGoalRank(Objective):
+    """The Energy must prefer the OWN goal over another problem's goal.
+
+    For every observed transition the model emits E(s_t, s_{t+1}, s0_own, 1)
+    and E(s_t, s_{t+1}, s0_other, 1) with the goal/initial slot swapped
+    across problems within the batch (roll by one; see
+    ``FlatIntentJEPA.forward``).  Loss = softplus(E_own - E_other): the
+    (root, endpoint) pair is identical, only the goal input differs, so the
+    head is FORCED to read the goal.  Self-supervised: which prompt a
+    trajectory belongs to is in the data.  Zero (skip) when the model flag
+    is off or the microbatch has a single problem.
+    """
+
+    def forward(self, out, batch: dict) -> torch.Tensor:
+        e_own = out.extras.get("energy_goal_own")
+        if e_own is None:
+            return out.step_states.sum() * 0.0
+        e_mis = out.extras["energy_goal_mis"]    # [B, T]
+        valid = out.step_mask.float()
+        pair_loss = F.softplus(e_own - e_mis)
+        with torch.no_grad():
+            ordered = (e_own < e_mis) & out.step_mask
+            out.extras["diag_energy_goal_acc"] = (
+                ordered.sum().float() / valid.sum().clamp(min=1)
+            )
+        return masked_mean(pair_loss, valid)

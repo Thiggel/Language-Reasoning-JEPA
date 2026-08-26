@@ -32,6 +32,8 @@ from textjepa.objectives.energy_feasibility import (
     EnergyCFFeasibilityRank,
     EnergyImaginedRank,
     EnergyPrefixRank,
+    HindsightLongHorizonRank,
+    MismatchedGoalRank,
 )
 from textjepa.objectives.intent_prior import IntentPriorLM
 from textjepa.objectives.value import (
@@ -106,6 +108,8 @@ __all__ = [
     "EnergyCFFeasibilityRank",
     "EnergyImaginedRank",
     "EnergyPrefixRank",
+    "HindsightLongHorizonRank",
+    "MismatchedGoalRank",
     "IntentPriorLM",
     "ActionGeneration",
     "GaussianActionPriorNLL",

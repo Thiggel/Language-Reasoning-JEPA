@@ -120,6 +120,9 @@ class IGSMDataset(Dataset):
         invalid_counterfactual_resolved_k: int = 0,
         rollout_counterfactual_k: int = 0,
         rollout_solution_prob: float = 0.0,
+        depth_uniform_anchors: bool = False,
+        hindsight_long_rollout: bool = False,
+        hindsight_long_max=None,
         sample_max_tries: int = 50,
         strict_steps_range: bool = False,
         adjectives: list[str] | None = None,
@@ -179,6 +182,18 @@ class IGSMDataset(Dataset):
                 f"rollout_solution_prob must be in [0, 1]: "
                 f"{self.rollout_solution_prob}"
             )
+        # See FaithfulDataset: sample the ranking anchor's steps-to-go
+        # uniformly up to the generator cap (far-from-goal contrasts as
+        # frequent as near-goal ones); off = historical, bit-identical.
+        self.depth_uniform_anchors = bool(depth_uniform_anchors)
+        # See FaithfulDataset: extra random feasible rollouts from the
+        # anchor with horizon up to the FULL remaining trajectory length,
+        # for hindsight_long_horizon_rank.  Isolated RNG stream.
+        self.hindsight_long_rollout = bool(hindsight_long_rollout)
+        self.hindsight_long_max = (
+            None if hindsight_long_max is None
+            else max(1, int(hindsight_long_max))
+        )
         self.sample_max_tries = max(1, int(sample_max_tries))
         self.strict_steps_range = bool(strict_steps_range)
         if self.geo_rank_policy not in {"random", "greedy", "latent_beam"}:
@@ -278,7 +293,15 @@ class IGSMDataset(Dataset):
             # one anchor step: alt intent phrases + env-rendered TRUE next
             # step sentences (text only; the ranking label is computed in
             # latent space by the model — no symbolic annotations)
-            t_star = rng.randrange(len(trace))
+            if self.depth_uniform_anchors:
+                # Steps-to-go uniform up to the generator cap; the clamp
+                # piles the excess on the trajectory start, the farthest
+                # state this trace has (see __init__).
+                cap = self.steps_range[1] + self.max_distractors
+                d = 1 + rng.randrange(max(cap, 1))
+                t_star = len(trace) - min(d, len(trace))
+            else:
+                t_star = rng.randrange(len(trace))
             env2 = SymbolicEnv(p, self.invalid_action_mode)
             for i in trace[:t_star]:
                 env2.step(i)
@@ -493,6 +516,32 @@ class IGSMDataset(Dataset):
                     if self.rollout_counterfactual_k:
                         ga["ga_rollout_cf_actions"] = rollout_cf_actions
                         ga["ga_rollout_cf_kinds"] = rollout_cf_kinds
+
+        # HINDSIGHT LONG-HORIZON negatives (see __init__): random feasible
+        # rollouts from the anchor state, horizon h uniform up to the full
+        # remaining trajectory length.  Isolated RNG stream.
+        if self.hindsight_long_rollout and ga:
+            hl_rng = random.Random(f"{self.seed}:{index}:hl")
+            cap = len(trace) - t_star
+            if self.hindsight_long_max is not None:
+                cap = min(cap, self.hindsight_long_max)
+            h = 1 + hl_rng.randrange(max(cap, 1))
+            hl_actions = []
+            for _ in range(self.geo_rank_rollouts):
+                roll_env = env2.clone()
+                seq = []
+                for _depth in range(h):
+                    if roll_env.solved:
+                        break
+                    feasible = roll_env.feasible_actions()
+                    if not feasible:
+                        break
+                    nxt = feasible[hl_rng.randrange(len(feasible))]
+                    seq.append(self.vocab.encode(action_phrase(p, nxt)))
+                    roll_env.step(nxt)
+                hl_actions.append(seq)
+            ga["ga_hl_h"] = h
+            ga["ga_hl_actions"] = hl_actions
 
         # Keep the grounding falsifier exactly paired with the aligned
         # condition.  In particular, draw the GAR anchor, alternatives, and

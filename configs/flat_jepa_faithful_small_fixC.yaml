@@ -1,0 +1,124 @@
+# Depth-cliff fix testbed (fixC): copy of configs/flat_jepa_faithful_small.yaml with epochs: 2 and the
+# respective flag on: objective.mismatched_goal_rank.
+# copy of configs/flat_jepa_stylized.yaml with the model shrunk to 4 layers /
+# d256 / 4 heads; the small model makes the FULL frozen 10-epoch budget fit in
+# ~2-2.5h on one GPU.  Data + objective (counterfactual-ranking energy recipe)
+# and the train section are untouched from the frozen recipe.
+# warm start from a full flat-JEPA checkpoint (student+teacher+heads); null = off
+init_from_ckpt: null
+# allow warm start when new flags ADD modules; those parameters start fresh.
+init_allow_missing: false
+run_name: flat_jepa_faithful_small_fixC
+seed: 0
+device: cuda:0
+
+data:
+  name: faithful
+  max_op: 15
+  max_edge: 20
+  op_range: [3, 15]
+  vocab_max_op: 15
+  vocab_max_edge: 20
+  necessary_range: null
+  distractor_prob: 0.0
+  max_distractors: 2
+  train_size: 100000
+  val_size: 500
+  train_seed: 1
+  val_seed: 2
+  # geometric-ranking counterfactuals (frozen recipe, identical to faithful)
+  geo_rank_k: 2
+  geo_rank_horizons: [1, 2, 4, 8]
+  geo_rank_rollouts: 4
+  invalid_counterfactual_k: 8
+  invalid_counterfactual_unresolved_only: true
+  invalid_counterfactual_resolved_k: 4
+  rollout_counterfactual_k: 4
+  # rollout policy: probability a rollout step follows the reference
+  # solution instead of a uniformly random feasible action (0 = historical)
+  rollout_solution_prob: 0.0
+
+model:
+  d_model: 256
+  n_layers: 4
+  n_heads: 4
+  ff_mult: 4
+  max_len: 4096
+  init_from_lm: null        # 768d LM incompatible with d256; from scratch
+  encoder_mode: full        # full | frozen | lora
+  lora_rank: 16
+  lora_alpha: 32.0
+  predictor_kind: mlp       # mlp | causal
+  predictor_hidden_mult: 4
+  predictor_layers: 2
+  predictor_residual: true
+  predictor_heads: 8
+  energy_hidden_mult: 2
+  energy_head_kind: mlp     # mlp (frozen recipe) | quasimetric
+  geo_horizon_input: false  # horizon-blind endpoint Energy (frozen recipe)
+  observed_action_ldad: true
+  ldad_max_len: 16
+  energy_cf_feasibility_rank: true
+  energy_cf_scope: all      # all | invalid_only
+  value_detach: false
+  teacher_chunk: 96
+  lm_loss_on: all_solution  # intent | all_solution
+
+objective:
+  latent_pred: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  latent_rollout_pred: {weight: 0.0, kind: smooth_l1, norm_targets: true, ks: [1, 2, 4]}
+  vicreg: {weight: 1.0, std_target: 1.0, cov_weight: 0.04, action_weight: 0.1}
+  counterfactual_state: {weight: 1.0, kind: smooth_l1, norm_targets: true}
+  geo_horizon_rank: {weight: 1.0, kind: logistic, margin: 0.5, label_gap: 0.02, temperature: 0.3, teacher_temperature: 0.1}
+  geo_advantage_mse: {weight: 0.25, target_scale: 1.0}
+  observed_action_ldad: {weight: 1.0}
+  energy_cf_feasibility_rank: {weight: 4.0}
+  # path-level counterfactual ranking: score every prefix of an imagined
+  # trajectory, not only its endpoint (opt-in; 0 = off, no behaviour change)
+  # cf_kind: all (current) | premature (easy control) | resolved (hard: legal-looking but pointless)
+  # depth_bias: uniform | late (bias the wasted step toward the end of the path)
+  energy_prefix_rank: {weight: 0.0, aggregate: mean_prefix, cf_kind: all, depth_bias: uniform, n_insert: 1}
+  # energy ranking ON IMAGINED STATES: roll the predictor h steps under the
+  # observed actions, then rank the observed continuation below sampled
+  # catalogue counterfactuals at each imagined depth (opt-in; 0 = off).
+  # depth: max rollout depth (contrasts at imagined depths 1..depth-1);
+  # kcat: sampled catalogue counterfactuals per imagined state.
+  energy_imagined_rank: {weight: 0.0, depth: 4, kcat: 8}
+  # detach_state: train the proposal head on a stop-gradient state (and with an
+  # UNTIED output matrix), so this CE term reaches no encoder parameter at all.
+  # --- trajectory geometry knobs (all off; 0 = no behaviour change) ---
+  straighten: {weight: 0.0}
+  monotone: {weight: 0.0, margin: 0.02}
+  energy_monotone: {weight: 0.0, margin: 0.05}
+  hindsight_monotone: {weight: 0.0, margin: 0.02, n_goals: 2}
+  # FIX C: goal-swap ranking (own goal must beat another problem's)
+  mismatched_goal_rank: {weight: 1.0}
+  intent_prior_lm: {weight: 1.0, detach_state: false}
+
+train:
+  batch_size: 16
+  microbatch_size: 16
+  num_workers: 12
+  epochs: 2
+  lr: 1.0e-4
+  encoder_lr_mult: 1.0      # lr multiplier for the backbone (1 = same lr)
+  betas: [0.9, 0.95]
+  lr_floor: 0.05
+  weight_decay: 0.05
+  warmup_steps: 500
+  grad_clip: 5.0
+  ema_start: 0.99
+  ema_end: 0.999
+  log_every: 20
+  eval_batches: 20
+  precision: bf16
+  max_steps: null           # smoke runs: stop after this many optimizer steps
+  grad_norm_report_steps: 1 # per-term per-module grad-norm report on the first N steps
+  checkpoint_every_steps: 500
+
+hydra:
+  run:
+    dir: runs/${run_name}
+  output_subdir: null
+  job:
+    chdir: false
