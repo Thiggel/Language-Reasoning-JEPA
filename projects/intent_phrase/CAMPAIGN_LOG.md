@@ -2591,3 +2591,32 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
   Causal history helps d4 answers (+.13) but the depth cliff persists -> predictor class is not the culprit (batch 8-vs-16 confound noted).
 - Goal-set min-distance control (d4, K=16) running on gruenau12 (predicted null). Stylized-small (4L/d256) fast-testbed training
   launched (`2026-08-26-stylized-small-v1`). Lanes A/B d8 + lane E still running on V100s.
+
+## 2026-08-26 (evening): progress-probe verdict — information PRESENT, readout broken
+
+- **The decisive fork is answered** (`runs/autonomy/intent_phrase/2026-08-26-progress-probe-v1/REPORT.md`, ORACLE DIAGNOSTIC,
+  evaluation-only; script `scripts/probe_progress_ranking.py`). On scr-base frozen states (hard21 val seed 2, canonical, fp32;
+  300 probe-train / 150 disjoint probe-eval problems, depths 3-8), small probes trained with a pairwise ranking loss
+  (necessary next state vs 3 random feasible non-necessary next states, executed + re-encoded) were evaluated by steps-to-go:
+  - Plain LN-L1 distance-to-goal (the planner's ruler, no training): 1.00 / .93 / .75 / .63 / **.58** at steps-to-go 1/2/3/4-5/6+
+    — the last-mile claim, quantified.
+  - A **LINEAR probe holds ~.89 at steps-to-go 4-5 AND 6+** (MLP similar); goal-blind variant identical.
+  - Untrained same-architecture encoder control: probes ~.52-.59 at 6+ — the signal comes from JEPA training, not raw text.
+- **Verdict: the depth cliff is a READOUT failure, not a representation failure.** Progress information is linearly present in the
+  encoder geometry at every depth; the L1-to-goal direction (and by implication the current energy head's long-range behaviour)
+  just doesn't read it. Fix belongs at the head level / energy training signal, not in replacing the encoder objective.
+
+## 2026-08-26 (evening): batch-8 control settles the predictor question; stylized has no cliff; fix campaign running
+
+- **Batch-8 Markov control (Alex a100, COMPLETED; final_id synced):** scr-base-b8 (mlp, b8): d2 .95/.85, d4 .86/.53, d8 .66/.45.
+  At matched batch 8 the causal transformer (d4 .93/.61, d8 .76/.46) beats the mlp clearly -> history conditioning is a real gain;
+  causal predictor is the new default for paper-scale cells. Batch 16->8 alone costs the mlp .14 solved at d8: hold batch fixed in comparisons.
+- **Stylized-small: NO depth cliff** (2ep n=100: energy .88/.83/.84; true+ruler 1.00/.96/.85; 10ep n=10 same) and NO last-mile ruler
+  decay (LN-L1 ranking .96-1.00 at all steps-to-go vs faithful's 1.00->.58). The disease is specific to faithful surface language
+  and/or LM warm start. Stylized answer emission ~0 (LM head never learns stylized text; solved-rate is the metric there).
+- **Owner directives:** never init from pretrained/LM (all future encoders from scratch); fast-loop protocol = 10 episodes/depth.
+- **Sharded eval shipped** (commit + snapshot): plan_flat --episode-start + merge tool + eval_sharded.sh; byte-identical to unsharded;
+  validated at n=100 (merged .840 vs serial .85). ~1.4GB GPU per shard.
+- **Fix campaign round 2 running** (gruenau7 worker pool, snapshot 0a941cc): faithful-small from-scratch baseline (training done,
+  boards running — decides faithful-language vs LM-init culprit) + fixA (depth-uniform anchors) / fixB (hindsight long-horizon rank) /
+  fixC (mismatched-goal rank) / fixABC cells, each 2ep + n=10 grid.
