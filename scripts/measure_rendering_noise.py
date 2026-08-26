@@ -131,8 +131,9 @@ def main() -> None:
         "render_spread_lnl1": mean(spreads),
         "step_movement_lnl1": mean(movement),
         "pred_err_1step_lnl1": mean(pred_err),
-        "spread_over_movement": mean(spreads) / mean(movement),
-        "prederr_over_spread": mean(pred_err) / mean(spreads),
+        "spread_over_movement": (mean(spreads) / mean(movement)) if movement else None,
+        # canonical rendering makes the spread exactly 0; guard the ratio
+        "prederr_over_spread": (mean(pred_err) / mean(spreads)) if spreads and mean(spreads) > 0 else None,
         "drift_by_k": {k: mean(v) for k, v in drift.items() if v},
         "drift_n_by_k": {k: len(v) for k, v in drift.items()},
     }
