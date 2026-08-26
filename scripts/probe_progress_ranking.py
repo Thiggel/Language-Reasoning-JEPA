@@ -48,7 +48,7 @@ from pathlib import Path
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from plan_flat import load_flat_run  # noqa: E402
+from plan_flat import build_eval_dataset, load_flat_run  # noqa: E402
 
 from textjepa.data.faithful import FaithfulDataset  # noqa: E402
 from textjepa.models.flat_intent_jepa import FlatIntentJEPA  # noqa: E402
@@ -317,11 +317,8 @@ def main() -> None:
     model = model.float().eval()
     max_len = int(cfg["model"]["max_len"])
     dc = cfg["data"]
-    ds = FaithfulDataset(
-        vocab, size=args.scan_limit, seed=args.split_seed,
-        max_op=dc["max_op"], max_edge=dc["max_edge"],
-        op_range=tuple(dc["op_range"]), distractor_prob=0.0,
-    )
+    # works for faithful AND stylized checkpoints (same builder as plan_flat)
+    ds, _caps = build_eval_dataset(cfg, vocab, args.scan_limit, args.split_seed)
 
     # ---- select disjoint train/eval problems, stratified over depth -------
     depths = list(range(args.depth_min, args.depth_max + 1))
@@ -366,8 +363,7 @@ def main() -> None:
             "depth_range": [args.depth_min, args.depth_max],
             "encoder": "student", "precision": "fp32",
             "rendering": "canonical (seq symbol naming, default)",
-            "caps": {"max_op": dc["max_op"], "max_edge": dc["max_edge"],
-                     "op_range": list(dc["op_range"])},
+            "caps": _caps,
             "negatives": "random feasible NON-necessary actions, executed in "
                          "a cloned true env and re-encoded",
             "probes": "pairwise logistic ranking loss on frozen features; "
