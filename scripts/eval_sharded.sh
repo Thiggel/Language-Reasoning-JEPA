@@ -5,6 +5,8 @@
 # e.g. eval_sharded.sh ck.pt out.json 100 24 "0,1,2" --lookahead 8 --endpoints true
 set -u
 CK=$1; OUT=$2; N=$3; SHARDS=$4; GPUS=$5; shift 5
+# rule of thumb: each shard needs ~1.4GB GPU memory (small model; more for 768d)
+# — cap SHARDS at roughly free_GPU_GiB / 1.5 per GPU or workers will OOM.
 REPO=/vol/home-vol2/ml/laitenbf/TextJEPA
 PY=$REPO/.venv/bin/python
 IFS=',' read -ra G <<< "$GPUS"
