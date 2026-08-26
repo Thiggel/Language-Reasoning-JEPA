@@ -2574,3 +2574,20 @@ Still running: fresh-causal-rollpred (rtxpro6k), fresh-insert2 / fresh-insert3 /
 - Practical recipe: causal cells can train bf16 at batch<=8 on Blackwell (fast, no fp32 workaround, no accumulation); avoid batch16 bf16 until torch/cuDNN fixed. Current scr-causal/scr-causal-rollpred-k4 (4107482/83) left running in fp32 batch8 (~31k steps, ~7h, boards expected this evening); note causal cells are batch8 vs Markov batch16 — a batch8 Markov control is the cheap tiebreaker if causal looks different.
 - OPS: Alex $HOME quota exceeded (shared FS 92%, probe died on write; checkpoint saves at risk for tonight's runs). fresh-solprob best.pt (legacy headline winner) synced home. ~60GB of superseded p16-*/fresh-*/canon-* checkpoints on Alex are deletion candidates — result JSONs all mirrored home; awaiting owner OK.
 - Culprit ladder (scr-base, canonical): drift probe confirms render spread exactly 0.0; 1-step pred err .263 vs step movement .201 (131%), drift to .90 at k=8 — predictor coarse even at k=1. prior-oracle d2/d4 .95/.92 solved with .96 exact → proposer coverage NOT the bottleneck; scoring is. true-state arms much worse than imagined at d2 → planner geometry self-consistent only on predicted manifold. Lanes A d8 / B d4 d8 / E still running.
+
+## 2026-08-26 (afternoon): goal multimodality acquitted; "last-mile ruler" is the new suspect; transformer boards landed
+
+- **Goal-state multimodality: ACQUITTED** (`runs/autonomy/intent_phrase/2026-08-26-goal-multimodality-v1/REPORT.md`, oracle diagnostic).
+  Faithful-hard problems barely have alternative orders (1.0/1.3/3.5 unique orders at depth 2-3/4-5/6-8), and where they exist the
+  alternative terminals cluster at 1-5% of cross-problem distance. Descent to the reference terminal holds along alternative orders.
+- **New leading suspect: the latent goal distance is a last-mile detector.** Along correct solutions it is nearly flat for the first
+  ~60-70% of steps (necessary-vs-random per-step gap ~0.03 of scale) and collapses only in the final 2-3 steps. Greedy ranking has
+  ~zero SNR exactly where deep problems spend their steps. Follow-up running: trained progress-ranking probe on frozen states
+  (info absent vs unreadable fork) -> `runs/autonomy/intent_phrase/2026-08-26-progress-probe-v1/`.
+- **Transformer-predictor boards (Alex, fp32 batch8, COMPLETED 4.5h; synced to 2026-08-25-alex-results/*/final_id/):**
+  scr-base (mlp, b16): d2 .96/.86, d4 .89/.48, d8 .80/.44 (solved/answer).
+  scr-causal (b8): d2 .96/.83, d4 .93/.61, d8 .76/.46.
+  scr-causal-rollpred-k4 (b8): d2 .93/.66, d4 .88/.59, d8 .74/.34.
+  Causal history helps d4 answers (+.13) but the depth cliff persists -> predictor class is not the culprit (batch 8-vs-16 confound noted).
+- Goal-set min-distance control (d4, K=16) running on gruenau12 (predicted null). Stylized-small (4L/d256) fast-testbed training
+  launched (`2026-08-26-stylized-small-v1`). Lanes A/B d8 + lane E still running on V100s.
