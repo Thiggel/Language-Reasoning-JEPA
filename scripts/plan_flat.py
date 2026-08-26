@@ -123,11 +123,21 @@ def main() -> None:
                     help="DIAGNOSTIC (endpoints=true): re-render each real endpoint K times "
                          "with perturbed global RNG and average the encodings, knocking out "
                          "rendering noise from the distance ruler")
+    ap.add_argument("--goal-set-samples", type=int, default=0,
+                    help="DIAGNOSTIC (scorer=oracle_distance): K>0 builds, per goal "
+                         "computation, K alternative valid terminal states (random "
+                         "topological orders of the remaining necessary actions, "
+                         "executed + canonically rendered in env clones and encoded) "
+                         "in addition to the reference terminal; the oracle distance "
+                         "becomes the MIN over this goal set.  0 = single reference "
+                         "goal (historical behavior, byte-identical)")
     ap.add_argument("--endpoints", default="imagined", choices=["imagined", "true"],
                     help="DIAGNOSTIC: true = execute candidates in a copy of the env and encode the REAL state")
     ap.add_argument("--branch", type=int, default=4,
                     help="energy-guided continuations kept per beam at depth>1")
     ap.add_argument("--n-episodes", type=int, default=100)
+    ap.add_argument("--episode-start", type=int, default=0,
+                    help="shard offset: run episodes [start, start+n) of the same deterministic set")
     ap.add_argument("--cap-mult", type=float, default=4.0)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--seed", type=int, default=0)
@@ -207,7 +217,7 @@ def main() -> None:
             args.action_decoder, map_location=device).to(device).eval()
     dc = cfg["data"]
     dataset, caps = build_eval_dataset(
-        cfg, vocab, args.n_episodes, args.split_seed, args.max_op,
+        cfg, vocab, args.episode_start + args.n_episodes, args.split_seed, args.max_op,
         args.max_edge, args.op_lo, args.op_hi, args.nec_lo, args.nec_hi,
     )
     planner = FlatPlanner(
@@ -217,6 +227,7 @@ def main() -> None:
         beam_diagnostics=not args.no_beam_diagnostics, scorer=args.scorer,
         distance_metric=args.distance_metric, endpoints=args.endpoints,
         true_render_avg=args.true_render_avg,
+        goal_set_samples=args.goal_set_samples,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
         prior_samples=args.prior_samples, prior_top_p=args.prior_top_p,
         prior_temperature=args.prior_temperature, prior_top_k=args.prior_top_k,
@@ -239,9 +250,11 @@ def main() -> None:
     ctx = (torch.autocast("cuda", dtype=torch.bfloat16)
            if args.precision == "bf16" and device.type == "cuda" else torch.autocast("cpu", enabled=False))
     with torch.no_grad(), ctx:
-        results = evaluate_flat_planning(planner, dataset, args.n_episodes, seed=args.seed)
+        results = evaluate_flat_planning(planner, dataset, args.n_episodes, seed=args.seed,
+                                         episode_start=args.episode_start)
     results["protocol"] = {
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
+        "episode_start": args.episode_start,
         "distance_metric": args.distance_metric,
         "max_expand": args.max_expand, "branch": args.branch,
         "root_agg": args.root_agg,
@@ -257,6 +270,7 @@ def main() -> None:
         "flow_diversity": (not args.flow_no_diversity) if args.flow_prior else None,
         "aggregate": args.aggregate, "scorer": args.scorer, "endpoints": args.endpoints,
         "true_render_avg": args.true_render_avg,
+        "goal_set_samples": args.goal_set_samples,
         "movement_weight": args.movement_weight if args.aggregate == "movement" else None,
         "beam_diagnostics": not args.no_beam_diagnostics,
         "expansion": (

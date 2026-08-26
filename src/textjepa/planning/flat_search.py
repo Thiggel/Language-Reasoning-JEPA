@@ -72,7 +72,9 @@ PROPOSER_INTERFACES = ("prior_propose", "autonomous", "flow_rerank",
 
 
 def goal_distance(endpoint, goal, metric: str = "raw"):
-    """Distance from candidate endpoints [N,D] to the encoded goal [D].
+    """Distance from candidate endpoints [N,D] to the encoded goal [D], or —
+    when ``goal`` is a SET of encoded goals [G,D] — the MIN distance over the
+    set (goal-multimodality diagnostic: any valid terminal counts).
 
     ``raw`` is plain L2.  It is WRONG for imagined endpoints: latent_pred
     trains the predictor against LayerNorm-ed targets, so predicted states
@@ -81,12 +83,15 @@ def goal_distance(endpoint, goal, metric: str = "raw"):
     by objectives/geometry.goal_distances) and is the correct default for any
     comparison that mixes predicted and encoded states.
     """
+    goals = goal if goal.dim() == 2 else goal.unsqueeze(0)  # [G,D]
     if metric == "raw":
-        return (endpoint - goal.unsqueeze(0)).norm(dim=-1)
-    if metric == "ln_l1":
+        d = (endpoint.unsqueeze(1) - goals.unsqueeze(0)).norm(dim=-1)
+    elif metric == "ln_l1":
         ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
-        return (ln(endpoint) - ln(goal).unsqueeze(0)).abs().mean(-1)
-    raise ValueError(f"unknown distance metric: {metric}")
+        d = (ln(endpoint).unsqueeze(1) - ln(goals).unsqueeze(0)).abs().mean(-1)
+    else:
+        raise ValueError(f"unknown distance metric: {metric}")
+    return d.min(dim=1).values
 
 
 def _percentile(vals: list, q: float) -> float:
@@ -114,6 +119,7 @@ class FlatPlanner:
                  distance_metric: str = "raw",
                  endpoints: str = "imagined",
                  true_render_avg: int = 1,
+                 goal_set_samples: int = 0,
                  cap_mult: float = 4.0, mask_attempted: bool = True,
                  prior_samples: int = 16, prior_top_p: float = 0.95,
                  prior_temperature: float = 1.3, prior_greedy: int = 1,
@@ -169,6 +175,14 @@ class FlatPlanner:
         self.scorer = scorer
         self.endpoints = endpoints
         self.true_render_avg = max(1, int(true_render_avg))
+        # DIAGNOSTIC (scorer=oracle_distance): K > 0 adds K alternative valid
+        # terminal states per goal computation — random topological orders of
+        # the remaining NECESSARY actions, executed in env clones and encoded
+        # — and the distance becomes the MIN over the goal set (reference
+        # terminal included).  Tests the GOAL-MULTIMODALITY hypothesis: a
+        # single reference terminal misleads the ruler once the planner takes
+        # a different, equally valid solution order.
+        self.goal_set_samples = max(0, int(goal_set_samples))
         self.oracle_diagnostic = (scorer != "energy" or endpoints != "imagined")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
@@ -619,6 +633,15 @@ class FlatPlanner:
             hist = hist + self.vocab.encode(probe.action_text(q))
             hist = hist + self.vocab.encode(probe.step(q))
             guard += 1
+        if self.goal_set_samples > 0:
+            # GOAL SET (multimodality diagnostic): the reference terminal PLUS
+            # K terminals reached by random topological orders of the same
+            # necessary actions.  goal_distance takes the MIN over the set.
+            variants = [hist] + [
+                self._sampled_completion(env, history, 104729 * (r + 1) + 31)
+                for r in range(self.goal_set_samples)
+            ]
+            return self._encode_batch(variants), bool(probe.solved)
         if self.true_render_avg > 1:
             variants = [hist] + [
                 self._replay(env, history, acts, 7919 * r + 13)
@@ -626,6 +649,38 @@ class FlatPlanner:
             ]
             return self._encode_batch(variants).mean(0), bool(probe.solved)
         return self._encode_batch([hist])[0], bool(probe.solved)
+
+    def _sampled_completion(self, env, history: list[int], salt: int) -> list[int]:
+        """ORACLE (goal-set diagnostic): complete the problem from ``history``
+        by repeatedly sampling UNIFORMLY among the currently-feasible actions
+        of the restricted set (the reference solution's necessary actions) —
+        a random topological order of the remaining necessary steps — and
+        render/execute it in an env clone.  Global RNG state is saved and
+        restored so the ambient stream (and hence everything else in the
+        episode) is byte-identical to the K=0 behaviour."""
+        import random as _random
+        import numpy as _np
+        py, nps = _random.getstate(), _np.random.get_state()
+        _random.seed(salt)
+        _np.random.seed(salt % (2 ** 31))
+        try:
+            rng = _random.Random(salt)
+            probe = env.clone()
+            hist = list(history)
+            guard = 0
+            while not probe.solved and guard < 64:
+                feas = probe.feasible_actions()
+                if not feas:
+                    break
+                nxt = [q for q in feas if q in env.fp.necessary] or list(feas)
+                q = rng.choice(sorted(nxt))
+                hist = hist + self.vocab.encode(probe.action_text(q))
+                hist = hist + self.vocab.encode(probe.step(q))
+                guard += 1
+            return hist
+        finally:
+            _random.setstate(py)
+            _np.random.set_state(nps)
 
     def _replay(self, env, history: list[int], seq: list, salt=None):
         """Re-execute ``seq`` from a fresh env clone; with ``salt`` set, under
@@ -1116,19 +1171,25 @@ def summarize(episodes: list[dict]) -> dict:
 
 
 def evaluate_flat_planning(planner: FlatPlanner, dataset, n_episodes: int,
-                           seed: int = 0, log_every: int = 10) -> dict:
+                           seed: int = 0, log_every: int = 10,
+                           episode_start: int = 0) -> dict:
+    # episode_start shards the eval: episodes [episode_start, episode_start +
+    # n_episodes) of the SAME deterministic episode set as an unsharded run
+    # (planner episodes are seeded per-episode with seed + i).  Reference
+    # policies use a per-episode rng keyed on (seed, i) so shard boundaries
+    # cannot change them either.
     menu_free = planner.candidate_interface in MENU_FREE_INTERFACES
-    rng = random.Random(seed)
     planned, rand_, first_ = [], [], []
-    for i in range(n_episodes):
+    for i in range(episode_start, episode_start + n_episodes):
         fp, _ = dataset.problem(i)
         planned.append(planner.plan_episode(fp, seed=seed + i))
         emitter = planner if planner.answer_emission else None
+        rng = random.Random(f"{seed}:{i}")
         rand_.append(_reference_episode(fp, "random", menu_free, planner.cap_mult, rng, planner.mask_attempted, emitter=emitter))
         first_.append(_reference_episode(fp, "first", menu_free, planner.cap_mult, rng, planner.mask_attempted, emitter=emitter))
         if log_every and (i + 1) % log_every == 0:
             sr = sum(e["solved"] for e in planned) / len(planned)
-            print(f"[ep {i+1}/{n_episodes}] success={sr:.3f}", flush=True)
+            print(f"[ep {i+1-episode_start}/{n_episodes}] success={sr:.3f}", flush=True)
     return {
         "compute": planner.counter.report(),
         "latent_planner": summarize(planned),
