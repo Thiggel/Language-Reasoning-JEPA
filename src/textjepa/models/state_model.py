@@ -6,7 +6,9 @@ import torch
 from torch import nn
 
 from textjepa.models.layers import (
+    LoopedRoPEEncoder,
     LoopedTransformerEncoder,
+    RoPETransformerEncoder,
     build_causal_attention_mask,
     encoder_stack,
 )
@@ -34,14 +36,29 @@ class DiscourseStateModel(nn.Module):
         eval_loops: int = 4,
         train_loop_distribution: str = "shifted_poisson",
         train_loop_sigma: float = 0.5,
+        pos_kind: str = "learned",
     ):
         super().__init__()
         self.n_heads = n_heads
-        self.pos = nn.Parameter(torch.zeros(1, max_chunks, d_model))
+        self.pos_kind = pos_kind
+        if pos_kind == "learned":
+            self.pos = nn.Parameter(torch.zeros(1, max_chunks, d_model))
+            nn.init.normal_(self.pos, std=0.02)
+        else:
+            self.pos = None
         self.segment = nn.Parameter(torch.zeros(2, d_model))
-        nn.init.normal_(self.pos, std=0.02)
         nn.init.normal_(self.segment, std=0.02)
-        self.encoder = (
+        if pos_kind == "rope":
+            self.encoder = (
+                LoopedRoPEEncoder(
+                    d_model, n_heads, ff_mult, dropout, train_loop_mean,
+                    train_loop_min, train_loop_max, eval_loops,
+                    train_loop_distribution, train_loop_sigma,
+                ) if recurrent else
+                RoPETransformerEncoder(d_model, n_heads, ff_mult, n_layers, dropout)
+            )
+        else:
+          self.encoder = (
             LoopedTransformerEncoder(
                 d_model,
                 n_heads,
@@ -60,6 +77,8 @@ class DiscourseStateModel(nn.Module):
         self.norm = nn.LayerNorm(d_model)
 
     def _positions(self, length: int) -> torch.Tensor:
+        if self.pos is None:
+            return 0.0
         if length <= self.pos.shape[1]:
             return self.pos[:, :length]
         return torch.nn.functional.interpolate(

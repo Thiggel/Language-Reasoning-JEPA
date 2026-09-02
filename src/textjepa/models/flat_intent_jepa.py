@@ -59,6 +59,7 @@ class FlatIntentJEPA(nn.Module):
         n_heads: int = 12,
         ff_mult: int = 4,
         max_len: int = 4096,
+        pos_kind: str = "learned",
         init_from_lm: str | None = None,
         encoder_mode: str = "full",  # full | frozen | lora
         lora_rank: int = 16,
@@ -132,10 +133,14 @@ class FlatIntentJEPA(nn.Module):
         if self.latent_rollout_ks and min(self.latent_rollout_ks) < 1:
             raise ValueError("latent_rollout_ks must be >= 1")
         self.init_from_lm = init_from_lm
+        if pos_kind not in {"learned", "rope"}:
+            raise ValueError(f"unknown pos_kind: {pos_kind}")
+        self.pos_kind = pos_kind
         self.encoder = DecoderLM(
             vocab_size=vocab_size, pad_id=pad_id, d_model=d_model,
             n_layers=n_layers, n_heads=n_heads, ff_mult=ff_mult,
             max_len=max_len, untie_head=self.lm_detach_state,
+            pos_kind=pos_kind,
         )
         if init_from_lm:
             ckpt = torch.load(init_from_lm, map_location="cpu", weights_only=False)
@@ -167,6 +172,7 @@ class FlatIntentJEPA(nn.Module):
             self.predictor = CausalHistoryPredictor(
                 d_model, d_model, n_layers=predictor_layers,
                 n_heads=predictor_heads, residual=predictor_residual,
+                pos_kind=pos_kind,
             )
         if energy_head_kind not in {"mlp", "quasimetric"}:
             raise ValueError(f"unknown energy_head_kind: {energy_head_kind}")
@@ -196,17 +202,22 @@ class FlatIntentJEPA(nn.Module):
     ) -> torch.Tensor:
         """Hidden states [B, L, D] under an arbitrary allowed-attention mask."""
         B, L = tokens.shape
-        if pos_ids is None:
-            x = enc.tok(tokens) + enc.pos[:, :L]
-        else:
-            x = enc.tok(tokens) + enc.pos[0][pos_ids]
+        x = enc.tok(tokens)
+        if enc.pos is not None:
+            if pos_ids is None:
+                x = x + enc.pos[:, :L]
+            else:
+                x = x + enc.pos[0][pos_ids]
         if allowed is None:
             from textjepa.models.layers import build_causal_attention_mask
 
             mask = build_causal_attention_mask(tokens != enc.pad_id, enc.n_heads)
         else:
             mask = (~allowed).repeat_interleave(enc.n_heads, dim=0)
-        x = enc.blocks(x, mask=mask)
+        if enc.pos is None:
+            x = enc.blocks(x, mask=mask, pos_ids=pos_ids)
+        else:
+            x = enc.blocks(x, mask=mask)
         return enc.norm(x)
 
     def encode(self, tokens, allowed=None, pos_ids=None, teacher=False):

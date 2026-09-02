@@ -478,13 +478,21 @@ class TokenTransformer(nn.Module):
         ff_mult: int = 4,
         max_len: int = 48,
         dropout: float = 0.0,
+        pos_kind: str = "learned",
     ):
         super().__init__()
         self.pad_id = pad_id
+        self.pos_kind = pos_kind
         self.tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
-        self.pos = nn.Parameter(torch.zeros(1, max_len, d_model))
-        nn.init.normal_(self.pos, std=0.02)
-        self.encoder = encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
+        if pos_kind == "rope":
+            self.pos = None
+            self.encoder = RoPETransformerEncoder(
+                d_model, n_heads, ff_mult, n_layers, dropout, bidirectional=True,
+            )
+        else:
+            self.pos = nn.Parameter(torch.zeros(1, max_len, d_model))
+            nn.init.normal_(self.pos, std=0.02)
+            self.encoder = encoder_stack(d_model, n_layers, n_heads, ff_mult, dropout)
         self.norm = nn.LayerNorm(d_model)
 
     def forward_tokens(self, tokens: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -492,10 +500,10 @@ class TokenTransformer(nn.Module):
         pad = tokens.eq(self.pad_id)
         key_pad = pad.clone()
         key_pad[pad.all(dim=-1), 0] = False  # keep all-pad rows finite
-        h = self.encoder(
-            self.tok(tokens) + self.pos[:, : tokens.shape[1]],
-            src_key_padding_mask=key_pad,
-        )
+        x = self.tok(tokens)
+        if self.pos is not None:
+            x = x + self.pos[:, : tokens.shape[1]]
+        h = self.encoder(x, src_key_padding_mask=key_pad)
         return self.norm(h), ~pad
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
@@ -524,3 +532,253 @@ def build_causal_attention_mask(
 def causal_attention_mask(length: int, device: torch.device) -> torch.Tensor:
     """Compact shared causal mask (``True`` entries are blocked)."""
     return torch.ones(length, length, dtype=torch.bool, device=device).triu(1)
+
+
+# ---------------------------------------------------------------------------
+# Rotary position embeddings (RoPE).  Added 2026-09 for the length-
+# generalization reruns: every learned absolute position table in the paper's
+# models can be swapped for RoPE via ``pos_kind="rope"``.  Positions are
+# supplied per token (``pos_ids`` [B, L] or [L]); when omitted they default to
+# 0..L-1.  Attention masks keep the codebase convention (bool, True = blocked,
+# shape [B*H, S, S] or [S, S]).
+# ---------------------------------------------------------------------------
+
+
+class RotaryEmbedding(nn.Module):
+    """Precomputes cos/sin tables for rotate-half RoPE on a head dimension."""
+
+    def __init__(self, head_dim: int, base: float = 10000.0):
+        super().__init__()
+        if head_dim % 2:
+            raise ValueError("RoPE needs an even head dimension")
+        inv_freq = 1.0 / (
+            base ** (torch.arange(0, head_dim, 2, dtype=torch.float32) / head_dim)
+        )
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
+
+    def forward(self, pos_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """pos_ids [..., L] (long) -> cos, sin [..., L, head_dim] (float32)."""
+        freqs = pos_ids.to(torch.float32).unsqueeze(-1) * self.inv_freq
+        emb = torch.cat([freqs, freqs], dim=-1)
+        return emb.cos(), emb.sin()
+
+
+def _rotate_half(x: torch.Tensor) -> torch.Tensor:
+    half = x.shape[-1] // 2
+    return torch.cat([-x[..., half:], x[..., :half]], dim=-1)
+
+
+def apply_rope(q: torch.Tensor, k: torch.Tensor, cos: torch.Tensor,
+               sin: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """q, k [B, H, L, D]; cos, sin [B, L, D] or [L, D] -> rotated q, k."""
+    if cos.dim() == 2:
+        cos, sin = cos[None, None], sin[None, None]
+    else:
+        cos, sin = cos[:, None], sin[:, None]
+    dtype = q.dtype
+    qf, kf = q.float(), k.float()
+    q_out = qf * cos + _rotate_half(qf) * sin
+    k_out = kf * cos + _rotate_half(kf) * sin
+    return q_out.to(dtype), k_out.to(dtype)
+
+
+def _blocked_mask_to_sdpa(mask: torch.Tensor | None, batch: int,
+                          n_heads: int) -> torch.Tensor | None:
+    """Codebase bool mask (True = blocked, [B*H, S, S] or [S, S]) ->
+    SDPA bool mask (True = attend, [B, H, S, S] or [S, S])."""
+    if mask is None:
+        return None
+    if mask.dtype != torch.bool:
+        raise ValueError("RoPE encoder expects a bool attention mask")
+    allowed = ~mask
+    if allowed.dim() == 2:
+        return allowed
+    if allowed.dim() == 3:
+        S = allowed.shape[-1]
+        if allowed.shape[0] == batch * n_heads:
+            return allowed.view(batch, n_heads, S, S)
+        if allowed.shape[0] == batch:
+            return allowed.view(batch, 1, S, S)
+    raise ValueError(f"unsupported attention mask shape {tuple(mask.shape)}")
+
+
+class RoPESelfAttention(nn.Module):
+    def __init__(self, d_model: int, n_heads: int, dropout: float = 0.0,
+                 rope_base: float = 10000.0):
+        super().__init__()
+        if d_model % n_heads:
+            raise ValueError("d_model must be divisible by n_heads")
+        self.n_heads = n_heads
+        self.head_dim = d_model // n_heads
+        self.dropout = dropout
+        self.qkv = nn.Linear(d_model, 3 * d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
+        self.rope = RotaryEmbedding(self.head_dim, rope_base)
+
+    def forward(self, x: torch.Tensor, pos_ids: torch.Tensor,
+                sdpa_mask: torch.Tensor | None) -> torch.Tensor:
+        B, L, D = x.shape
+        q, k, v = self.qkv(x).view(B, L, 3, self.n_heads, self.head_dim).unbind(2)
+        q, k, v = (t.transpose(1, 2) for t in (q, k, v))  # [B, H, L, Dh]
+        cos, sin = self.rope(pos_ids)
+        q, k = apply_rope(q, k, cos, sin)
+        out = F.scaled_dot_product_attention(
+            q, k, v, attn_mask=sdpa_mask,
+            dropout_p=self.dropout if self.training else 0.0,
+            is_causal=sdpa_mask is None,
+        )
+        return self.out_proj(out.transpose(1, 2).reshape(B, L, D))
+
+
+class RoPETransformerBlock(nn.Module):
+    """Pre-norm transformer block with rotary self-attention."""
+
+    def __init__(self, d_model: int, n_heads: int, ff_mult: float = 4,
+                 dropout: float = 0.0, rope_base: float = 10000.0):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.self_attn = RoPESelfAttention(d_model, n_heads, dropout, rope_base)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.linear1 = nn.Linear(d_model, int(round(d_model * ff_mult)))
+        self.linear2 = nn.Linear(int(round(d_model * ff_mult)), d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: torch.Tensor, pos_ids: torch.Tensor,
+                sdpa_mask: torch.Tensor | None) -> torch.Tensor:
+        x = x + self.dropout(self.self_attn(self.norm1(x), pos_ids, sdpa_mask))
+        x = x + self.dropout(self.linear2(self.dropout(F.gelu(self.linear1(self.norm2(x))))))
+        return x
+
+
+def _default_pos_ids(x: torch.Tensor, pos_ids: torch.Tensor | None) -> torch.Tensor:
+    if pos_ids is None:
+        return torch.arange(x.shape[1], device=x.device)
+    return pos_ids
+
+
+class RoPETransformerEncoder(nn.Module):
+    """Drop-in for ``nn.TransformerEncoder`` (causal/masked use) with RoPE.
+
+    ``forward(x, mask=None, src_key_padding_mask=None, pos_ids=None)``:
+    ``mask`` follows the codebase convention (bool, True = blocked); with no
+    mask the stack is plainly causal.  ``src_key_padding_mask`` (True = pad)
+    is folded into the mask.
+    """
+
+    def __init__(self, d_model: int, n_heads: int, ff_mult: float = 4,
+                 n_layers: int = 1, dropout: float = 0.0,
+                 rope_base: float = 10000.0, bidirectional: bool = False):
+        super().__init__()
+        self.n_heads = n_heads
+        self.bidirectional = bool(bidirectional)
+        self.layers = nn.ModuleList([
+            RoPETransformerBlock(d_model, n_heads, ff_mult, dropout, rope_base)
+            for _ in range(n_layers)
+        ])
+
+    def _sdpa_mask(self, x, mask, src_key_padding_mask):
+        B, L, _ = x.shape
+        sdpa = _blocked_mask_to_sdpa(mask, B, self.n_heads)
+        if sdpa is None and self.bidirectional:
+            sdpa = torch.ones(L, L, dtype=torch.bool, device=x.device)
+        if src_key_padding_mask is not None:
+            keep = ~src_key_padding_mask.bool()  # [B, L] True = valid key
+            if sdpa is None:
+                causal = torch.ones(L, L, dtype=torch.bool, device=x.device).tril()
+                sdpa = causal[None, None] & keep[:, None, None, :]
+            elif sdpa.dim() == 2:
+                sdpa = sdpa[None, None] & keep[:, None, None, :]
+            else:
+                sdpa = sdpa & keep[:, None, None, :]
+            dead = ~sdpa.any(-1, keepdim=True)
+            sdpa = sdpa.clone()
+            sdpa[..., 0:1] |= dead
+        return sdpa
+
+    def forward(self, x, mask=None, src_key_padding_mask=None, pos_ids=None):
+        pos_ids = _default_pos_ids(x, pos_ids)
+        sdpa = self._sdpa_mask(x, mask, src_key_padding_mask)
+        for layer in self.layers:
+            x = layer(x, pos_ids, sdpa)
+        return x
+
+
+class LoopedRoPEEncoder(RoPETransformerEncoder):
+    """Weight-shared RoPE block with the LoopedTransformerEncoder schedule."""
+
+    def __init__(self, d_model, n_heads, ff_mult, dropout=0.0,
+                 train_loop_mean=4.0, train_loop_min=1, train_loop_max=8,
+                 eval_loops=4, train_loop_distribution="shifted_poisson",
+                 train_loop_sigma=0.5, rope_base=10000.0):
+        super().__init__(d_model, n_heads, ff_mult, 1, dropout, rope_base)
+        if dropout != 0.0:
+            raise ValueError("looped reasoning baselines require dropout=0")
+        self.train_loop_mean = float(train_loop_mean)
+        self.train_loop_min = int(train_loop_min)
+        self.train_loop_max = int(train_loop_max)
+        self.eval_loops = int(eval_loops)
+        self.train_loop_distribution = train_loop_distribution
+        self.train_loop_sigma = float(train_loop_sigma)
+        self.last_num_loops = self.eval_loops
+        self.block = self.layers[0]
+
+    sample_num_loops = LoopedTransformerEncoder.sample_num_loops
+
+    def forward(self, x, mask=None, src_key_padding_mask=None, num_loops=None,
+                pos_ids=None):
+        loops = (
+            self.sample_num_loops() if self.training else self.eval_loops
+        ) if num_loops is None else int(num_loops)
+        if loops < 1:
+            raise ValueError("num_loops must be positive")
+        self.last_num_loops = loops
+        pos_ids = _default_pos_ids(x, pos_ids)
+        sdpa = self._sdpa_mask(x, mask, src_key_padding_mask)
+        for _ in range(loops):
+            x = self.block(x, pos_ids, sdpa)
+        return x
+
+
+class RoPEDecoderBlock(nn.Module):
+    """Pre-norm decoder block: rotary causal self-attention + cross-attention
+    over a memory (no positions on the memory), used by the sentence LM's
+    per-sentence token decoder."""
+
+    def __init__(self, d_model: int, n_heads: int, ff_mult: float = 4,
+                 dropout: float = 0.0, rope_base: float = 10000.0):
+        super().__init__()
+        self.norm1 = nn.LayerNorm(d_model)
+        self.self_attn = RoPESelfAttention(d_model, n_heads, dropout, rope_base)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.cross_attn = nn.MultiheadAttention(
+            d_model, n_heads, dropout=dropout, batch_first=True,
+        )
+        self.norm3 = nn.LayerNorm(d_model)
+        self.linear1 = nn.Linear(d_model, int(round(d_model * ff_mult)))
+        self.linear2 = nn.Linear(int(round(d_model * ff_mult)), d_model)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, memory, pos_ids, sdpa_mask=None):
+        x = x + self.dropout(self.self_attn(self.norm1(x), pos_ids, sdpa_mask))
+        x = x + self.dropout(self.cross_attn(
+            self.norm2(x), memory, memory, need_weights=False)[0])
+        x = x + self.dropout(self.linear2(self.dropout(F.gelu(self.linear1(self.norm3(x))))))
+        return x
+
+
+class RoPETransformerDecoder(nn.Module):
+    def __init__(self, d_model, n_heads, ff_mult=4, n_layers=2, dropout=0.0,
+                 rope_base=10000.0):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            RoPEDecoderBlock(d_model, n_heads, ff_mult, dropout, rope_base)
+            for _ in range(n_layers)
+        ])
+        self.norm = nn.LayerNorm(d_model)
+
+    def forward(self, tgt, memory, pos_ids=None):
+        pos_ids = _default_pos_ids(tgt, pos_ids)
+        x = tgt
+        for layer in self.layers:
+            x = layer(x, memory, pos_ids, None)  # None -> is_causal
+        return self.norm(x)

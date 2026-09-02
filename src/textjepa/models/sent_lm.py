@@ -23,7 +23,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from textjepa.models.layers import TokenTransformer, mlp
+from textjepa.models.layers import RoPETransformerDecoder, TokenTransformer, mlp
 from textjepa.models.state_model import DiscourseStateModel
 
 
@@ -50,13 +50,17 @@ class SentenceLM(nn.Module):
         eval_loops: int = 4,
         train_loop_distribution: str = "shifted_poisson",
         train_loop_sigma: float = 0.5,
+        pos_kind: str = "learned",
     ):
         super().__init__()
+        if pos_kind not in {"learned", "rope"}:
+            raise ValueError(f"unknown pos_kind: {pos_kind}")
+        self.pos_kind = pos_kind
         self.pad_id = pad_id
         self.latent_target = latent_target
         self.chunk_encoder = TokenTransformer(
             vocab_size, pad_id, d_model, chunk_layers, chunk_heads,
-            ff_mult, max_chunk_len, 0.0,
+            ff_mult, max_chunk_len, 0.0, pos_kind=pos_kind,
         )
         self.state_model = DiscourseStateModel(
             d_model,
@@ -72,18 +76,25 @@ class SentenceLM(nn.Module):
             eval_loops,
             train_loop_distribution,
             train_loop_sigma,
+            pos_kind=pos_kind,
         )
         self.dec_tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         nn.init.normal_(self.dec_tok.weight, std=0.02)
-        self.dec_pos = nn.Parameter(torch.zeros(1, max_chunk_len, d_model))
-        nn.init.normal_(self.dec_pos, std=0.02)
-        layer = nn.TransformerDecoderLayer(
-            d_model, dec_heads, d_model * ff_mult, 0.0,
-            activation="gelu", batch_first=True, norm_first=True,
-        )
-        self.decoder = nn.TransformerDecoder(
-            layer, dec_layers, norm=nn.LayerNorm(d_model)
-        )
+        if pos_kind == "rope":
+            self.dec_pos = None
+            self.decoder = RoPETransformerDecoder(
+                d_model, dec_heads, ff_mult, dec_layers, 0.0,
+            )
+        else:
+            self.dec_pos = nn.Parameter(torch.zeros(1, max_chunk_len, d_model))
+            nn.init.normal_(self.dec_pos, std=0.02)
+            layer = nn.TransformerDecoderLayer(
+                d_model, dec_heads, d_model * ff_mult, 0.0,
+                activation="gelu", batch_first=True, norm_first=True,
+            )
+            self.decoder = nn.TransformerDecoder(
+                layer, dec_layers, norm=nn.LayerNorm(d_model)
+            )
         self.dec_head = nn.Linear(d_model, vocab_size, bias=False)
         self.dec_head.weight = self.dec_tok.weight
         self.latent_head = mlp([d_model, d_model * 2], d_model)
@@ -107,6 +118,18 @@ class SentenceLM(nn.Module):
         )
         return torch.cat([s0.unsqueeze(1), states[:, :-1]], dim=1)
 
+    def decode_hidden(self, inp: torch.Tensor, ctx: torch.Tensor) -> torch.Tensor:
+        """Teacher-forced decoder states: inp [N, L] (shifted tokens), ctx
+        [N, D] -> [N, L, D]."""
+        L = inp.shape[1]
+        if self.dec_pos is None:
+            return self.decoder(self.dec_tok(inp), ctx.unsqueeze(1))
+        x = self.dec_tok(inp) + self.dec_pos[:, :L]
+        causal = nn.Transformer.generate_square_subsequent_mask(
+            L, device=inp.device
+        )
+        return self.decoder(x, ctx.unsqueeze(1), tgt_mask=causal)
+
     def decode_ce(
         self, ctx: torch.Tensor, tokens: torch.Tensor
     ) -> torch.Tensor:
@@ -117,12 +140,7 @@ class SentenceLM(nn.Module):
             [torch.full((N, 1), self.pad_id, device=tokens.device,
                         dtype=torch.long), tokens[:, :-1]], dim=1
         )
-        x = self.dec_tok(inp) + self.dec_pos[:, :L]
-        causal = nn.Transformer.generate_square_subsequent_mask(
-            L, device=tokens.device
-        )
-        h = self.decoder(x, ctx.unsqueeze(1), tgt_mask=causal)
-        logits = self.dec_head(h)
+        logits = self.dec_head(self.decode_hidden(inp, ctx))
         ce = F.cross_entropy(
             logits.reshape(-1, logits.shape[-1]), tokens.reshape(-1),
             ignore_index=self.pad_id, reduction="none",

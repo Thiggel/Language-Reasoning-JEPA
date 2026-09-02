@@ -6,7 +6,8 @@ import torch
 from torch import nn
 
 from textjepa.models.layers import (
-    FlashMultiheadAttention, mlp, packed_encoder_forward,
+    FlashMultiheadAttention, RoPETransformerEncoder, mlp,
+    packed_encoder_forward,
 )
 
 
@@ -55,8 +56,14 @@ class CausalHistoryPredictor(nn.Module):
         context_window: int | None = None,
         attention_backend: str = "auto",
         sequence_packing: bool = False,
+        pos_kind: str = "learned",
     ):
         super().__init__()
+        if pos_kind not in {"learned", "rope"}:
+            raise ValueError(f"unknown pos_kind: {pos_kind}")
+        if pos_kind == "rope" and sequence_packing:
+            raise ValueError("rope predictor does not support sequence_packing")
+        self.pos_kind = pos_kind
         self.residual = residual
         if context_window is not None and context_window < 1:
             raise ValueError("context_window must be positive or None")
@@ -67,18 +74,26 @@ class CausalHistoryPredictor(nn.Module):
                 "sequence_packing does not support a context_window"
             )
         self.inp = nn.Linear(d_state + d_action, d_state)
-        self.pos = nn.Parameter(torch.zeros(1, max_steps, d_state))
-        nn.init.normal_(self.pos, std=0.02)
-        layer = nn.TransformerEncoderLayer(
-            d_state,
-            n_heads,
-            d_state * ff_mult,
-            dropout=0.0,
-            batch_first=True,
-            norm_first=True,
-            activation="gelu",
-        )
-        self.blocks = nn.TransformerEncoder(layer, n_layers)
+        if pos_kind == "learned":
+            self.pos = nn.Parameter(torch.zeros(1, max_steps, d_state))
+            nn.init.normal_(self.pos, std=0.02)
+        else:
+            self.pos = None
+        if pos_kind == "rope":
+            self.blocks = RoPETransformerEncoder(
+                d_state, n_heads, ff_mult, n_layers, 0.0,
+            )
+        else:
+            layer = nn.TransformerEncoderLayer(
+                d_state,
+                n_heads,
+                d_state * ff_mult,
+                dropout=0.0,
+                batch_first=True,
+                norm_first=True,
+                activation="gelu",
+            )
+            self.blocks = nn.TransformerEncoder(layer, n_layers)
         if self.sequence_packing:
             for block in self.blocks.layers:
                 block.self_attn = FlashMultiheadAttention(
@@ -89,6 +104,8 @@ class CausalHistoryPredictor(nn.Module):
         self.out = nn.Linear(d_state, d_state)
 
     def _positions(self, length: int) -> torch.Tensor:
+        if self.pos is None:
+            return 0.0
         if length <= self.pos.shape[1]:
             return self.pos[:, :length]
         return torch.nn.functional.interpolate(

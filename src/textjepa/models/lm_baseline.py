@@ -12,7 +12,9 @@ import torch
 from torch import nn
 
 from textjepa.models.layers import (
+    LoopedRoPEEncoder,
     LoopedTransformerEncoder,
+    RoPETransformerEncoder,
     build_causal_attention_mask,
 )
 
@@ -36,14 +38,31 @@ class DecoderLM(nn.Module):
         train_loop_distribution: str = "shifted_poisson",
         train_loop_sigma: float = 0.5,
         untie_head: bool = False,
+        pos_kind: str = "learned",
     ):
         super().__init__()
+        if pos_kind not in {"learned", "rope"}:
+            raise ValueError(f"unknown pos_kind: {pos_kind}")
+        self.pos_kind = pos_kind
         self.pad_id = pad_id
         self.tok = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
-        self.pos = nn.Parameter(torch.zeros(1, max_len, d_model))
-        nn.init.normal_(self.pos, std=0.02)
+        if pos_kind == "learned":
+            self.pos = nn.Parameter(torch.zeros(1, max_len, d_model))
+            nn.init.normal_(self.pos, std=0.02)
+        else:
+            self.pos = None
         self.n_heads = n_heads
-        if recurrent:
+        if recurrent and pos_kind == "rope":
+            self.blocks = LoopedRoPEEncoder(
+                d_model, n_heads, ff_mult, dropout, train_loop_mean,
+                train_loop_min, train_loop_max, eval_loops,
+                train_loop_distribution, train_loop_sigma,
+            )
+        elif pos_kind == "rope":
+            self.blocks = RoPETransformerEncoder(
+                d_model, n_heads, ff_mult, n_layers, dropout,
+            )
+        elif recurrent:
             self.blocks = LoopedTransformerEncoder(
                 d_model,
                 n_heads,
@@ -80,10 +99,12 @@ class DecoderLM(nn.Module):
     ) -> torch.Tensor:
         """Return normalized causal token states for frozen-feature analysis."""
         B, L = tokens.shape
-        x = self.tok(tokens) + self.pos[:, :L]
+        x = self.tok(tokens)
+        if self.pos is not None:
+            x = x + self.pos[:, :L]
         valid = tokens != self.pad_id
         mask = build_causal_attention_mask(valid, self.n_heads)
-        if isinstance(self.blocks, LoopedTransformerEncoder):
+        if isinstance(self.blocks, (LoopedTransformerEncoder, LoopedRoPEEncoder)):
             x = self.blocks(x, mask=mask, num_loops=num_loops)
         else:
             if num_loops is not None:
