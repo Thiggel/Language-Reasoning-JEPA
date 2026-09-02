@@ -622,11 +622,26 @@ class RoPESelfAttention(nn.Module):
         q, k, v = (t.transpose(1, 2) for t in (q, k, v))  # [B, H, L, Dh]
         cos, sin = self.rope(pos_ids)
         q, k = apply_rope(q, k, cos, sin)
-        out = F.scaled_dot_product_attention(
-            q, k, v, attn_mask=sdpa_mask,
-            dropout_p=self.dropout if self.training else 0.0,
-            is_causal=sdpa_mask is None,
-        )
+        drop = self.dropout if self.training else 0.0
+        # CUDA SDPA kernels cap the batch grid at 65535 rows; the JEPA
+        # counterfactual predictor batches can exceed that, so chunk.
+        chunk = 32768
+        if B <= chunk:
+            out = F.scaled_dot_product_attention(
+                q, k, v, attn_mask=sdpa_mask, dropout_p=drop,
+                is_causal=sdpa_mask is None,
+            )
+        else:
+            outs = []
+            for i in range(0, B, chunk):
+                m = sdpa_mask
+                if m is not None and m.dim() == 4 and m.shape[0] == B:
+                    m = m[i:i + chunk]
+                outs.append(F.scaled_dot_product_attention(
+                    q[i:i + chunk], k[i:i + chunk], v[i:i + chunk],
+                    attn_mask=m, dropout_p=drop, is_causal=sdpa_mask is None,
+                ))
+            out = torch.cat(outs, 0)
         return self.out_proj(out.transpose(1, 2).reshape(B, L, D))
 
 
