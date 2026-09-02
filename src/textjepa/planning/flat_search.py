@@ -120,6 +120,7 @@ class FlatPlanner:
                  root_agg: str = "best",
                  beam_diagnostics: bool = True,
                  scorer: str = "energy",
+                 goal_input: str = "context",
                  distance_metric: str = "raw",
                  endpoints: str = "imagined",
                  true_render_avg: int = 1,
@@ -182,6 +183,15 @@ class FlatPlanner:
         if endpoints not in {"imagined", "true"}:
             raise ValueError(f"unknown endpoints {endpoints!r}")
         self.scorer = scorer
+        # goal_input (2026-09, reviewer item 14): which vector feeds the
+        # energy head's goal slot at test time.  "context" = the context
+        # encoding s_0 (deployable, default); "achieved" = the EMA encoding of
+        # the TRUE achieved terminal state (the training-time hindsight goal;
+        # candidate-privileged diagnostic measuring the train/test goal-input
+        # mismatch).
+        if goal_input not in {"context", "achieved"}:
+            raise ValueError(f"unknown goal_input {goal_input!r}")
+        self.goal_input = goal_input
         self.endpoints = endpoints
         self.true_render_avg = max(1, int(true_render_avg))
         # DIAGNOSTIC (scorer=oracle_distance): K > 0 adds K alternative valid
@@ -193,7 +203,7 @@ class FlatPlanner:
         # a different, equally valid solution order.
         self.goal_set_samples = max(0, int(goal_set_samples))
         self.oracle_diagnostic = (scorer not in {"energy", "context_distance"}
-                                  or endpoints != "imagined")
+                                  or endpoints != "imagined" or goal_input != "context")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
         self.mask_attempted = bool(mask_attempted)
@@ -818,7 +828,11 @@ class FlatPlanner:
                                     self.distance_metric) for h in range(1, depth + 1)]
                 return torch.stack(ds, 1).mean(1)
             return goal_distance(endpoint.float(), s0.float(), self.distance_metric)
-        init = s0.unsqueeze(0).expand(n, -1)
+        if self.goal_input == "achieved" and goal is not None:
+            g = goal if goal.dim() == 1 else goal[0]
+            init = g.to(s0.dtype).unsqueeze(0).expand(n, -1)
+        else:
+            init = s0.unsqueeze(0).expand(n, -1)
         if self.aggregate == "endpoint" or src == "true" or depth == 1:
             self.counter.bump("energy_forwards", n)
             return self.model.energy(root, endpoint, init, float(horizon))
@@ -954,7 +968,7 @@ class FlatPlanner:
             stats["n_kept"] += len(roots)
             pool = [q for q in pool_actions if q not in attempted] if self.mask_attempted else list(pool_actions)
             goal = None
-            if self.scorer == "oracle_distance" or (
+            if self.scorer == "oracle_distance" or self.goal_input == "achieved" or (
                     self.lookahead > 1 and self.beam_diagnostics):
                 # goal vector: ORACLE for the oracle_distance scorer, and the
                 # measurement metric for the depth-offers-better-options stat.

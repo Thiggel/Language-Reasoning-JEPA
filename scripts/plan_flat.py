@@ -113,6 +113,10 @@ def main() -> None:
                          "number of necessary-and-unresolved actions left after executing the "
                          "candidate in a CLONE of the env (correct goal, EXACT ruler) -- this is "
                          "the genuine upper bound on the search procedure")
+    ap.add_argument("--goal-input", default="context", choices=["context", "achieved"],
+                    help="DIAGNOSTIC: feed the energy head's goal slot with the EMA "
+                         "encoding of the TRUE achieved terminal state instead of the "
+                         "context encoding (train/test goal-input mismatch measurement)")
     ap.add_argument("--distance-metric", default="raw", choices=["raw", "ln_l1", "cos"],
                     help="metric for scorer=oracle_distance.  raw = plain L2 "
                          "(historical; WRONG when endpoints are imagined, since "
@@ -226,6 +230,7 @@ def main() -> None:
         root_agg=args.root_agg,
         beam_diagnostics=not args.no_beam_diagnostics, scorer=args.scorer,
         distance_metric=args.distance_metric, endpoints=args.endpoints,
+        goal_input=args.goal_input,
         true_render_avg=args.true_render_avg,
         goal_set_samples=args.goal_set_samples,
         candidate_interface=args.interface, cap_mult=args.cap_mult,
@@ -256,6 +261,7 @@ def main() -> None:
         "ckpt": args.ckpt, "interface": args.interface, "lookahead": args.lookahead,
         "episode_start": args.episode_start,
         "distance_metric": args.distance_metric,
+        "goal_input": args.goal_input,
         "max_expand": args.max_expand, "branch": args.branch,
         "root_agg": args.root_agg,
         "cap_mult": args.cap_mult,
