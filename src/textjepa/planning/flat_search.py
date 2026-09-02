@@ -89,6 +89,10 @@ def goal_distance(endpoint, goal, metric: str = "raw"):
     elif metric == "ln_l1":
         ln = lambda x: torch.nn.functional.layer_norm(x, x.shape[-1:])
         d = (ln(endpoint).unsqueeze(1) - ln(goals).unsqueeze(0)).abs().mean(-1)
+    elif metric == "cos":
+        e = torch.nn.functional.normalize(endpoint, dim=-1)
+        g = torch.nn.functional.normalize(goals, dim=-1)
+        d = 1.0 - (e.unsqueeze(1) * g.unsqueeze(0)).sum(-1)
     else:
         raise ValueError(f"unknown distance metric: {metric}")
     return d.min(dim=1).values
@@ -168,7 +172,12 @@ class FlatPlanner:
         if distance_metric not in {"raw", "ln_l1"}:
             raise ValueError(f"unknown distance metric: {distance_metric}")
         self.distance_metric = distance_metric
-        if scorer not in {"energy", "oracle_distance", "symbolic_oracle"}:
+        # context_distance (2026-09, reviewer item 4 "the title's own null"):
+        # rank imagined endpoints by raw latent distance to the test-time goal
+        # input z_g = the context encoding s_0 (no learned energy head), with
+        # the same beam/aggregation as the energy planner.
+        if scorer not in {"energy", "oracle_distance", "symbolic_oracle",
+                          "context_distance"}:
             raise ValueError(f"unknown scorer {scorer!r}")
         if endpoints not in {"imagined", "true"}:
             raise ValueError(f"unknown endpoints {endpoints!r}")
@@ -183,7 +192,8 @@ class FlatPlanner:
         # single reference terminal misleads the ruler once the planner takes
         # a different, equally valid solution order.
         self.goal_set_samples = max(0, int(goal_set_samples))
-        self.oracle_diagnostic = (scorer != "energy" or endpoints != "imagined")
+        self.oracle_diagnostic = (scorer not in {"energy", "context_distance"}
+                                  or endpoints != "imagined")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
         self.mask_attempted = bool(mask_attempted)
@@ -801,6 +811,13 @@ class FlatPlanner:
         if self.scorer == "oracle_distance" or _force_oracle:
             return goal_distance(endpoint.float(), goal.float(),
                                  self.distance_metric)
+        if self.scorer == "context_distance":
+            if self.aggregate == "mean_prefix" and depth > 1:
+                # mean over imagined prefixes s_1..s_depth, as for energies
+                ds = [goal_distance(prefixes[:, h].float(), s0.float(),
+                                    self.distance_metric) for h in range(1, depth + 1)]
+                return torch.stack(ds, 1).mean(1)
+            return goal_distance(endpoint.float(), s0.float(), self.distance_metric)
         init = s0.unsqueeze(0).expand(n, -1)
         if self.aggregate == "endpoint" or src == "true" or depth == 1:
             self.counter.bump("energy_forwards", n)

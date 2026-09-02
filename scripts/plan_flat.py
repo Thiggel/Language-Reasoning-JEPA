@@ -106,14 +106,14 @@ def main() -> None:
                     help="aggregate=movement: weight of the no-movement penalty, in units "
                          "of the candidate-batch std of the endpoint energy")
     ap.add_argument("--scorer", default="energy",
-                    choices=["energy", "oracle_distance", "symbolic_oracle"],
+                    choices=["energy", "oracle_distance", "symbolic_oracle", "context_distance"],
                     help="DIAGNOSTIC (candidate-privileged oracle rows, never a headline): "
                          "oracle_distance ranks by latent distance to the encoded TRUE solved "
                          "state (correct goal, LEARNED ruler); symbolic_oracle ranks by the "
                          "number of necessary-and-unresolved actions left after executing the "
                          "candidate in a CLONE of the env (correct goal, EXACT ruler) -- this is "
                          "the genuine upper bound on the search procedure")
-    ap.add_argument("--distance-metric", default="raw", choices=["raw", "ln_l1"],
+    ap.add_argument("--distance-metric", default="raw", choices=["raw", "ln_l1", "cos"],
                     help="metric for scorer=oracle_distance.  raw = plain L2 "
                          "(historical; WRONG when endpoints are imagined, since "
                          "latent_pred only matches the encoder up to LayerNorm "
