@@ -121,6 +121,8 @@ def sample_fsa_problem(
     depth: int,
     branching_factor: int = 4,
     side_facts_per_step: int = 0,
+    side_kind: str = "side",
+    dead_end_length: int = 1,
 ) -> FsaProblem:
     """Sample one FSA deduction problem with ``depth`` gold inference layers.
 
@@ -128,11 +130,27 @@ def sample_fsa_problem(
     adds that many applicable-but-off-path rules per layer so the feasible
     menu is larger than one.  Zero reproduces the source generator, where
     exactly one rule is applicable at every point.
+
+    ``side_kind`` selects what those off-path rules look like:
+
+    * ``"side"`` (historical): ``If c_k is S, then c_k is <word>-side.`` --
+      lexically marked conclusions that no rule consumes, so the necessary
+      rule is identifiable from the candidate text alone.
+    * ``"dead_end"`` (2026-09): decoy rules with the SAME antecedents and
+      surface form as the gold rule (``If c_k is M and c_k is S, then
+      c_{k+1} is D.``) whose conclusion starts a decoy chain (marker rule +
+      ``dead_end_length`` further layers) that never reaches the target;
+      ``dead_end_length = -1`` instead switches onto one of the catalogue's
+      full-length off-path branches, which ends at c_depth with a non-target
+      state.  The necessary rule can then only be identified by following the
+      catalogue forward (lookahead) or backward from the goal.
     """
     if depth < 1:
         raise ValueError("depth must be >= 1")
     if branching_factor < 2:
         raise ValueError("branching_factor must be >= 2")
+    if side_kind not in {"side", "dead_end"}:
+        raise ValueError(f"unknown side_kind: {side_kind}")
     rng = problem_rng(seed, index)
     constants = [f"c{i}" for i in range(depth + 1)]
     max_state_symbols = min(
@@ -199,6 +217,22 @@ def sample_fsa_problem(
     side_words = [
         word for word in STATE_WORDS if word not in states
     ] or list(STATE_WORDS)
+    # (state word, constant) pairs already claimed by the branches; decoy
+    # states must not collide with them (a collision would silently splice a
+    # decoy into a real branch).
+    claimed: set[tuple[str, str]] = set(used) | {
+        (branch_states[b][0], constants[0]) for b in range(branching_factor)
+    }
+    decoy_rng = random.Random(rng.random()) if side_kind == "dead_end" else None
+
+    def fresh_state(constant: str) -> str:
+        pool = [w for w in STATE_WORDS if (w, constant) not in claimed]
+        if not pool:
+            raise RuntimeError("no free state word for a decoy fact")
+        word = decoy_rng.choice(pool)
+        claimed.add((word, constant))
+        return word
+
     for step in range(depth):
         source, destination = constants[step], constants[step + 1]
         order = list(range(branching_factor))
@@ -214,15 +248,53 @@ def sample_fsa_problem(
                 _atom(destination, branch_markers[branch][step + 1]),
             )
         for extra in range(side_facts_per_step):
-            word = f"{side_words[(step + extra) % len(side_words)]}-side"
-            add_rule(
-                (_atom(source, branch_states[0][step]),),
-                _atom(source, word),
+            if side_kind == "side":
+                word = f"{side_words[(step + extra) % len(side_words)]}-side"
+                add_rule(
+                    (_atom(source, branch_states[0][step]),),
+                    _atom(source, word),
+                )
+                continue
+            gold_antecedents = (
+                _atom(source, branch_markers[0][step]),
+                _atom(source, branch_states[0][step]),
             )
+            if dead_end_length < 0:
+                # switch onto a full-length off-path branch
+                other = 1 + (extra % (branching_factor - 1))
+                add_rule(
+                    gold_antecedents,
+                    _atom(destination, branch_states[other][step + 1]),
+                )
+                continue
+            # fresh decoy chain: switch rule, marker rule, then
+            # ``dead_end_length`` further layers, each with its own marker.
+            antecedents = gold_antecedents
+            for hop in range(dead_end_length + 1):
+                layer = step + 1 + hop
+                if layer > depth:
+                    break
+                here = constants[layer]
+                d_state = fresh_state(here)
+                d_marker = decoy_rng.choice(markers)
+                add_rule(antecedents, _atom(here, d_state))
+                add_rule((_atom(here, d_state),), _atom(here, d_marker))
+                antecedents = (_atom(here, d_marker), _atom(here, d_state))
 
+    if side_kind == "dead_end":
+        # catalogue order must carry no information about which feasible rule
+        # is the gold one (the historical generator lists a layer's branch
+        # rules before its decoys); re-number after shuffling.
+        decoy_rng.shuffle(rules)
+        rules = [
+            ProofRule(rule_id=f"r{i + 1}", text=r.text,
+                      antecedents=r.antecedents, conclusion=r.conclusion)
+            for i, r in enumerate(rules)
+        ]
     target = _atom(constants[depth], branch_states[0][depth])
+    tag = "" if side_kind == "side" else f"-de{dead_end_length}"
     return FsaProblem(
-        problem_id=f"s{seed}-d{depth}-k{branching_factor}-i{index}",
+        problem_id=f"s{seed}-d{depth}-k{branching_factor}-i{index}{tag}",
         depth=depth,
         branching_factor=branching_factor,
         initial=initial,
@@ -270,7 +342,15 @@ def _layer_index(fact: Fact) -> int:
 
 
 def expert_derivation(problem: FsaProblem) -> tuple[RuleApplication, ...]:
-    """Forward-chain to the target; the FSA theory forces a unique chain."""
+    """Forward-chain to the target along the gold path.
+
+    Applies, per layer, the rule concluding the next path state and then the
+    rule concluding its marker (2*depth - 1 applications).  In the historical
+    ``side`` generator this is exactly the greedy chain; with decoy rules the
+    greedy chain would wander, so the path is followed explicitly.
+    """
+    if problem.path_states and problem.path_markers:
+        return _path_derivation(problem)
     state = problem.initial
     derivation: list[RuleApplication] = []
     for _ in range(4 * problem.depth + 4):
@@ -289,6 +369,33 @@ def expert_derivation(problem: FsaProblem) -> tuple[RuleApplication, ...]:
         chosen = chosen or available[0]
         derivation.append(chosen)
         state = state | {chosen.conclusion}
+    raise RuntimeError(f"FSA problem {problem.problem_id} did not reach its target")
+
+
+def _path_derivation(problem: FsaProblem) -> tuple[RuleApplication, ...]:
+    constants = problem.constants
+    state = set(problem.initial)
+    by_conclusion: dict[Fact, list[ProofRule]] = {}
+    for rule in problem.rules:
+        by_conclusion.setdefault(rule.conclusion, []).append(rule)
+    derivation: list[RuleApplication] = []
+
+    def apply(conclusion: Fact) -> None:
+        for rule in by_conclusion.get(conclusion, []):
+            if all(fact in state for fact in rule.antecedents):
+                derivation.append(_ground_application(rule))
+                state.add(conclusion)
+                return
+        raise RuntimeError(
+            f"FSA problem {problem.problem_id}: no applicable rule concludes "
+            f"{conclusion}"
+        )
+
+    for layer in range(1, problem.depth + 1):
+        apply(_atom(constants[layer], problem.path_states[layer]))
+        if problem.target in state:
+            return tuple(derivation)
+        apply(_atom(constants[layer], problem.path_markers[layer]))
     raise RuntimeError(f"FSA problem {problem.problem_id} did not reach its target")
 
 
