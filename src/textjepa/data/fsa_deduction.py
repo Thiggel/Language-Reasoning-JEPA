@@ -161,6 +161,15 @@ def sample_fsa_problem(
     num_state_symbols = min(
         max(depth + 1, branching_factor + 1), max_state_symbols
     )
+    if side_kind == "dead_end" and dead_end_length >= 0:
+        # decoy states are drawn from the SAME per-problem alphabet as the
+        # branch states (word frequency must not separate gold from decoy);
+        # the alphabet is enlarged so every constant has enough free words.
+        num_state_symbols = min(
+            max(num_state_symbols,
+                branching_factor + side_facts_per_step * (dead_end_length + 1) + 2),
+            max_state_symbols,
+        )
     states = rng.sample(STATE_WORDS, num_state_symbols)
     markers = list(MARKER_WORDS[:branching_factor])
 
@@ -226,7 +235,7 @@ def sample_fsa_problem(
     decoy_rng = random.Random(rng.random()) if side_kind == "dead_end" else None
 
     def fresh_state(constant: str) -> str:
-        pool = [w for w in STATE_WORDS if (w, constant) not in claimed]
+        pool = [w for w in states if (w, constant) not in claimed]
         if not pool:
             raise RuntimeError("no free state word for a decoy fact")
         word = decoy_rng.choice(pool)
