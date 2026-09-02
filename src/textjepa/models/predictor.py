@@ -148,9 +148,21 @@ class CausalHistoryPredictor(nn.Module):
             key_padding = ~valid
             key_padding = key_padding.clone()
             key_padding[key_padding.all(1), 0] = False
-        pred = self.out(self.norm(self.blocks(
-            h, mask=causal, src_key_padding_mask=key_padding
-        )))
+        # CUDA attention kernels cap the batch grid at 65535 rows; the JEPA
+        # counterfactual batches can exceed that, so run the stack in chunks.
+        chunk = 32768
+        if h.shape[0] <= chunk:
+            enc = self.blocks(h, mask=causal, src_key_padding_mask=key_padding)
+        else:
+            enc = torch.cat([
+                self.blocks(
+                    h[i:i + chunk], mask=causal,
+                    src_key_padding_mask=(
+                        None if key_padding is None else key_padding[i:i + chunk]
+                    ),
+                ) for i in range(0, h.shape[0], chunk)
+            ], 0)
+        pred = self.out(self.norm(enc))
         if self.residual:
             pred = states + pred
         return pred[:, 0] if squeeze else pred
