@@ -91,6 +91,12 @@ class FlatIntentJEPA(nn.Module):
         lm_loss_on: str = "all_solution",
         lm_detach_state: bool = False,
         latent_rollout_ks: tuple[int, ...] = (),
+        # Accepted for checkpoint-config compatibility with the FSA training
+        # model (patches/fsa_flat_intent_jepa.py): the block-encoded rollout
+        # teacher pass is a training-time device only; planning and probing
+        # never use it, so both keys are ignored here.
+        rollout_blocks: bool = False,
+        rollout_block_chunk: int = 4,
     ):
         super().__init__()
         if encoder_mode not in {"full", "frozen", "lora"}:

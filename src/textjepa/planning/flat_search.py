@@ -60,9 +60,10 @@ from textjepa.planning.search import EpisodeResult
 CANDIDATE_INTERFACES = (
     "feasible_menu", "full_catalogue", "ldad_cycle", "codebook_ground",
     "prior_propose", "autonomous", "flow_rerank", "flow_decode", "code_prior",
+    "latent_prior",
 )
 MENU_FREE_INTERFACES = (
-    "full_catalogue", "ldad_cycle", "codebook_ground", "prior_propose",
+    "full_catalogue", "ldad_cycle", "codebook_ground", "prior_propose", "latent_prior",
     "autonomous", "flow_rerank", "flow_decode", "code_prior",
 )
 # Interfaces that propose actions instead of reading a menu/catalogue; these
@@ -573,6 +574,21 @@ class FlatPlanner:
         """ldad_cycle / codebook_ground: rank catalogue roots by cycle score or
         ground codebook entries to nearest catalogue vectors."""
         iface = self.candidate_interface
+        if iface == "latent_prior":
+            # p(a | s) over the catalogue from the trained action-prior head:
+            # cosine between g(state) and each phrase latent (in context).
+            head = getattr(self.model, "action_prior_head", None)
+            if head is None:
+                raise RuntimeError("latent_prior needs a checkpoint trained with objective.latent_action_prior")
+            cat = torch.stack([codes_by_action[q] for q in roots])
+            q = torch.nn.functional.normalize(head(state.unsqueeze(0)).float(), dim=-1)
+            k = torch.nn.functional.normalize(cat.float(), dim=-1)
+            scores = (k @ q.squeeze(0))
+            order = torch.argsort(scores, descending=True).tolist()
+            roots = [roots[i] for i in order]
+            if self.prior_top_k > 0:
+                roots = roots[: self.prior_top_k]
+            return roots
         if iface == "codebook_ground":
             if self.codebook is None:
                 raise RuntimeError("fit_action_prior must run before codebook_ground")
@@ -961,8 +977,12 @@ class FlatPlanner:
             phrases = [self.vocab.encode(env.action_text(q)) for q in needed]
             codes = self._codes(history, phrases)
             code_of = {q: codes[i] for i, q in enumerate(needed)}
-            if self.candidate_interface in {"ldad_cycle", "codebook_ground"}:
+            if self.candidate_interface in {"ldad_cycle", "codebook_ground", "latent_prior"}:
                 roots = self._filter_roots(roots, env, state, code_of)
+                if self.candidate_interface == "latent_prior":
+                    gold = [q for q in env.feasible_actions() if q in env.fp.necessary]
+                    stats["latent_prior_hits"] = stats.get("latent_prior_hits", 0) + int(any(q in roots for q in gold))
+                    stats["latent_prior_steps"] = stats.get("latent_prior_steps", 0) + 1
                 if not roots:
                     break
             stats["n_kept"] += len(roots)
