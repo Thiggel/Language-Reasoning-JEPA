@@ -289,6 +289,7 @@ class FaithfulDataset(Dataset):
         shuffle_actions: bool = False,
         hash_bins=None,
         necessary_range=(None, None),
+        anchors_necessary_only: bool = False,
         **_,
     ):
         self.shuffle_actions = bool(shuffle_actions)
@@ -395,6 +396,11 @@ class FaithfulDataset(Dataset):
         self.max_distractors = max_distractors
         self.hash_bins = None if hash_bins is None else tuple(hash_bins)
         self.necessary_range = tuple(necessary_range)
+        # 2026-09-03 detour demonstrations: with distractor_prob > 0 the
+        # trajectory contains wasted (feasible, unnecessary) steps; this flag
+        # keeps the counterfactual anchor on a NECESSARY step so the ranking
+        # losses never learn a wasted step as the positive.
+        self.anchors_necessary_only = bool(anchors_necessary_only)
 
     def __len__(self) -> int:
         return self.size
@@ -492,6 +498,12 @@ class FaithfulDataset(Dataset):
                 t_star = len(trace) - min(d, len(trace))
             else:
                 t_star = rng.randrange(len(trace))
+            if self.anchors_necessary_only and trace[t_star] not in fp.necessary:
+                # nearest necessary step at or after the draw (else before);
+                # deterministic given the draw, no extra RNG consumption.
+                later = [i for i in range(t_star, len(trace)) if trace[i] in fp.necessary]
+                earlier = [i for i in range(t_star) if trace[i] in fp.necessary]
+                t_star = later[0] if later else earlier[-1]
             env2 = FaithfulEnv(fp)
             for q in trace[:t_star]:
                 env2.step(q)
