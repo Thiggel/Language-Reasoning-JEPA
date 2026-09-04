@@ -179,7 +179,7 @@ class FlatPlanner:
         # input z_g = the context encoding s_0 (no learned energy head), with
         # the same beam/aggregation as the energy planner.
         if scorer not in {"energy", "oracle_distance", "symbolic_oracle",
-                          "context_distance"}:
+                          "context_distance", "action_prior", "energy+prior", "goal_pred_distance"}:
             raise ValueError(f"unknown scorer {scorer!r}")
         if endpoints not in {"imagined", "true"}:
             raise ValueError(f"unknown endpoints {endpoints!r}")
@@ -203,7 +203,7 @@ class FlatPlanner:
         # single reference terminal misleads the ruler once the planner takes
         # a different, equally valid solution order.
         self.goal_set_samples = max(0, int(goal_set_samples))
-        self.oracle_diagnostic = (scorer not in {"energy", "context_distance"}
+        self.oracle_diagnostic = (scorer not in {"energy", "context_distance", "action_prior", "energy+prior", "goal_pred_distance"}
                                   or endpoints != "imagined" or goal_input != "context")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
@@ -810,6 +810,20 @@ class FlatPlanner:
         depth = max(len(q) for q in seqs)
         if self.scorer == "symbolic_oracle" and not _force_oracle:
             return self._symbolic_scores(seqs, env)
+        if self.scorer in {"action_prior", "energy+prior"} and not _force_oracle:
+            # 2026-09-03: categorical action prior (CatalogueActionPrior objective): score a rollout by the
+            # negative cosine between g(state) and the latent of its FIRST action (lower = better), i.e. the
+            # learned distribution over next catalogue actions in latent space.  energy+prior adds the prior
+            # score (in units of the softmax temperature 0.1) to the endpoint energy computed below.
+            head = getattr(self.model, "action_prior_head", None)
+            if head is None:
+                raise RuntimeError("scorer=action_prior needs a checkpoint trained with catalogue_action_prior")
+            q = torch.nn.functional.normalize(head(state.unsqueeze(0)).float(), dim=-1)  # [1, D]
+            firsts = torch.stack([code_of[seq[0]] for seq in seqs], 0).float()           # [n, D]
+            prior = -(torch.nn.functional.normalize(firsts, dim=-1) @ q.t()).squeeze(-1) / 0.1
+            if self.scorer == "action_prior":
+                return prior
+            self._prior_bonus = prior
         D = state.shape[-1]
         any_code = next(iter(code_of.values()))
         act = torch.zeros(n, depth, D, device=self.device, dtype=any_code.dtype)
@@ -837,6 +851,19 @@ class FlatPlanner:
         if self.scorer == "oracle_distance" or _force_oracle:
             return goal_distance(endpoint.float(), goal.float(),
                                  self.distance_metric)
+        if self.scorer == "goal_pred_distance":
+            # 2026-09-04: geometry-only planning without an oracle: distance between the imagined successor and the
+            # goal latent PREDICTED from the context by goal_pred_head (GoalLatentPred objective).  LN-L1, mean over
+            # imagined prefixes at depth > 1 like the energies.
+            head = getattr(self.model, "goal_pred_head", None)
+            if head is None:
+                raise RuntimeError("scorer=goal_pred_distance needs a checkpoint trained with goal_latent_pred")
+            g = head(s0.unsqueeze(0)).float()
+            def _d(x):
+                return (torch.nn.functional.layer_norm(x.float(), x.shape[-1:]) - torch.nn.functional.layer_norm(g, g.shape[-1:])).abs().mean(-1)
+            if self.aggregate == "mean_prefix" and depth > 1:
+                return torch.stack([_d(prefixes[:, h]) for h in range(1, depth + 1)], 1).mean(1)
+            return _d(endpoint)
         if self.scorer == "context_distance":
             if self.aggregate == "mean_prefix" and depth > 1:
                 # mean over imagined prefixes s_1..s_depth, as for energies
@@ -851,7 +878,10 @@ class FlatPlanner:
             init = s0.unsqueeze(0).expand(n, -1)
         if self.aggregate == "endpoint" or src == "true" or depth == 1:
             self.counter.bump("energy_forwards", n)
-            return self.model.energy(root, endpoint, init, float(horizon))
+            e = self.model.energy(root, endpoint, init, float(horizon))
+            if self.scorer == "energy+prior":
+                e = e.float() + self._prior_bonus
+            return e
         # Trajectory-mean energy over the imagined prefixes s_1..s_depth.  The
         # endpoint-only score is blind to WASTED first steps: an illegal (no-op)
         # action reaches the same endpoint for free, so at depth > 1 the argmin
