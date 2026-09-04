@@ -179,7 +179,7 @@ class FlatPlanner:
         # input z_g = the context encoding s_0 (no learned energy head), with
         # the same beam/aggregation as the energy planner.
         if scorer not in {"energy", "oracle_distance", "symbolic_oracle",
-                          "context_distance", "action_prior", "energy+prior", "goal_pred_distance", "prior_rollout"}:
+                          "context_distance", "action_prior", "energy+prior", "goal_pred_distance", "prior_rollout", "goal_pred_energy"}:
             raise ValueError(f"unknown scorer {scorer!r}")
         if endpoints not in {"imagined", "true"}:
             raise ValueError(f"unknown endpoints {endpoints!r}")
@@ -203,7 +203,7 @@ class FlatPlanner:
         # single reference terminal misleads the ruler once the planner takes
         # a different, equally valid solution order.
         self.goal_set_samples = max(0, int(goal_set_samples))
-        self.oracle_diagnostic = (scorer not in {"energy", "context_distance", "action_prior", "energy+prior", "goal_pred_distance", "prior_rollout"}
+        self.oracle_diagnostic = (scorer not in {"energy", "context_distance", "action_prior", "energy+prior", "goal_pred_distance", "prior_rollout", "goal_pred_energy"}
                                   or endpoints != "imagined" or goal_input != "context")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
@@ -873,6 +873,16 @@ class FlatPlanner:
                     if h < len(seq) and seq[h] is not None:
                         total[i] = total[i] - logp[i, kidx[seq[h]]]
             return total
+        if self.scorer == "goal_pred_energy":
+            # calibrated temporal distance (TemporalDistanceReg) from the imagined successor to the PREDICTED goal latent
+            head = getattr(self.model, "goal_pred_head", None)
+            if head is None:
+                raise RuntimeError("scorer=goal_pred_energy needs a checkpoint trained with goal_latent_pred")
+            g = head(s0.unsqueeze(0)).to(endpoint.dtype).expand(n, -1)
+            init = s0.unsqueeze(0).expand(n, -1)
+            if self.aggregate == "mean_prefix" and depth > 1:
+                return torch.stack([self.model.energy(prefixes[:, h], g, init, 1).float() for h in range(1, depth + 1)], 1).mean(1)
+            return self.model.energy(endpoint, g, init, 1).float()
         if self.scorer == "goal_pred_distance":
             # 2026-09-04: geometry-only planning without an oracle: distance between the imagined successor and the
             # goal latent PREDICTED from the context by goal_pred_head (GoalLatentPred objective).  LN-L1, mean over
