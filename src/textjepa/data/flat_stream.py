@@ -333,8 +333,14 @@ def build_block_attention(
     main_len: torch.Tensor,
     anchor_pos: torch.Tensor,
     phrase_id: torch.Tensor,
+    prompt_len: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Allowed-attention matrix ``[B, L, L]`` (True = may attend).
+
+    ``prompt_len`` [B] (2026-09-04, prefix-bidirectional encoder): queries inside
+    the prompt (problem statement + catalogue) may attend to EVERY prompt token,
+    not only earlier ones; the trajectory after the prompt stays causal, so no
+    future information leaks into any state.
 
     Main-stream queries are plain causal.  Phrase-block queries see the
     main stream up to and including ``anchor_pos`` plus the earlier tokens
@@ -352,7 +358,11 @@ def build_block_attention(
     main_allowed = causal & (k < main_len.view(B, 1, 1))
     same_phrase = phrase_id.unsqueeze(2) == phrase_id.unsqueeze(1)
     block_allowed = (k <= anchor_pos.view(B, 1, 1)) | (same_phrase & causal)
-    allowed = torch.where(is_main_q, main_allowed, block_allowed) & valid_k
+    allowed = torch.where(is_main_q, main_allowed, block_allowed)
+    if prompt_len is not None:
+        pl = prompt_len.view(B, 1, 1)
+        allowed = allowed | ((q < pl) & (k < pl))
+    allowed = allowed & valid_k
     dead = ~allowed.any(-1)
     allowed[..., 0] |= dead
     return allowed

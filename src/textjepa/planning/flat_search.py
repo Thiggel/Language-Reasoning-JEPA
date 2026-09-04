@@ -179,7 +179,7 @@ class FlatPlanner:
         # input z_g = the context encoding s_0 (no learned energy head), with
         # the same beam/aggregation as the energy planner.
         if scorer not in {"energy", "oracle_distance", "symbolic_oracle",
-                          "context_distance", "action_prior", "energy+prior", "goal_pred_distance"}:
+                          "context_distance", "action_prior", "energy+prior", "goal_pred_distance", "prior_rollout"}:
             raise ValueError(f"unknown scorer {scorer!r}")
         if endpoints not in {"imagined", "true"}:
             raise ValueError(f"unknown endpoints {endpoints!r}")
@@ -203,7 +203,7 @@ class FlatPlanner:
         # single reference terminal misleads the ruler once the planner takes
         # a different, equally valid solution order.
         self.goal_set_samples = max(0, int(goal_set_samples))
-        self.oracle_diagnostic = (scorer not in {"energy", "context_distance", "action_prior", "energy+prior", "goal_pred_distance"}
+        self.oracle_diagnostic = (scorer not in {"energy", "context_distance", "action_prior", "energy+prior", "goal_pred_distance", "prior_rollout"}
                                   or endpoints != "imagined" or goal_input != "context")
         self.candidate_interface = candidate_interface
         self.cap_mult = float(cap_mult)
@@ -851,6 +851,28 @@ class FlatPlanner:
         if self.scorer == "oracle_distance" or _force_oracle:
             return goal_distance(endpoint.float(), goal.float(),
                                  self.distance_metric)
+        if self.scorer == "prior_rollout":
+            # 2026-09-04 (own idea): LATENT BEAM SEARCH WITH THE CATEGORICAL PRIOR. Score a rollout a_1..a_k by
+            # -sum_k log p(a_k | zhat_{k-1}) where p is the action prior (softmax over the catalogue latents in
+            # code_of) evaluated on the IMAGINED states zhat (zhat_0 = the real state).  With lookahead >= 2 the
+            # planner's beam then prefers first actions whose imagined successor still admits a confident
+            # continuation -- a decoy's successor has no good next action, so its rollout scores badly.  LM-style
+            # tree search, but entirely in latent space and label-free.
+            head = getattr(self.model, "action_prior_head", None)
+            if head is None:
+                raise RuntimeError("scorer=prior_rollout needs a checkpoint trained with catalogue_action_prior")
+            keys = list(code_of.keys()); K = torch.stack([code_of[q] for q in keys], 0).float()
+            Kn = torch.nn.functional.normalize(K, dim=-1); kidx = {q: i for i, q in enumerate(keys)}
+            states = [state.unsqueeze(0).expand(n, -1)] + ([prefixes[:, h] for h in range(1, depth)] if depth > 1 else [])
+            total = torch.zeros(n, device=self.device)
+            for h in range(depth):
+                qv = torch.nn.functional.normalize(head(states[h]).float(), dim=-1)          # [n, D]
+                logits = (qv @ Kn.t()) / 0.1                                                  # [n, |catalogue|]
+                logp = torch.log_softmax(logits, -1)
+                for i, seq in enumerate(seqs):
+                    if h < len(seq) and seq[h] is not None:
+                        total[i] = total[i] - logp[i, kidx[seq[h]]]
+            return total
         if self.scorer == "goal_pred_distance":
             # 2026-09-04: geometry-only planning without an oracle: distance between the imagined successor and the
             # goal latent PREDICTED from the context by goal_pred_head (GoalLatentPred objective).  LN-L1, mean over
@@ -964,6 +986,8 @@ class FlatPlanner:
         rng = random.Random(seed)
         history = [t for s in fp.prompt_sentences for t in self.vocab.encode(s)]
         prompt_len = len(history)
+        if hasattr(self.model, "eval_prompt_len"):
+            self.model.eval_prompt_len = prompt_len   # prefix-bidirectional encoders need the prompt boundary
         s0, _ = self._state(history)
         n_necessary = len(fp.necessary)
         cap = int(math.ceil(self.cap_mult * n_necessary))
