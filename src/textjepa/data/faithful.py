@@ -290,6 +290,7 @@ class FaithfulDataset(Dataset):
         hash_bins=None,
         necessary_range=(None, None),
         anchors_necessary_only: bool = False,
+        geo_rank_cap_remaining: bool = False,
         **_,
     ):
         self.shuffle_actions = bool(shuffle_actions)
@@ -401,6 +402,9 @@ class FaithfulDataset(Dataset):
         # keeps the counterfactual anchor on a NECESSARY step so the ranking
         # losses never learn a wasted step as the positive.
         self.anchors_necessary_only = bool(anchors_necessary_only)
+        # 2026-09-06: cap the ranking-rollout horizon at (remaining necessary steps - 1) so that no rollout reaches the
+        # terminal state: gold ends one necessary step short, a wasted candidate two -- the label stays informative near the goal.
+        self.geo_rank_cap_remaining = bool(geo_rank_cap_remaining)
 
     def __len__(self) -> int:
         return self.size
@@ -508,6 +512,8 @@ class FaithfulDataset(Dataset):
             for q in trace[:t_star]:
                 env2.step(q)
             executed = trace[t_star]
+            if self.geo_rank_cap_remaining:
+                geo_rank_horizon = max(1, min(geo_rank_horizon, env2.remaining_necessary() - 1))
             alternatives = [q for q in env2.feasible_actions() if q != executed]
             rng.shuffle(alternatives)
             alternatives = alternatives[: self.geo_rank_k]
