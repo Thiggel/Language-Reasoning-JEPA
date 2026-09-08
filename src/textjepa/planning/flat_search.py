@@ -271,8 +271,10 @@ class FlatPlanner:
     def _state(self, history: list[int]) -> tuple[torch.Tensor, torch.Tensor]:
         toks = torch.tensor(history[-self.max_len:], dtype=torch.long,
                             device=self.device).unsqueeze(0)
-        h = self.model.encode(toks)
         self.counter.backbone(1, toks.shape[1])
+        if hasattr(self.model, "plan_state"):      # sentence world model: state = state-model readout
+            return self.model.plan_state(toks)
+        h = self.model.encode(toks)
         return h[0, -1], h[0]
 
     @torch.no_grad()
