@@ -149,7 +149,7 @@ class FlatPlanner:
         self.lookahead = int(lookahead)
         self.max_expand = int(max_expand)
         self.branch = int(branch)
-        if aggregate not in {"endpoint", "mean_prefix", "movement"}:
+        if aggregate not in {"endpoint", "mean_prefix", "movement", "min_prefix"}:
             raise ValueError(f"unknown aggregate {aggregate!r}")
         self.aggregate = aggregate
         if expansion not in {"beam", "random"}:
@@ -862,6 +862,19 @@ class FlatPlanner:
         if src == "true":
             endpoint = self._true_endpoints(seqs, env, history)
         if self.scorer == "oracle_distance" or _force_oracle:
+            if self.aggregate == "min_prefix" and depth > 1 and not _force_oracle:
+                # "does one of the beams ARRIVE": score a rollout by the closest point it passes through, not by
+                # where it ends.  An endpoint ruler cannot express having arrived, so at depth > remaining every
+                # sequence that reaches the goal keeps walking (a detour or an illegal no-op) and a sequence that
+                # merely delays the goal looks as good (2026-09-10 pair-class probe).  prefixes[:, 0] is the root.
+                if src == "true":
+                    pts = torch.stack([self._true_endpoints([q[:k] for q in seqs], env, history)
+                                       for k in range(1, depth + 1)], 1).float()          # [n, depth, D]
+                else:
+                    pts = prefixes[:, 1:].float()
+                dd = torch.stack([goal_distance(pts[:, k], goal.float(), self.distance_metric)
+                                  for k in range(pts.shape[1])], 1)                          # [n, depth]
+                return dd.min(dim=1).values
             return goal_distance(endpoint.float(), goal.float(),
                                  self.distance_metric)
         if self.scorer == "prior_rollout":
