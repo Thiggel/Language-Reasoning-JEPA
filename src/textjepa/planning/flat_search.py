@@ -214,6 +214,8 @@ class FlatPlanner:
         self.prior_greedy = int(prior_greedy)
         self.phrase_token_cap = int(phrase_token_cap)
         self.outcome_token_cap = int(outcome_token_cap)
+        # sentences the environment renders per outcome; set per episode in plan_episode
+        self.outcome_sentences = 1
         self.codebook_k = int(codebook_k)
         self.codebook_seed = int(codebook_seed)
         self.prior_top_k = int(prior_top_k)
@@ -289,8 +291,15 @@ class FlatPlanner:
     # ----------------------------------------------------------- proposer
     @torch.no_grad()
     def _decode_sentence(self, history: list[int], cap: int, greedy: bool,
-                         gen: torch.Generator | None) -> list[int]:
+                         gen: torch.Generator | None,
+                         n_sentences: int = 1) -> list[int]:
+        """Decode up to ``cap`` tokens, stopping after ``n_sentences`` tokens that end in '.'.
+
+        ``n_sentences`` is 1 for intent phrases.  An OUTCOME is one sentence when the action IS the
+        rule sentence, but TWO under ``action_kind=derive`` ("<rule sentence> <fact>"), where the
+        answer lives in the second one."""
         phrase: list[int] = []
+        seen = 0
         for _ in range(cap):
             ctx = (history + phrase)[-self.max_len:]
             toks = torch.tensor(ctx, dtype=torch.long, device=self.device).unsqueeze(0)
@@ -310,7 +319,9 @@ class FlatPlanner:
                 nxt = int(si[pick].item())
             phrase.append(nxt)
             if self.vocab.id_to_token[nxt].endswith("."):
-                break
+                seen += 1
+                if seen >= n_sentences:
+                    break
         return phrase
 
     @torch.no_grad()
@@ -984,7 +995,8 @@ class FlatPlanner:
         model's own choice (sentence-final '.' token) rather than by the
         token cap."""
         gen_out = self._decode_sentence(history, self.outcome_token_cap,
-                                        greedy=True, gen=None)
+                                        greedy=True, gen=None,
+                                        n_sentences=self.outcome_sentences)
         terminated = bool(gen_out) and self.vocab.id_to_token[gen_out[-1]].endswith(".")
         text = self.vocab.decode(gen_out).strip()
         return {"tokens": gen_out, "text": text,
@@ -994,6 +1006,9 @@ class FlatPlanner:
     @torch.no_grad()
     def plan_episode(self, fp, seed: int = 0) -> dict:
         env = fp.make_env()
+        # the FSA "derive" rendering returns "<rule sentence> <fact>" per step, so answer emission
+        # must decode two sentences to reach the answer fact
+        self.outcome_sentences = 2 if getattr(fp, "action_kind", "rule") == "derive" else 1
         self.counter.new_episode()
         rng = random.Random(seed)
         history = [t for s in fp.prompt_sentences for t in self.vocab.encode(s)]
