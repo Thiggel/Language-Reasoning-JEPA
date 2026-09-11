@@ -171,7 +171,7 @@ class FlatPlanner:
         # headline): `scorer=oracle_distance` ranks by latent distance to the
         # encoded TRUE solved state, `endpoints=true` executes each candidate
         # sequence in a copy of the environment and encodes the REAL state.
-        if distance_metric not in {"raw", "ln_l1"}:
+        if distance_metric not in {"raw", "ln_l1", "cos"}:
             raise ValueError(f"unknown distance metric: {distance_metric}")
         self.distance_metric = distance_metric
         # context_distance (2026-09, reviewer item 4 "the title's own null"):
